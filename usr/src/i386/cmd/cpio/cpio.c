@@ -1,4 +1,4 @@
-#ident	"@(#)cpio:i386/cmd/cpio/cpio.c	1.30.42.12"
+#ident	"@(#)cpio:i386/cmd/cpio/cpio.c	1.30.42.13"
 
 /***************************************************************************
  * Command: cpio
@@ -1071,8 +1071,11 @@ bfill_thread(void *dummy)
 				 * sneak past it.
 				 */
 				Buffr.b_waitforput = 1;
-				COND_WAIT_LOOP((Buffr.b_out_p < Buffr.b_end_p &&
-						Buffr.b_out_p != Buffr.b_base_p), &Buffr.b_put);
+				COND_WAIT_LOOP((((Buffr.b_out_p < Buffr.b_end_p)
+					|| ((Buffr.b_out_p == Buffr.b_end_p)
+					&& Buffr.b_waitfortake))
+					&& Buffr.b_out_p != Buffr.b_base_p),
+					&Buffr.b_put);
 				Buffr.b_waitforput = 0;
 				Buffr.b_in_p = Buffr.b_base_p;
 				read_size = Bufsize;

@@ -1,4 +1,4 @@
-#ident	"@(#)dcu:scripts/dcurc	1.62.5.2"
+#ident	"@(#)dcu:scripts/dcurc	1.62.5.3"
 
 #
 # NOTE: if you want a blank line in a embedded string a string use
@@ -479,6 +479,14 @@ if [ ! "${BDIRQ[$2]}" = "${BDIRQ[$1]}" ] \
 then
 	return 0
 fi
+if [ "$UNIX_INSTALL" = Y ]; then
+
+	if [ "${BDBUSTYPE[$2]}" = "$unknown" ]; then
+		RMdelkey ${BDKEY[$2]}
+	fi
+	return 2
+fi
+
 
 if [ "${BDITYPE[$2]}" = 1 ] || [ "${BDITYPE[$1]}" = 1 ] 
 then
@@ -1084,6 +1092,10 @@ do
 		|| [ "${BDINTERPSM[brd]}" != "Y" ]
 		then
 			RMirqconf $i $brd
+			if [ "$?" = "2" ]; then
+				let brd+=1
+				continue
+			fi
 			if [ ${DCUMODE} = DCUSCREENS ]
 			then
 				footer $DCUGENERIC_WAIT_FOOTER

@@ -1,4 +1,20 @@
-#ident "@(#)Makefile	1.6"
+# Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+#                                                                         
+#        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+#                   SANTA CRUZ OPERATION INC.                             
+#                                                                         
+#   The copyright notice above does not evidence any actual or intended   
+#   publication of such source code.                                      
+
+# Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+#                                                                         
+#        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+#                   SANTA CRUZ OPERATION INC.                             
+#                                                                         
+#   The copyright notice above does not evidence any actual or intended   
+#   publication of such source code.                                      
+
+#ident "@(#)Makefile	1.7"
 #ident "$Header$"
 
 include $(CMDRULES)
@@ -14,7 +30,7 @@ INSDIR_NAMED_D = $(ETC)/inet/named.d
 OWN = bin
 GRP = bin
 
-LOCALDEF =  	-DSVR4 -DUSE_POSIX
+LOCALDEF =  	-DSVR4 -DUSE_POSIX -DBSD
 LOCALINC =	-I../include
 
 OBJS =		db_dump.o db_load.o db_lookup.o db_reload.o db_save.o db_update.o \

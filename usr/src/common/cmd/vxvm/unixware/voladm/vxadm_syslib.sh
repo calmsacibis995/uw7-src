@@ -1,6 +1,6 @@
 #!/sbin/sh -
-# @(#)cmd.vxvm:unixware/voladm/vxadm_syslib.sh	1.6 11/13/97 17:14:22 - cmd.vxvm:unixware/voladm/vxadm_syslib.sh
-#ident	"@(#)cmd.vxvm:unixware/voladm/vxadm_syslib.sh	1.6"
+# @(#)cmd.vxvm:unixware/voladm/vxadm_syslib.sh	1.8 3/4/98 18:09:38 - cmd.vxvm:unixware/voladm/vxadm_syslib.sh
+#ident	"@(#)cmd.vxvm:unixware/voladm/vxadm_syslib.sh	1.8"
 
 #set -x
 
@@ -37,6 +37,8 @@ inuse_check()
 	mount_outfile=$tmpfile2
 
 	mount > $mount_outfile
+
+	/sbin/devnm /stand >>$mount_outfile 2>/dev/null
 
 	inuse_list=
 	not_inuse_list=

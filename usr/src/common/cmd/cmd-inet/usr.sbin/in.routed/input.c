@@ -1,4 +1,24 @@
-#ident	"@(#)input.c	1.3"
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+#ident	"@(#)input.c	1.4"
 #ident	"$Header$"
 
 /*
@@ -658,7 +678,7 @@ input(struct sockaddr_in *from,		/* received from this IP address */
 			 */
 			if (have_ripv1_out
 			    && (((rt = rtget(dst,mask)) == 0
-				 || !(rt->rt_state & RS_NET_SYN)))
+				 || !(rt->rt_state & (RS_NET_SYN | RS_IF))))
 			    && (v1_mask = ripv1_mask_net(dst,0)) > mask) {
 				ddst_h = v1_mask & -v1_mask;
 				i = (v1_mask & ~mask)/ddst_h;

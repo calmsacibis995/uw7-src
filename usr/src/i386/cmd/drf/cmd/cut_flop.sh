@@ -111,6 +111,9 @@ function prep_flop2
 		cp $srcfile $destfile
 	done < $PROTO/disk2.files
 
+	# If the below not done, vi will fail
+	ln usr/lib/libcrypt.so usr/lib/libcrypt.so.1
+
 	for i in $FSMODS
 	do
 		[ -d .extra.d/etc/fs/$i -o "$i" = "dow" ] || mkdir -p .extra.d/etc/fs/$i

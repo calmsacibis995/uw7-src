@@ -1,4 +1,24 @@
-#ident	"@(#)popen.c	1.6"
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+#ident	"@(#)popen.c	1.7"
 
 /* Copyright (c) 1988 The Regents of the University of California. All rights
  * reserved.
@@ -145,7 +165,14 @@ int closestderr;
     gargv[gargc] = NULL;
 
     iop = NULL;
+#ifdef UXW
+    ENABLE_WORK_PRIVS;
+    pid = vfork();
+    CLR_WORKPRIVS_NON_ADMIN(0);
+    switch (pid) {
+#else  /* UXW */
     switch (pid = vfork()) {
+#endif /* UXW */
     case -1:                    /* error */
         (void) close(pdes[0]);
         (void) close(pdes[1]);

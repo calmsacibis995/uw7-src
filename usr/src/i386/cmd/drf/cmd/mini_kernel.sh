@@ -160,7 +160,7 @@ USAGE="Usage: $0 kdb|nokdb"
 
 STATIC_LIST="ansi asyc atup ca ccnv cdfs char cmux confmgr cram dcompat
 dma eisa elf fd fdbuf fifofs fpe fs gentty gvid hpci iaf iasy intmap intp io
-kd kdvm kernel kma ldterm mca mem memfs mm mod modksym name namefs nullzero
+kd kdvm kernel kma ldterm mca mem memfs mm mod modksym mtrr name namefs nullzero
 pci proc procfs pstart resmgr rtc sad sc01 sd01 sdi specfs st01 sum svc
 sysclass ts udev util ws at_toolkit psm_i8254 psm_i8259 psm_mc146818
 psm_time vtoc i2omsg i2otrans"
