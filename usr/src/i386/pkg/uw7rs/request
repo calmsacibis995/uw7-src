@@ -1,0 +1,396 @@
+#!/usr/bin/sh
+#ident "@(#)request	1.14 98/03/05 17:04:12"
+# uw7rs request script
+
+FAILURE=1
+EXITCODE=3        # User termination request exit code
+CMDARGS="$*"	  # Preserve arguments for later
+
+trap 'exit $EXITCODE' 2 3 15
+
+ERROR()
+{
+	trap 'exit $FAILURE' 1 2 3 15
+	echo "\nERROR: $1"
+	# await input to retain window
+	echo "\nPress enter to quit...\c"
+	read junk
+	exit $FAILURE
+}
+
+# Required release and version are only needed in the request script
+# For multiple Updates, set RQDVER to something like "2.01 or 2.02":
+# we use it in an error msg if the "version" isn't right...
+
+RQDREL="5"
+RQDVER="7"
+
+# define variables needed during pkgadd/pkgrm...
+#
+# this is the only way I could find to set needed variables in one place
+# and have them known across all scripts
+#
+# we now put only CLASSES and PKGVARS in the pkginfo file, everything else
+# goes in the PKGVARS file
+
+CONFDIR=/etc/conf
+CONFBIN=$CONFDIR/bin
+PKGDIR=/var/sadm/pkg
+CONTENTS=/var/sadm/install/contents
+TMP=/tmp/${PKGINST}.err
+
+# change to NO if the most recent Update is not to be "locked on" by
+# creating a dependency on it during postinstall
+#
+# in general, the Update should be locked on if it (or an earlier
+# Update in the case of update111 & update112) changed any of the
+# files updated by the PTF -- if all the files to be changed by the
+# PTF are being updated for the 1st time, the Update shouldn't be
+# "locked" unless it contains "new/changed functionality" or some
+# other dependency needed by the PTF
+
+# postinstall could conceivably look in the contents file for earlier
+# Updates having changed the same files and take the appropriate action,
+# but I'm not gonna do that until I'm certain it's the right answer
+
+LOCK_UPDATE=NO
+
+# if this PTF supersedes another, list the superseded PTF(s) here and
+# it'll be "locked on" in a similar fashion...
+
+SUPD_PTF=""
+
+# pkgptf (mine, at least) checks the 2 vars below in the "context" of the
+# files being updated.  Of course, postinstall/postremove could do something
+# similar, but then I have to make them aware of all the possibilities...
+
+# change to NO if not installing any kernel files...
+
+KERNPATCH="YES"
+
+# change to YES if need to run niccfg...
+
+NICCFG=NO
+
+# if installing files w/ privileges, pkgadd sets everything up ok.  However,
+# pkgrm has no notion of restoring previous versions of files (it's actually the
+# postremove script that does it), so this var tells the script that privileges
+# need to be restored.  (In the next major release, cpio will handle this.)
+
+FIXPRIVS=YES
+
+# new files to be installed by PTF
+
+NEWFILES=""
+
+# files to be removed by PTF
+
+DELFILES=""
+
+# all files that may be replaced by the PTF
+
+REPLFILES=" /etc/conf/bin/idresadd /etc/conf/pack.d/fs/Driver_atup.o /etc/conf/pack.d/fs/Driver_mp.o /etc/conf/pack.d/inet/Driver_mp.o /etc/conf/pack.d/io/Driver_atup.o /etc/conf/pack.d/io/Driver_mp.o /etc/conf/pack.d/memfs/Driver_atup.o /etc/conf/pack.d/memfs/Driver_mp.o /etc/conf/pack.d/mpio/Driver.o \
+/etc/conf/pack.d/mtrr/Driver.o /etc/conf/pack.d/pci/Driver_atup.o /etc/conf/pack.d/pci/Driver_mp.o /etc/conf/pack.d/psm_cfgtables/Driver_mp.o /etc/conf/pack.d/psm_mc146818/Driver.o /etc/conf/pack.d/sd01/Driver.o /etc/conf/pack.d/svc/Driver_atup.o /etc/conf/pack.d/svc/Driver_mp.o /etc/conf/pack.d/vol/Driver_atup.o \
+/etc/conf/pack.d/vol/Driver_mp.o /etc/conf/pack.d/vol/space.c /usr/lib/vxvm/voladm.d/lib/vxadm_syslib.sh /usr/lib/vxvm/voladm.d/bin/disk.ckinit /etc/conf/sdevice.d/mtrr /etc/dcu.d/scripts/dcurc /usr/X/lib/X11/dyddx/mw/libXDriver.so /usr/dt/bin/dtterm /usr/dt/lib/libDtTerm.so.1 /usr/dt/lib/libDtTerm.a /usr/dt/lib/nls/msg/ja/dtterm.cat.m /usr/dt/lib/nls/msg/ja/dtpad.cat.m \
+/usr/lib/libthread.so /usr/lib/libthread.so.1 /usr/bin/cpio /usr/sbin/sco_cpd /usr/lib/drf/cut_flop /usr/lib/drf/mini_kernel /usr/lib/locale/ja/LC_MESSAGES/ifor.cat /usr/lib/scoadmin/tasksched/taskGUI /usr/sbin/in.ftpd /usr/sbin/in.named /usr/sbin/in.routed /etc/conf/pack.d/nfs/Driver_atup.o /etc/conf/pack.d/nfs/Driver_mp.o"
+
+
+# If this is a critical PTF that must be re-applied after an
+# update is installed but before the system is rebooted. Set
+# PTFUPDATE to YES and populate PTFUPDLIST, PTFUPDCMT, and
+# PTFUPDCLASS variables with the appropriate information to
+# notify the Update during its installation.
+
+PTFUPDATE=NO
+
+# Example: PTFUPDLIST="update202 update203"
+PTFUPDLIST="update pkgname list"
+
+# Example: PTFUPDCMT="System will not reboot"
+PTFUPDCMT="PTF comment (single line; 59 characters max)"
+
+# PTFUPDCLASS has only one setting as of now - 'critical'.
+PTFUPDCLASS=critical
+
+# a temporary work directory...
+
+PKGTMP=/tmp/tmp.${PKGINST}
+
+# where to (temporarily) install Driver Software Package (DSP) files
+
+DSPTMP=${PKGTMP}/drivers
+
+# directory under which files will be saved
+
+SAVEDIR=$PKGSAV/oldfiles
+
+# name of file where we'll keep contents info about installed files
+
+FILEINFO=$PKGSAV/fileinfo
+
+# name of file where we'll save most of the package variables -- where
+# they can be used in multiple scripts...
+
+PKGVARS=$PKGSAV/ptfvars
+
+# some common error messages
+
+BADREL="${NAME}\n\tis intended for UnixWare ${RQDVER} systems.\n\tIt cannot be installed on other systems."
+
+# Since the request script is invoked directly from the installation media
+# (before any changes are made to the system), display some info describing
+# the fix and allow the user to determine whether or not it's needed/wanted.
+
+# Do all checks such as Release/Version and whether needed tools are in
+# place in this script and exit $FAILURE if not (again, before anything gets
+# changed...)
+
+pg -e -p "Press enter for next screen..." ${REQDIR}/${PKGINST}.inst.txt
+
+echo "\nPress enter for next screen...\c"
+read JUNK
+
+pg -e -p "Press enter for next screen..." << DOC
+*****************************************************************************
+                      SCO TERMS and CONDITIONS 
+
+The software files enclosed in this UnixWare product package ("PACKAGE") 
+are protected by the copyright laws of the United States and international
+copyright treaties.  This PACKAGE contains software files which are intended
+to replace, patch or otherwise run with commercially available versions of
+SCO software products.  You may without charge, reproduce and distribute
+copies of the PACKAGE and use copies of the files contained within the PACKAGE 
+for their intended purposes to replace legally obtained, commercially available
+SCO software; provided you do NOT (1) receive any direct payment,
+commercial benefit, or other consideration for the reproduction, distribution
+or use, or distribute the PACKAGE as part of or in combination with any other
+software or hardware product without the prior written consent of SCO.
+(2) change or omit any copyright notice or proprietary rights notice appearing 
+on or in the PACKAGE.
+
+These Terms and Conditions apply to the PACKAGE and are in addition to the 
+Software License Agreement which governs usage of the SCO software product 
+version to which PACKAGE is a supplement.  The User hereby agrees to 
+continue to abide by those terms and conditions.  Customers should refer to 
+their Software License Agreement for the complete SCO software product
+LIMITED WARRANTY and LIMITATION OF LIABILITY.
+
+EXCEPT AS RESTRICTED BY LAW, THE SOFTWARE PROGRAMS CONTAINED IN THE FILE ARE
+PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO, ANY IMPLIED WARRANTIES OF MERCHANTABILITY,
+TITLE OR FITNESS FOR A PARTICULAR PURPOSE.
+
+ !!! By installing this PACKAGE, You AGREE to these TERMS AND CONDITIONS !!!
+*****************************************************************************
+DOC
+
+ANS=`ckyorn -d "y" -p "Do you wish to continue with installation? [y,n,?,q]:"` || exit $EXITCODE
+
+[ "$ANS" = "y" ] && echo || exit $EXITCODE
+
+[ -n "${RQDREL}" ] && {
+    expr " ${RQDREL} " : ".* `uname -r` .*" >/dev/null || ERROR "${BADREL}"
+    [ -n "${RQDVER}" ] && {
+        expr " ${RQDVER} " : ".* `uname -v` .*" >/dev/null || ERROR "${BADREL}"
+    }
+}
+
+REPLACE=""
+OSMPLOCK=YES
+CLASSES=""
+for file in $REPLFILES
+do
+	if [ -f $file ] 
+	then
+                REPLACE="$REPLACE $file"
+	fi
+
+        grep "^$file " $CONTENTS > /dev/null 2>&1
+        if [ $? = 0 ]
+        then
+                set -- `grep "^$file " $CONTENTS`
+                case "$2" in
+
+                  "v"|"f")
+			shift ; shift ; shift ; shift
+			IPKG=`expr "$6" : "\([0-9]*\)"`
+			if [ "$IPKG" = "$6" ]
+			then
+				IPKG=$9
+			else
+				IPKG=$6
+			fi
+                        ;;
+                  "b"|"c")
+			shift ; shift ; shift
+                  	IPKG=`expr "$6" : "\([0-9]*\)"`
+			if [ "$IPKG" = "$6" ]
+			then
+				IPKG=$9
+			else
+				IPKG=$6
+			fi
+			;;
+                  "d")  shift
+			IPKG=`expr "$6" : "\([0-9]*\)"`
+			if [ "$IPKG" = "$6" ]
+			then
+				IPKG=$9
+			else
+				IPKG=$6
+			fi
+                        ;;
+                  "d")  IPKG="$7"
+                        ;;
+                  "s"|"l")
+			IPKG="${3}"
+			;;
+                  *)    echo "Unsupported file type in request script."
+                        exit $FAILURE
+                        ;;
+                esac
+
+		IPKG=`echo ${IPKG} | sed "s/:.*//"`
+		echo $IPKG $file
+                echo "$CLASSES" | grep " $IPKG " > /dev/null 2>&1
+                if [ $? -ne 0 ]
+                then
+                        CLASSES="${CLASSES}${IPKG} "
+                fi
+        fi
+done
+
+set -- $CMDARGS
+
+echo
+echo "Installing files from the following packages:"
+echo "     $CLASSES"
+echo
+
+
+# determine that ID/TP tools are available
+
+[ "$KERNPATCH" = "YES" ] && {
+    [ -x ${CONFBIN}/idbuild -a -x ${CONFBIN}/idinstall ] || {
+        ERROR "The Installable Driver feature has been removed.\nCannot install ${NAME}."
+    }
+}
+
+# check files to save are there before changing any saves
+
+ls -d ${REPLACE} >/dev/null 2>&1 || {
+    ERROR "Cannot find all files to be saved"
+}
+
+# If installed before, push previous saves through to the next
+# package which replaced them, or back to root if no later package.
+# This allows reinstallation, without overwriting genuine saves by
+# the package files themselves; and matches what happens in contents -
+# installing ptfAAAA then ptfBBBB then ptfAAAA gives ptfBBBB ptfAAAA
+
+if pkginfo -q ${PKGINST} 2>/dev/null && [ -d ${SAVEDIR} ]
+then
+	set -f
+	[ -n "${NEWFILES}" ] && rm -f ${NEWFILES} 2>/dev/null
+	grep "^/.* ${PKGINST}" ${CONTENTS} | while read \
+	path type class mode owner group size sum mtime pkgs
+	do	# handle other types than file later on?
+		[ "$type" = "f" -o "$type" = "v" -o "$type" = "l" ] || continue
+		# if nothing saved, assume it's one of our new files,
+		# or we got here before and then failed after: okay
+		[ -f ${SAVEDIR}${path} ] || continue
+		next=`echo . $pkgs | sed -ne "s/.* ${PKGINST}.* //p"`
+		if [ "$next" = "" ]
+		then	next=root
+			savedir=""
+			[ -f $path ] && {
+				set -- `ls -og $path`
+				[ "$3" = "$size" ] || continue
+				set -- `sum $path`
+				[ "$1" = "$sum"  ] || continue
+			}
+		else	next=`echo $next | sed -e "s/[ :].*//"`
+			savedir=${PKGDIR}/$next/save/oldfiles
+			[ -d $savedir ] || continue
+		fi
+		destdir=`dirname ${savedir}${path}`
+		[ -d $destdir ] || mkdir -p $destdir || {
+			ERROR "Cannot create $next save directory"
+		}
+		mv -f ${SAVEDIR}${path} ${savedir}${path} || {
+			ERROR "Cannot replace $next saved file"
+		}
+	done
+	[ $? -eq 0 ] || exit ${FAILURE}	# above was a subshell 
+	for path in ${DELFILES}
+	do	[ -f ${SAVEDIR}${path} ] || continue
+		[ -f $path ] && continue
+		destdir=`dirname $path`
+		[ -d $destdir ] || mkdir -p $destdir || {
+			ERROR "Cannot create root save directory"
+		}
+		mv -f ${SAVEDIR}${path} $path || {
+			ERROR "Cannot replace root saved file"
+		}
+	done
+	rm -rf ${SAVEDIR}
+fi
+
+# if any of the $NEWFILES or $DELFILES are present,
+# we'll add them to the $SAVEFILES list...
+
+SAVEFILES="${REPLACE}"
+[ -n "${NEWFILES}" -o -n "${DELFILES}" ] && {
+    SAVENEWDEL=`ls -d ${NEWFILES} ${DELFILES} 2>/dev/null`
+    SAVEFILES="${SAVEFILES}${SAVENEWDEL:+ ${SAVENEWDEL}}"
+}
+
+[ -d ${SAVEDIR} ] || mkdir -p ${SAVEDIR} || {
+    ERROR "Cannot create save directory"
+}
+
+ls -d ${SAVEFILES} |cpio -pdum ${SAVEDIR} 2>/dev/null
+[ $? -eq 0 ] || {
+    ERROR "Cannot save files to be replaced"
+}
+
+cat >$1 <<!
+CLASSES="$CLASSES"
+PKGVARS=$PKGVARS
+!
+
+cat >$PKGVARS <<!
+CONFDIR=$CONFDIR
+CONFBIN=$CONFBIN
+CONTENTS=$CONTENTS
+TMP=$TMP
+PKGTMP=$PKGTMP
+DSPTMP=$DSPTMP
+KERNPATCH=$KERNPATCH
+NICCFG=$NICCFG
+FIXPRIVS=$FIXPRIVS
+SAVEFILES="$SAVEFILES"
+SAVEDIR=$SAVEDIR
+FILEINFO=$FILEINFO
+LOCK_UPDATE=$LOCK_UPDATE
+SUPD_PTF=$SUPD_PTF
+PTFUPDATE=$PTFUPDATE
+OSMPLOCK=$OSMPLOCK
+!
+
+[ "$PTFUPDATE" = "YES" ] && {
+    echo "PTFUPDLIST=\"${PTFUPDLIST}\"" >>$PKGVARS
+    echo "PTFUPDCMT=\"${PTFUPDCMT}\"" >>$PKGVARS
+    echo "PTFUPDCLASS=${PTFUPDCLASS}" >>$PKGVARS
+    echo "PTFUPDFILE=/var/sadm/pkg/.ptfupdate" >>$PKGVARS
+}
+
+# make sure any variables added at the beginning of the request are
+# written to the $PKGVARS file -- if needed in the other scripts
+
+# make sure postinstall does not pick up files left by other users
+case ${PKGTMP} in # safety!
+/tmp/*) rm -rf ${PKGTMP} ;;
+esac
+
+exit 0

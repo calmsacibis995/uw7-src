@@ -1,0 +1,193 @@
+#!/usr/bin/sh
+#ident "@(#)postinstall	1.6 98/02/20 14:46:04"
+
+FAILURE=1	# fatal error
+
+REBUILD=10
+
+. $PKGVARS
+
+if [ "$KERNPATCH" = "YES" -o "$NICCFG" = "YES" ]
+then
+	EXITRC=$REBUILD
+else
+	EXITRC=0
+fi
+
+ERROR()
+{
+	trap 'exit $FAILURE' 1 2 3 15
+	echo "\nERROR: $1"
+	# await input to retain window
+	echo "\nPress enter to quit...\c"
+	read junk
+	exit $FAILURE
+}
+
+
+# define any PTF-specific functions here BEGIN
+
+do_tcl_tndx() {
+
+# networking tlibs in scoadm package
+SCOADM="/usr/lib/netadm"
+
+# networking tlibs in inet package
+INET="/usr/lib/scoadmin/ncm/hosts /usr/lib/scoadmin/ncm/dns /usr/lib/scoadmin/ncm/main /usr/lib/scoadmin/ncm/nis /usr/lib/scoadmin/ncm/ntp"
+
+for FILE in $INET $SCOADM
+do
+	[ -f $FILE.tlib ] && /bin/touch $FILE.tlib
+	[ -f $FILE.tndx ] && /bin/touch $FILE.tndx
+done
+
+# datestamp tcl.tndx later than tcl.tlib
+TCL_PATH=/usr/lib/tclX7.6.0
+touch ${TCL_PATH}/tcl.tndx 
+
+# datestamp vtcl.tndx later than vtcl.tlib
+VTCL_PATH=/usr/lib/vtcl
+touch ${VTCL_PATH}/vtcl.tndx
+
+}
+
+# nsadmin_adpmw_fix()
+#
+# fix the password in the Netscape admin server admpw file if not set
+# correctly by the installation
+ 
+nsadmin_adpmw_fix()
+  {
+	# check the current file to see if it contains no password
+	# for the admin user
+	if [ "`grep '^admin:' /usr/ns-home/admserv/admpw" = "admin:" ]; then
+		# create the line the way we want it to be, and if there
+		# is still no root entry in /etc/shadow then there's
+		# little that can be done
+		grep "^root:" /etc/shadow \
+			| awk -F":" '{ print "admin" FS $2 }' \
+			>/tmp/ftc_$$.sed
+
+		# append any other entries from the admpw file
+		sed -e "/^admin:/d" /usr/ns-home/admserv/admpw >>/tmp/ftc_$$.sed
+		cp /tmp/ftc_$$.sed /usr/ns-home/admserv/admpw
+
+		# erase the temporary file
+		rm -f /tmp/ftc_$$.sed
+	fi
+  }
+
+
+# define any PTF-specific functions here END
+
+
+# install (part of?) a DSP
+
+do_idinstall() {
+
+	DRV=$1
+	cd ${DSPTMP}/${DRV} || {
+		ERROR "Driver installation failed"
+	}
+
+	# make sure all files have a later timestamp than anything
+	# already installed -- pkg'g timestamps are already clobbered
+	# by idinstall, so this doesn't lose any info that's not already
+	# lost
+
+	touch *
+
+	${CONFBIN}/idinstall -P ${PKGINST} -M ${DRV} || {
+		ERROR "Driver installation failed"
+	}
+}
+
+# idinstall any driver packages in $DSPTMP...  but why do it that way?
+
+INSTALLFF=no
+[ -d ${DSPTMP} ] && {
+	DRIVERS=`(cd ${DSPTMP}; echo *)`
+	for DSP in $DRIVERS
+	do
+		do_idinstall $DSP
+		INSTALLFF=yes
+	done
+}
+
+# any PTF-specific post installation stuff...
+do_tcl_tndx
+pkginfo -q nsadmin && nsadmin_adpmw_fix > /dev/null 2>&1
+
+
+# rebuild, if necessary, for changes to take effect
+# can't fail, because won't actually idbuild til reboot
+
+[ "$KERNPATCH" = "YES" ] && ${CONFBIN}/idbuild
+
+# if $NICCFG is set to YES, then do a niccfg (if it's present...)
+
+[ "$NICCFG" = "YES" ] && {
+	NICCFG=/usr/sbin/niccfg
+	[ -x $NICCFG ] && $NICCFG
+}
+
+# everything else is common for all PTFs (I think)...
+
+# if the $PKGTMP directory is present, remove it and...
+#	1) removef the contents file entries for the temporarily installed
+#	   files
+#	2) installf -f to "finalize" the contents file updates for the
+#	   actual file names
+
+[ -d ${PKGTMP} ] && {
+	cd /tmp
+	case ${PKGTMP} in # safety!
+	/tmp/*) rm -rf ${PKGTMP} ;;
+	esac
+	grep "^${PKGTMP}[ /]" ${CONTENTS} |awk '{print $1}' |
+		sort |removef $PKGINST - >/dev/null 2>&1
+	removef -f $PKGINST >/dev/null 2>&1
+	INSTALLFF=yes
+}
+[ $INSTALLFF = yes ] && installf -f $PKGINST
+
+# get the $CONTENTS file info re the files we installed
+
+grep "^/.*${PKGINST}" ${CONTENTS} | \
+	awk '($2 == "f" || $2 == "v") {print $1, $7, $8, $9}' | \
+	sed -e "/.var.sadm.pkg..ptfupdate/d" >$FILEINFO
+
+# lock on the latest update by creating a dependency on it...
+
+[ "$LOCK_UPDATE" = "YES" ] && {
+	pkginfo -c update |grep 'update[1-9]' |sort |sed -n '$s/[^ ]*/P/p' >>/var/sadm/pkg/${PKGINST}/install/depend
+}
+
+# lock on any superseded PTF(s)...
+
+[ "$SUPD_PTF" ] && {
+	pkginfo $SUPD_PTF 2>/dev/null | sed "s/[^ ]*/P/" >>/var/sadm/pkg/${PKGINST}/install/depend
+}
+
+# Must stop listed Updates from rebooting.
+[ "$PTFUPDATE" = "YES" ] && {
+	[ ! -f "$PTFUPDFILE" ] && echo "#Update Pkgname<tab>PTF Pkgname<tab>Class<tab>Comments" >$PTFUPDFILE
+
+	grep "${PKGINST}" $PTFUPDFILE >/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		# Create an entry for each Update this
+		# PTF must be re-installed after.
+		for upd in $PTFUPDLIST
+		do
+			echo "${upd}	${PKGINST}	${PTFUPDCLASS}	${PTFUPDCMT}" >>$PTFUPDFILE
+		done
+	fi
+	installf ${PKGINST} $PTFUPDFILE v 0744 bin bin 
+	installf -f ${PKGINST}
+}
+
+echo "\nThe release notes for this Release Supplement can be found in"
+echo "/var/sadm/pkg/${PKGINST}/install/${PKGINST}.txt"
+
+exit $EXITRC

@@ -1,0 +1,88 @@
+#!/usr/bin/sh
+#ident "@(#)postremove	1.2 98/02/13 19:48:11"
+
+FAILURE=1	# fatal error
+
+REBUILD=10
+
+. $PKGVARS
+
+if [ "$KERNPATCH" = "YES" -o "$NICCFG" = "YES" ]
+then
+	EXITRC=$REBUILD
+else
+	EXITRC=0
+fi
+
+ERROR()
+{
+	trap 'exit $FAILURE' 1 2 3 15
+	echo "\nERROR: $1"
+	# await input to retain window
+	echo "\nPress enter to quit...\c"
+	read junk
+	exit $FAILURE
+}
+
+# idinstall -do not needed as the restore below will overlay
+# the DSP components (if any) that were saved...
+
+# restore files saved during pkgadd
+
+cd $SAVEDIR
+find . ! -type d -print |cpio -pdum / 2>/dev/null
+[ $? -eq 0 ] || {
+	ERROR "Cannot restore files"
+}
+
+# update the contents database w/ restored file info...
+# 1st, installf the files w/ our $PKGINST (we are, after all, (re)installing
+#	them) ...
+# then, since our $PKGINST is being removed, removef them
+#
+# all this because the pkg'g tools don't have any concept of software
+#	maintenance and associated backup/restore needs...
+
+[ -n "${SAVEFILES}" ] && {
+	ls -d ${SAVEFILES} 2>/dev/null | installf ${PKGINST} -
+	installf -f ${PKGINST}
+	ls -d ${SAVEFILES} 2>/dev/null | removef ${PKGINST} - >/dev/null 2>&1
+	removef -f ${PKGINST}
+}
+
+# remove any and all "no reboot" entries...
+[ "$PTFUPDATE" = "YES" ] && {
+	grep "	${PKGINST}	" $PTFUPDFILE >/dev/null 2>&1 && {
+		sed -e "/	${PKGINST}	/d" $PTFUPDFILE >/tmp/.ptfupdate
+		mv /tmp/.ptfupdate $PTFUPDFILE
+		installf ${PKGINST} $PTFUPDFILE v 0744 bin bin 
+		installf -f ${PKGINST}
+		removef ${PKGINST} $PTFUPDFILE
+		removef -f ${PKGINST}
+	}
+}
+
+# any ${NEWFILES} installed should be deleted by pkgrm, but some
+# other PTF-specific stuff may be needed here...
+
+# if $FIXPRIVS is set to YES and /etc/security/tools/priv_upd is present,
+# then run it...
+
+[ "$FIXPRIVS" = "YES" ] && {
+	FIXPRIVS=/etc/security/tools/priv_upd
+	[ -x $FIXPRIVS ] && $FIXPRIVS
+}
+
+# rebuild, if necessary, for changes to take effect
+# can't fail, because won't actually idbuild til reboot
+
+[ "$KERNPATCH" = "YES" ] && ${CONFBIN}/idbuild
+
+# if $NICCFG is set to YES, then do a niccfg (if it's present...)
+
+[ "$NICCFG" = "YES" ] && {
+	NICCFG=/usr/sbin/niccfg
+	[ -x $NICCFG ] && $NICCFG
+}
+
+exit $EXITRC

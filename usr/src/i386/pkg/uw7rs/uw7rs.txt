@@ -1,0 +1,421 @@
+____________________________________________________________________________
+
+                    UnixWare 7 Release Supplement Notes
+____________________________________________________________________________
+
+------------------------------------------------------------------------------
+Software Notes and Recommendations
+------------------------------------------------------------------------------
+
+The UnixWare(R) 7 Release Supplement (uw7rs) should only be installed on the 
+following UnixWare releases:
+
+    UnixWare 7
+
+The command uname -sv will return UnixWare 7 if the correct release
+is installed.
+
+The package name used to install and remove the UnixWare 7 Release
+Supplement is:
+
+    uw7rs
+
+During the installation of the Release Supplement, the following message 
+may appear:
+
+    UX:pkginstall: WARNING: filename <no longer a linked file>
+
+This message can be ignored. It is information displayed by pkginstall(1M)
+when a hard link is being broken.
+
+Please note that a new release of the Hardware Development Kit (HDK)
+will be available in the near future.  The latest pre-release HDK
+documentation is available from the SCO(R) documentation web
+server at:
+
+    http://www.sco.com/unixware7/documentation
+
+We appreciate your business.
+
+SCO Support Services
+
+------------------------------------------------------------------------------
+Installation Instructions
+------------------------------------------------------------------------------
+
+If the root disk of the system on which you are installing the Release
+Supplement is encapsulated by the Veritas Volume Manager, you must
+remove any of the following licenses before beginning the installation:
+
+    +  The Enterprise license
+
+    +  The ODM license
+
+To remove a license:
+
+1.  Start the SCOadmin Manager by entering scoadmin on the command line,
+    then select License Manager.
+
+2.  Select the license from the List, then select License -> Remove.
+
+3.  Reboot the system.
+
+Install the Release Supplement on the system on which you downloaded the
+files, as described below:
+
+1.  As root, in single user mode, uncompress the file and add 
+    the package to your system using these commands:
+
+    uncompress /tmp/uw7rs.Z
+    pkgadd -d /tmp/uw7rs
+
+2.  Reboot the system for the changes to take effect.
+
+To install the Release Supplement on a system to which you cannot or do not
+wish to download the files, transfer the images to diskettes and install
+the images, as described below.
+
+If you removed the licenses before you installed the Release Supplement,
+replace them. In the License Manager: 
+
+1.  Select License -> Add.
+
+2.  Enter the details from the Certificate of License and Authenticity.
+
+3.  Click on License and follow any further instructions.
+
+See the UnixWare 7 Installation Guide for information about licensing
+products.
+
+------------------------------------------------------------------------------
+Removal Instructions
+------------------------------------------------------------------------------
+
+1.  As root, in single user mode, remove the package using the command:
+
+    pkgrm uw7rs
+
+2.  Reboot the system for the changes to take effect.
+
+
+------------------------------------------------------------------------------
+Using FTP to download the UnixWare 7 Release Supplement 
+------------------------------------------------------------------------------
+
+You can download uw7rs from the FTP server at SCO. To download the
+UnixWare Release Supplement packages and images:
+
+1.  Create a directory to hold the Release Supplement files, and then
+    make that directory your current directory as follows:
+
+    mkdir /tmp/uw7rs
+    cd /tmp/uw7rs
+
+2.  Log in to the FTP server as an anonymous user and provide your email
+    address (for example, john@acme.com) when prompted for a password:
+
+    ftp ftp.sco.com
+    name: anonymous
+    Password: <your email address>
+
+3.  Set FTP binary mode:
+
+    binary
+
+4.  Change to the uw7rs directory on the FTP site:
+
+    cd Supplements/unixware7/rs700/
+
+    Using the ls command, you should see the following files:
+
+    uw7rs.Z            Compressed image of the Release Supplement
+    uw7rs.flop.img.v1  Release Supplement floppy image volume #1
+    uw7rs.flop.img.v2  Release Supplement floppy image volume #2
+    uw7rs.txt          This file
+
+5.  Use the mget command at the FTP prompt to transfer all of the Release
+    Supplement files as follows:
+
+    mget *
+
+    Once the transfer is complete, you should see the files in the
+    /tmp/uw7rs directory.
+
+6.  To verify a successful download, compare the checksums of the downloaded
+    files (found using sum -r) with the checksums given in the uw7rs.txt file.
+
+
+------------------------------------------------------------------------------
+Making diskette images to install the Release Supplement
+------------------------------------------------------------------------------
+
+Once you have downloaded the files from the web site, you can make a set
+of diskettes for use in installing the Release Supplement as follows:
+
+1.  You will need two formatted diskettes. To format a diskette use
+    either of the following commands:
+
+    format /dev/rfd0135ds18
+    format /dev/rdsk/f03ht
+
+    Use the same device name (``/dev/rfd0135ds18'' or ``/dev/rdsk/f03ht'')
+    in each of the following steps.
+
+2.  With the first diskette in the drive, change to the directory where
+    you have put the uw7rs files and enter either of the following:
+
+    dd if=uw7rs.flop.img.v1 of=/dev/rfd0135ds18 bs=36b
+    dd if=uw7rs.flop.img.v1 of=/dev/rdsk/f03ht bs=36b
+
+3.  Put in the second diskette and enter either of the following:
+
+    dd if=uw7rs.flop.img.v2 of=/dev/rfd0135ds18 bs=36b
+    dd if=uw7rs.flop.img.v2 of=/dev/rdsk/f03ht bs=36b
+
+You can now use pkgadd(1M) or the Application Installer to install the
+Release Supplement images.
+
+--------------------------------------------------------------------------
+UnixWare 7 Release Supplement corrects the following problems:
+--------------------------------------------------------------------------
+
+    +  A panic might have occurred in STREAMS while the system was running
+       the AIM VII Shared System benchmark test.
+
+    +  Some multiprocessor Pentium Pro/Pentium II systems caused
+       memory-related panics due to incorrect BIOS initialization of
+       additional CPUs.
+
+    +  A panic occurred on shutdown on Multi-processor Specification (MPS)
+       compliant systems which have I/O APICs that are present but disabled
+       described in the MPS table.
+
+    +  A panic occurred when stress testing an NFS-mounted filesystem on
+       the system exporting the filesystem.
+
+    +  High stress conditions involving the NFS filesystem could cause a
+       system to panic or to hang.
+
+    +  A panic occurred when removing a swap file with a message such as:
+
+       PANIC: page_sortadd: bad vp.
+
+       The underlying cause of this panic could also be responsible for
+       other panics which seem to originate from filesystem or virtual
+       memory code.
+
+    +  Data corruption when using a VxVM managed root volume (encapsulated
+       root disk) might have resulted in the following:
+
+       -  Failure to boot a rebuilt kernel, probably with the following
+          message:
+
+          unix:not a boot image
+
+       -  A panic during system initialization, when rebooting after
+          installation of a kernel affecting change.
+
+       -  Other data corruption when calling write with a size greater than
+          or equal to 256KB.
+
+       If you have encapsulated your root disk and later wish to install
+       other packages that affect the kernel, you should first install the
+       Release Supplement.
+
+       _________________________________________________________________________
+       NOTE  This problem is the same as the one that was described in the
+       UnixWare 7 Release Notes as follows:
+
+       -  You should install osmp during system installation if
+          possible, in order to avoid possible corruption of large
+          drivers that may occur when ODM is installed without osmp
+          being present. This corruption may cause the Volume Manager
+          and other managers to crash.
+       _________________________________________________________________________
+
+    +  In certain unusual circumstances, the configuration scripts in the
+       Online Data Manager could write incorrect entries to disk table of
+       contents files and so render disks inaccessible.
+
+    +  A memory leak occurred when data was read via the raw device from a
+       Volume Manager volume.
+
+    +  Under certain rare timing conditions, cpio would dump core due to a
+       segmentation violation or hang.
+
+    +  The screen-switched VESA MW X server crashed when starting an X client
+       from another multiscreen.  The X server crash caused the login session
+       to be lost.
+
+    +  Block corruption errors occurred when building an Oracle database.
+
+    +  CLARiiON devices were not accessible if only inactive paths were
+       available to them.
+
+    +  On a system with the MPIO driver, you could not initialize multiple
+       disks.
+
+    +  A multiprocessor system with an Award BIOS 4.51pg would not boot the
+       multiprocessor kernel.
+
+    +  Configuration problems with the support of some PCI 2.1 devices,
+       specifically PCI bridge cards and cards that support 64-bit memory
+       addressing.
+
+    +  Certain HBA drivers that use kernel scatter/gather lists could cause
+       data corruption when processing large I/O requests.
+
+    +  You could not use pkgrm(1M) to remove dpt drivers.
+
+    +  The following message was previously displayed at boot time:
+
+       psm_time_spin_adjust: invalid delay factor (boot)
+
+    +  While the system was booting, 8-bit characters were displayed
+       incorrectly.
+
+    +  Erroneous permission problems occurred when starting some SCOadmin
+       managers or other Visual Tcl applications.
+
+    +  After booting from the Emergency Recovery Floppies, and entering the
+       UNIX shell, an invocation of the vi command failed.
+
+    +  When you ran ls in FTP, the following message might have been
+       displayed:
+
+       resource temporarily exhausted
+
+    +  Running in.routed with RIPv1 on a gateway where the interfaces have
+       differing network masks might previously have resulted in an incorrect
+       kernel routing table entry for the interface with the smallest mask
+       length.
+
+    +  If you set up an IP alias on a network interface (using an ifconfig
+       alias), then started the name server, users could not talk to the name
+       server using the aliased IP address. They could use only the true IP
+       address of the interface. in.named can now bind to all IP addresses
+       associated with an interface.
+
+    +  Problems in the networked copy protection scheme.
+
+    +  Problems occurred with cursor handling in dtterms on the CDE in the
+       Japanese environment.
+
+    +  The ``Day of the week'' list in the Task Manager was not displayed in
+       the localized language.
+
+    +  There were incorrect Japanese translations for the Close and Edit
+       buttons for dtterm and dtpad.
+
+In addition to the problems noted above, note the following corrections
+and additions to the UnixWare 7 Release Notes:
+
+    +  The MEMADJUST boot parameter is not required when booting with a DPT
+       HBA as stated in ``Installation limitations and workarounds''.
+
+    +  In ``Installation limitations and workarounds'', in the item that
+       begins ``UnixWare cannot install on a device that is not detected.'',
+       note the following rule for determining which HBA is primary on a
+       Compaq system:
+
+       -  In Compaq servers, the system BIOS will boot from the HBA assigned
+          the ``Controller order'' of ``first'' using the System
+          Configuration Utility. Any controller may be selected as the first
+          controller regardless of slot. The UnixWare HBA drivers for Compaq
+          controllers will request HBA number 0 for this first controller.
+          It is important that HBA 0 be assigned to the ``primary'' or
+          ``boot'' controller. Problems with /stand can result when the boot
+          controller is not HBA 0.
+
+    +  In ``Installation fails with IRQ conflict'' replace the second bullet
+       point in step 2 with:
+
+       -  If you have a primary IDE device, under New, press <F5> to create
+          an IDE.
+
+    +  When you add an ODM license, the following message is displayed:
+
+       unknown product with id 157
+
+       This message indicates a correctly installed VxVM Mirroring or ODM
+       license.
+
+    +  In ``Network device support'' under ``Compaq'', the ``Netelligent
+       10/100 TX PCI (Board ID CPQA32)'' should be ``Netelligent 10/100 TX
+       PCI (Board ID CPQAE32)''.
+
+    +  In ``Hardware limitations and workarounds'' the following note:
+
+       Duplicate controller numbers
+          On a Compaq Proliant 6000 system with embedded cpqsc
+          controllers and an IDE controller on the motherboard,
+          deletion of controllers that have been auto-detected can
+          result in the generation of duplicated controller numbers in
+          the resmgr database.
+
+          Use dcu(1M) to remove the duplicates.
+
+       should read:
+
+       Duplicate Controller Numbers
+          On Compaq systems with an IDE controller and with more than
+          one Compaq HBA installed (either SCSI-2 using the cpqsc
+          driver, or SMART arrays using the ida driver), it is
+          possible to get duplicate controller numbers in the resource
+          manager database. This will result in a message at boot time
+          requesting that you press <Esc> to continue or <Enter> to
+          rebuild the kernel. The rebuild will occur automatically if
+          no key is pressed for 30 seconds. The system will reboot and
+          as the duplicate controller numbers remain in the database
+          the process will repeat ad infinitum.
+
+          To recover from this reboot loop, press <Esc> to stop the
+          kernel rebuild. After the system boots, run /sbin/dcu to
+          change the UNIT number of the IDE controller to something
+          unused by any other HBA controller on the system. See
+          dcu(1M) for instructions on how to run the DCU. You are
+          likely to find that unit number 1 is not used by any other
+          HBA controller. Be sure to save your changes when exiting
+          the DCU. One additional reboot will be required in order
+          that the ide driver will begin using the new UNIT number
+          that you assigned using the DCU.
+
+    +  In ``Hardware limitations and workarounds'' under the point headed
+       Selecting incorrect support modules, ``Compaq 2500'' should read
+       ``Compaq Proliant 2500'', and ``Compaq 2000'' should read ``Compaq
+       Proliant 2000''.
+
+    +  In ``Hardware limitations and workarounds'' the point headed Compaq
+       LTE5280 should be replaced with the following:
+
+       -  On some newer laptop systems, the video drivers provided with
+          UnixWare 7 will fail to work properly. Contact your system vendor to
+          ensure that you have the latest BIOS revision for your laptop.
+
+    +  The following note under ``Command line and shell'' does not apply:
+
+       .profile
+          .profile is not executed when you open an xterm using the command
+
+          xterm -ls
+
+          You should run .profile by hand.
+
+    +  In ``Command line and shell'' under the point headed "Using cu as
+       root", the limitation noted applies only to systems that are
+       configured with a modem that accepts incoming calls.
+
+    +  If the Video Configuration Manager is run in the graphical
+       environment, the configuration could be lost after a reboot.
+       Change video modes only on virtual terminals in text mode.
+
+    +  Select in RPC fails on long timeouts.
+
+    +  Do not add the Predictor-1 compression algorithm to any PPP bundle
+       configurations. Doing so will put your system at risk from kernel
+       panics when a PPP link that uses the algorithm is active. In the
+       SCOadmin PPP Manager, the compression algorithms (CCP) are selectable
+       from Link Protocols when adding or modifying a bundle configuration.
+       Ensure the CCP link protocol is de-selected (not highlighted) for all
+       bundle configurations.
+
