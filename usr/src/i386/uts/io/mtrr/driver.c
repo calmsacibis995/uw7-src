@@ -1,4 +1,4 @@
-#ident	"@(#)kern-i386:io/mtrr/driver.c	1.2"
+#ident	"@(#)kern-i386:io/mtrr/driver.c	1.2.1.1"
 #ident	"$Header$"
 
 /*****************************************************************/
@@ -1380,6 +1380,7 @@ mtrrinit()
 {
 int var;
 
+#ifdef DEBUG
 #ifdef P6A0
         cmn_err(CE_NOTE,"P6A0 Memory Type Range Register Driver (no WBINVD)");
 #elif defined P6A1
@@ -1388,6 +1389,7 @@ int var;
         cmn_err(CE_NOTE,"Memory Type Range Register Driver");
         cmn_err(CE_NOTE,"Copyright (c) Intel Corporation 1995");
 #endif
+#endif /* DEBUG */	
 
 #ifdef KDEBUG
 	l.cpu_features[0] |= CPUFEAT_MTRR;
@@ -1404,8 +1406,15 @@ int var;
 			return(-1);
 		}
 		save_mtrrs(init_mtrrs);
-	}   else
+	}
+#ifdef DEBUG
+	/*
+	 * This driver is configured by default on even non P6 machines.
+	 * So this message is misleading.
+	 */
+	else
 		cmn_err(CE_WARN,"Processor does not support MTRRs.");
+#endif	
 	return(0);
 }
 /*----------------------------------------------------------------------*/	

@@ -1,4 +1,4 @@
-#ident	"@(#)kern-i386at:svc/bs.c	1.20.12.1"
+#ident	"@(#)kern-i386at:svc/bs.c	1.20.12.2"
 #ident	"$Header$"
 
 
@@ -74,6 +74,8 @@ extern boolean_t use_gdb;
 #ifndef MINI_KERNEL
 extern boolean_t disable_verify;
 #endif
+
+extern boolean_t disable_copy_mtrrs; 
 
 struct bootinfo bootinfo; /* TEMP */
 
@@ -235,6 +237,7 @@ bs_getval(const char *param)
  *	  case 27 DMEM=<msg>
  *	  case 28 HDPARM<n>=<parmstr>
  *	  case 29 DISABLE_VERIFY=<YES|NO>
+ *	  case 30 DISABLE_COPY_MTRRS=<YES|NO>
  *
  *	Note that '<>' surround user supplied values; '[]' surround
  *	optional extensions; "parms" are words containing numeric characters;
@@ -510,6 +513,14 @@ bs_doarg(const char *s, const char *p, void *dummy)
 	}
 #endif	
 
+	/* case 30 DISABLE_COPY_MTRRS */
+
+	if (equal(s, "DISABLE_COPY_MTRRS") && (p[0] == 'Y' || p[0] == 'y')) {
+		disable_copy_mtrrs = B_TRUE;
+		return 0;			
+	}
+
+	
 	/* case 8: block device overrides */
 
 	n = bs_lexparms(p, parms, MAXPARMS);

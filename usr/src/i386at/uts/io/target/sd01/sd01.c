@@ -1,4 +1,4 @@
-#ident	"@(#)kern-pdi:io/target/sd01/sd01.c	1.172.32.3"
+#ident	"@(#)kern-pdi:io/target/sd01/sd01.c	1.172.32.4"
 #ident	"$Header$"
 
 #define _DDI 8
@@ -938,6 +938,11 @@ sd01_dmstamp(struct disk *dp)
 	struct pd_stamp dmstamp;
 	uchar_t *buff;
 	int ret_val = 0;
+
+	/*
+	 * Must set the default stamp in case of failure.
+	 */
+	PD_SETSTAMP(&dm->dm_stamp, PD_STAMP_DFLT, PD_STAMP_DFLT, PD_STAMP_DFLT);
 
 	if ((stampAddr = sd01_getStamp(dp, &dm->dm_stamp)) == 0) {
 		ret_val = EACCES;

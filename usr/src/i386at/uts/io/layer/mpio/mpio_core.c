@@ -1,4 +1,4 @@
-#ident	"@(#)kern-pdi:io/layer/mpio/mpio_core.c	1.1.11.4"
+#ident	"@(#)kern-pdi:io/layer/mpio/mpio_core.c	1.1.11.5"
 
 /*
  *  This module contains the MPIO Driver core.
@@ -114,6 +114,20 @@
 
 #include    <svc/systm.h>
 
+/*
+ * This define includes a fix submitted by ICL. It is a partial fix to
+ * the problem of not having active paths to open on. The fundamental
+ * problem here, that is not addressed, is that paths may fail at open and
+ * the recovery strategy must be in place at this time.
+ *
+ * Also, a related problem is that if all paths are failed there is no way
+ * to open the device and issue administrative commands.
+ *
+ * When these problems are addressed this define should be removed with 
+ * its code.
+ */
+#define ICL
+
 #include    "mpio_core.h"
 #include    "mpio_os.h"
 #include    "mpio_proto.h"
@@ -124,7 +138,7 @@
 
 mpio_driver_info_t *    dip;		/* top most data structure    */
 mpio_qm_anchor_t	     mpio_vdev_queue;    /* Vdev queue		*/
-
+sdi_signature_t		*signull , sd01_type_null_signature;
 sdi_device_t *mpio_register_device(sdi_device_t*, vdev_p_t, rm_key_t);
 
 /*
@@ -147,6 +161,7 @@ mpio_start(void)
 {
     int		 key;
     vdev_p_t	    vdevp, firstvdevp;
+    struct pd_stamp *disk_stamp;
 
     MPIO_DEBUG0(0,"Enter mpio_start.");
 
@@ -164,6 +179,16 @@ mpio_start(void)
 
     dip->ready = B_TRUE;
 
+
+    /*
+     * Initialize the NULL signature.
+     */
+    signull = &sd01_type_null_signature;
+    signull->sig_size = sizeof(struct pd_stamp);
+    signull->sig_state = 0;
+    disk_stamp = (struct pd_stamp *) signull->sig_string;
+    PD_SETSTAMP(disk_stamp, PD_STAMP_DFLT, PD_STAMP_DFLT, PD_STAMP_DFLT);
+	
 done:
     return;
 }
@@ -685,7 +710,11 @@ mpio_openAll(vdev_t *vdevp)
 	lpgp = vdevp->lpg_vector[0].working_lpg;
 
 	if ((pathp = MPIO_QM_HEAD(&lpgp->active_list)) == NULL) {
+#ifdef ICL
+		return NO_PATH;
+#else
 		return FAILURE;
+#endif
 	}
 
 	for (; pathp != NULL; pathp = MPIO_QM_NEXT(&lpgp->active_list,pathp)) {
@@ -738,6 +767,10 @@ mpio_open8(void *idatap, ulong_t *channelp, int flags, cred_t *credp,
 {
     vdev_p_t    vdevp;
     status_t    status = OK;
+#ifdef ICL
+    path_p_t    nullp = NULL;
+    boolean_t	done = FALSE;
+#endif
 
     MPIO_DEBUG1(0,"open8 Vdev:0x%x",vdevp);
      
@@ -752,6 +785,36 @@ mpio_open8(void *idatap, ulong_t *channelp, int flags, cred_t *credp,
     if (vdevp->open_count++ == 0) {
 	    MPIO_VDEV_UNLOCK(vdevp);
 
+#ifdef ICL
+        while (!done) {
+            MPIO_VDEV_SLEEP_LOCK(vdevp);
+
+            status = mpio_openAll(vdevp);
+            if (status != OK)
+                mpio_closeAll(vdevp);
+
+            if (status == NO_PATH) {
+                MPIO_VDEV_SLEEP_UNLOCK(vdevp);
+                cmn_err(CE_NOTE, "mpio: open failed - NO_PATH, attempting recovery");
+                status = mpio_vdev_recover_from_path_failure(&nullp, vdevp);
+                if (status == FAILURE) {
+                    cmn_err(CE_NOTE, "mpio: path RECOVERY FAILED!!");
+                    done = TRUE;
+                }
+            } else {
+                MPIO_VDEV_SLEEP_UNLOCK(vdevp);
+                done = TRUE;
+            }
+        }
+
+        if (status == FAILURE) {
+            MPIO_VDEV_LOCK(vdevp);
+            vdevp->open_count--;
+            MPIO_VDEV_UNLOCK(vdevp);
+        }
+
+#else
+
 	    MPIO_VDEV_SLEEP_LOCK(vdevp);
 	    if (mpio_openAll(vdevp) != OK) {
 		mpio_closeAll(vdevp);
@@ -763,6 +826,8 @@ mpio_open8(void *idatap, ulong_t *channelp, int flags, cred_t *credp,
 		status = FAILURE;
 	    }
 	    MPIO_VDEV_SLEEP_UNLOCK(vdevp);
+#endif
+
     } else {
     	MPIO_VDEV_UNLOCK(vdevp);
     }
@@ -1510,12 +1575,27 @@ mpio_lpg_activate_path(
 		 * are now accessible. In particular opens had never succeeded.
 		 * Issue the opens after the appropiate closes.
 		 */
+#ifdef ICL
+		if (vdevp->open_count > 0) {
+	    	    mpio_closeAll(vdevp);
+	    	    mpio_lpg_switch_state_after_trespass(lpgp);
+	    	    if (mpio_openAll(vdevp) != OK) {
+	    		mpio_closeAll(vdevp);
+			status =  FAILURE;
+		    }
+		}
+		else {
+		    /* Path may have failed before device was opened - RK (ICL) */
+	    	    mpio_lpg_switch_state_after_trespass(lpgp);
+		}
+#else
 	    	mpio_closeAll(vdevp);
 	    	mpio_lpg_switch_state_after_trespass(lpgp);
 	    	if (mpio_openAll(vdevp) != OK) {
 	    		mpio_closeAll(vdevp);
 			status =  FAILURE;
 		}
+#endif
 	    }
 	    break;
 	case SDI_PATH_ACTIVE:
@@ -2042,11 +2122,21 @@ mpio_vdev_switch_lpg_vector(int this_cpugroup, int new_cpugroup, vdev_p_t vdevp)
 sig_compare_result_t
 mpio_signature_compare(const sdi_signature_t *sig0p, const sdi_signature_t *sig1p)
 {
-	if (bcmp(sig0p->sig_string, sig1p->sig_string,
-		min(sdi_sigGetSize(sig0p), sdi_sigGetSize(sig1p))) == 0)
-		return FSIG_MATCHED;
-	else
+
+	/*
+	 * Never match the NULL signature.
+	 */
+	if (bcmp(signull->sig_string, sig0p->sig_string,
+		min(sdi_sigGetSize(signull), sdi_sigGetSize(sig0p))) == 0)
 		return FSIG_NO_MATCHED;
+	else if (bcmp(signull->sig_string, sig1p->sig_string,
+		min(sdi_sigGetSize(signull), sdi_sigGetSize(sig1p))) == 0)
+		return FSIG_NO_MATCHED;
+	else if (bcmp(sig0p->sig_string, sig1p->sig_string,
+		min(sdi_sigGetSize(sig0p), sdi_sigGetSize(sig1p))) != 0)
+		return FSIG_NO_MATCHED;
+	else
+		return FSIG_MATCHED;
 }
 /* END mpio_signature_compare */
 

@@ -1,7 +1,7 @@
 #ifndef _IO_MPIO_MPIO_CORE_H    /* wrapper symbol for kernel use */
 #define _IO_MPIO_MPIO_CORE_H    /* subject to change without notice */
 
-#ident	"@(#)kern-pdi:io/layer/mpio/mpio_core.h	1.1.5.3"
+#ident	"@(#)kern-pdi:io/layer/mpio/mpio_core.h	1.1.5.4"
 
 /*
  * This module contains the MPIO driver core defines. This module
@@ -195,7 +195,11 @@ typedef struct {
 /*
  *  Definition of error state that is used thoughout this driver
  */
+#ifdef ICL
+typedef enum status { OK, FAILURE, NO_PATH } status_t;
+#else
 typedef enum status { OK, FAILURE } status_t;
+#endif
 
 /*
  * Initializing driver information block (dip)

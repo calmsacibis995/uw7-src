@@ -1,4 +1,24 @@
-#ident	"@(#)kern-i386at:io/autoconf/ca/pci/pci_bios.c	1.12.11.1"
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+#ident	"@(#)kern-i386at:io/autoconf/ca/pci/pci_bios.c	1.12.11.2"
 #ident	"$Header$"
 
 #include <proc/regset.h>
@@ -603,6 +623,8 @@ pci_read_exp_rom_signature(ms_cgnum_t cgnum,
 		p = (struct pci_rom_header *) ((char *) e_rom_start
 					+ i * PCI_EXP_ROM_HDR_CHUNK);
 		if (p->sig == PCI_EXP_ROM_HDR_SIG){
+
+			if (!p->run_length) continue;
 
 			q = (struct pci_rom_data *)( (char *) p + p->offset);
 

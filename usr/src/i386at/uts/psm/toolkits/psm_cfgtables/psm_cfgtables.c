@@ -1,4 +1,24 @@
-#ident	"@(#)kern-i386at:psm/toolkits/psm_cfgtables/psm_cfgtables.c	1.1.4.2"
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+/*
+ * Copyright (c) 1998 The Santa Cruz Operation, Inc.. All Rights Reserved. 
+ *                                                                         
+ *        THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF THE               
+ *                   SANTA CRUZ OPERATION INC.                             
+ *                                                                         
+ *   The copyright notice above does not evidence any actual or intended   
+ *   publication of such source code.                                      
+ */
+
+#ident	"@(#)kern-i386at:psm/toolkits/psm_cfgtables/psm_cfgtables.c	1.1.4.3"
 #ident	"$Header$"
 
 
@@ -344,12 +364,18 @@ cfgtable_readmp(struct mpconfig *mp, struct mp_info *mpi)
                 type = ep->bytes[0];
 	}
 
+	/* Now set the real number of described I/O APICs. */
+	mpi->num_ioapics = napics;
+
 	while ((char *)ep < end_of_tbl) {
 		switch(type) {
 			case CFG_ET_MC_PTR:
 				mpi->mc.node_id = ep->m.node_id;
 				mpi->mc.mc_table = ep->m.table_ptr;
 		}
+
+		if (ep->bytes[1] == 0) break;
+
                 ep = (union mpcentry *)((char *)ep + ep->bytes[1]);
                 type = ep->bytes[0];
 	}

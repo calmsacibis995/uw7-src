@@ -1,4 +1,4 @@
-#ident	"@(#)kern-i386at:psm/toolkits/psm_mc146818/psm_mc146818.c	1.3.1.1"
+#ident	"@(#)kern-i386at:psm/toolkits/psm_mc146818/psm_mc146818.c	1.3.2.1"
 #ident	"$Header$"
 
 /* 
@@ -15,6 +15,7 @@
 #include <psm/toolkits/psm_mc146818/psm_mc146818.h>
 
 ms_bool_t	psm_mc146818_initialized=MS_FALSE;
+ms_lockp_t	psm_mc146818_lock;
 
 /*
  * void
@@ -47,6 +48,15 @@ psm_mc146818_init()
 		outb(MC146818_ADDR, MC146818_D);
 		(void)inb(MC146818_DATA);		/* set time valid */
 	}
+
+	/*
+	 * psm_mc146818_rtodc()/psm_mc146818_wtodc() might be already
+	 * serialized but psm_mc146818_getsec() is not. Since there
+	 * are writers that could do the thing on wrong RTC registers
+	 * we must use a strict locking.
+	 */
+
+	psm_mc146818_lock = os_mutex_alloc();
 }
 
 /*
@@ -63,9 +73,12 @@ int
 psm_mc146818_getsec()
 {
 	unsigned char	byte;
+	ms_lockstate_t  lstate;
 
 	if (psm_mc146818_initialized == MS_FALSE)
 		psm_mc146818_init();
+
+	lstate = os_mutex_lock(psm_mc146818_lock);
 
 wait0:
 	outb(MC146818_ADDR, 0);
@@ -82,6 +95,8 @@ wait1:
 	if (byte == 0xff)
 		goto wait1;
 	
+	os_mutex_unlock(psm_mc146818_lock, lstate);
+
 	return((int) byte);
 }
 
@@ -106,6 +121,7 @@ psm_mc146818_rtodc(ms_daytime_t *dayp)
 	unsigned char	*bufp;
 	unsigned char	reg;
 	unsigned int	i, cnt;
+	ms_lockstate_t  lstate;
 
 	if (psm_mc146818_initialized == MS_FALSE)
 		psm_mc146818_init();
@@ -116,9 +132,13 @@ psm_mc146818_rtodc(ms_daytime_t *dayp)
 	 * Changes required here & in kernel to use new ms_daytime_t.
 	 */
 
+	lstate = os_mutex_lock(psm_mc146818_lock);
+
 	outb(MC146818_ADDR, MC146818_D); /* check if clock valid */
 	reg = inb(MC146818_DATA);
 	if (!(reg & MC146818_VRT)) {
+
+		os_mutex_unlock(psm_mc146818_lock, lstate);
 		return MS_FALSE;
 	}
 
@@ -160,11 +180,13 @@ checkuip:
 	}
 
 
+	os_mutex_unlock(psm_mc146818_lock, lstate);
 	return MS_TRUE;
 
 tryagain:
 	if (++cnt == 1000) {
 		os_printf ("Real Time Clock not responding");
+		os_mutex_unlock(psm_mc146818_lock, lstate);
 		return MS_FALSE;
 	}
 	goto checkuip;
@@ -187,6 +209,7 @@ psm_mc146818_wtodc(ms_daytime_t *dayp)
 	unsigned char	*bufp;
 	unsigned char	reg;
 	unsigned int	i;
+	ms_lockstate_t  lstate;
 
 	/*
 	 * ZZZ TODO KLUDGE - conversion routines not yet done for converting
@@ -196,6 +219,8 @@ psm_mc146818_wtodc(ms_daytime_t *dayp)
 
 	if (psm_mc146818_initialized == MS_FALSE)
 		psm_mc146818_init();
+
+	lstate = os_mutex_lock(psm_mc146818_lock);
 
 	outb(MC146818_ADDR, MC146818_B);
 	reg = inb(MC146818_DATA);
@@ -209,6 +234,7 @@ psm_mc146818_wtodc(ms_daytime_t *dayp)
 	outb(MC146818_ADDR, MC146818_B);
 	outb(MC146818_DATA, reg & ~MC146818_SET); /* allow time update */
 
+	os_mutex_unlock(psm_mc146818_lock, lstate);
 	return (MS_TRUE);
 }
 

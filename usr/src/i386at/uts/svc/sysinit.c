@@ -1,4 +1,4 @@
-#ident	"@(#)kern-i386at:svc/sysinit.c	1.74.21.5"
+#ident	"@(#)kern-i386at:svc/sysinit.c	1.74.21.6"
 #ident	"$Header$"
 
 /*
@@ -141,6 +141,7 @@ boolean_t copyright_changed = B_FALSE;
 boolean_t disable_pge = B_FALSE;
 boolean_t ignore_machine_check = B_FALSE;
 boolean_t disable_cache = B_FALSE;
+boolean_t disable_copy_mtrrs = B_FALSE;
 #ifdef CCNUMA
 boolean_t using_pae = B_TRUE;
 #else
@@ -2086,6 +2087,15 @@ scg_sysinit(cgnum_t cgnum)
 }
 #endif /* CCNUMA */
 
+#ifndef CCNUMA
+#ifndef MINI_KERNEL
+/*
+ * init_mtrrs is initialized by mtrrinit(), which is called by io_init.
+ */
+extern ullong_t *init_mtrrs;
+#endif /* MINI_KERNEL */
+#endif /* CCNUMA */
+
 /*
  * void
  * selfinit(int procid)
@@ -2373,7 +2383,22 @@ selfinit(int procid)
 	 * Perform misc. initialization including interrupt
 	 * distribution/assignments to non-boot engine.
 	 */
-
+#ifndef CCNUMA
+#ifndef MINI_KERNEL
+	/*
+	 * Make MTRRs on non-boot processors consistent with the ones on the
+	 * BSP. The mtrrinit() is called above (it's in io_init[]), and the
+	 * MTRRs are copied into the memory pointed to by init_mtrrs. 
+	 * The mini-kernel is ATUP, so we don't need this code, and the mtrr
+	 * is not statically linked (not configured).
+	 */
+	if (myengnum != BOOTENG) {
+		if (l.cpu_features[0] & CPUFEAT_MTRR && !disable_copy_mtrrs) {
+			copy_mtrrs(init_mtrrs);
+		}
+	}
+#endif /* MINI_KERNEL */
+#endif /* CCNUMA */	
 
 	asm("cli");		/* make sure interrupts are off */
 	ms_init_cpu();

@@ -1,4 +1,4 @@
-#ident	"@(#)kern-i386at:io/autoconf/ca/pci/pci_ca.c	1.15.13.1"
+#ident	"@(#)kern-i386at:io/autoconf/ca/pci/pci_ca.c	1.15.14.1"
 #ident	"$Header$"
 
 #include <proc/regset.h>
@@ -550,7 +550,7 @@ get_pci_device_cip(ms_cgnum_t cgnum, uchar_t bus, uchar_t dev,
 					"on CG %d: no support for "
 					"memory space above 4GB",
 					vendor_id, device_id, cgnum);
-			else
+			else {
 				/*
 				 * Treat this 64-bit BAR as a 32-bit
 				 * BAR by copying its 32 lower bits to
@@ -560,6 +560,8 @@ get_pci_device_cip(ms_cgnum_t cgnum, uchar_t bus, uchar_t dev,
 				 * the loop.
 				 */
 				base_regs[i+1] = base_regs[i] & (~0x7);
+				reg_lengths[i+1] = reg_lengths[i];
+			}
 			break;
 		   case 0x06: /*reserved*/
 			cmn_err(CE_NOTE, "!PCI board 0x%x,0x%x on CG "
