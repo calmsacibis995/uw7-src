@@ -1,0 +1,65 @@
+#ident	"@(#)pkg4.i386:i386/pkg/uccs/postremove	1.12"
+#-------
+#Set up localized messaging
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then 
+	if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+		-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		/usr/lib/locale/${LOCALE}/LC_MESSAGES
+		
+		installf ${PKGINST} /usr/lib/locale/${LOCALE}/LC_MESSAGES
+	fi
+fi
+#
+# Take care of libcrypt.a
+#
+#-------
+
+urel=`uname -r`
+
+if [ $urel = "5" ]
+then
+	rm -f /usr/lib/libcrypt.a
+	if	[ -f /usr/lib/libcrypt_d.a ]
+	then
+		ln /usr/lib/libcrypt_d.a /usr/lib/libcrypt.a
+	fi
+else
+	# add on version
+	rm -f /udk/usr/lib/libcrypt.a
+	if	[ -f /udk/usr/lib/libcrypt_d.a ]
+	then
+		ln /udk/usr/lib/libcrypt_d.a /udk/usr/lib/libcrypt.a
+	fi
+	rm -f /usr/ccs/lib/libp/libc.so.1
+	exit 0
+fi
+
+#-------
+#
+# Take care of /usr/lib/cpp.
+#
+#-------
+
+if	[ -h /usr/lib/cpp -a ! -f /usr/ccs/lib/cpp ]
+then	rm -f /usr/lib/cpp
+fi
+
+#-------
+#edit /etc/profile to remove PATH modification
+#-------
+if  grep "\*\*UNIXWARE CCS\*\*" /etc/profile >/dev/null
+then
+ed - /etc/profile <<Y
+g/\*\*UNIXWARE CCS\*\*/d
+w
+q
+Y
+fi
+exit 0
+

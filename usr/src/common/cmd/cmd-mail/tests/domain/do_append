@@ -1,0 +1,106 @@
+:
+#
+# append trace files into existing merge files, then re-do annotation
+#
+
+# TRACE is the tcltrace program
+# -- if not set in your env, will assume as follows
+if [ "$TRACE" == "" ]
+then
+	TRACE=../tcl/tcltrace
+fi
+
+# remove old results (not the merge files!)
+rm -f domain.tclt.a
+rm -f intl.tclt.a
+rm -f main.tclt.a
+rm -f mapFile.tclt.a
+rm -f ui.tclt.a
+rm -f uimenu.tclt.a
+rm -f uitoolbar.tclt.a
+
+# move merge files into trace files
+mv merge.domain trace.domain
+mv merge.intl trace.intl
+mv merge.main trace.main
+mv merge.mapFile trace.mapFile
+mv merge.ui trace.ui
+mv merge.uimenu trace.uimenu
+mv merge.uitoolbar trace.uitoolbar
+
+# merge new trace files and old ones
+$TRACE -m trace.domain* > merge.domain
+$TRACE -m trace.intl* > merge.intl
+$TRACE -m trace.main* > merge.main
+$TRACE -m trace.mapFile* > merge.mapFile
+$TRACE -m trace.ui* > merge.ui
+$TRACE -m trace.uimenu* > merge.uimenu
+$TRACE -m trace.uitoolbar* > merge.uitoolbar
+rm -f trace.domain*
+rm -f trace.intl*
+rm -f trace.main*
+rm -f trace.mapFile*
+rm -f trace.ui*
+rm -f trace.uimenu*
+rm -f trace.uitoolbar*
+
+# create new annotated instrumented files
+$TRACE -a merge.domain domain.tclt >domain.tclt.a
+$TRACE -a merge.intl intl.tclt >intl.tclt.a
+$TRACE -a merge.main main.tclt >main.tclt.a
+$TRACE -a merge.mapFile mapFile.tclt >mapFile.tclt.a
+$TRACE -a merge.ui ui.tclt >ui.tclt.a
+$TRACE -a merge.uimenu uimenu.tclt >uimenu.tclt.a
+$TRACE -a merge.uitoolbar uitoolbar.tclt >uitoolbar.tclt.a
+
+
+# output current branch coverage info
+covered=`egrep '^_branch' domain.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' domain.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "domain.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' intl.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' intl.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "intl.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' main.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' main.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "main.tcl :"
+echo "$covered out of $total branches covered"
+
+
+covered=`egrep '^_branch' mapFile.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' mapFile.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "mapFile.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' ui.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' ui.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "ui.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' uimenu.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' uimenu.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "uimenu.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' uitoolbar.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' uitoolbar.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "uitoolbar.tcl :"
+echo "$covered out of $total branches covered"

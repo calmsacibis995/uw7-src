@@ -1,0 +1,48 @@
+#ident	"@(#)pkg.cmds:i386/pkg/cmds/request	1.7.1.4"
+#ident	"$Header$"
+
+
+#	request script for cmds package installation
+#	don't pdelete. Can't padd once it is pdeleted.
+
+trap 'exit 3' 15
+
+pkginfo lp >/dev/null 2>&1
+if [ "$?" = "0" ]
+then
+	CLASSES="$CLASSES post"
+else
+	# If we are installing from the set, is lp being installed now?
+	for i in $PKGLIST
+	do
+		case $i in
+		lp)	CLASSES="$CLASSES post";;
+		esac
+	done 
+fi
+
+cat  >$1 <<!
+CLASSES='$CLASSES'
+!
+
+SCRIPTS=/usr/sbin/pkginst
+AUTOMERGE=Yes
+PKGINSTALL_TYPE=NEWINSTALL
+
+# Call chkpkgrel to determine installation type.
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY ;;
+	4) 	PKGINSTALL_TYPE=UPGRADE ;;
+	6) 	PKGINSTALL_TYPE=UPGRADE2 ;;
+	*)	;;
+esac
+
+# Save upgrade/overlay variables in response file.
+echo AUTOMERGE=\"${AUTOMERGE}\" >> $1
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >>$1
+
+exit 0
+

@@ -1,0 +1,73 @@
+#ident	"@(#)postremove	1.3"
+#ident  "$Header$"
+
+TEMPFILE=/tmp/nsu.$$
+
+## Shutdown Spooler
+
+if [ -x "/usr/sbin/lpshut" ]
+then
+	/usr/sbin/lpshut >/dev/null 2>&1
+fi
+
+## Restore Non-networking Spooler and lpadmin
+
+if [ -f $USRLIB/lp/lpsched.LPM ]
+then
+
+	#echo "Restoring lpsched. . .\c "
+	mv $USRLIB/lp/lpsched.LPM $USRLIB/lp/lpsched 
+	chmod 04110 $USRLIB/lp/lpsched 
+	chown root $USRLIB/lp/lpsched 
+	chgrp lp   $USRLIB/lp/lpsched 
+	if test -d /var/sadm/pkg/es
+	then
+		/sbin/chlvl SYS_PRIVATE  $USRLIB/lp/lpsched 
+		/sbin/filepriv -i audit,setuid,setplevel,setflevel,owner,macread,macwrite,dacread,dacwrite,compat,dev,sysops $USRLIB/lp/lpsched
+
+	
+	fi
+# 	installf here because original lp file is restored
+	installf -c sysutil base /usr/lib/lp/lpsched f 4110 root lp 2 NULL audit,setuid,setplevel,setflevel,owner,macread,macwrite,dacread,dacwrite,compat,dev,sysops
+
+	#echo "Lpsched restored."
+else
+ 
+	echo "Unable to restore lpsched."
+	echo "Lp Print Services will be inoperable."
+fi
+
+if [ -f $USRSBIN/lpadmin.LPM ]
+then
+
+	#echo "Restoring lpadmin. . .\c "
+	mv $USRSBIN/lpadmin.LPM $USRSBIN/lpadmin
+	chmod 04110 $USRSBIN/lpadmin 
+	chown root $USRSBIN/lpadmin 
+	chgrp lp   $USRSBIN/lpadmin 
+	if test -d /var/sadm/pkg/es
+	then
+		/sbin/chlvl SYS_PRIVATE  $USRSBIN/lpadmin 
+		/sbin/filepriv -i audit,macread,macwrite,setflevel,owner,dev,dacread $USRSBIN/lpadmin
+	fi
+# 	installf here because original lp file is restored
+	installf -c sysutil base /usr/sbin/lpadmin f 4110 root lp 2 NULL audit,macread,macwrite,setflevel,owner,dev,dacread
+
+	#echo "Lpadmin restored."
+else
+ 
+	echo "Unable to restore lpadmin."
+fi
+
+LPSCHED=${USRLIB}/lp/lpsched
+
+# Start the Spooler/Scheduler
+
+cd /
+if [ -x "/usr/lib/lp/lpsched" ]
+then
+	${LPSCHED} >/dev/null 2>&1
+fi
+
+installf -f base 
+exit 0

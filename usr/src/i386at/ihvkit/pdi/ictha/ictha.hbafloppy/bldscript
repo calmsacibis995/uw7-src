@@ -1,0 +1,118 @@
+#!/usr/bin/ksh
+#ident	"@(#)ihvkit:pdi/ictha/ictha.hbafloppy/bldscript	1.1"
+
+
+bldpkg ()
+{
+	cd $PKG
+	REL=UW2.0
+	D=`date '+%D'`
+	clear
+	echo Creating package image...
+	if [ -f $ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgmk/pkgmk ]
+	then
+		$ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgmk/pkgmk -o -p "$REL $D" -ai386 -r $BASE/$PKG -f prototype -l2370  -d $IHVSPOOL || {
+			echo "Unable to create the driver package"
+			return 1
+		}
+	else
+		/usr/bin/pkgmk -o -p "$REL $D" -ai386 -r $BASE/$PKG -f prototype -l2370  -d $IHVSPOOL || {
+			echo "Unable to create the driver package"
+			return 2
+		}
+	fi
+
+	cat tmp/$DRIVER/loadmods > $IHVSPOOL/etc/loadmods
+	cp tmp/$DRIVER/$DRIVER $IHVSPOOL/etc/conf/mod.d
+	cd $BASE
+	return 0
+}
+
+makeIhvFlop ()
+{
+	HERE=`pwd`
+	cd $IHVSPOOL
+	CDEVICE=""
+	BDEVICE=""
+	FMTCMD=""
+	MKFSCMD=""
+	MOUNTPT=""
+	CMDLIST="CDEVICE BDEVICE FMTCMD MKFSCMD MOUNTPT"
+
+	devattr diskette1 cdevice bdevice fmtcmd mkfscmd mountpt | {
+		for cmd in ${CMDLIST}
+		do
+			read line
+			eval "$cmd=\"${line}\""
+		done
+	}
+
+	test -n "$FMTCMD" && echo "$FMTCMD" &&  eval "$FMTCMD" || {
+		echo "Unable to format the diskette"
+		return 3
+	}
+
+	test -n "$MKFSCMD" && echo "$MKFSCMD" && eval "$MKFSCMD" || {
+		echo "Unable to create the file system on the diskette"
+		return 4
+	}
+
+    	/sbin/mount -Fs5 $BDEVICE $MOUNTPT && {
+   		echo "\nTransferring package contents to floppy disk\n"
+
+		/bin/find . -print | /bin/cpio -pmud $MOUNTPT || {
+			echo "Unable to transfer pkg to the floppy disk"
+			return 5
+		}
+	}
+	cd $HERE
+
+ 	/sbin/umount $MOUNTPT || {
+		echo "Unable to unmount the floppy file system"
+		return 6
+	}
+}
+
+#####main
+echo 
+ID=`id | cut -d"(" -f2 | cut -d")" -f1`
+if [ "$ID" != "root" ]
+then
+	echo "User must have root permissions to execute this script"
+	exit 1
+fi
+
+
+DRIVER=ictha
+PKG=${DRIVER}
+DRIVERUCASE=ICTHA
+EXITVAL=0
+
+BASE=`pwd`
+LOADNAME="${DRIVERUCASE} HBA"
+clear
+
+IHVSPOOL=/var/spool/pkg/hbafloppy
+[ ! -d $IHVSPOOL ] && {
+	mkdir -p $IHVSPOOL > /dev/null 2>&1
+}
+echo Creating additional files needed...
+
+mkdir -p $IHVSPOOL/etc/conf/mod.d >/dev/null 2>&1
+echo "$LOADNAME">  $IHVSPOOL/etc/load.name
+
+bldpkg || {
+	EXITVAL=$?
+	cd $BASE
+        rm -rf $IHVSPOOL
+        exit $EXITVAL
+}
+
+cp $BASE/etc/HBAINST $IHVSPOOL/etc
+echo "${PKG}" >> $IHVSPOOL/etc/pkglist
+
+makeIhvFlop || EXITVAL=$?
+
+cd $BASE
+rm -rf $IHVSPOOL
+exit $EXITVAL

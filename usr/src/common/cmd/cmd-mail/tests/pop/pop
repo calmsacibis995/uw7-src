@@ -1,0 +1,160 @@
+#!/bin/sh
+#
+# test suite for POP 3.
+# see test suite document for documentation (pop.plan).
+#
+
+# utility routines
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+sanitize() \
+{
+	sed -e '/POP3/d' -e '/PASS/d' -e '/USER/d'
+}
+
+# this takes advantage of the ms1 drivers behavior that allows delete of INBOX
+cleanup() \
+{
+	$IMAP << DONE1 2>&1 > /tmp/pop.out
+1 DELETE INBOX
+2 LOGOUT
+DONE1
+	rm -f /tmp/pop.out /tmp/pop.out1
+}
+
+# create a basic mailbox in INBOX
+# messages must be followed by a blank line to terminate the command.
+# effectively the blank line is the CRLF at the end of the command.
+Setup() \
+{
+	$IMAP << DONE 2>&1 > /tmp/imap.out
+1 APPEND INBOX {71}
+From: tester
+To: tester
+Subject: test1
+
+This is test message one.
+
+2 APPEND INBOX {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+
+3 APPEND INBOX {73}
+From: tester
+To: tester
+Subject: test3
+
+This is test message three.
+
+4 LOGOUT
+DONE
+	rm -f /tmp/imap.out
+	return 0
+}
+
+Pop1() \
+{
+	cleanup
+	Setup
+	$POP << POP1 > /tmp/pop.out
+USER $USER
+PASS $PASS
+QUIT
+POP1
+	grep "Mailbox open" < /tmp/pop.out > /dev/null
+	if [ $? != "0" ]
+	then
+		cat /tmp/pop.out
+		passfail 1
+		# exit because other tests won't work if login failed
+		exit 0
+	fi
+	cleanup
+	passfail 0
+}
+
+Pop2() \
+{
+	cleanup
+	Setup
+	$POP << POP2 > /tmp/pop.out
+USER $USER
+PASS $PASS
+STAT
+LIST
+RETR 1
+QUIT
+POP2
+	cat /tmp/pop.out | sanitize > /tmp/pop.out1
+	cat << POP2_1 > /tmp/pop.out
++OK User name accepted, password please
++OK Mailbox open, 3 messages
+<STAT>
++OK 3 251
+<LIST>
++OK Mailbox scan listing follows
+1 83
+2 83
+3 85
+.
+<RETR 1>
++OK 83 octets
+From: tester
+To: tester
+Subject: test1
+Status:  O
+
+This is test message one.
+.
+<QUIT>
++OK Sayonara
+POP2_1
+	diff /tmp/pop.out /tmp/pop.out1
+	passfail $?
+	exit
+}
+
+# main Main main()
+# test wants to run as a normal user
+
+TEST=""
+IMAP=/etc/imapd
+POP="socket localhost 110"
+ cleanup
+
+echo -n "Input password for user $USER: "
+stty -echo
+PASS=`line`
+stty echo
+echo
+
+tests_pop="1 2"
+
+testlist Pop $tests_pop
+ cleanup

@@ -1,0 +1,16 @@
+#ident	"@(#)oemcd:mach.build/mkcpqUnixWareja	1.1"
+set -x
+if [ $# -eq 0 ]
+then
+	echo "USAGE $0 ddfile"
+	exit 1
+fi
+TMPFILE=/tmp/list.$$
+SPOOL=$SPOOL/cpq
+rm -f $ROOT/$SPOOL/UnixWare
+ln -s  $ROOT/$SPOOL/locale/ja/UnixWare $ROOT/$SPOOL/UnixWare
+echo "/usr/bin/pkgtrans -s $ROOT/$SPOOL $1 \c" > $TMPFILE
+echo "UnixWare \c" >> $TMPFILE
+echo `sed -n '/^[a-zA-Z]/p' $ROOT/$SPOOL/locale/ja/UnixWare/setinfo | cut -f1` >> $TMPFILE
+ksh $TMPFILE
+rm $TMPFILE

@@ -1,0 +1,65 @@
+#ident	"@(#)pkg.cmds:i386/pkg/cmds/crontab	1.4"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+# This script is taken from 3b2 perf package.
+
+CRONDIR=/var/spool/cron/crontabs
+CRONTAB=/var/spool/cron/crontabs/sys
+
+if [ "$1" = install ]
+then
+	ENTRY1='0 * * * 0-6 $TFADMIN /usr/lib/sa/sa1'
+	ENTRY2='20,40 8-17 * * 1-5 $TFADMIN /usr/lib/sa/sa1'
+	ENTRY3='5 18 * * 1-5 $TFADMIN /usr/lib/sa/sa2 -s 8:00 -e 18:01 -i 1200 -A'
+
+	if [ -d $CRONDIR ]; then
+		if [ ! -f $CRONTAB ]; then
+			> $CRONTAB
+			chmod 600  $CRONTAB 2>/dev/null
+			chown sys  $CRONTAB 2>/dev/null
+			chgrp sys  $CRONTAB 2>/dev/null
+		fi
+	else
+		pfmt -s warn -g ${PKGMSG}:51 " cannot install cron entries for SAR\n" 2>&1
+	fi
+	if [ -f $CRONTAB ]; then
+		if grep "sa1" $CRONTAB >/dev/null 2>&1 ; then  :
+		else
+			echo "$ENTRY1" >> $CRONTAB
+			echo "$ENTRY2" >> $CRONTAB
+		fi
+		if grep "sa2" $CRONTAB >/dev/null 2>&1 ; then  :
+		else
+			echo "$ENTRY3" >> $CRONTAB
+		fi
+	fi
+	cat $CRONTAB
+	exit 0
+fi
+
+if [ "$1" = remove ]
+then
+	/usr/bin/ed $CRONTAB <<-! >/dev/null 2>&1
+		g/sa1/d
+		g/sa2/d
+		w
+		q
+	!
+	cat $CRONTAB
+	exit 0
+fi
+
+pfmt -s error -g ${PKGMSG}:52 " invalid argument supplied to build script\n"
+exit 1

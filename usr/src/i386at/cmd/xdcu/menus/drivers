@@ -1,0 +1,523 @@
+#ident	"@(#)dcu:menus/drivers	1.49.1.1"
+
+. ${DCUSCRIPTS}/dculib.sh
+
+function xpnddriver
+{
+# xpnddriver()
+# Called to display additional information about driver
+# when the F6=Info hotkey is invoked from within any of the
+# Software Device Drivers category screens
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset -R25 imsg
+typeset -L51 msg
+integer i=0
+typeset name isc unit ipl itype irq ports porte addrs addre dma cpu
+
+place_window $DCU_MAX_WIDTH $DCU_MAX_HEIGHT-$FOOTER_HEIGHT-1 -below 0 -title "$CONFIG_INFO" 
+
+integer mc
+eval mc=\$"${MODNAME[$CURDRV]}"
+if (( mc == 0 ))
+then
+	wprintf $CURWIN "%s\n $NOSELECTMSG"
+else
+	wprintf $CURWIN "%s\n $SELECTMSG"
+fi
+
+name="${DRVBOARDNAMEFULL[$CURDRV]}"
+imsg="$BoardName"
+msg=" : $name"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+#name="${MODNAME[$CURDRV]}"
+#imsg="$DriverName"
+#msg=" : $name"
+#wprintf $CURWIN "%s %s\n $imsg $msg"
+#
+name="${DRVMODCHOICES[$CURDRV]}"
+imsg="$DriverName"
+msg=" : $name"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+isc="${DRVISCCHOICES[$CURDRV]}"
+imsg="$boardisc"
+msg=" : $isc"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+unit="${DRVUNITCHOICES[$CURDRV]}"
+imsg="$boardunit"
+msg=" : $unit"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+ipl="${DRVIPLCHOICES[$CURDRV]}"
+imsg="$boardipl"
+msg=" : $ipl"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+itype="${DRVITYPECHOICES[$CURDRV]}"
+imsg="$boarditype"
+msg=" : $itype"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+irq="${DRVIRQCHOICES[$CURDRV]}"
+imsg="$boardirq"
+msg=" : $irq"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+ports="${DRVPORTSCHOICES[$CURDRV]}"
+imsg="$boardios"
+msg=" : $ports"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+porte="${DRVPORTECHOICES[$CURDRV]}"
+imsg="$boardioe"
+msg=" : $porte"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+addrs="${DRVMEMSCHOICES[$CURDRV]}"
+imsg="$boardmems"
+msg=" : $addrs"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+addre="${DRVMEMECHOICES[$CURDRV]}"
+imsg="$boardmeme"
+msg=" : $addre"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+dma="${DRVDMACHOICES[$CURDRV]}"
+imsg="$boarddma"
+msg=" : $dma"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+cpu="${DRVCPUCHOICES[$CURDRV]}"
+imsg="$boardcpu"
+msg=" : $cpu"
+wprintf $CURWIN "%s %s\n $imsg $msg"
+
+typeset oldfooter="$CURFOOT"
+footer "$ESCXNDFOOTER"
+integer drvxwin="$CURWIN"
+call getkey
+wclose $drvx_win
+footer "$oldfooter"
+}
+
+function driversdone
+{
+# driversdone()
+# Exit callback function for the drivers function that is called
+# to display the category menu again.
+# Calling/Exit State: 0.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset i
+#destroy_check $DRVCID
+category
+return 0
+}
+
+function drivers
+{
+# drivers()
+# Called when the Software Device Driver Selection finds entries
+# to display the corresponding Software Device Drivers for that category.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset mn tmp prev_tmp i selected
+typeset -L8 drvname
+typeset -L8 prev_drvname=""
+typeset -L60 board
+typeset category
+integer inst chklines chkrows=20 chkitems=0 
+
+footer ""
+category="$*"
+open_check -fg $COMBO2_FG -bg $COMBO2_BG -exit driversdone
+DRVCID=$CID
+
+add_check "$CATMAIN_HEADER" -gray
+let chkitems+=1
+add_check "$CATMAIN_HEADER2" -gray
+let chkitems+=1
+
+for i in $ALLDRIVERS
+do
+	if [ ! "$category" = "${alldrivers}" -a  ! "$category" = "${DRVCATEGORY[$i]}" ]
+	then
+		continue
+	fi
+	eval inst=\$"${MODNAME[i]}"
+	if (( $inst ))
+	then
+		selected=-is_selected
+	else
+		selected=
+		inst=1
+	fi
+	drvname="${MODNAME[$i]}"
+	board="${DRVBOARDNAMEFULL[$i]}"
+	mn="${MODNAME[i]}"
+	if [ "${drvname}" = "${prev_drvname}" ]
+	then
+		tmp="         "$board""
+		add_check -help 'helpwin dcu.drivsum' -entry "CURDRV=$i" -on "$mn=$inst" -off "$mn=" $selected "$tmp" -gray
+	else
+		tmp=""$drvname" "$board""
+		add_check -help 'helpwin dcu.drivsum' -entry "CURDRV=$i" -on "$mn=$inst" -off "$mn=" $selected "$tmp"
+	fi
+	let chkitems+=1
+	prev_drvname="${drvname}"
+
+done
+
+if (( chkitems == 2 ))
+then
+	display -w "$NODRVCATS" -bg $MAGENTA -fg $WHITE
+	footer "$GENERIC_CONTINUE_FOOTER"
+	call proc_loop
+	driversdone
+	return 0
+fi
+let chklines=chkitems
+check_runparms $DRVCID $chklines
+typeset title="$DRVSUMMARY"
+(( $CHECK_WIN_HEIGHT < $chkrows )) && {
+let chkrows=$CHECK_WIN_HEIGHT+1
+chklines=$CHECK_WIN_HEIGHT
+}
+place_window $DCU_MAX_WIDTH $DCU_MAX_HEIGHT-$FOOTER_HEIGHT -left 0 -above 0 -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'msg; footer "$DRVFOOTER"'
+typeset wid=$CURWIN
+set_hotkey 5 configboard
+set_hotkey 6 xpnddriver 
+run_check $DRVCID 0 $chklines
+}
+
+function configboard
+{
+# configboard()
+# Called when the F5=New key is selected
+# to generate the display for the New Hardware Configuration.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+integer i mc
+eval mc=\$"${MODNAME[$CURDRV]}"
+if (( mc == 0 ))
+then
+	msgnoerr "$NOSELECT"
+	return 0
+fi
+# if we're adding an additional network board, tell user to run netcfg
+# instead.  dcu doesn't add all the necessary additional parameters
+# to the resmgr(ndcfg does) so this will only lead to problems later on.
+if [ -d ${ROOT}/etc/conf/bcfg.d/${MODNAME[$CURDRV]} ]
+then
+	msgnoerr "use /usr/sbin/netcfg to add an additional network board"
+	return 0
+fi
+typeset title="$BRDCONFIG"
+
+set -A OLDLINETOBD - ${LINETOBD[*]}
+set -A OLDBOARDFLD - ${BOARDFLD[*]}
+set -A driverval - ${MODNAME[$CURDRV]}
+if [ "${MODNAME[CURDRV]}" = "${MODNAME[CURDRV+1]}" ]
+then
+	set -A boardval - ${MODNAME[$CURDRV]}
+else
+	set -A boardval - "${DRVBOARDNAMEFULL[$CURDRV]}"
+fi
+set -A iplval - ${DRVIPLCHOICES[$CURDRV]}
+set -A itypeval - ${DRVITYPECHOICES[$CURDRV]}
+set -A irqval - ${DRVIRQCHOICES[$CURDRV]}
+set -A portsval - ${DRVPORTSCHOICES[$CURDRV]}
+set -A porteval - ${DRVPORTECHOICES[$CURDRV]}
+set -A memsval - ${DRVMEMSCHOICES[$CURDRV]}
+set -A memeval - ${DRVMEMECHOICES[$CURDRV]}
+set -A dmaval - ${DRVDMACHOICES[$CURDRV]}
+set -A cpuval - ${DRVCPUCHOICES[$CURDRV]}
+
+saveboardflg=1
+
+if [ -z "$CNFGBDINDX" ]
+then
+	popfree 
+	CNFGBDINDX=$?
+	open_form -exit "BDLINE=1; confboarddone"
+	CNFGBDFID=$FID
+	let CNFGBOARDFLD=FIELDCNT
+
+	BDMODNAME[$CNFGBDINDX]="$driverval"
+	BDNAME[$CNFGBDINDX]="$boardval"
+	BDIPL[$CNFGBDINDX]="$iplval"
+	BDITYPE[$CNFGBDINDX]="1"		# mine don't share
+	BDIRQ[$CNFGBDINDX]="$irqval"
+	BDPORTSTART[$CNFGBDINDX]="$portsval"
+	BDPORTEND[$CNFGBDINDX]="$porteval"
+	BDADDRSTART[$CNFGBDINDX]="$memsval"
+	BDADDREND[$CNFGBDINDX]="$memeval"
+	BDDMA[$CNFGBDINDX]="$dmaval"
+	BDCPU[$CNFGBDINDX]="$cpuval"
+
+	add_field BDMODNAME[$CNFGBDINDX] \
+		-bg $COMBO2_BG -fg $COMBO2_FG -gray \
+		-px $((26-${#boarddriver})) -p "$boarddriver" -ilen 8
+
+	add_field BDNAME[$CNFGBDINDX] \
+		-bg $COMBO2_BG -fg $COMBO2_FG -gray \
+		-px $((26-${#boardname})) -p "$boardname" -ilen 50 
+
+	add_field BDUNIT[$CNFGBDINDX] \
+		-px $((26-${#boardunit})) -p "$boardunit" -ilen 11 \
+		-choice "choose_unit $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_unit $CNFGBDINDX'
+
+	add_field BDIPL[$CNFGBDINDX] \
+		-px $((26-${#boardipl})) -p "$boardipl" -ilen 1 \
+		-choice "choose_ipl $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_ipl $CNFGBDINDX'
+
+	add_field BDITYPE[$CNFGBDINDX] \
+		-px $((26-${#boarditype})) -p "$boarditype" -ilen 1 \
+		-choice "choose_itype $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_itype $CNFGBDINDX'
+
+	add_field BDIRQ[$CNFGBDINDX] \
+		-px $((26-${#boardirq})) -p "$boardirq" -ilen 2 \
+		-choice "choose_irq $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard"  \
+		-exit 'check_irq $CNFGBDINDX'
+
+	add_field BDPORTSTART[$CNFGBDINDX] \
+		-px $((26-${#boardios})) -p "$boardios" -ilen 8 \
+		-choice "choose_ports $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_ports $CNFGBDINDX'
+
+	add_field BDPORTEND[$CNFGBDINDX] \
+		-px $((26-${#boardioe})) -p "$boardioe" -ilen 8 \
+		-choice "choose_porte $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help 'helpwin dcu.addboard' \
+		-exit 'check_porte $CNFGBDINDX'
+
+	add_field BDADDRSTART[$CNFGBDINDX] \
+		-px $((26-${#boardmems})) -p "$boardmems" -ilen 8 \
+		-choice "choose_addrs $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help 'helpwin dcu.addboard' \
+		-exit 'check_addrs $CNFGBDINDX'
+
+	add_field BDADDREND[$CNFGBDINDX] \
+		-px $((26-${#boardmeme})) -p "$boardmeme" -ilen 8 \
+		-choice "choose_addre $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help 'helpwin dcu.addboard' \
+		-exit 'check_addre $CNFGBDINDX'
+
+	add_field BDDMA[$CNFGBDINDX] \
+		-px $((26-${#boarddma})) -p "$boarddma" -ilen 2 \
+		-choice "choose_dma $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_dma $CNFGBDINDX'
+
+	add_field BDCPU[$CNFGBDINDX] \
+		-px $((26-${#boardcpu})) -p "$boardcpu" -ilen 1 \
+		-choice "choose_cpu $CNFGBDINDX" \
+		-entry "msgnoerr;BDLINE=1" \
+		-help "helpwin dcu.addboard" \
+		-exit 'check_cpu $CNFGBDINDX'
+	
+	place_window $DCU_MAX_WIDTH $DCU_MAX_HEIGHT-$FOOTER_HEIGHT -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'msgnoerr; footer "$CONFFOOTER"'
+	typeset wid=$CURWIN
+
+else
+
+	place_window $DCU_MAX_WIDTH $DCU_MAX_HEIGHT-$FOOTER_HEIGHT -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'msgnoerr; footer "$CONFFOOTER"'
+	typeset wid=$CURWIN
+
+	set -A driverval ${MODNAME[$CURDRV]}
+	if [ "${MODNAME[CURDRV]}" = "${MODNAME[CURDRV+1]}" ]
+	then
+		set -A boardval - ${MODNAME[$CURDRV]}
+	else
+		set -A boardval - "${DRVBOARDNAMEFULL[$CURDRV]}"
+	fi
+
+	integer drvname=$CNFGBOARDFLD
+	integer bdname=$CNFGBOARDFLD+1
+	integer unit=$CNFGBOARDFLD+2
+	integer ipl=$CNFGBOARDFLD+3
+	integer itype=$CNFGBOARDFLD+4
+	integer irq=$CNFGBOARDFLD+5
+	integer portstart=$CNFGBOARDFLD+6 portend=$CNFGBOARDFLD+7
+	integer addrstart=$CNFGBOARDFLD+8 addrend=$CNFGBOARDFLD+9
+	integer dma=$CNFGBOARDFLD+10
+	integer cpu=$CNFGBOARDFLD+11
+
+	fld_change $CNFGBDFID $drvname "$driverval"
+	fld_change $CNFGBDFID $bdname "$boardval"
+	fld_change $CNFGBDFID $unit "$unitval"
+	fld_change $CNFGBDFID $ipl "$iplval"
+	fld_change $CNFGBDFID $itype "$itypeval"
+	fld_change $CNFGBDFID $irq "$irqval"
+	fld_change $CNFGBDFID $portstart "$portsval"
+	fld_change $CNFGBDFID $portend "$porteval"
+	fld_change $CNFGBDFID $addrstart "$memsval" 
+	fld_change $CNFGBDFID $addrend "$memeval" 
+	fld_change $CNFGBDFID $dma "$dmaval" 
+	fld_change $CNFGBDFID $cpu "$cpuval" 
+fi
+let BOARDFLD[1]=$CNFGBOARDFLD
+LINETOBD[1]=$CNFGBDINDX
+BDMODINDX[$CNFGBDINDX]=$CURDRV
+BDTYPE[$CNFGBDINDX]=$unused
+BDBUSTYPE[$CNFGBDINDX]=$unknown
+BDCNFG[$CNFGBDINDX]="$Y"
+BDKEY[$CNFGBDINDX]=""
+set_hotkey 4 verifydriver
+set_hotkey 6 xpnddriver 
+set_hotkey 8 cancelreturn 
+BOARDXPND="$CONFFOOTER"
+run_form $CNFGBDFID
+}
+
+
+function cancelreturn
+{
+# cancelreturn()
+# Called when the F8=Cancel&Return key is selected from
+# a New Hardware Device Configuration screen to terminate addition
+# of new entry.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	saveboardflg=0
+	# manually execute a KEY_DONE (code 4119)
+	call form_input $CNFGBDFID 4119
+}
+
+
+function confboarddone
+{
+# confboarddone()
+# Exit callback function for the configboard function that is called
+# when the F5=New hotkey is selected to configure a new entry.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+# May remove if winxksh behaviour changed to detect the failure
+if [ -n "$IRQCHKD" ] \
+|| [ -n "$IOSCHKD" ] \
+|| [ -n "$IOECHKD" ] \
+|| [ -n "$MEMSCHKD" ] \
+|| [ -n "$MEMECHKD" ] \
+|| [ -n "$DMACHKD" ]
+then
+	return 1
+fi
+if (( saveboardflg == 1 ))
+then
+	saveboard
+fi
+BDTYPE[$CNFGBDINDX]=$unused
+set -A LINETOBD 0 ${OLDLINETOBD[*]}
+set -A BOARDFLD 0 ${OLDBOARDFLD[*]}
+BDFID=
+return 0
+}
+
+function saveboard
+{
+# saveboard()
+# Called when a New Software Device Driver entry is to be applied.
+# It only updates the board array indexes and not the resmgr database.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+integer x bd=LINETOBD[$BDLINE]
+if [ ! "${BDTYPE[$bd]}" = $changed ]
+then
+	popfree 
+	i=$?
+	NEWCNFG=$i
+	RMnewkey
+	BDKEY[$i]=$?
+	DEL_KEYS="$DEL_KEYS ${BDKEY[$i]}"
+	BDKEY[$bd]=${BDKEY[$i]}
+	BDCHGS[$i]=$ADD_DEL_CHG
+	BDTYPE[$i]=$changed
+	BDTYPE[$bd]=$changed
+	BDNAME[$i]="${MODNAME[$CURDRV]}"
+	BDMODNAME[$i]="${MODNAME[$CURDRV]}"
+	BDMODINDX[$i]=$CURDRV
+	BDCNFG[$i]="$Y"
+	BDUNIT[$i]="${BDUNIT[$bd]}"
+	if [ -f "${ROOT}/etc/conf/pack.d/${MODNAME[$CURDRV]}/disk.cfg" ]
+	then
+		if [ -z "${BDUNIT[$bd]}" ]
+		then
+			BDUNIT[$i]="-1"
+		fi
+	fi
+	BDIPL[$i]="${BDIPL[$bd]}"
+	BDITYPE[$i]="${BDITYPE[$bd]}"
+	eval 'let x=${MODNAME[$CURDRV]}+1'
+	eval ${MODNAME[$CURDRV]}=\$x
+fi
+BDIRQ[$NEWCNFG]="${BDIRQ[$bd]}"
+BDPORTSTART[$NEWCNFG]="${BDPORTSTART[$bd]}"
+BDPORTEND[$NEWCNFG]="${BDPORTEND[$bd]}"
+BDADDRSTART[$NEWCNFG]="${BDADDRSTART[$bd]}"
+BDADDREND[$NEWCNFG]="${BDADDREND[$bd]}"
+BDDMA[$NEWCNFG]="${BDDMA[$bd]}"
+BDCNFG[$NEWCNFG]="$Y"
+}
+
+function verifydriver
+{
+# verifydriver()
+# Called when the F4=Verify hotkey is selected from within a New
+# Software Device Drivers screen to verify the entry.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	verifyconf $CNFGBDFID $CNFGBDINDX
+}

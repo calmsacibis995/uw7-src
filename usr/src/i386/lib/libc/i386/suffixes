@@ -1,0 +1,96 @@
+#ident	"@(#)libc-i386:suffixes	1.6"
+#
+# suffix rules for libc
+#
+# Suffixes are used to distinguish between the various ways
+# that libc source is built.  As a general rule, a lowercase
+# suffix means built non-PIC, an uppercase suffix means the
+# same as the corresponding lowercase suffix, but built -KPIC.
+#
+# .x  - "crt" standalone object; installed as .o
+# .o  - regular object; primarily for libc.a
+# .O  - regular shared object; primarily for libc.so.1
+# .p  - regular profiled object; primarily for libp/libc.a
+# .P  - regular profiled shared object; primarily for libp/libc.so.1
+# .O2 - shared object shimmed for UW2; for libc.so.UW
+# .P2 - profiled shared object shimmed for UW2; for libp/libc.so.UW
+# .O5 - shared object shimmed for OSR5; for libc.so.OSR
+# .P5 - profiled shared object shimmed for OSR5; for libp/libc.so.OSR
+#
+
+AWK	= awk
+LD_LIST	= $(LD) -G -dy -e _rt_boot -ztext -zdefs \
+		-Bsymbolic:$(CPU)/Nbsymbs -Bexport:$(CPU)/Expsymbs
+INSTALL	= sh $(SGSBASE)/sgs.install
+SGSBASE	= ../../../cmd/sgs
+SGSINC	= ../../../cmd/sgs/inc
+INCLIST	= -I../$(CPU)/inc -I../port/inc -I$(SGSINC)/$(CPU) -I$(SGSINC)/common
+CC_LIST	= $(CC) $(INCLIST) $(DEFLIST) -D_SIMPLE_R $(CFLAGS) -Kno_host
+SHARED	= -DPIC -DDSHLIB -D_REENTRANT
+SHDLIST	= $(PICFLAG) $(SHARED)
+_c_x	= $(CC_LIST) '-Wa,-o$*.x' -c
+_c_o	= $(CC_LIST) '-Wa,-o$*.o' -c
+_c_O	= $(CC_LIST) '-Wa,-o$*.O' -c $(SHDLIST)
+_c_p	= $(CC_LIST) '-Wa,-o$*.p' -cp -DPROF
+_c_P	= $(CC_LIST) '-Wa,-o$*.P' -cp $(SHDLIST) -DPROF
+_c_O2	= $(CC_LIST) '-Wa,-o$*.O2' -c $(SHDLIST) -DGEMINI_ON_UW2
+_c_P2	= $(CC_LIST) '-Wa,-o$*.P2' -cp $(SHDLIST) -DGEMINI_ON_UW2 -DPROF
+_c_O5	= $(CC_LIST) '-Wa,-o$*.O5' -c $(SHDLIST) -DGEMINI_ON_OSR5
+_c_P5	= $(CC_LIST) '-Wa,-o$*.P5' -cp $(SHDLIST) -DGEMINI_ON_OSR5 -DPROF
+M4_LIST	= ../$(CPU)/m4.def ../$(CPU)/sys.def ../$(CPU)/ansi.def
+NOPROF	= -DMCOUNT=/
+_s_x	= $(AS) '-o$*.x' -m -- $(NOPROF) $(M4_LIST) ../$(CPU)/nonpic.def
+_s_o	= $(AS) '-o$*.o' -m -- $(NOPROF) $(M4_LIST) ../$(CPU)/nonpic.def
+_s_O	= $(AS) '-o$*.O' -m -- $(SHARED) $(NOPROF) $(M4_LIST) ../$(CPU)/pic.def
+_s_p	= $(AS) '-o$*.p' -m -- -DPROF \
+			$(M4_LIST) ../$(CPU)/mcount.def ../$(CPU)/nonpic.def
+_s_P	= $(AS) '-o$*.P' -m -- $(SHARED) -DPROF \
+			$(M4_LIST) ../$(CPU)/mcount.def ../$(CPU)/pic.def
+_s_O2	= $(AS) '-o$*.O2' -m -- $(SHARED) -DGEMINI_ON_UW2 \
+			$(NOPROF) $(M4_LIST) ../$(CPU)/pic.def
+_s_P2	= $(AS) '-o$*.P2' -m -- $(SHARED) -DGEMINI_ON_UW2 -DPROF \
+			$(M4_LIST) ../$(CPU)/mcount.def ../$(CPU)/pic.def
+_s_O5	= $(AS) '-o$*.O5' -m -- $(SHARED) -DGEMINI_ON_OSR5 \
+			$(NOPROF) $(M4_LIST) ../$(CPU)/pic.def
+_s_P5	= $(AS) '-o$*.P5' -m -- $(SHARED) -DGEMINI_ON_OSR5 -DPROF \
+			$(M4_LIST) ../$(CPU)/mcount.def ../$(CPU)/pic.def
+
+.SUFFIXES:
+.SUFFIXES: .c .s .x .o .O .p .P .O2 .P2 .O5 .P5
+
+.c.x:
+	$(_c_x) $*.c
+.c.o:
+	$(_c_o) $*.c
+.c.O:
+	$(_c_O) $*.c
+.c.p:
+	$(_c_p) $*.c
+.c.P:
+	$(_c_P) $*.c
+.c.O2:
+	$(_c_O2) $*.c
+.c.P2:
+	$(_c_P2) $*.c
+.c.O5:
+	$(_c_O5) $*.c
+.c.P5:
+	$(_c_P5) $*.c
+.s.x:
+	$(_s_x) $*.s
+.s.o:
+	$(_s_o) $*.s
+.s.O:
+	$(_s_O) $*.s
+.s.p:
+	$(_s_p) $*.s
+.s.P:
+	$(_s_P) $*.s
+.s.O2:
+	$(_s_O2) $*.s
+.s.P2:
+	$(_s_P2) $*.s
+.s.O5:
+	$(_s_O5) $*.s
+.s.P5:
+	$(_s_P5) $*.s

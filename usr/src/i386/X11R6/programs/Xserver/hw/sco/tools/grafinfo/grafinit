@@ -1,0 +1,383 @@
+#!/bin/ksh
+#ident	"@(#)grafinit	11.5.1.1	1/21/98	18:27:31"
+
+
+LABEL="UX:$0"
+CAT=grafinit
+LIBDIR=/usr/X11R6.1/lib
+
+GRAFDIR=${LIBDIR}/grafinfo
+GRAFDEV=${GRAFDIR}/grafdev
+GRAFPREF=${GRAFDIR}/grafpref
+AOFDIR=${LIBDIR}/vidconf/AOF
+AOFBIN=${AOFDIR}/bin
+GRAFTMP=/tmp/grafinit.$$
+AOFSIG=${AOFDIR}/.sig
+
+export LABEL CAT LIBDIR AOFDIR GRAFPREF
+export GRAFDIR GRAFDEV AOFBIN GRAFTMP PATH AOFSIG
+
+
+BitsPerPixel() {
+        echo $1 | sed -e '
+                        s/16M/24/
+                        s/16m/24/
+                        s/64K/16/
+                        s/64k/16/
+                        s/256/8/
+                        s/16/4/'
+}
+
+RefreshRate() {
+        echo $1 | sed -e '
+                        s/HZ//
+                        s/Hz//
+                        s/hZ//
+                        s/hz//'  
+}
+
+GrafModes() {
+
+#	derived from xd.0 -
+#	extract modes and driver information from grafinfo files
+#	hiramc@sco.COM - June 1994
+
+        awk '
+        {
+        	if ( match ( $1, "VENDOR" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	        }
+        	if ( match ( $1, "MODEL" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+        	}
+	        if ( match ( $1, "CLASS" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+        	}
+	        if ( (length($1) == 4) && match ( $1, "MODE" ) ) {
+			printf "%s\n", $2
+			CRYN="Yes"
+        	}
+        }
+
+        END {
+
+	        if ( match ( CRYN, "No" ) ) printf "\n"
+
+        } ' $1 | tr "[A-Z]" "[a-z]" | sed -e "s/\"//g" -e "s/;//g"
+
+}
+
+QueryGrafMem () {
+        /bin/tcl -c 'set MEMORY {0x80000}
+                catch {set VESA [exec -- vesa -i -v 2> /dev/null]; eval $VESA}
+                echo [format "%d" $MEMORY]'
+}
+
+GrafEnoughMem() {
+
+        case "$1" in
+           1800x1440)
+                pixels=2592000 ;;
+           1600x1280)
+                pixels=2048000 ;;
+           1600x1200)
+                pixels=1920000 ;;
+           1280x1024)
+                pixels=1310720 ;;
+           1152x864)
+                pixels=995328  ;;
+           1024x768)
+                pixels=786432  ;;
+           800x600)
+                pixels=480000  ;;
+           *)
+                pixels=307200  ;;
+        esac
+
+        case "$2" in
+           16M | 16m | 24)
+                bytes=`expr $pixels \* 3` ;;
+           64K | 64k | 16)
+                bytes=`expr $pixels \* 2` ;;
+           *)
+                bytes=$pixels ;;
+        esac
+
+        enough=`expr $3 \>= $bytes`
+        echo $enough
+}
+
+GrafdevEntries() {
+	echo /dev/vt01:$1
+	echo /dev/vt02:$1
+	echo /dev/vt03:$1
+	echo /dev/vt04:$1
+	echo /dev/vt05:$1
+	echo /dev/vt06:$1
+	echo /dev/vt07:$1
+	echo /dev/vt08:$1
+	echo /dev/vt09:$1
+	echo /dev/vt10:$1
+	echo /dev/vt11:$1
+	echo /dev/vt12:$1
+}
+
+RefreshRate() {
+        set `echo $1 | sed -e 's|\-| |g'`
+        if [ "$3" = "" ]
+        then
+                echo 0
+        else
+                echo $3
+        fi
+}
+
+UpdateGrafdev() {
+
+        GRAFINFO=${GRAFDIR}/$1
+        GRAFPREF=$2
+        TOTAL_MEMORY=$3
+
+        if [ -f ${GRAFPREF} ]
+        then
+		# default mode used is same as CDE Desktop login screen.
+                DEF_MODE=`grep /dev/vt01 ${GRAFPREF} | sed -e 's|,.*||g
+                                                         s|.*\.||g
+                                                         s|\-| |g'` 2> /dev/null
+        fi
+
+        if [ "$DEF_MODE" = "" ] 
+        then
+                DEF_MODE="800x600 8 60"
+        fi
+        
+        set $DEF_MODE
+
+        case "$1" in
+           1800x1440)
+                DIMENSIONS="1800x1440 1600x1280 1600x1200 1280x1024 1152x864 1024x768 800x600 640x480" ;;
+           1600x1280)
+                DIMENSIONS="1600x1280 1600x1200 1280x1024 1152x864 1024x768 800x600 640x480" ;;
+           1600x1200)
+                DIMENSIONS="1600x1200 1280x1024 1152x864 1024x768 800x600 640x480" ;;
+           1280x1024)
+                DIMENSIONS="1280x1024 1152x864 1024x768 800x600 640x480" ;;
+           1152x864)
+                DIMENSIONS="1152x864 1024x768 800x600 640x480" ;;
+           1024x768)
+                DIMENSIONS="1024x768 800x600 640x480" ;;
+           800x600)
+                DIMENSIONS="800x600 640x480" ;;
+           *)
+                DIMENSIONS="640x480" ;;
+        esac
+
+        case "$2" in
+           16M | 16m | 24)
+                DEPTHS="16M 16m 24 64K 64k 16 256 8" ;;
+           64K | 64k | 16)
+                DEPTHS="64K 64k 16 256 8" ;;
+           *)
+                DEPTHS="256 8" ;;
+        esac
+
+        if [ "$3" = "" ]
+        then
+                REFRESH=60
+        else
+                REFRESH=$3
+        fi
+
+        # Create new grafdev
+        rm -f ${GRAFDEV}
+
+        GrafModes ${GRAFINFO} > ${GRAFTMP}
+        done=0
+        for WxH in $DIMENSIONS
+        do
+                [ $done -eq 1 ] && break
+
+                for depth in $DEPTHS
+                do
+                        [ $done -eq 1 ] && break;
+
+                       	for mode in `grep ${WxH}-${depth} ${GRAFTMP} 2>/dev/null`
+                        do
+                                r=`RefreshRate $mode`
+                                if [ `expr $r \<= $REFRESH` -ne 0 ]
+                                then
+                                        if [ `GrafEnoughMem ${WxH} ${depth} ${TOTAL_MEMORY}` -ne 0 ]
+                                        then
+                                                GrafdevEntries $mode > ${GRAFDEV}
+                                                done=1
+                                                break
+                                        fi
+                                fi
+                        done
+                done
+        done
+
+        if [ ! -f ${GRAFDEV} ]
+        then
+            # Default to ibm vga
+            GrafdevEntries "ibm.vga.vga.640x480-16" > ${GRAFDEV}
+	fi
+
+        rm -f ${GRAFTMP}
+}
+
+BiosSig() {
+	${AOFBIN}/vrom 2> /dev/null | sum -r | awk '{print $1}'
+}
+
+GrafConfigHasChanged() {
+
+        BIOS=$1
+        MEM=$2
+
+        [ -f ${AOFSIG} ] || touch ${AOFSIG}
+
+        if [ ! -f ${GRAFDEV} ]
+        then
+                return 0
+        fi
+
+        /bin/ksh -c "[ ${GRAFDEV} -ot ${AOFSIG} ]" > /dev/null 2>&1
+        if [ $? -eq 0 ]
+        then
+                rm -f ${GRAFDEV}
+                return 0
+        fi
+
+        grep -e "BIOS=${BIOS}" ${AOFSIG} > /dev/null 2>&1
+        if [ $? -ne 0 ]
+        then
+                return 0
+        fi
+
+        grep -e "MEMORY=${MEM}" ${AOFSIG} > /dev/null 2>&1
+        if [ $? -ne 0 ]
+        then
+                return 0
+        fi
+
+        grep /dev/vt01 ${GRAFDEV} > /dev/null 2>&1
+        if [ $? -ne 0 ]
+        then
+                return 0
+        fi
+
+        # Test that grafdev entries are still valid
+        XGI=`sed -e 's|.*#.*||' \
+                 -e 's|.*:\(.*\)\.\(.*\)\..*\..*|\1/\2.xgi|' ${GRAFDEV}` 2> /dev/null
+        if [ "${XGI}" = "" ]
+        then
+                return 0
+        fi
+
+        for xgi in ${XGI}
+        do
+                [ -f ${GRAFDIR}/${xgi} ] || return 0
+        done
+
+        return 1
+
+}
+
+GrafInitialize() {
+
+        if [ "$1" = "RC_SCRIPT" ]
+        then
+                VOPTS="-i"
+        fi
+
+	BIOS=`BiosSig`
+        MEM=`QueryGrafMem`
+
+	if GrafConfigHasChanged $BIOS $MEM
+	then
+		echo "BIOS=${BIOS}" > ${AOFSIG}
+		echo "MEMORY=${MEM}" >> ${AOFSIG}
+                rm -f ${GRAFDIR}/vesa/svga.xgi
+		[ -f ${GRAFDEV} ] && mv ${GRAFDEV} ${GRAFPREF}
+	        GrafdevEntries "ibm.vga.vga.640x480-16" > ${GRAFDEV}
+                GRAFINFO=`grafdetect`
+                if [ \( $? != 0 \) -o \
+			\(" ${GRAFINFO}" = "" \) -o \
+			! -f ${GRAFDIR}/${GRAFINFO} ]
+                then
+                        GRAFINFO=vesa/svga.xgi
+			[ -d ${GRAFDIR}/vesa ] || mkdir ${GRAFDIR}/vesa
+			tty | egrep '^/dev/vt|^/dev/console' > /dev/null
+			if [ $? = 0 ]            # user on console
+			then
+				${AOFBIN}/grafmkxgi ${VOPTS} -v VESA -m SVGA -t > \
+				${GRAFDIR}/${GRAFINFO} 2> /dev/null
+			else		# user not on console, don't test
+				${AOFBIN}/grafmkxgi ${VOPTS} -v VESA -m SVGA > \
+					${GRAFDIR}/${GRAFINFO} 2> /dev/null
+			fi
+
+                        if [ $? != 0 ]
+                        then
+                                rm -f ${GRAFDIR}/${GRAFINFO}
+                                GRAFINFO=ibm/vga.xgi
+                        fi
+                fi
+		UpdateGrafdev $GRAFINFO $GRAFPREF $MEM
+		rm -f ${GRAFPREF}
+	fi
+}
+
+#
+# main
+#
+
+PATH=${AOFBIN}:/sbin:/usr/sbin:/usr/bin:/etc:/usr/ccs/bin
+export PATH
+
+if [ ! -d ${AOFBIN} ]
+then			 
+	echo no ${AOFBIN}
+	exit
+fi
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+
+fi
+
+case "$1" in
+'start')
+        GrafInitialize RC_SCRIPT
+        ;;
+''|'-start'|'-s')
+        GrafInitialize
+	;;
+'stdvga'|'-stdvga')
+	GrafdevEntries "ibm.vga.vga.640x480-16" > ${GRAFDEV}
+	;;
+'reset'|'-reset'|'-r'|'-default'|'default'|'-d')
+        rm -f ${AOFSIG}
+        GrafInitialize
+        ;;
+'stop'|'-stop')
+	;;
+
+*)
+	USAGE="$0 { start | stop | reset | stdvga }"
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	;;
+esac

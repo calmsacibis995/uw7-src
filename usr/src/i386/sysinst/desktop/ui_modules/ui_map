@@ -1,0 +1,147 @@
+#ident "@(#)ui_map	15.2	98/01/18"
+#
+# This file is dotted in by a ksh script (sequencer). 
+# 
+# NOTE: To save memory, the exit codes could be changed to low numbers.
+# This would save about 30K. Still exit with the large values, but have
+# a common base (120), and subtract it off. So the arrays are all in the
+# range of 0..8, rather than 120..128.
+#
+
+#
+# The first module to run
+#
+start_module=init
+
+#
+# Stop when this module is reached (it is not run).
+#
+stop_module=ui_done
+
+#
+# If an error occurs, go to this module (as opposed to dying ungracefully).
+#
+recovery_module=recover
+
+#
+# Where are the modules?
+#
+module_path=/isl/ui_modules
+
+#
+# Define the state transitions.
+#
+init[$NEXT]=lang
+lang[$NEXT]=do_cmds
+do_cmds[$NEXT]=boot2
+boot2[$NEXT]=welcome
+welcome[$NEXT]=zone
+zone[$NEXT]=locale
+locale[$NEXT]=keyboard
+keyboard[$NEXT]=license
+license[$NEXT]=hba
+hba[$NEXT]=dcu
+dcu[$NEXT]=disk_size
+disk_size[$NEXT]=name
+name[$NEXT]=media
+media[$NEXT]=check_media
+media[$NET]=net_wrapper
+net_wrapper[$NEXT]=disk_config
+# This next line will have to go when vince's new net_wrapper stuff is here.
+net_wrapper[$TCP]=netinst_tcp
+net_wrapper[$SPX]=netinst_ipx
+net_wrapper[$NICS]=ii_detect
+ii_detect[$NEXT]=ii_select
+ii_select[$NEXT]=ii_config
+ii_config[$NEXT]=pop{net_wrapper}
+netinst_tcp[$NEXT]=pop{net_wrapper}
+netinst_ipx[$NEXT]=pop{net_wrapper}
+check_media[$NEXT]=disk_config
+check_preserve[$NEXT]=disk_config
+check_preserve[$PRESERVE]=uturn
+disk_config[$NEXT]=change_slices
+disk_config[$PARTITION]=partition
+partition[$NEXT]=change_slices
+change_slices[$NEXT]=change_disk_ops
+change_slices[$SLICE]=slices
+slices[$NEXT]=change_disk_ops
+change_disk_ops[$NEXT]=cans
+change_disk_ops[$OPTIONS]=disk_ops
+disk_ops[$NEXT]=cans
+cans[$OPTIONS]=sets
+cans[$NEXT]=check_pkg_sizes
+sets[$OPTIONS]=services
+sets[$NEXT]=check_pkg_sizes
+services[$NEXT]=pop{sets}
+check_pkg_sizes[$NEXT]=osmp
+osmp[$NEXT]=nics_detect
+nics_detect[$NEXT]=nics_select
+nics_select[$NEXT]=nics_config
+nics_config[$NEXT]=tcpconf
+tcpconf[$NEXT]=ipxconf
+ipxconf[$NEXT]=nisconf
+nisconf[$NEXT]=date
+date[$NEXT]=security
+security[$NEXT]=owner
+owner[$NEXT]=password
+password[$NEXT]=ad_flash
+ad_flash[$NEXT]=pla
+pla[$NEXT]=rusure
+rusure[$NEXT]=ui_done
+
+#
+
+# Help links
+#
+lang[$HELP]=help
+welcome[$HELP]=help
+zone[$HELP]=help
+locale[$HELP]=help
+keyboard[$HELP]=help
+license[$HELP]=help
+hba[$HELP]=help
+dcu[$HELP]=help
+disk_size[$HELP]=help
+media[$HELP]=help
+check_media[$HELP]=help
+change_disk_ops[$HELP]=help
+disk_config[$HELP]=help
+disk_ops[$HELP]=help
+partition[$HELP]=help
+change_slices[$HELP]=help
+cans[$HELP]=help
+slices[$HELP]=help
+name[$HELP]=help
+date[$HELP]=help
+owner[$HELP]=help
+security[$HELP]=help
+password[$HELP]=help
+sets[$HELP]=help
+services[$HELP]=help
+ad_flash[$HELP]=help
+pla[$HELP]=help
+rusure[$HELP]=help
+net_wrapper[$HELP]=uturn
+tcpconf[$HELP]=help
+ipxconf[$HELP]=help
+nisconf[$HELP]=help
+nics_detect[$HELP]=help
+nics_select[$HELP]=help
+nics_config[$HELP]=help
+netinst_tcp[$HELP]=help
+netinst_ipx[$HELP]=help
+ii_detect[$HELP]=help
+ii_select[$HELP]=help
+ii_config[$HELP]=help
+
+
+#
+# Error links
+#
+welcome[$DIE]=dead
+keyboard[$DIE]=dead
+dcu[$DIE]=dead
+disk_size[$DIE]=dead
+check_media[$DIE]=dead
+pla[$DIE]=dead
+

@@ -1,0 +1,488 @@
+#!/sbin/sh 
+#ident "@(#)services	15.1	97/12/19"
+#
+# services -- ISL UI module:  user selects/deselects services
+#
+
+# TODO:
+# -	get hops to create a winrc function to select/unselect a check box item.
+#		.	see Dandy, below.
+# -	get hops to make open_check really handle -bg and -fg.
+
+# Read cans.rc to load common functions,
+# and to load the can_ifile which defines svc_ variables:
+#
+# can_pkg_nums[x]  list of indexes into the pkg_ arrays for can #x
+#
+# num_svcs         number of entries in the svc_XXX[] arrays
+# svc_label[x]     check box item label for service #x
+# svc_desc[x]      text that accompanies each check box item for service #x
+# svc_pkg_nums[x]  list of indexes into the pkg_ arrays for service #x
+# 
+# num_pkgs         number of entries in the pkg_XXX[] arrays
+# pkg_label[x]     check box item label for package #x
+# pkg_code[x]      short name of package #x
+# pkg_desc[x]      text that accompanies each check box item for package #x
+# pkg_pkg_nums[x]  list of indexes into the pkg_ arrays for package #x
+#
+
+. /isl/ui_modules/cans.rc
+. /etc/inst/locale/$LANG/menus/sets.txtstrings
+CAN_HEADER="$HEAD_SVC"
+
+# Other variables:
+# 
+# can_id           index of can chosen on can screen
+# current_svc      index of service previously/currently chosen on this screen
+# pkg_ids          user chosen list of indexes into the pkg_ arrays;
+#                  set by save_exit funcs in 'cans' and 'services',
+#                  used to rehighlight correct set of choices
+# pkg_selcted[x]   'yes' if package #x is currently selected
+# pkg_used[x]      'yes' if package #x is in some service;
+#                  used to create the 'Miscellaneous' service
+# 
+#
+
+#--------------------------------------------------------
+
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+
+	# set pkg_ids to be the set of selected packages.
+	# 
+	pkg_ids=
+	p=-1
+	while (( ( p += 1 ) < num_pkgs )) 	# scan all packages
+	do
+		[ "${pkg_selected[p]}" = yes ] && pkg_ids="$pkg_ids $p"
+	done
+	ivar set pkg_ids[$current_set] "$pkg_ids"
+	ivar set ${set_code[current_set]}_PKG_NUMS "$pkg_ids"
+	ivar set help_topic services
+
+	# Exit this module with a code that tells the sequencer what screen 
+	# to present next.
+	#
+	ii_exit $1
+}
+
+function service_selected_size
+{
+[ -n "$debug" ] && set -x
+	typeset i=$1 selected=0 unselected=0 p=0
+	for x in ${svc_pkg_nums[i]} ; do
+		if [[ ${pkg_selected[$x]} = yes ]]; then
+			selected=1
+			[[ -n ${pkg_size[x]} ]] && (( p += ${pkg_size[x]} )) 
+		else
+			unselected=1
+		fi
+	done
+	svc_status[i]=${SVC_STAT_STR[0]}
+	[[ $selected = 1 && $unselected = 1 ]] &&
+			svc_status[i]=${SVC_STAT_STR[1]}
+	[[ $selected = 1 && $unselected = 0 ]] &&
+			svc_status[i]=${SVC_STAT_STR[2]}
+	(( p=p/2 ))
+	typeset -L2 remainder
+	(( remainder = p % 1000 ))
+	remainder=`call altprintf "%02d" $remainder`
+	(( p /= 1000 ))
+	sz=`call altprintf "%4d" $p`
+	sz="${sz}.$remainder"
+#	typeset -R7 sz="$p"
+	svc_pct[i]="$sz"
+}
+
+
+function get_services
+{
+[ -n "$debug" ] && set -x
+	integer i num current
+	#
+	# Create the description window
+	#
+	place_window 76 7 -above 0
+	desc_window=$CURWIN
+
+	set -- ${set_svc_nums[current_set]}
+	current_svc=$1
+
+	# For each service, sum the sizes of its package to compute the
+	# percent of available disk space the service will consume.
+	# Also, set width to the longest svc_label.
+	width=0
+	total_size=0
+	for i				# make chkbx item for each srvc
+	do
+		service_selected_size $i
+		[[ "${svc_pkg_nums[i]}" = *[0-9]* ]] && 
+			(( ${#svc_label[i]} > width )) && width=${#svc_label[i]}
+		(( total_size += svc_pct[i] ))
+	done
+
+	#
+	# Create the form
+	#
+	set -A SW 0 1 $((width+2)) 10 
+
+	for str in ${SVC_STAT_STR[@]} ${SERVICE_TBL_TTLS[1]}
+	do
+		(( ${#str} > SW[1] )) && SW[1]=${#str}
+	done
+	(( ${#SERVICE_TBL_TTLS[2]} > SW[2] )) && SW[2]=${#SERVICE_TBL_TTLS[2]}
+	(( ${#SERVICE_TBL_TTLS[3]} > SW[3] )) && SW[3]=${#SERVICE_TBL_TTLS[3]}
+
+	(( width = SW[1] + SW[2] + SW[3] ))
+
+	open_form
+	form_id=$FID
+	setup_table -offset 1 -rows 7 -cols 3 -page -titles SERVICE_TBL_TTLS \
+			-widths SW
+
+	# create check-box items (services)
+	#
+	# t is index of displayed choice, i is index of svc.
+	# If one or more services has no packages, t != i.
+	t=0
+	i=-1
+	for i in ${set_svc_nums[current_set]}	# make chkbx item for each srvc
+	do
+		# only display svc if it has pkgs
+		[[ "${svc_pkg_nums[i]}" = *[0-9]* ]] && {
+			s="$(echo ${svc_label[i]})"
+			p=${#s}
+
+			SRV_STATE[$i]=${svc_status[i]}
+
+			next_field -noinput -entry "describe_svc $t $i" \
+				-choice "service_choose_pkgs \"\${SRV_STATE[$i]}\" \"Service: $s\"" \
+				SRV_STATE[$i]
+			next_field_prompt -l "$s"
+			svc_size_fld[$i]=$FIELDCNT
+			next_field_prompt -l "${svc_pct[i]} MB"
+			next_row
+					
+			(( t += 1 ))	
+		}
+	done
+	num_choices=$t
+
+	#
+	# Create the window for it
+	#
+#	(( num += 2 ))
+	(( width += 10 ))
+num=11
+	place_window $width 9 -title "$TITLE_SVC_SEL" -below 1 -above 10 \
+			-current 'fld_change_if_neccessary'
+	check_window1=$CURWIN
+
+	[ -1 = $check_window1 ] && save_exit HELP
+	run_form $form_id
+
+	msg "$MSG_CHOOSE_SVCS"
+	set_hotkey  1 "save_exit HELP"
+	set_hotkey  9 "save_exit PREV"
+	set_hotkey 10 "save_exit NEXT"
+
+	input_handler
+}
+
+# You need to change the current field from some other function, but 
+# this function needs to be the one to change all the non-current
+# fields.  Set need_fld_change=1 before exiting your callback function
+# if you want to update the current service's size field.  Set
+# mucho_fld_change=1 if you want to update all the state and size
+# fields (except the current state field, which you already updated).
+# service_selected_size should have been called for every service
+# whose package selections have changed, so that all the svc_pct[]
+# and svc_status[] variables are up-to-date.
+
+function fld_change_if_neccessary
+{
+[ -n "$debug" ] && set -x
+	if [[ $need_fld_change = 1 ]]; then
+		fld_pchange $form_id ${svc_size_fld[current_svc]} "${svc_pct[current_svc]} MB"
+		need_fld_change=0
+	fi
+
+	if [[ $mucho_fld_change = 1 ]]; then
+		for i in ${set_svc_nums[current_set]}	# for each service
+		do
+			fld_pchange $form_id ${svc_size_fld[i]} \
+					"${svc_pct[i]} MB"
+			if [[ $i != $current_svc ]]; then
+				fld_change $form_id $((svc_size_fld[i]-2)) \
+					"${svc_status[i]}"
+			fi
+		done
+		mucho_fld_change=0
+	fi
+
+	footer "$FOOT_SVC_SEL"
+}
+
+
+
+function service_choose_pkgs
+{
+[ -n "$debug" ] && set -x
+
+	CHOOSE_TITLE="$2"
+	CHOOSE_FOOTER="$2"
+
+	set -A SS "${SRV_STATS[@]}"
+
+	choose -f -e -exit scp_exit -winparms "-above 4 -below 1" "$1" "${SS[@]}"
+}
+
+
+function scp_exit
+{
+[ -n "$debug" ] && set -x
+	
+	case $CHOICE in
+		${SS[0]})		# Individual
+			popup_pkg_chooser
+			return 0
+			;;
+		${SS[1]})		# All
+			for x in ${svc_pkg_nums[current_svc]} ; do
+				pkg_selected[$x]=yes
+			done
+			;;
+		${SS[2]})		# Off
+			for x in ${svc_pkg_nums[current_svc]} ; do
+				pkg_selected[$x]=
+			done
+			;;
+	esac
+
+	recalculate_this_service
+	return 0
+}
+
+
+
+function exit_popup
+{
+[ -n "$debug" ] && set -x
+	recalculate_this_service
+
+	msg "$MSG_CHOOSE_SVCS"
+	footer "$FOOT_SVC_SEL"
+#	destroy_chk $check_box
+#	wclose $check_window1
+}
+
+function popup_pkg_chooser
+{
+[ -n "$debug" ] && set -x
+	#
+	# Create the package check_box
+	#
+	[[ -z "$(echo ${svc_pkg_nums[current_svc]})" ]] && {
+		msg "$BOGUS_SERVICE"
+		return
+	}
+
+	# Compute the percentage of available disk space each package
+	# will consume.
+	# Also, set width to the longest pkg_label.
+	width=0
+	for x in ${svc_pkg_nums[current_svc]} ; do
+#		s=
+#		[[ -n ${pkg_size[x]} ]] && {
+#			percent_format ${pkg_size[x]}
+#			s="$percent"
+#		}
+#		pkg_pct[x]="$s"
+		(( ${#pkg_label[x]} > width )) && width=${#pkg_label[x]}
+	done
+
+	open_check -bg 0 -fg 3 -exit exit_popup
+	pkg_check_box=$CID
+	for x in ${svc_pkg_nums[current_svc]} ; do
+		is_selected=""
+		[ "${pkg_selected[x]}" = yes ] && is_selected="-is_selected"
+
+		typeset -L$width leftside="${pkg_label[x]}"
+		(( sizek = pkg_size[x] / 2 ))
+		typeset -L2 remainder
+		(( remainder = sizek % 1000 ))
+		(( sizek /= 1000 ))
+		remiander=`call altprintf "%02d" $remainder`
+		sizek=`call altprintf "%4d" $sizek`
+#		typeset -R7 sz="$sizek"
+		full="$leftside  ${sizek}.$remainder MB"
+
+		add_check "$full" $is_selected		\
+			-entry  "describe_pkg $x"			\
+			-on     "changed=yes; pkg_selected[$x]=yes"	\
+			-off    "changed=yes; pkg_selected[$x]="
+#			-exit   "is_svc_selected $current_svc"
+	done
+	(( width += 18 ))
+	
+	#
+	# Create the window for it
+	#
+#	place_window $width $num -title "$TITLE_PKG_SEL" -below 0 -right 0
+	place_window $width $num -title "$TITLE_PKG_SEL" -below 1 -above 5
+	check_window2=$CURWIN
+
+	run_check $pkg_check_box 0 ${#svc_pkg_nums[current_svc]}
+
+	# JAY if hops adds a -exit option to open_check, ditch the next line,
+	# and remove F9 from FOOT_PKG_SEL.
+#	set_hotkey  9 "exit_popup; return 0; destroy_chk $pkg_check_box; wclose $check_window2"
+
+	msg "$MSG_CHOOSE_PKGS."
+	footer "$FOOT_PKG_SEL"
+
+# This was another failed attempt to control the msg/footer.
+# If I wclose the service check_window1, it disappears, but
+# the pkg_check_box I popup in this function disappears too.
+#	wclose $check_window1 # wanted to kill svc check box; doesn't work t
+#	input_handler
+}
+
+# JTB: not needed at present - was used for old method with only
+# check boxes and opening a new services box every time something
+# changed.
+
+#function is_svc_selected
+#{
+#[ -n "$debug" ] && set -x
+#	svc_selected[$1]=
+#	for p in ${svc_pkg_nums[$1]} ; do
+#		# On very first pass, set list of pkgs used by any can/service.
+#		[ $first_pass = yes ] && pkg_used[$p]=yes	
+#		# Unused pkgs go in service named "Misc."
+#
+#		# The primary task for this func: mark service if it contains a pkg
+#		# needed by the can chosen on the previous screen.
+#		# pkg_selected[] is initialized in Main (below).
+#		[ "${pkg_selected[p]}" = yes ] && {
+#			svc_selected[$1]=yes;
+#			# check_is_selected $check_box $1 True  # See Dandy below.
+#			[ $first_pass = yes ] && return 0
+#		#	return 0	# See 'Dandy' below.
+#			# break;
+#		}
+#	done
+#	# check_is_selected $check_box $1 False  # See Dandy below.
+#	return 0
+#	#
+#	# Dandy.  
+#	# But there is no winrc function to select/unselect a check box item.
+#	# So there is no way to update the check item for the current service
+#	# based on whether there is at least one package item checked within
+#	# that service.
+#	# JAY, get M.Hopkirk to create function check_is_selected True|False.
+#	#
+#	# check_is_selected $check_box $1 ${svc_selected[$1]}
+#}
+
+function describe_pkg
+{
+[ -n "$debug" ] && set -x
+	current_pkg=$1
+	wclear  $desc_window
+	wgotoxy $desc_window 1 1
+
+	eval d="\${pkg_desc_$LANG[$1]}"
+	[ -z "$d" ] && d="${pkg_desc[$1]}"
+	wprintf $desc_window "$d"
+}
+
+function describe_svc
+{
+[ -n "$debug" ] && set -x
+	current_svc=$2
+	wclear  $desc_window
+	wgotoxy $desc_window 1 1
+
+	eval d="\${svc_desc_$LANG[$current_svc]}"
+	[ -z "$d" ] && d="${svc_desc[$current_svc]}"
+	wprintf $desc_window "$d"
+}
+
+function select_svc
+{
+[ -n "$debug" ] && set -x
+	popup_pkg_chooser
+}
+	
+function deselect_svc
+{
+[ -n "$debug" ] && set -x
+	popup_pkg_chooser
+}
+
+function recalculate_this_service
+{
+[ -n "$debug" ] && set -x
+	(( total_size -= svc_pct[current_svc] ))
+	service_selected_size $current_svc
+	(( total_size += svc_pct[current_svc] ))
+
+	call -v set_choice "@string_t:|${svc_status[current_svc]}|"
+	need_fld_change=1
+}
+
+function recalculate_all_services
+{
+[ -n "$debug" ] && set -x
+	total_size=0
+	typeset i=-1
+	while (( ( i += 1 ) < num_svcs ))	# for each service
+	do
+		service_selected_size $i
+		(( total_size += svc_pct[i] ))
+	done
+	call -v set_choice "@string_t:|${svc_status[current_svc]}|"
+	mucho_fld_change=1
+}
+
+function pkg_ids_2_pkg_selected
+{
+	# Set pkg_selected[x]=yes for each x in $pkg_ids.
+	# This prepares the popup_pkg_chooser function.
+
+	unset pkg_selected
+	for p in $pkg_ids ; do
+		pkg_selected[p]=yes
+	done
+}
+
+#
+# Main
+#
+
+check_window1=""
+changed=
+
+current_set=`ivar get current_set`	# Set screen tells us which set to do.
+[[ -z $current_set ]] && current_set=0
+
+# The pkg ids currently selected.
+pkg_ids=`ivar get pkg_ids[$current_set]`  
+
+# Index of the can chosen by the user.
+can_id=`ivar get can_id`	
+
+pkg_ids_2_pkg_selected
+
+# Let the user de/select services
+current_svc=0
+
+# F9 or F10 cause this module to exit via save_exit
+get_services	
+
+# Save their choices
+save_exit NEXT
+

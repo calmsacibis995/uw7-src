@@ -1,0 +1,87 @@
+#!/bin/sh
+#
+#	@(#)XDriver	11.1	10/22/97	12:41:10
+#
+#	XDriver - show the modes and drivers selected in grafdev file
+#		This is slow, but it gets the job done.
+#
+#	An example /usr/lib/grafinfo/grafdev file:
+#
+#	/dev/console:ibm.vga.vga.640x480-16
+#	/dev/vt01:ibm.vga.vga.640x480-16
+#	/dev/vt02:ibm.vga.vga.640x480-16
+#	/dev/vt03:ibm.vga.vga.640x480-16
+#	/dev/vt04:ibm.vga.vga.640x480-16
+#	/dev/vt05:ibm.vga.vga.640x480-16
+#	/dev/vt06:ibm.vga.vga.640x480-16
+#	/dev/vt07:ibm.vga.vga.640x480-16
+#	/dev/vt08:ibm.vga.vga.640x480-16
+#	/dev/vt09:numbernine.vision330.s3t.1280x1024-256-75
+#	/dev/vt10:ibm.vga.vga.320x200-256
+#	/dev/vt11:ibm.vga.vga.640x350-16
+#	/dev/vt12:ibm.vga.vga.640x480-2
+#
+#	And the results of running this script:
+#
+#	/dev/console:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt01:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt02:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt03:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt04:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt05:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt06:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt07:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt08:ibm.vga.vga.640x480-16 - mw
+#	/dev/vt09:numbernine.vision330.s3t.1280x1024-256-75 - nsf8
+#	/dev/vt10:ibm.vga.vga.320x200-256 - dfb
+#	/dev/vt11:ibm.vga.vga.640x350-16 - mw
+#	/dev/vt12:ibm.vga.vga.640x480-2 - mw
+#
+#	Tue Oct  7 12:26:27 PDT 1997	-	hiramc@sco.COM
+#	- created from a combination of xd.0 (the ShowModes routine)
+#
+ShowModes() {
+
+for Fname in $*
+do
+awk \
+'
+{
+	if ( match ( $1, "VENDOR" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "MODEL" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "CLASS" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( (length($1) == 4) && match ( $1, "MODE" ) ) {
+			printf "%s", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "XDRIVER" ) ) {
+			printf " - %s\n", $3
+			CRYN="Yes"
+	}
+}
+END {
+	if ( match ( CRYN, "No" ) ) printf "\n"
+}
+' $Fname
+done | tr "[A-Z]" "[a-z]" | sed -e "s/\"//g" -e "s/;//g"
+
+}	#	ShowModes()
+
+for GrafDev in `cat /usr/lib/grafinfo/grafdev`
+do
+VT=`echo $GrafDev | cut -d: -f1`
+echo "$VT:\c"
+XGIFILE=`echo $GrafDev | cut -d: -f2 | cut -d. -f1,2 | sed -e "s/\./\//"`
+MODE=`echo $GrafDev | cut -d: -f2 | cut -d. -f3,4 `
+ShowModes /usr/lib/grafinfo/$XGIFILE.xgi | grep "$MODE"
+done
+

@@ -1,0 +1,33 @@
+#ident	"@(#)Menu.lssys	1.2"
+#ident  "$Header$"
+
+################################################################################
+#
+#	Module Name:Menu.lssys
+#
+#	Functional Description: This menu is a popup menu for listing system
+#                               entries in /etc/uucp/Systems.
+#
+################################################################################
+menu="SYSTEM- TIME  TYPE  CLASS  PHONE  LOGIN"
+
+close=`unset -l NAMES`
+`message "Press CANCEL to return to the previous form"`
+
+`sed -e 's/     / /g' /etc/uucp/Systems > /tmp/Systems.notab`
+
+`if [ $TFADMIN ];
+then
+        $TFADMIN /usr/bin/cat /tmp/Systems.notab | /usr/bin/grep "^$ARG1" | set        -l NAMES;
+else
+         /usr/bin/cat /tmp/Systems.notab | /usr/bin/grep "^$ARG1" | set -l NAMES;
+ fi;`
+ `echo $NAMES | regex '^([^ ^#^	][^ ^#^	]*)$0 (.*)$1'
+'name="$m0"
+description="$m1"
+action=CLOSE'`
+`rm /tmp/Systems.notab`
+ 
+name=""
+button=3
+action=nop

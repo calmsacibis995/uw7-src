@@ -1,0 +1,79 @@
+#ident "@(#)pop.plan	11.1"
+
+POP Server Test Suite
+
+1. Introduction.
+
+The test suite for the rfc1725 compliant POP server is described in
+this document.  Each test case  is described, and the test case numbers
+correspond to the test case numbers in the test suite code.
+
+2. Architecture.
+
+The test suite is a shell script and a single binary that talks to the
+POP server through sockets.   The test suite avoids looking at
+mailboxes by using the IMAP server to verify and manage  mailbox contents.
+
+The reasoning is that the underlying mailbox storage format is subject
+to change as it is hidden  under the c-client library.  The c-client
+library has it's own tests for the message stores, so we do 
+not need to test at that level.
+
+Unlike the imap server, the POP server needs to be run from inetd,
+so a small program called socket is used to allow the pop server's
+stdin and stdout to become stdin and stdout of a program 
+that can be called from a shell script (socket).
+
+3. POP Test Cases.
+
+3.1 POP Manual Test Cases.
+
+o - Using a prefered POP client of the time (Eudora or Netscape as of
+    this writing), connect to the POP server over the network, login,
+    and read some mail.  Preferably try both UNIX and Windows based clients
+
+o - Fire up a POP client, open INBOX, send some message to yourself, check
+    for new mail, vfy that it comes in and that the new flag is set on
+    the new messages.
+
+o - Test that the POP server correctly identifies a multihome user
+    and gets to their mailbox, check the correct passwd is used as well.
+
+
+3.2 POP Primitives.
+
+The following primitives are listed in rfc1725:
+
+  USER
+  PASS
+  QUIT
+  STAT
+  LIST
+  RETR
+  DELE
+
+Optional primitives are:
+
+  TOP
+  UIDL
+  APOP
+
+APOP is not tested, all other primitives are tested.
+
+3.3 Automated Test Cases.
+
+The POP primitives are tested in the order they are listed in rfc1725.
+This is not an exhaustive test by any means, but every primitive and
+its basic functionality are tested.  The purpose here is less of a POP
+protocol test and more of an integration test between the POP server and
+our c-client modifications on the back end.
+
+Pop1 - Just login and logout as our user.
+Pop2 - STAT and LIST inbox.
+Pop3 - RETR all messages.
+Pop4 - DELE all messages, STAT and LIST again.
+Pop5 - TOP 0 all messages, get just the headers.
+Pop6 - UIDL all messages.
+
+4. Performance Test Cases.
+

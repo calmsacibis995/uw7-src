@@ -1,0 +1,266 @@
+#ident	"@(#)cutmedia	16.1	98/03/03"
+
+# cutmedia script provides the mechanism by which publishers will
+# create floppies and tapes. The operations are:
+#	Transfer one or more packages to the selected media
+#	Transfer one or more sets to the selected media
+
+# Name: cutmedia
+# cutmedia usage: cutmedia [-d device]
+# -d type of media to be created
+
+USAGE="\n${0} usage: ${0} [-d device]\n"
+
+
+NTAPE='Ntape1:/dev/rmt/c0s0n:::desc="Cartridge Tape Drive" volume="cartridge tape" type="ctape" removable="true" mkdtab="false" capacity="120000" bufsize="20480" norewind="/dev/rmt/c0s0n" erasecmd="/usr/lib/tape/tapecntl -e" display="true" rewindcmd="/usr/lib/tape/tapecntl -w"'
+
+make_packages() {
+
+	PKGLIST=""
+	NO_OF_PKGS=0
+
+
+HELPMSG="Enter 'y' to see the list of available packages or
+enter 'n' if you do not wish to see the list"
+PROMPT="Would you like to see the list of available packages?"
+
+SHOWME=`ckyorn -d y -p "${PROMPT}" -h "${HELPMSG}"` || exit $?
+
+cd ${PKG_HOME}
+if [ "${SHOWME}" = "y" ]  # display the list
+then
+	for i in  `ls */pkginfo|cut -d"/" -f1`
+	do
+		# if setinfo file exists, it is a set.
+		# otherwise, it must be a package.
+
+       		if [ ! -f ${i}/setinfo ]
+        	then
+               		PKGLIST="${PKGLIST} ${i}"
+			NO_OF_PKGS=`expr ${NO_OF_PKGS} + 1`
+        	fi
+	done
+
+	ANS=`ckitem -nl "The available packages are:\n" -m ${NO_OF_PKGS} -Q\
+        	${PKGLIST}`
+
+else
+	echo "\nEnter the list of packages separated by a blank space: \c"; read ANS
+fi
+	case ${MEDIA} in
+
+		Ntape1|ctape1)
+   			${PKGTRANS} ${OPTIONS} `pwd` ${MEDIA} `echo ${ANS}`
+				;;
+		diskette1|diskette2) 
+			for pkg in ${ANS}
+			do
+				echo "\nGetting ready to transfer the package ${pkg} ..."
+   				${PKGTRANS} ${OPTIONS} `pwd` ${MEDIA} `echo ${pkg}`
+			done
+				;;
+	esac
+}
+
+make_sets() {
+
+	SETLIST=""
+	PKGLIST=""
+	NO_OF_SETS=0
+
+HELPMSG="Enter 'y' to see the list of available sets or
+enter 'n' if you do not wish to see the list"
+PROMPT="Would you like to see the list of available sets?"
+
+SHOWME=`ckyorn -d y -p "${PROMPT}" -h "${HELPMSG}"` || exit $?
+
+cd ${PKG_HOME}
+if [ "${SHOWME}" = "y" ]  # display the list
+then
+
+	# if setinfo file exists, it must be a set
+	for i in  `ls */setinfo|cut -d"/" -f1`
+	do
+       		#if [ -f ${i}/setinfo ]
+        	#then
+               		SETLIST="${SETLIST} ${i}"
+			NO_OF_SETS=`expr ${NO_OF_SETS} + 1`
+        	#fi
+	done
+
+	ANS=`ckitem -nl "The available sets are:\n" -m ${NO_OF_SETS} -Q\
+        	${SETLIST}`
+else
+	echo "\nEnter the list of sets separated by a blank space: \c"; read ANS
+fi
+	
+	for set in ${ANS}
+	do
+		PKGLIST="${PKGLIST} ${set}" 
+		MEMBER_PKGS=`cat ${set}/setinfo|egrep -v "^#"|egrep "^[a-z]|^[A-Z]"|cut -f1`
+		PKGLIST="${PKGLIST} ${MEMBER_PKGS}"
+	done
+
+
+	case ${MEDIA} in
+		Ntape1|ctape1)
+   			${PKGTRANS} ${OPTIONS} `pwd` ${MEDIA} `echo ${PKGLIST}`
+			;;
+		diskette1|diskette2)
+			for set in ${ANS}
+    			do
+				MEMBER_PKGS=`cat ${set}/setinfo|egrep -v "^#"|egrep "^[a-z]|^[A-Z]"|cut -f1`
+				echo "\nGetting ready to transfer the set package ${set} ..."
+    				${PKGTRANS} ${OPTIONS} `pwd` ${MEDIA} `echo ${set}`
+				for pkg in ${MEMBER_PKGS}
+				do
+					echo "\nGetting ready to transfer the package ${pkg} ..."
+    					${PKGTRANS} ${OPTIONS} `pwd` ${MEDIA} `echo ${pkg}`
+				done
+				
+    			done
+    			;;
+    	esac
+
+}
+
+get_media_type() {
+
+	ANS1=`ckitem -nl \
+		"Select media type\n"\
+		"Floppy_1 Media described by diskette1"\
+		"Floppy_2 Media described by diskette2"\
+		"Tape Media described by ctape1 or Ntape1"\
+		"Quit  Exit"`
+		#"Tape Media described by ctape1"` 
+	case ${ANS1} in
+		Floppy_1)
+			MEDIA=diskette1
+				;;
+		Floppy_2)
+			MEDIA=diskette2
+				;;
+		Tape)
+			MEDIA=ctape1
+			#MEDIA=Ntape1
+			if grep '^Ntape' /etc/device.tab >/dev/null 2>&1
+			then
+                          	:
+                        else
+                                #echo "$NTAPE" >>/etc/device.tab
+				:
+                        fi
+				;;
+		Quit|quit|q)
+			exit 0
+				;;
+		*)	echo ${USAGE}; exit 1
+				;;
+	esac
+}
+
+process_arguments() {
+
+	set -- `getopt d: $*`
+
+    	if [ $? -ne 0 ]
+    	then    echo ${USAGE}
+    		exit 3
+    	fi
+
+	for i in $*
+	do
+    		case ${i} in 
+    		-d) MEDIA=${2}
+			break
+   			;;
+   		--|*)
+			echo ${USAGE}
+			exit 3
+			;;
+		esac
+	done
+}
+##############################
+# if it is tape
+#eval `grep $MEDIA /etc/device.tab | sed -e 's/.*:desc=/desc=/'`
+#        if [ ${MEDIA} = Ntape1 ];then
+#                echo "Insert the $desc and press return\c"
+#                read x;
+#                echo "Erasing Tape"
+#                        $rewindcmd
+#                        sleep 5
+#                        $erasecmd || {
+#                                echo "Can't erase the $volume"
+#                                exit 1
+#                }
+#        fi
+##############################
+
+select_operation() {
+  
+  while true 
+  do
+	#clear
+	ANS=`ckitem -nl \
+		"Select one of the following operations\n"\
+		"Pkg Transfer one or more packages to the media"\
+		"Set Transfer one or more sets to the media"\
+		"Quit  Exit"`
+
+	case ${ANS} in
+		
+		Pkg|P)
+			make_packages
+				;;
+		Set|S)
+			make_sets
+				;;
+		Quit|q|quit)		
+			exit 1
+			;;
+		*)
+			echo "ERROR"
+			;;
+	esac
+  done
+}
+
+############################################################
+## MAIN starts here
+
+if [ "${ROOT}" = "" ]
+then
+        echo "ROOT is not set. Enter the path for ROOT: \c"; read ROOT
+fi
+
+if [ "${MACH}" = "" ]
+then
+        echo "MACH is not set. Enter the path for MACH: \c"; read MACH
+fi
+
+if [ "${SPOOL}" = "" ]
+then
+        echo "SPOOL is not set. Enter the path for SPOOL: \c"; read SPOOL
+fi
+
+PKG_HOME=${ROOT}/${SPOOL}
+
+PKGTRANS=$ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgtrans/pkgtrans
+
+OPTIONS="-o -s"
+
+if [ $# = 0 ]  		# if no argument given
+then
+	get_media_type
+else
+	process_arguments $* 
+fi
+
+if [ $? -eq 0 ]
+then 
+	select_operation
+else
+	exit 2
+fi
+

@@ -1,0 +1,73 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxtaginfo.sh	1.2 3/3/97 03:17:39 - cmd.vxvm:common/support/vxtaginfo.sh
+#ident	"@(#)cmd.vxvm:common/support/vxtaginfo.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+: ${VOL_SCRIPTS_DIR:-$VOLROOT_DIR/usr/lib/vxvm/bin}
+PATH=/usr/lib/vxvm/bin:/usr/sbin:/sbin:/usr/bin
+[ -n "$VOLROOT_DIR" -o -n "$VOL_SCRIPTS_DIR" ] && {
+	PATH=$VOL_SCRIPTS_DIR:$VOLROOT_DIR/usr/sbin:$PATH
+}
+export PATH
+
+s_shell_output=
+usage=`egettxt "Usage: vxtaginfo [-s] device-path tag" vxvmshm:543`
+while getopts :s c
+do
+	case $c in
+	s)	s_shell_output=yes;;
+	?)	echo "$usage" >&2
+		exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -ne 2 ]
+then
+	echo "$usage" >&2
+	exit 1
+fi
+
+tmp=/tmp/vxvm-$$
+trap "rm -f $tmp; exit 1" INT HUP TERM
+
+$PRTVTOC -f $tmp "$1"
+exec < $tmp
+rm -f $tmp
+while read slice tag flags start size
+do
+	if [ "X$tag" = "X$2" ]
+	then
+		if [ -z "$s_shell_output" ]
+		then
+			echo $slice $tag $flags $start $size
+		else
+			echo "PART_SLICE=$slice"
+			echo "PART_TAG=$tag"
+			echo "PART_START=$start"
+			echo "PART_SIZE=$size"
+		fi
+		exit 0
+	fi
+done
+egettxt "vxtaginfo: tag $2 not found" vxvmshm:662 $0 "$@" >&2
+exit 1

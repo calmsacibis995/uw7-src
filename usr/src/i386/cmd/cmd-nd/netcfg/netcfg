@@ -1,0 +1,938 @@
+#!/bin/osavtcl
+#ident "@(#)netcfg	29.1"
+#ident "$Header$"
+#
+#  Based on OpenServer netconfig version 13.3
+#
+#	Copyright (C) The Santa Cruz Operation, 1994-1996
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+
+#cmdtrace on [ open "/tmp/netcfg.log" a+ ]
+
+loadlibindex /usr/lib/sysadm.tlib
+
+set NCFG_DIR /usr/lib/netcfg
+
+source $NCFG_DIR/bin/ncfgUI.msg.tcl
+source $NCFG_DIR/bin/netcfg.msg.tcl
+source $NCFG_DIR/lib/libSCO.tcl
+
+set NCFG_CONTROLDIR $NCFG_DIR/control
+set NCFG_INFODIR $NCFG_DIR/info
+set NCFG_INITDIR $NCFG_DIR/init
+set NCFG_REMOVEDIR $NCFG_DIR/remove
+set NCFG_RECONFDIR $NCFG_DIR/reconf
+set NCFG_LISTDIR $NCFG_DIR/list
+set NCFG_CHAINS_FILE $NCFG_DIR/chains
+set NCFG_TMP_CHAINS_FILE $NCFG_DIR/tmp/chains
+set NCFG_DEFERRED_CHAINS_FILE $NCFG_DIR/deferred
+set NCFG_PARTIAL_CHAINS_FILE $NCFG_DIR/partial
+set NCFGUI_PATH $NCFG_DIR/bin/ncfgUI
+set NCFGBE_PATH $NCFG_DIR/bin/ncfgBE
+set PCHAINS /tmp/llincfgPchains
+set LLI_ELEMENT_REMOVE_FILE /tmp/_lli_remove
+
+set RELINK_REQUIRED 0
+set REBOOT_REQUIRED 0
+set SCRIPT_FAILED 0
+set AUTO_RELINK 0
+set NEVER_RELINK 0
+set CUSTOM_EVENT 0
+set USER_CANCELED 0
+
+# -da, -rc, -re, and events switch off argv[1]
+set optString "a:c:e:I:R:r:dlnstv"
+
+proc ElementTOInfoPath {element} \
+{
+	global NCFG_CHAINS_FILE NCFG_INFODIR
+
+	set x [ string first "(" $element ]
+	if { $x == -1 } {
+		return $NCFG_INFODIR/$element
+	} else {
+		set len [ string length $element ]
+
+		set e [ string range $element 0 [ expr $x-1 ] ] 
+		set p [ string range $element [ expr $x+1 ] [ expr $len-2 ]] 
+		return $NCFG_INFODIR/$e/$p
+	}
+}
+
+proc ElementTOName {element} \
+{
+	set x [ string first "(" $element ]
+	if { $x == -1 } {
+		return $element
+	} else {
+		set len [ string length $element ]
+
+		set e [ string range $element 0 [ expr $x-1 ] ] 
+		set p [ string range $element [ expr $x+1 ] [ expr $len-2 ]] 
+		return $e
+	}
+}
+
+proc GetKeyVal {path key} \
+{
+	set val ""
+	set fd [ open $path r ]
+	set sc [ scancontext create ]
+	scanmatch $sc "^${key}=" {
+		set len [ expr { [ string length $key ] + 1} ]
+		set val [ string trim [ csubstr $matchInfo(line) $len end ] \" ]
+	}
+	scanfile $sc $fd
+	scancontext delete $sc
+	close $fd
+	return $val
+}
+
+proc Interface {above below} \
+{
+	set olddir [ pwd ]
+
+	set up [ GetKeyVal [ ElementTOInfoPath $below ] UP ]
+	set down [ GetKeyVal [ ElementTOInfoPath $above ] DOWN ]
+
+	foreach u $up {
+		foreach d $down {
+			if { $u == $d } {
+				return $u
+			}
+		}
+	}
+	return "??"
+}
+
+proc ReadInfo {info_path} \
+{
+	global env
+
+	set fd [ open $info_path ]
+	while { [ gets $fd line ] != -1 } {
+		set inx [ string first "=" $line ]
+		if { $inx != -1 } {
+			set v [ string range $line 0 [ expr $inx-1 ] ]
+			set var [ string trim $v ]
+			set v [ string range $line [ expr $inx+1 ] end ]
+			set val [ string trim $v " 	\"" ]
+
+			set env($var) $val
+		}
+	}
+	close $fd
+}
+
+proc MakeScriptArgs {dir chain component} \
+{
+	global NCFG_CHAINS_FILE env
+
+	set len [ llength $chain ]
+	set index -1
+	for {set i 0} {$i<$len} {incr i} {
+		if { [ lindex $chain $i ] == $component } {
+			set index $i
+			break
+		}
+	}
+	if { $index == -1 } {
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_NOT_PART_OF_CHAIN [ list $component $chain ] ]"
+		exit 1
+	}
+	if { $index == 0 } {
+		set above_element "-"
+		set above_interface "-"
+		set env(UP_INFO_PATH) ""
+	} else {
+		set above_element [ lindex $chain [ expr {$index-1} ] ]
+		set above_interface [ Interface $above_element $component ]
+		set env(UP_INFO_PATH) [ ElementTOInfoPath $above_element ]
+	}
+	if { $index == ($len-1) } {
+		set below_element "-"
+		set below_interface "-"
+		set env(DOWN_INFO_PATH) ""
+	} else {
+		set below_element [ lindex $chain [ expr {$index+1} ] ]
+		set below_interface [ Interface $component $below_element ]
+		set env(DOWN_INFO_PATH) [ ElementTOInfoPath $below_element ]
+		ReadInfo $env(DOWN_INFO_PATH)
+
+		set srcfile "/tmp/${below_element}.src"
+		if { [ file exists $srcfile ] } {
+			ReadInfo $srcfile
+		}
+	}
+
+	set fd [ open $NCFG_CHAINS_FILE r ]
+	set found 0
+	while { [ gets $fd line ] != -1 } {
+		foreach i [ translit {#} { } $line ] {
+			if { $i == $component } {
+				incr found
+			}
+		}
+	}
+	close $fd
+	set name [ ElementTOName $component ]
+	set script "$dir/$name"
+	return [ list [ list $script $component $below_element $below_interface $above_element $above_interface ] $found ]
+}
+
+proc IsInChainsFile {chain {file ""}} \
+{
+	global NCFG_CHAINS_FILE
+
+	if { $file == "" } {
+		set file $NCFG_CHAINS_FILE
+	}
+	if { [ file exists $file ] } {
+		set fd [ open $file r ]
+		while { [ gets $fd line ] != -1 } {
+			if { $line == $chain } {
+				close $fd
+				return 1
+			}
+		}
+		close $fd
+	}
+	return 0
+}
+
+proc ExecuteScript {arglist {mask_signals ""}} \
+{
+	global RELINK_REQUIRED REBOOT_REQUIRED SCRIPT_FAILED USER_CANCELED env
+
+#puts stderr "ExecuteScript <$arglist>" no
+	if { ! [ file exists [ lindex $arglist 0 ] ] } {
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_ARGLIST_NOT_EXIST [ list $arglist ] ]"
+		set SCRIPT_FAILED 1
+		return 1
+	}
+
+	set childpid [ fork ] 
+	if { $childpid } {
+		set r [ wait $childpid ]
+#echo "WAIT $childpid == $r"
+		case [ lindex $r 1 ] {
+		EXIT {
+			set result [ lindex $r 2 ]
+		}
+		{SIG STOP} {
+			set result 1
+		}
+		}
+	} else {
+		if { $mask_signals == "" } {
+			signal default {SIGHUP SIGINT SIGTERM}
+		}
+		global env
+		set env(PATH) "/bin:/etc:/tcb/bin:/usr/bin:/ibin"
+
+		if {[id userid] == "0"} {
+			catch { execl [ lindex $arglist 0 ] [ lrange $arglist 2 end ] }
+			puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_UNABLE_TO_EXEC [ lindex $arglist 0 ] ]"
+			exit 1
+		}
+
+
+		set command [ lindex $arglist 0 ]
+		set args    [ lrange $arglist 2 end ] 
+		# get command name out of database
+		set RETCODE [ catch {
+			set tfcmdname [ exec /bin/adminrole NETCFG | grep $command ]
+			} ]
+		if { $RETCODE == "0" } {
+			set cmdname [string trim [ ctoken tfcmdname : ] ]
+			set RETCODE [ catch {  exec /sbin/tfadmin -t NETCFG: $cmdname } ]
+			if { $RETCODE == "0" } {
+				catch { execl /sbin/tfadmin "NETCFG: $cmdname [ lrange $arglist 2 end ]" }
+				puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_UNABLE_TO_EXEC [ lindex $arglist 0 ] ]"
+				exit 1
+			}
+		}
+
+		#fall through to here for default case
+		catch { execl [ lindex $arglist 0 ] [ lrange $arglist 2 end ] }
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_UNABLE_TO_EXEC [ lindex $arglist 0 ] ]"
+		exit 1
+	}
+
+#puts stderr "result <$result>"
+	case $result {
+		1 {
+#puts stderr "Error: $r, press enter to continue"
+#gets stdin
+			set SCRIPT_FAILED 1
+		}
+		2 {
+			set RELINK_REQUIRED 1
+			set result 0
+		}
+		3 {
+			set USER_CANCELED 1
+		}
+		4 {
+			set REBOOT_REQUIRED 1
+			set result 0
+		}
+	}
+	return $result
+}
+
+proc RemoveChainEntry {file chain {newchain ""}} \
+{
+	global NCFG_TMP_CHAINS_FILE
+#puts stderr "RemoveChainEntry $file $chain $newchain"
+	set ifd [ open $file r ]
+	lassign [ tmpfile $NCFG_TMP_CHAINS_FILE ]  ofd tmpfilename
+	while { [ gets $ifd line ] != -1 } {
+		if { $line != $chain } {
+			puts $ofd $line
+		} else {
+			if { $newchain != "" } {
+				puts $ofd $newchain
+			}
+		}
+	}
+	close $ofd
+	close $ifd
+
+	TfadminMv $tmpfilename $file
+}
+
+proc SendRequest {request} \
+{
+	global BEstdin BEstdout
+
+#puts stderr "Send($request)"
+	puts $BEstdin $request
+	flush $BEstdin
+
+	if { [ gets $BEstdout message ] == -1 } {
+		puts stderr "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_BE_DIED ]"
+		exit 1
+	}
+	# returns a list, first element is error code, NOERROR is magic string
+	# error code should be an internationalized string name, if not just die
+	set ErrorCode [ lindex $message 0 ]
+	set message [ lrange $message 1 end ]
+	if { $ErrorCode != "NOERROR" } {
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_BE_DIED [ list $ErrorCode ] ]"
+		exit 1
+	}
+	return $message
+}
+
+proc StartBE {} \
+{
+	global NCFGBE_PATH
+	global BEstdin BEstdout
+
+	pipe a BEstdin 
+	pipe BEstdout b
+	
+	set childPid [ fork ]
+	case $childPid {
+		-1 {
+			puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_CANNOT_FORK_BE ]"
+		}
+		0 {
+			close $BEstdin
+			close $BEstdout
+	
+			dup $a stdin
+			close $a
+	
+			dup $b stdout
+			close $b
+	
+			signal ignore {SIGINT}
+			execl $NCFGBE_PATH $NCFGBE_PATH
+		}
+	}
+	
+	close $a
+	close $b
+}
+
+# remove chain and dependent chains
+proc RemoveAll {chain_l chain} \
+{
+	if { [ llength $chain_l ] == 1 } {
+		set mesh [ SendRequest "DELETE_TREE {{CHAIN $chain_l} {INDEX 0} {CONFIGURED 1}}" ]
+	} else {
+		set mesh [ SendRequest "DELETE_TREE {{CHAIN {$chain_l}} {INDEX 0} {CONFIGURED 1}}" ]
+	}
+	set maxindent 0
+	foreach item $mesh {
+		set indent [ keylget item INDENT ]
+		if { $maxindent < $indent } {
+			set maxindent $indent
+		}
+	}
+	# mesh contains a list of chains
+	# selectable keyword determines if we really need to remove a chain
+	for {set i $maxindent} {$i >= 0} {incr i -1} {
+		foreach item $mesh {
+			set indent [ keylget item INDENT ]
+			set select [ keylget item SELECTABLE ]
+			if { $indent == $i && $select == 1 } {
+				set node [ keylget item NODEINFO ]
+				set chlist [ keylget node CHAIN ]
+				set chname [ join $chlist # ]
+				if { [ IsInChainsFile $chname ] } {
+					doRemove $chlist $chname
+				}
+			}
+		}
+	}
+}
+
+proc doRemove {chain_l chain {element ""} {count 0}} \
+{
+	global NCFG_CONTROLDIR NCFG_REMOVEDIR NCFG_CHAINS_FILE USER_CANCELED
+#puts stderr "doRemove <$chain_l> <$chain> <$element> <$count>"
+
+	set first 1
+	foreach i $chain_l {
+		if { $element != "" && $element != $i } {
+			continue
+		}
+		set lastremovecnt [ expr $count + 1 ]
+		if { [ file exists $NCFG_CONTROLDIR/$i ] } {
+			set x [ MakeScriptArgs $NCFG_CONTROLDIR $chain_l $i ]
+			set args [ lindex $x 0 ]
+			if { [ lindex $x 1 ] == $lastremovecnt } {
+				lappend args "Y"
+			} else {
+				lappend args "N"
+			}
+			lappend args "stop"
+			ExecuteScript $args
+		}
+
+		set x [ MakeScriptArgs $NCFG_REMOVEDIR $chain_l $i ]
+		set args [ lindex $x 0 ]
+		if { [ lindex $x 1 ] == $lastremovecnt } {
+			lappend args "Y"
+		} else {
+			lappend args "N"
+		}
+		if { [ ExecuteScript $args mask_signals ] == 4 && $first } {
+			set USER_CANCELED 1
+			return
+		}
+		set first 0
+	}
+
+	if { $element == ""} {
+		RemoveChainEntry $NCFG_CHAINS_FILE $chain
+	}
+
+	foreach i $chain_l {
+		set srcfile "/tmp/$i.src"
+
+		if { [ file exists $srcfile ] } {
+			TfadminUnlink $srcfile
+		}
+	}
+}
+
+proc doAdd {chain_l chain {element ""}} \
+{
+	global NCFG_INITDIR NCFG_CONTROLDIR NCFG_INFODIR NCFG_CHAINS_FILE
+	global USER_CANCELED NCFG_TMP_CHAINS_FILE
+#puts stderr "doAdd <$chain_l> <$chain> <$element>"
+
+	foreach i $chain_l {
+		if { ! [ file exists $NCFG_INFODIR/$i ] } {
+			puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_CHAIN_CMPNT_NOT_EXIST [ list $i $chain ] ]"
+			exit 1
+		}
+	}
+
+	set failed ""
+	for {set i [ expr {[ llength $chain_l ] -1} ]} {$i>=0} {incr i -1} {
+		set found 0
+		foreach el $element {
+			if { $el == [ lindex $chain_l $i ] } {
+				set found 1
+				break
+			}
+		}
+		if { $element != "" && ! $found } {
+			continue
+		}
+		set x [ MakeScriptArgs $NCFG_INITDIR $chain_l [ lindex $chain_l $i ] ]
+		set args [ lindex $x 0 ]
+		if { [ lindex $x 1 ] == 0 } {
+			lappend args "Y"
+		} else {
+			lappend args "N"
+		}
+		if { [ ExecuteScript $args ] } {
+			set failed $i
+			break
+		}
+
+		if { [ file exists $NCFG_CONTROLDIR/[ lindex $chain_l $i ] ] } {
+			set x [ MakeScriptArgs $NCFG_CONTROLDIR $chain_l [ lindex $chain_l $i ] ]
+			set args [ lindex $x 0 ]
+			if { [ lindex $x 1 ] == 0 } {
+				lappend args "Y"
+			} else {
+				lappend args "N"
+			}
+			lappend args "start"
+			if { [ ExecuteScript $args ] } {
+				set failed $i
+				break
+			}
+		}
+	}
+
+	if {$failed != ""} {
+		if {$USER_CANCELED} {
+			set failed [ expr $failed + 1 ]
+		}
+		set partial_l [ lrange $chain_l $failed end ]
+		foreach el $partial_l {
+			doRemove $chain_l $chain $el -1
+		}
+	} else {
+		lassign [ tmpfile $NCFG_TMP_CHAINS_FILE ] fd tmpfilename
+		set fd2 [ open $NCFG_CHAINS_FILE r ]
+		copyfile $fd2 $fd
+		close $fd2
+		puts $fd $chain
+		close $fd
+		
+		TfadminMv $tmpfilename $NCFG_CHAINS_FILE 
+	}
+
+	# Clean up .src files in /tmp
+	foreach i $chain_l {
+		set srcfile "/tmp/$i.src"
+
+		if { [ file exists $srcfile ] } {
+			TfadminUnlink $srcfile
+		}
+	}
+}
+
+proc doDeferredAdd {file {partial ""}} \
+{
+	global NCFG_CHAINS_FILE
+
+	if { ! [ file exists $file ] } { 
+		return 0
+	}
+	set fd [ open $file ]
+	set chains ""
+	set pchains ""
+
+	while { [ gets $fd chain ] != -1 } {
+		set chain_l [ split $chain "#" ]
+		if { [ IsInChainsFile $chain ] } {
+			RemoveChainEntry $file $chain
+			continue
+		}
+		# handle partially config'd element that didn't "ncfginstall -a"
+		if { $partial != "" } {
+			set element_p ""
+			set pelement 0
+			set orig_chain $chain
+			foreach el $chain_l {
+				if [ regexp "\\(\\(($el)\\)\\)" $el m m1 ] {
+					lappend element_p $m1
+					set pchain $chain
+					regsub "(.*)\\(\\(($m1)\\)\\)(.*)" $pchain "\\1$m1\\3" chain
+					keylset pchains $orig_chain $chain
+				} else {
+					if [ regexp "\\(.+\\)" $el ] {
+						set pelement 1
+						break
+					}
+				}
+			}
+			if { $pelement } {
+				continue
+			} else {
+				keylset PARTIAL $chain $element_p
+				set chain_l [ split $chain # ]
+			}
+		}
+		set tail [ lindex $chain_l [ expr { [ llength $chain_l ] -1 } ] ]
+		set inserted ""
+		# sort chains lexicographically based on last element name
+		for {set i 0} {[ lindex $chains $i ] != ""} {incr i} {
+			set el [ split [ lindex [ lindex $chains $i ] 1 ] "#" ]
+			set ctail [ lindex $el [ expr { [ llength $el ] -1 } ] ]
+			if { [ string compare $ctail $tail ] == 1 } {
+				set chains [ linsert $chains $i [ list $chain_l $chain ] ]
+				set inserted "true"
+				break
+			}
+		}
+		if { $inserted == "" } {
+			lappend chains [ list $chain_l $chain ]
+		}
+	}
+	close $fd
+	# Make a list of all the elements on the bottom of a chain
+	set tails ""
+	foreach i $chains {
+		set l [ lindex $i 0 ]
+		set tail [ lindex $l [ expr { [ llength $l ] -1 } ] ]
+		set found 0
+		foreach t $tails {
+			if { $t == $tail } {
+				set found 1
+				break
+			}
+		}
+		if { ! $found } {
+			lappend tails $tail
+		}
+	}
+	# Remove from that list anything which is on the top of a list
+	set newtails ""
+	foreach t $tails {
+		set found 0
+		foreach i $chains {
+			set l [ lindex $i 0 ]
+			set head [ lindex $l 0 ]
+			if { $t == $head } {
+				if { [ llength $l ] != 1 } {
+					set found 1
+					break
+				}
+			}
+		}
+		if { ! $found } {
+			lappend newtails $t
+		}
+	}
+	set tails $newtails
+	while { $tails != "" } {
+		set newtails ""
+		foreach i $chains {
+			set l [ lindex $i 0 ]
+			set tail [ lindex $l [ expr { [ llength $l ] -1 } ] ]
+			set head [ lindex $l 0 ]
+			set found 0
+			foreach t $tails {
+				if { $t == $tail } {
+					set found 1
+					break
+				}
+			}
+			if { $found } {
+				set found 0
+				foreach pchain [ keylget pchains ] {
+					set chain [ keylget pchains $pchain ]
+					if { $chain == [ lindex $i 1 ] } {
+						RemoveChainEntry $file $pchain
+						set found 1
+						break
+					}
+				}
+				if { ! $found } {
+					RemoveChainEntry $file [ lindex $i 1 ]
+				}
+				if { $partial != "" && [ info exists PARTIAL ] } {
+					doAdd [ lindex $i 0 ] [ lindex $i 1 ] [ keylget PARTIAL [ lindex $i 1 ] ]
+				} else {
+					doAdd [ lindex $i 0 ] [ lindex $i 1 ]
+				}
+				if { $head != $tail } {
+					lappend newtails $head
+				}
+			}
+		}
+		set tails $newtails
+	}
+	return 1
+}
+
+proc Usage {} \
+{
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_UI ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_ADD_CHAIN ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_DEFER_ADD ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_REMOVE_CHAIN ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_REMOVE_CHAIN_ELEMENT ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_RECONFIG_CHAIN_ELEMENT ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_EXAMINE_CHAIN ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_LIST_CHAINS ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_DEFER_ADD_NOW ]"
+
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_OPTIONS ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_RELINK ]"
+	puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_USAGE_NO_RELINK ]"
+	exit 1
+}
+
+proc ParseCommandLine {} \
+{
+	global optString argc argv optind optarg opterr
+	global action chain element count chain_l
+	global AUTO_RELINK NEVER_RELINK
+
+	set opterr 0
+	set action ""
+	set chain ""
+	while { [ set opt [ getopt $argc $argv $optString ] ] != -1 } {
+		case $opt {
+		{a} {
+			set action a
+			set chain $optarg
+		}
+		{c} {
+			set action c
+			set chain $optarg
+			set element [ lindex $argv [expr $optind+2] ]
+			set count [ lindex $argv [expr $optind+3] ]
+		}
+		{e} {
+			set action e
+			set chain $optarg
+			set element [ lindex $argv [expr $optind+2] ]
+		}
+		{I} {
+			set action I
+			set chain $optarg
+		}
+		{l} {
+			set AUTO_RELINK 1
+		}
+		{n} {
+			set NEVER_RELINK 1
+		}
+		{R} {
+			set action R
+			set chain $optarg
+			set element [ lindex $argv [expr $optind+2] ]
+			set count [ lindex $argv [expr $optind+3] ]
+		}
+		{r} {
+			set action r
+			set chain $optarg
+		}
+		{s} {
+			set action s
+		}
+		{v} {
+			set action v
+		}
+		{?} {
+			Usage
+		} }
+	}
+	set chain_l [ split $chain # ]
+}
+
+# main Main MAIN
+
+ErrorTopLevelCatch {
+
+global env
+
+set action [ lindex $argv 0 ]
+set chain [ lindex $argv 1 ]
+
+signal ignore {SIGHUP SIGINT SIGQUIT SIGTERM}
+
+case $action {
+-da {
+	if { [ IsInChainsFile $chain ] } {
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_CHAIN_EXISTS [ list $chain ] ]"
+		exit 1
+	}
+	if { [ IsInChainsFile $chain $NCFG_DEFERRED_CHAINS_FILE ] } {
+		puts stderr "[ IntlLocalizeMsg SCO_NCFG_ERR_DEFERRED_CHAIN_EXISTS [ list $chain ] ]"
+	} else {
+		set fd [ open $NCFG_DEFERRED_CHAINS_FILE a ]
+		puts $fd $chain
+		close $fd
+	}
+}
+-add_deferred_now {
+	set CUSTOM_EVENT 1
+	doDeferredAdd $NCFG_DEFERRED_CHAINS_FILE
+}
+-add_partial_now {
+	set CUSTOM_EVENT 1
+	for {set i 0} {$i<100 && [ exec ncfginstall -p ] != ""} {incr i} {
+		if { ! [ doDeferredAdd $NCFG_PARTIAL_CHAINS_FILE partial ] } {
+			break
+		}
+	}
+	if { $i == 100 } {
+		set SCRIPT_FAILED 1
+	}
+}
+-remove_dependent_chains_now {
+	set CUSTOM_EVENT 1
+	set Pel_l [ exec ncfginstall -P $PCHAINS ]
+	StartBE
+	foreach Pchain [ exec ncfginstall -c $PCHAINS ] {
+		lvarpush Rlist $Pchain
+	}
+	if [ info exists Rlist ] {
+		foreach Pchain $Rlist {
+			set Pchain_l [ split $Pchain # ]
+			RemoveAll $Pchain_l $Pchain
+			foreach el $Pchain_l {
+				foreach Pel $Pel_l {
+					if { [ string match $el $Pel ] } {
+						set Plist($Pel) ""
+					}
+				}
+			}
+		}
+		if [ info exists Plist ] {
+			set PnetX ""
+			foreach Pel [ array names Plist ] {
+				TfadminUnlink $NCFG_INFODIR/$Pel
+				TfadminUnlink $NCFG_REMOVEDIR/$Pel
+				if [ regexp "net\[0-9\]+" $Pel ] {
+					if { [ string compare $PnetX $Pel ] < 1 } {
+						set PnetX $Pel
+					}
+				}
+			}
+			if [ regexp "net\[0-9\]+" $PnetX ] {
+				set cwd [ pwd ]
+				cd $NCFG_INFODIR
+				foreach Pnext [ glob -nocomplain net* ] {
+					if { [file exists $NCFG_INFODIR/$Pnext] && ![file exists $NCFG_INITDIR/$Pnext] } {
+						TfadminUnlink $NCFG_REMOVEDIR/$Pnext
+						TfadminUnlink $NCFG_INFODIR/$Pnext
+					}
+				}
+				cd $cwd
+			}
+		}
+	}
+	TfadminUnlink $PCHAINS
+}
+-rc {
+	RemoveChainEntry $NCFG_CHAINS_FILE $chain
+}
+"" {
+	signal default {SIGHUP SIGINT SIGQUIT SIGTERM}
+	execl $NCFGUI_PATH $NCFGUI_PATH
+}
+default {
+	ParseCommandLine
+	case $action {
+	a {
+		if { [ IsInChainsFile $chain ] } {
+			puts stderr "netcfg: Chain $chain already exists"
+			exit 1
+		}
+		doAdd $chain_l $chain
+	}
+	c {
+		if { [ llength $chain_l ] > 1 && ! [ IsInChainsFile $chain ] } {
+			puts stderr "netcfg: Chain $chain does not exist"
+			exit 1
+		}
+		set x [ MakeScriptArgs $NCFG_RECONFDIR $chain_l $element ]
+		set args [ lindex $x 0 ]
+		ExecuteScript $args
+	}
+	e {
+		if { [ llength $chain_l ] > 1 && ! [ IsInChainsFile $chain ] } {
+			puts stderr "netcfg: Chain $chain does not exist"
+			exit 1
+		}
+		set x [ MakeScriptArgs $NCFG_LISTDIR $chain_l $element ]
+		set args [ lindex $x 0 ]
+		ExecuteScript $args
+	}
+	I {
+		set up_interface $chain
+		foreach chain [ exec netcfg -s ] {
+			set chain_l [ split $chain "#" ]
+			foreach element [ split $chain "#" ] {
+				set x [ lindex [ MakeScriptArgs $NCFG_INFODIR $chain_l $element ] 0 ]
+				set el [ lindex $x 0 ]
+				set up [ GetKeyVal $el UP ]
+				foreach i $up {
+					if { ! [ string compare $i $up_interface ] } {
+						set elements([ crange $el [ expr [ string last / $el ] + 1 ] end ]) ""
+					}
+				}
+			}
+		}
+		if [ info exists elements ] {
+			puts stdout "[ array names elements ]"
+		}
+	}
+	R {
+		set CUSTOM_EVENT 1
+		set remove_file [ open $LLI_ELEMENT_REMOVE_FILE a ]
+		close $remove_file
+		doRemove $chain_l $chain $element $count
+		TfadminUnlink $LLI_ELEMENT_REMOVE_FILE
+	}
+	r {
+		StartBE
+		if { ! [ IsInChainsFile $chain ] } {
+			puts stderr "netcfg: Chain $chain does not exist"
+			exit 1
+		}
+		RemoveAll $chain_l $chain
+	}
+	s {
+		if [ file exists $NCFG_CHAINS_FILE ] {
+			set ifd [ open $NCFG_CHAINS_FILE r ]
+			while { [ gets $ifd line ] != -1 } {
+				puts stdout $line
+			}
+			close $ifd
+		}
+	}
+	v {
+		set pkgnics [ exec pkginfo -l nics | grep VERSION ]
+		regexp "VERSION: *(.*)" $pkgnics line ver
+		puts stdout $ver
+	}
+	default {
+		Usage
+	} }
+} }
+
+if { $SCRIPT_FAILED } {
+	exit 1
+}
+if { $USER_CANCELED } {
+	exit 3
+}
+if { $RELINK_REQUIRED } {
+	if { $AUTO_RELINK } {
+		cd /etc/conf/cf.d
+		execl ./link_unix -y
+	} else {
+		if { $CUSTOM_EVENT } {
+			if { [ file exists /ibin/customSched ] } {
+				exec /ibin/customSched kernellink
+			}
+		} else {
+			if { ! $NEVER_RELINK } {
+				exit 2
+			}
+		}
+	}
+}
+if { $REBOOT_REQUIRED } {
+	exit 4
+}
+exit 0
+} netcfg

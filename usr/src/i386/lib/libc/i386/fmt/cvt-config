@@ -1,0 +1,264 @@
+#ident	"@(#)libc-i386:fmt/cvt-config	1.2.1.2"
+
+##	x86 configuration file for mk_cvt program
+
+CVT-IDENT	#ident	"@(#)libc-i386:fmt/cvt-config	1.2.1.2"	/* from the configuration file */
+
+CVTD-EXPSIZE	11
+CVTD-EXPBIAS	1023
+CVTD-SIGNIFSIZE	53
+
+CVTL-EXPSIZE	15
+CVTL-EXPBIAS	16383
+CVTL-SIGNIFSIZE	64
+
+CVT-FILEDECL
+=#ifdef __USLC__
+=static const int two = 2;	/* used only by asm frexp's */
+=
+=asm double
+=#ifdef __STDC__
+=xfrexp(double val, int *ep, int two)
+=#else
+=xfrexp(val, ep, two)
+=#endif
+={
+=%mem val, ep, two;
+=	movl	ep, %eax
+=	fldl	val
+=	fxtract
+=	fxch	%st(1)
+=	fistpl	(%eax)
+=	fidiv	two
+=	incl	(%eax)
+=}
+= #pragma asm full_optimization xfrexp
+=
+=asm long double
+=#ifdef __STDC__
+=xfrexpl(long double val, int *ep, int two)
+=#else
+=xfrexpl(val, ep, two)
+=#endif
+={
+=%mem val, ep, two;
+=	movl	ep, %eax
+=	fldt	val
+=	fxtract
+=	fxch	%st(1)
+=	fistpl	(%eax)
+=	fidiv	two
+=	incl	(%eax)
+=}
+= #pragma asm full_optimization xfrexpl
+=#else /*!__USLC__*/
+=#include <math.h>
+=#endif /*__USLC__*/
+=
+=#include <string.h>
+=
+=#ifdef __STDC__
+=static Uchar *hexstr(Cvt *, Uchar *);
+=#else
+=static Uchar *hexstr();
+=#endif
+=
+=static void
+=#ifdef __STDC__
+=infstr(Cvt *cp)	/* produce string for infinity */
+=#else
+=infstr(cp)Cvt *cp;
+=#endif
+={
+=	memcpy((void *)cp->buf, (const void *)((cp->mode & CVT_CAPS)
+=		? _str_uc_inf : _str_lc_inf), (size_t)8);
+=	cp->len = 8;
+=	cp->decpt = CVT_INF;
+=}
+=
+=static void
+=#ifdef __STDC__
+=nanstr(Cvt *cp, Uchar *s, int n)	/* produce string for NaN */
+=#else
+=nanstr(cp, s, n)Cvt *cp; Uchar *s; int n;
+=#endif
+={
+=	cp->buf += 3 + 1;	/* room for "nan(" */
+=	cp->ndig = n;
+=	cp->len = n;
+=	if ((s = hexstr(cp, s)) != cp->buf)	/* not default pattern */
+=	{
+=		cp->len += 2;
+=		cp->buf[-1] = '(';
+=		*s = ')';
+=		s += 2;
+=	}
+=	s[-1] = '\0';
+=	cp->buf -= 3 + 1;
+=	cp->len += 3;
+=	if (cp->mode & CVT_CAPS)
+=	{
+=		cp->buf[0] = 'N';
+=		cp->buf[1] = 'A';
+=		cp->buf[2] = 'N';
+=	}
+=	else
+=	{
+=		cp->buf[0] = 'n';
+=		cp->buf[1] = 'a';
+=		cp->buf[2] = 'n';
+=	}
+=	cp->decpt = CVT_NAN;
+=}
+
+CVTD-EXPLODE
+=	cp->sign = cp->val.uc[7] >> 7;
+=	if ((exp2 = (cp->val.ul[1] >> 20) & LOW(11)) == 0) /* zero, subnormal */
+=	{
+=		if ((cp->val.ul[1] & LOW(20)) == 0 && cp->val.ul[0] == 0)
+=		{
+=			cp->decpt = 1;
+=			cp->buf[0] = '0';
+=			cp->buf[1] = '\0';
+=			cp->len = 1;
+=			return cp->buf;
+=		}
+=#ifdef __USLC__
+=		cp->val.d = xfrexp(cp->val.d, &exp2, two);
+=#else
+=		cp->val.d = frexp(cp->val.d, &exp2);
+=#endif
+=	}
+=	else if (exp2 == LOW(11))	/* infinity or NaN */
+=	{
+=		if (cp->val.ul[0] == 0 && (cp->val.ul[1] & LOW(20)) == 0)
+=			infstr(cp);
+=		else /* NaN */
+=		{
+=			Uchar nibbles[13];
+=
+=			nibbles[0] = cp->val.uc[6] & LOW(3);
+=			w1 = 0;
+=			w2 = 5;
+=			do
+=			{
+=				nibbles[++w1] = cp->val.uc[w2] >> 4;
+=				nibbles[++w1] = cp->val.uc[w2] & LOW(4);
+=			} while (--w2 >= 0);
+=			nanstr(cp, nibbles, 13);
+=		}
+=		return 0;
+=	}
+=	else	/* normal: remove bias and adjust for implicit 1 */
+=	{
+=		exp2 -= 1023 - 1;
+=	}
+=	/*
+=	* Handle "A" conversion now.
+=	*/
+=	if (cp->mode & CVT_A)
+=	{
+=		Uchar nibbles[15];	/* nibbles[0] needed for rounding */
+=
+=		nibbles[1] = 1;		/* implicit 1 */
+=		nibbles[2] = cp->val.uc[6] & LOW(4);
+=		w1 = 2;
+=		w2 = 5;
+=		do
+=		{
+=			nibbles[++w1] = cp->val.uc[w2] >> 4;
+=			nibbles[++w1] = cp->val.uc[w2] & LOW(4);
+=		} while (--w2 >= 0);
+=		if (cp->ndig > 14)
+=			cp->ndig = 14;
+=		cp->len = 14;
+=		cp->decpt = exp2 - 1;	/* place binary point 1 to the right */
+=		*hexstr(cp, &nibbles[1]) = '\0';
+=		return cp->buf;
+=	}
+=	w2 = WMASK;
+=	w4 = ((w1 = cp->val.ul[0]) << 3) & w2;
+=	w1 >>= WSIZE - 3;
+=	w3 = w1 & w2;
+=	w1 >>= WSIZE;
+=	w1 &= LOW(7);
+=	w1 |= cp->val.ul[1] << 7;
+=	w2 &= w1;
+=	w1 >>= WSIZE;
+=	w1 &= LOW(WSIZE - 1);
+=	w1 |= BIT(WSIZE - 1);	/* implicit 1 */
+
+CVTL-EXPLODE
+=	cp->sign = cp->val.uc[9] >> 7;
+=	if ((exp2 = cp->val.us[4] & LOW(15)) == 0)	/* zero or subnormal */
+=	{
+=		if (cp->val.ul[0] == 0 && cp->val.ul[1] == 0)	/* zero */
+=		{
+=			cp->decpt = 1;
+=			cp->buf[0] = '0';
+=			cp->buf[1] = '\0';
+=			cp->len = 1;
+=			return cp->buf;
+=		}
+=#ifdef __USLC__
+=		cp->val.ld = xfrexpl(cp->val.ld, &exp2, two);
+=#else
+=		cp->val.ld = frexpl(cp->val.ld, &exp2);
+=#endif
+=	}
+=	else if (exp2 == LOW(15))	/* infinity or NaN */
+=	{
+=		if (cp->val.ul[0] == 0 && cp->val.ul[1] == BIT(31))
+=			infstr(cp);
+=		else /* NaN */
+=		{
+=			Uchar nibbles[16];
+=
+=			w1 = -1;
+=			w2 = 7;
+=			do
+=			{
+=				nibbles[++w1] = cp->val.uc[w2] >> 4;
+=				nibbles[++w1] = cp->val.uc[w2] & LOW(4);
+=			} while (--w2 >= 0);
+=			nibbles[0] &= LOW(2);
+=			nanstr(cp, nibbles, 16);
+=		}
+=		return 0;
+=	}
+=	else	/* normal: remove bias, adjust due to offset binary point */
+=	{
+=		exp2 -= 16383 - 1;
+=	}
+=	/*
+=	* Handle "A" conversion now.
+=	*/
+=	if (cp->mode & CVT_A)
+=	{
+=		Uchar nibbles[17];	/* nibbles[0] needed for rounding */
+=
+=		w1 = 0;
+=		w2 = 7;
+=		do
+=		{
+=			nibbles[++w1] = cp->val.uc[w2] >> 4;
+=			nibbles[++w1] = cp->val.uc[w2] & LOW(4);
+=		} while (--w2 >= 0);
+=		if (cp->ndig > 16)
+=			cp->ndig = 16;
+=		cp->len = 16;
+=		cp->decpt = exp2 - 4;	/* normalize on nibble boundary */
+=		*hexstr(cp, &nibbles[1]) = '\0';
+=		return cp->buf;
+=	}
+=	w2 = WMASK;
+=	w5 = ((w1 = cp->val.ul[0]) << 6) & w2;
+=	w1 >>= WSIZE - 6;
+=	w4 = w1 & w2;
+=	w1 >>= WSIZE;
+=	w3 = w1 & LOW(10);
+=	w3 |= ((w1 = cp->val.ul[1]) << 10) & w2;
+=	w1 >>= WSIZE - 10;
+=	w2 &= w1;
+=	w1 >>= WSIZE;
+=	w1 &= WMASK;

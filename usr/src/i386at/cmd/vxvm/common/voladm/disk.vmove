@@ -1,0 +1,89 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.vmove.sh	1.2 3/3/97 03:21:54 - cmd.vxvm:common/voladm/disk.vmove.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.vmove.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push Evacuate
+voladm_help_push disk.vmove.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:280 "Move volumes from a disk"
+	ewritemsg -M vxvmshm:549 \
+"Use this menu operation to move any volumes that are using a
+  disk onto other disks.  Use this menu immediately prior to
+  removing a disk, either permanently or for replacement.  You can
+  specify a list of disks to move volumes onto, or you can move the
+  volumes to any available disk space in the same disk group.
+
+  NOTE:  Simply moving volumes off of a disk, without also removing
+         the disk, does not prevent volumes from being moved onto
+         the disk by future operations.  For example, using two
+         consecutive move operations may move volumes from the
+         second disk to the first."
+
+	voladm_get_disk_dmname
+
+	ewritemsg -M vxvmshm:590 \
+"You can now specify a list of disks to move onto.  Specify a list
+  of disk media names (e.g., ${dgname}01) all on one line separated by
+  blanks.  If you do not enter any disk media names, then the volumes
+  will be moved to any available space in the disk group."
+
+	while true
+	do
+		read_input "Enter disks" "<disk ...>,list"
+		dmlist=$input
+		case $input in
+		list|l)	(echo ""; vxprint -td -g "$dgname"; echo "") |
+			voladm_display
+			;;
+		*)	break;;
+		esac
+	done
+
+	export dmname dgname; ewritemsg -M vxvmshm:343 \
+"Requested operation is to move all volumes from disk $dmname in
+  group $dgname.
+
+  NOTE: This operation can take a long time to complete."
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn -M vxvmshm:279 "Move volumes from a different disk?" n && continue
+		break
+	fi
+
+	writemsg
+	doit vxevac $v_opt -V -g "$dgname" "$dmname" $dmlist
+	if [ $? -eq 0 ]
+	then
+		export dmname; ewritemsg -M vxvmshm:231 "Evacuation of disk $dmname is complete."
+		voladm_yorn -M vxvmshm:281 "Move volumes from another disk?" n || break
+	else
+		ewritemsg -M vxvmshm:298 "Operation failed."
+		voladm_yorn -M vxvmshm:279 "Move volumes from a different disk?" n || break
+	fi
+done
+
+quit 0

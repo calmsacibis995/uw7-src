@@ -1,0 +1,125 @@
+                            README v. 20.1
+
+TO DO:
+------
+
+add pciorphans command which walks through pci config space and shows
+network boards which don't have a bcfg assigned to them yet.  resshowunclaimed
+shows boards that _do_ have a bcfg that matches them.
+Should hook into PCI subclass code "Ethernet/Token/FDDI/ATM/Other" and print
+Vendor from pcivendor[] array too.
+
+NOTE:  when parsing through the resmgr looking for IO addresses or memory
+       addresses you must look at all values for given parameter.  important
+       since PCI boards can have multiple values (i.e. multiple address ranges)
+       this is important when trying to reduce ISA parameter list.
+
+  For future hardware coming down the line,
+- add new optional CHECKSUM_IP=true/false parameter to driver.
+- add new optional CHECKSUM_UDP=true/false parameter to driver.
+- add new optional CHECKSUM_TCP=true/false parameter to driver.
+- add new optional CHECKSUM_IPX=true/false parameter to driver.
+- add new optional CHECKSUM_SPX=true/false parameter to driver.
+  If found and true, write true to info file
+  If found and false, write false to info file
+  If not found, write false to info file
+
+  As a precursor to I2O support,
+- add new STATS_IP=true/false parameter to info file
+- add new STATS_UDP=true/false parameter to info file
+- add new STATS_TCP=true/false parameter to info file
+- add new STATS_IPX=true/false parameter to info file
+- add new STATS_SPX=true/false parameter to info file
+
+Also add parameters for checksuming, IPSEC security, encryption, filtering,
+etc.
+
+- must tell vendors that they must create #$version 1 bcfg files.
+  If they don't, then a TYPE= line isn't valid in bcfg file (TYPE= is 
+  specific to #$verison 1 files), so there's no way to know if
+  driver is ODI (where DLPI=true isn't defined) or MDI.  Further,
+  netinstall process assumes that if TYPE isn't defined and DLPI=true
+  isn't defined that driver is ODI.
+
+- must come up with a benchmark for ACTUAL_SEND_SPEED AND ACTUAL_RECEIVE_SPEED
+
+- comment from netinstall:
+#
+# If this is an ODI Token Ring card, make sure we load odisr
+# AFTER the driver is loaded for the card.
+#
+  we don't do this -- I wonder if it's required?
+
+- ndcfg does not do anything with the following bcfg parameters.  Some of
+  these should have some supported added to them.
+
+   command          reason
+  ----------------  --------------------
+  FAILOVER          - showfailover command not implmented in ndcfg yet
+  IDTUNE_NUM        - only used by few IBM drivers for tuning LSL_*KCHUNKS
+  IDTUNE_ARRAY[]    - only used by few IBM drivers for tuning LSL_*KCHUNKS
+      note that nics postinstall script does pay attention to IDTUNE* though
+  NET_BOOT          - ???
+  NUM_PORTS         - only used by Compaq_Netflex_Ether_Dual-replace w/ CUSTOM
+  OLD_DRIVER_NAME   - obsolete(only for upgrade purposes)
+  UPGRADE_CHECK     - obsolete(only for upgrade purposes)
+  VERIFY            - obsolete(not even used in UW2.1 netinstall, niccfg or dcu)
+  WRITEFW           - ???
+  ADDRM             - obsolete(use AUTOCONF instead)
+
+- EnsureNumerics:  ensure that only IOADDR and MEMADDR allow ranges. 
+  That is, if user tries to define ranges for IRQ/DMAC then fail.
+  EnsureNumeric for ranges should also ensure that secondnum - firstnum > 0
+  Conversely, EnsureNumerics should ensure that everything in
+  PORT= and MEM= are supplied as ranges, since isaautodetect and 
+  idinstall command must have ranges with a dash.  
+
+- add environment variable (ROOT/MACH) support for non-root link kit
+  operations.  all commands to /etc/conf should have this prepended to
+  the string.  Could just modify runcommand to check for this and
+  do the work -- easy
+
+- need routine if netinstall=1 to EnsureDriverisDLM() - 
+
+- When implementing the idinstall command and we're parsing through the
+  parameters we need to ensure that the actual parameter that goes into the
+  resmgr isn't one of IRQ/DMAC/IOADDR/MEMADDR/OLDIRQ/OLDDMAC/OLDIOADDR/
+  OLDMEMADDR
+
+- showcustom routine when it displays custom parameters to user and
+  when it does the strstr to see if resmgrparam has a space in it is
+  awkward since it calls error but doesn't return.  This should be 
+  handled better and should be checked when bcfg loaded.
+
+- when loading in bcfg files see if smart bus and AUTOCONF not false then
+  ensure BOARD_ID is set in bcfg file and that the board id is valid for
+  the particular bus type.
+
+- when loading in bcfg files check CONFORMANCE to make sure it's acceptable
+
+- when loading in bcfg files make sure TOPOLOGY= strings are valid in topo[]
+  array
+
+- Add support for IDTUNE[] commands:
+  Install time:
+  -------------
+  1st add of driver: do idtune command, signal fullrelink=1
+  ALL add of driver: Add IDTUNE[x] to resmgr just like ODIMEM is added
+                     for *all* instances.  important for removal.
+  Remove time
+  -----------
+  (not important since only IBM ODI drivers use IDTUNE[] and
+  even then it's only to set the LSL_{1,2,6,10,36}KCHUNKS parameter.
+  last remove of driver (none left):  undo idtune by getting idtune[x] from
+                                      resmgr and running idtune to set it
+                                      back to what it was
+                                      then remove IDTUNE[x] params from 
+                                      resmgr if smart board.
+
+
+- longer term:  figure out a status method to report back to barry
+                that the resmgr was busy -- sleeping 60 seconds -- so user
+                won't be freaked out by possible impending error.
+                Also useful for status message telling the user what command
+                is being run etc. so that they will know what is happening
+                under the hood/bonnet.

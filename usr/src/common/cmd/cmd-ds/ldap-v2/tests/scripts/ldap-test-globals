@@ -1,0 +1,37 @@
+# This script contains the global values for the LDAP test suites.
+# 
+
+LDAPTESTDIR=/usr/local/ldap-tests
+LDIFDIR=${LDAPTESTDIR}/ldifs
+CFGFILES=${LDAPTESTDIR}/cfgfiles
+SLAPD=/usr/lib/ldap/slapd
+LDIF2LDBM=/usr/bin/ldif2ldbm
+LDBMCAT=/bin/ldbmcat
+
+function startSlapd {
+        if [ ! -z "$SLAPDFILE" ]
+        then
+                echo Starting SLAPD daemon
+                ${SLAPD} -f ${SLAPDFILE}
+                sleep 1
+        fi
+}
+
+function stopSlapd {
+        if [ ! -z "$SLAPDFILE" ]
+        then
+                echo Stopping SLAPD daemon
+                typeset bname=$(echo $SLAPDFILE | sed -e's/\//_/g')
+                PIDFILE="/var/ldap/pids/$bname"
+                if [ -f "$PIDFILE" ]
+                then
+                        typeset PID=$(cat "$PIDFILE")
+                        echo PID = $PID
+                        kill -TERM "$PID"
+                else
+                        echo Cannot find pid file of slapd daemon
+                        echo you will have to stop it yourself will kill -TERM
+                        exit 1
+                fi
+        fi
+}

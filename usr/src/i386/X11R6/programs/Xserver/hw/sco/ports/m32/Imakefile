@@ -1,0 +1,112 @@
+/*
+ * @(#) @(#)Imakefile	11.4.1.1	1/22/98	11:49:24
+ *
+ * Copyright (C) The Santa Cruz Operation, 1993.
+ * This Module contains Proprietary Information of
+ * The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+#include <Server.tmpl>
+
+SRCS =	m32Clip.c m32Cmap.c m32Cop.c m32Cursor.c m32Data.c \
+	m32FillRct.c m32FillSp.c m32Font.c m32GC.c \
+	m32Image8.c m32Image16.c m32Init.c m32Line.c m32Mem.c m32Misc.c \
+	m32Mono.c m32RectOps.c m32Screen.c m32Win.c
+
+OBJS =	m32Clip.o m32Cmap.o m32Cop.o m32Cursor.o m32Data.o \
+	m32FillRct.o m32FillSp.o m32Font.o m32GC.o \
+	m32Image8.o m32Image16.o m32Init.o m32Line.o m32Mem.o m32Misc.o \
+	m32Mono.o m32RectOps.o m32Screen.o m32Win.o
+
+STD_DEFINES = ServerDefines
+DDXLIBS = libm32.a
+GRAFDIR = $(USRLIBDIR)/grafinfo
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -DI128_FAST_GC_OPS -DVOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+        -I$(SERVERSRC)/hw/sco/ports/wd \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(m32,$(OBJS))
+SharedXDriverTarget(m32,6.0,$(OBJS),shared,..)
+LintLibraryTarget(m32,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(m32,$(DDXLIBS))
+
+#else /* USLArchitecture */
+
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(m32,$(OBJS))
+ProfiledLibraryTarget(m32,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(m32,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(m32,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(m32,$(OBJS))
+LintLibraryTarget(m32,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(m32,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+InstallNamedNonExec(grafinfo/ati/68800.unq,68800,$(USRLIBDIR)/vidconf/AOF/UNIQUE/ati)
+InstallNamedNonExec(grafinfo/ati/68800bc.unq,68800bc,$(USRLIBDIR)/vidconf/AOF/UNIQUE/ati)
+InstallNamedNonExec(grafinfo/AOF/68800,68800,$(USRLIBDIR)/vidconf/AOF/ID/ati)
+InstallGrafFile(grafinfo/ati,68800.xgi,ati)
+InstallGrafFile(grafinfo/ati,68800bc.xgi,ati)
+InstallGrafFile(grafinfo/intel,68800.xgi,intel)
+InstallGrafFile(grafinfo/sni,68800.xgi,sni)
+
+DependTarget()
+

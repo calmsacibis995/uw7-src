@@ -1,0 +1,395 @@
+#!/usr/bin/ksh
+
+#ident	"@(#)prep.flop	15.1	98/03/04"
+
+# This script will create the mini-kernel, build special boot-floppy only
+# commands, and prep the executables included on the boot floppy.  The shell
+# script cut.flop must be used to create the boot floppy.
+
+############# Initialization and Command-line Parsing #############
+
+test -z "$ROOT" && {
+	echo "ROOT not set"
+	exit 1
+}
+test -z "$WORK" && {
+	echo "WORK not set"
+	exit 1
+}
+test -z "$MACH" && {
+	echo "MACH not set"
+	exit 1
+}
+test -z "$PFX" && {
+	echo "PFX not set"
+	exit 1
+}
+[ -z "$LCL_MACH" ] && LCL_MACH=.$MACH export LCL_MACH
+test -f cmd/mini_kernel.sh || {
+	echo "ERROR -- You need to be in the directory $PROTO"
+	exit 1
+}
+
+PATH=:$PROTO/bin:$TOOLS/usr/ccs/bin:$PATH export PATH
+RAMPROTO="desktop/files/ramdfs.proto" export RAMPROTO
+FLOP_TMP_DIR=/tmp/flop.$$ export FLOP_TMP_DIR
+
+# IMPORTANT -- DO NOT CHANGE THE ORDER OF THE MODULES IN _DRVMODS!
+#_DRVMODS="dpt cpqsc adsc ictha ide" export _DRVMODS
+_DRVMODS=" " export _DRVMODS
+
+CMD=$0
+Usage()
+{
+	{
+	echo "Usage: ${CMD} [-c] [-k|-K] [-u]"
+	echo "\t-c builds the local commands."
+	echo "\t-k builds a non-kdb kernel."
+	echo "\t-K builds a kdb kernel."
+	echo "\t-u builds an unofficial floppy (no pstamping)."
+	echo "\tThe -k and -K options are mutually exclusive."
+	} >&2
+	# The -q option is intentionally not listed here.
+	exit 1
+}
+
+command=false
+Kflag=false
+kflag=false
+kernel=false
+official=true
+quick=false
+skip_pkg=false
+
+#  Can reset by -O option. In that case, the drivers are copied from
+#  i386at/etc/conf, not i386at/$MINI/etc/conf
+MINI=mini
+LANG=$LOCALE export LANG
+
+while getopts ckKuqsO c
+do
+	case $c in
+		c)
+			command=true
+			;;
+		k)
+			kernel=true
+			kflag=true
+# We don't use unixsyms any more for both non/with kdb kernel.
+#		SYMS="-l $FLOP_TMP_DIR/symlist"
+			SYMS=""
+			KDB=nokdb
+			;;
+		K)
+			kernel=true
+			Kflag=true
+			SYMS=""
+#		SYMS="-l $FLOP_TMP_DIR/symlist"
+			KDB=kdb
+			;;
+		u)
+			official=false
+			;;
+		O)
+			MINI=""
+			;;
+		q)
+			quick=true
+			;;
+		s)
+			skip_pkg=true
+			;;
+		\?)
+			Usage
+			;;
+		*)
+			echo Internal error during getopts. >&2
+			exit 2
+			;;
+	esac
+done
+shift `expr $OPTIND - 1`
+$Kflag && $kflag && Usage
+
+############# Function defintions #############
+
+make_native()
+{
+	OCMDRULES=$CMDRULES
+	CMDRULES=$XCMDRULES
+	OPATH=$PATH
+	PATH=/usr/bin:$PATH
+	export CMDRULES PATH
+
+	make -f cmd.mk native || exit $?
+	install -f $PROTO/bin bzip
+	install -f $PROTO/bin iscompress
+	install -f $PROTO/bin wrt
+	install -f $PROTO/bin hsflop
+	install -f $PROTO/bin chall
+	install -f $PROTO/bin checkwhite
+
+	CMDRULES=$OCMDRULES
+	PATH=$OPATH
+}
+
+build_commands()
+{
+	[ -d $PROTO/bin ] || mkdir -p $PROTO/bin
+	echo "Building local commands."
+
+	echo "\nWorking in desktop/instcmd directory."
+#	(cd desktop/instcmd; make -P -f instcmd.mk install) || exit $?
+	(cd desktop/instcmd; make -f instcmd.mk install) || exit $?
+
+	echo "\nWorking in cmd directory."
+	(cd cmd; make -f cmd.mk install) || exit $?
+	(cd cmd; make_native) || exit $?
+	$skip_pkg || {
+		(cd cmd; create_ISL_pkg_data) || exit $?
+	}
+
+	install -f $PROTO bin/cut.flop
+	install -f $PROTO bin/cut.netflop
+}
+
+build_kernel()
+{
+	trap "rm -rf $FLOP_TMP_DIR; exit" 0 1 2 3 15
+	mkdir $FLOP_TMP_DIR
+	$quick || {
+		echo "\nCreating a kernel build tree in $ROOT/$LCL_MACH"
+		rm -f $ROOT/$LCL_MACH/stand/unix.nostrip
+		[ -d $ROOT/$LCL_MACH/stand ] || mkdir -p $ROOT/$LCL_MACH/stand
+		[ -d $ROOT/$LCL_MACH/etc/conf/mod.d ] ||
+			mkdir -p $ROOT/$LCL_MACH/etc/conf/mod.d
+		[ -d $ROOT/$LCL_MACH/etc/conf/modnew.d ] ||
+			mkdir -p $ROOT/$LCL_MACH/etc/conf/modnew.d
+		(
+#		cd $ROOT/$MACH
+		[ -h $ROOT/$MACH/$MINI/etc/.boot ] || ln -s  $ROOT/$MACH/etc/.boot $ROOT/$MACH/$MINI/etc/.boot
+		
+		cd $ROOT/$MACH/$MINI
+		echo "Copying from $ROOT/$MACH/mini"
+			find etc/conf/*.d etc/.boot -print |
+			egrep -v 'unix$|\.o$|mod\.d|modnew\.d' |
+			cpio -pdumV $ROOT/$LCL_MACH
+		find etc/conf/pack.d \( -name Driver.o -o -name Modstub.o \) -print |
+			cpio -pdumV $ROOT/$LCL_MACH
+		)
+		[ -h $ROOT/$LCL_MACH/etc/conf/bin ] ||
+			ln -s $ROOT/$MACH/etc/conf/bin $ROOT/$LCL_MACH/etc/conf/bin
+	}
+
+	echo "\nReconfiguring files under $ROOT/$LCL_MACH/etc/conf"
+	# mini_kernel echoes the list of loadable modules to stdout.
+	MODLIST=`MACH=$LCL_MACH mini_kernel $KDB` || exit $?
+	
+	echo "\nCreating loadable modules."
+	MODARGS=`for i in $MODLIST
+		do
+			echo "-M $i \c"
+		done`
+	MACH=$LCL_MACH $ROOT/$LCL_MACH/etc/conf/bin/idbuild \
+		-I$ROOT/$MACH/usr/include $MODARGS || exit $?
+	mv $ROOT/$LCL_MACH/etc/conf/mod.d/* $ROOT/$LCL_MACH/etc/conf/modnew.d
+
+	echo "\nExamining symbol tables of various loadable modules."
+	(
+	cd $ROOT/$LCL_MACH/etc/conf/modnew.d
+	for i in $MODLIST
+	do
+		[ -f $i ] || {
+			echo ERROR -- Cannot find $ROOT/$LCL_MACH/etc/conf/modnew.d/$i >&2
+			exit 1
+		}
+		${PFX}nm $i | grep UNDEF | sed -e 's/.*|//' > $FLOP_TMP_DIR/${i}list
+	done
+	)
+	sed -e '/#/D' -e '/^$/D' desktop/staticlist > $FLOP_TMP_DIR/staticlist
+	{
+	for i in $MODLIST static
+	do
+		cat $FLOP_TMP_DIR/${i}list
+	done
+	} | sort -u > $FLOP_TMP_DIR/symlist
+
+	echo "\nBuilding the mini-kernel."
+
+	echo "\nSaving symlist ..."
+	cp $FLOP_TMP_DIR/symlist symlist
+#
+# -c flag added to override the various mdep.c checks in idmkunix,
+# e.g. don't do dma channel conflict checking, memory address overlap
+# checking, etc.
+#
+	echo "$ROOT/$LCL_MACH/etc/conf/bin/idbuild "
+
+	MACH=$LCL_MACH $ROOT/$LCL_MACH/etc/conf/bin/idbuild -K \
+		-I$ROOT/$MACH/usr/include \
+		-O $ROOT/$LCL_MACH/stand/unix.nostrip ||
+			exit $?
+
+# Removed 'cause we don't care about loadmods any more on the boot
+# floppy.  All mods have been transfered to the HBA floppy.  (JTB, 4/7/97)
+#
+#	# collect PDI driver entries from mod_register file
+#	rm -f $ROOT/$LCL_MACH/stand/loadmods
+#	for i in $_DRVMODS
+#	do
+#		grep $i $ROOT/$LCL_MACH/etc/conf/cf.d/mod_register \
+#			>> $ROOT/$LCL_MACH/stand/loadmods
+#	done
+}
+
+# If we have a pstamp command, use it.  Otherwise just strip the comment
+# section using mcs(1).  The pstamp command is not needed for builds outside of
+# Novell official integration.
+
+# The "type" builtin command in older versions of sh returns 0 even if it
+# cannot find the operand.  Therefore, we cannot just check the return
+# value of "type".
+
+type pstamp | grep "not found" > /dev/null
+if [ $? -ne 0 ] && $official
+then
+	f_pstamp()
+	{
+		if [ -w $1 ]
+		then
+			${PFX}strip $1 > /dev/null 2>&1
+			pstamp -p unix -r $REL -l $PSTAMP_LOAD -t i386 $1
+		else
+			echo "WARNING: Cannot write file $1, not pstamping"
+		fi
+	}
+else
+	f_pstamp()
+	{
+		if [ -w $1 ]
+		then
+			${PFX}strip $1 > /dev/null 2>&1
+			${PFX}mcs -d $1 > /dev/null 2>&1
+		else
+			echo "WARNING: Cannot write file $1, not mcs'ing"
+		fi
+	}
+fi
+
+strip_em()
+{
+	echo "\nStripping various files."
+	cd $PROTO
+	export SLBASE
+	SLBASE=$PROTO/bin
+	for name in bin/*
+	do
+		f_pstamp $name
+	done
+	SLBASE=$ROOT/.$MACH
+	for name in $ROOT/$LCL_MACH/etc/conf/modnew.d/*
+	do
+		f_pstamp $name
+	done
+
+	$official && {
+		export SLBASE
+		SLBASE=$ROOT/$MACH
+		nawk '$1 !~ /#/ && $NF ~ /ROOT..MACH/ {print $NF}' $RAMPROTO |
+		while read file
+		do
+			eval f_pstamp ${file}
+		done
+		SLBASE=$ROOT/.$MACH
+		nawk '$1 !~ /#/ && $NF ~ /ROOT...MACH/ {print $NF}' $RAMPROTO |
+		while read file
+		do
+			eval f_pstamp ${file}
+		done
+	}
+}
+
+# after putting the undefined DLM NIC symbols into .unixsyms in case that 
+# driver is chosen for a netinstall we need to disable the driver so that a 
+# later cut.flop->cut.flop.mk will not include the NICS when building the
+# resmgr file (since idconfupdate -s would still find the nics as enabled from
+# first call to mini_kernel)
+turnoffnics()
+{
+	DLPI_LIST="dlpi dlpibase net0"
+	MDI_LIST=""
+
+	#only MDI drivers
+
+	for i in $ROOT/$LCL_MACH/etc/conf/bcfg.d/*/*
+	do
+
+	 . $i > /dev/null 2>&1
+
+	 echo "$TOPOLOGY" | egrep -qi "isdn|x25|serial" && continue
+
+	 MDI_LIST="$MDI_LIST\n${DRIVER_NAME}"
+	done
+
+	MDI_LIST="`echo ${MDI_LIST} | sort -u `"
+	MDI_LIST="`echo ${MDI_LIST}`"     # change newlines back to spaces
+	NICLIST="$DLPI_LIST $MDI_LIST"
+	for nic in $NICLIST
+	do
+		[ -f $ROOT/$LCL_MACH/etc/conf/sdevice.d/$nic ] || {
+			[ -f $ROOT/$LCL_MACH/etc/conf/sdevice.d/.save/$nic ] || {
+				echo "FATAL ERROR: $ROOT/$LCL_MACH/etc/conf/sdevice.d/$nic not found"
+				exit 1
+			}
+			mv $ROOT/$LCL_MACH/etc/conf/sdevice.d/.save/$nic $ROOT/$LCL_MACH/etc/conf/sdevice.d/$nic
+		}
+		[ -f $ROOT/$LCL_MACH/etc/conf/mdevice.d/$nic ] || {
+			[ -f $ROOT/$LCL_MACH/etc/conf/mdevice.d/.save/$nic ] || {
+				echo "FATAL ERROR: $ROOT/$LCL_MACH/etc/conf/mdevice.d/$nic not found"
+				exit 1
+			}
+			mv $ROOT/$LCL_MACH/etc/conf/mdevice.d/.save/$nic $ROOT/$LCL_MACH/etc/conf/mdevice.d/$nic
+		}
+		awk 'BEGIN	{
+					OFS="\t";
+				}
+				{
+					if ( $1 == "'$nic'" )
+					{
+						$2="N";
+						print $0
+						next
+					}
+				}
+				{ print $0 }' \
+		$ROOT/$LCL_MACH/etc/conf/sdevice.d/$nic > \
+		$ROOT/$LCL_MACH/etc/conf/sdevice.d/.$nic && \
+		mv $ROOT/$LCL_MACH/etc/conf/sdevice.d/.$nic \
+		   $ROOT/$LCL_MACH/etc/conf/sdevice.d/$nic
+	done
+}
+
+#main()
+{
+	$command && build_commands
+	[ -s $PROTO/bin/bzip ] || {
+		echo ERROR -- You must use the -c option at least once. >&2
+		exit 1
+	}
+	$kernel && \
+	(
+	build_kernel
+	)
+	[ -s $ROOT/$LCL_MACH/stand/unix.nostrip ] || {
+		echo ERROR -- You must use the -k or -K flag at least once. >&2
+		exit 1
+	}
+	$kernel && turnoffnics
+	strip_em
+	
+	echo "\nProcessing HBA drivers..."
+	$PROTO/cmd/bldscript
+
+	echo "\n$0: Done."
+        exit 0
+}

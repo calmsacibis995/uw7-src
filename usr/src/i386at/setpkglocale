@@ -1,0 +1,47 @@
+#!/usr/bin/ksh
+
+#ident	"@(#)setpkglocale	1.2"
+
+INDIR=$1
+LOCALE=$2
+
+LDIR=$INDIR/locale/$LOCALE
+
+if [ ! -d $LDIR ]
+then
+	echo "$LDIR does not exist"
+	exit 1
+fi
+
+cd $LDIR
+for i in *
+do
+	if [ -f $LDIR/$i/pkgmap ]
+	then
+
+		if [ -h $INDIR/$i ]
+		then
+			/usr/bin/rm -f $INDIR/$i
+		else if [ -d $INDIR/$i -o -f $INDIR/$i ]
+		     	then
+				echo "conflict: $INDIR/$i exists \c" >&2
+				echo "and is not a symlink" >&2
+				echo "exiting" >&2
+				exit 1
+			fi
+		fi
+
+		echo "linking $i"
+		ln -s $LDIR/$i $INDIR/$i
+
+		if [ $? -ne 0 ]
+		then
+			echo "ln -s failed" >&2
+			echo "exiting" >&2
+			exit 1
+		fi
+
+	else
+		echo "Ignoring: $LDIR/$i"
+	fi
+done

@@ -1,0 +1,326 @@
+#ident	"@(#)crash:i386at/cmd/crash/addstruct	1.1.1.1"
+
+#if 0	/* begin addstruct shell script within offstruct C source */
+: #
+: #	Copyright (C) 1996-1997 The Santa Cruz Operation, Inc.
+: #		All Rights Reserved.
+: #	The information in this file is provided for the exclusive use of
+: #	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+: #	right to use, modify, and incorporate this code into other products
+: #	for purposes authorized by the license agreement provided they include
+: #	this notice and the associated copyright notice with any such product.
+: #	The information in this file is provided "AS IS" without warranty.
+: #
+: #	addstruct: script to generate structure offset tables for crash(1M)
+: #	through its "addstruct" command (or the script can be run manually).
+: #
+: #	addstruct needs cc, and ld for .so, to be installed on the system;
+: #	it works with temporary files tmpstruct* in the current directory.
+: #
+: #	addstruct may fail on some header files: the header file may need
+: #	preparatory editing, or the "offstruct" source at the end of this
+: #	script may need more sophistication.
+: #
+
+if [ $# -lt 2 ]
+then	echo \
+	"usage: sh $0 structname \"hdrfile[s]\" [ outfile ] [ ccline ]" >&2
+	exit 2
+fi
+
+crashlib=/usr/lib/crash
+
+structname=$1
+shift
+hdrfiles=$1
+shift
+
+if [ $# -gt 0 ]
+then	outfile=$1
+	shift
+	case "$outfile" in
+	*.c)	;; # generate source for editing or linking with others
+	*.h)	;; # generate source for editing or inclusion in others
+	*.o)	;; # generate object for static linking into /etc/crash
+	*.so)	;; # generate shared object for dynlink from /usr/lib/crash
+	*)	echo "addstruct: outfile $outfile must be .c or .h or .o or .so" >&2
+		exit 2
+		;;
+	esac
+else	outfile=$crashlib/${structname}offs.so
+fi
+
+if [ $# -gt 0 ]
+then	cc=$1
+	shift
+else	cc=cc
+fi
+if [ $# -gt 0 ]
+then	ccargs=$*
+else	ccargs="-Xa -D_KERNEL -DBUG386B1 -DMERGE386 -DV86MODE -DEVGA -DCLIENT_DELAY_DELETE -DIAPX386 -D_M_I386 -DM_I386 -DM_UNIX -D_INKERNEL -D_NO_PROTOTYPE -D_SVID3"
+: #	-D_M_I386 through -D_SVID3 are for OpenServer not UnixWare header files
+fi
+
+rm -f tmpstruct.c tmpstruct.i tmpstruct.o tmpstruct
+touch tmpstruct.c && rm -f tmpstruct.c		|| exit 1
+if [ -f "$outfile" ]	# validate permission in advance
+then	touch "$outfile"			|| exit 1
+else	touch "$outfile" && rm -f "$outfile"	|| exit 1
+fi
+
+outofdate=testit
+if [ -f ./addstruct ]
+then	addstruct=./addstruct
+	offstruct=./offstruct
+else	addstruct=$crashlib/addstruct
+	offstruct=$crashlib/offstruct
+	if   [ -w $crashlib ]
+	then	:
+	elif [ -x $offstruct ]
+	then	outofdate=
+	else	offstruct=./offstruct
+	fi
+fi
+[ -n "$outofdate" ] && outofdate=`find $addstruct -newer $offstruct 2>/dev/null`
+[ -n "$outofdate" ] && rm -f $offstruct
+
+if [ ! -x $offstruct ]
+then	rm -f $offstruct
+	cp $addstruct tmpstruct.c 		|| exit 1
+	$cc -O -s -o tmpstruct tmpstruct.c	|| exit 1
+	rm -f tmpstruct.c			|| exit 1
+	chmod a+x tmpstruct
+	mv -f tmpstruct $offstruct		|| exit 1
+fi
+
+touch tmpstruct.c				|| exit 1
+for f in $hdrfiles
+do	echo "#include \"$f\"" >>tmpstruct.c	|| exit 1
+done
+$cc -P $ccargs tmpstruct.c			|| exit 1
+mv -f tmpstruct.i tmpstruct.c			|| exit 1
+$offstruct "$structname" tmpstruct.c		|| exit 1
+$cc -O -s -o tmpstruct tmpstruct.c		|| exit 1
+./tmpstruct > tmpstruct.c			|| exit 1
+rm -f tmpstruct
+
+case "$outfile" in
+*.c)	mv -f tmpstruct.c "$outfile"		|| exit 1
+	;;
+*.h)	mv -f tmpstruct.c "$outfile"		|| exit 1
+	;;
+*.o)	$cc $ccargs -c tmpstruct.c 		|| exit 1
+	rm -f tmpstruct.c
+	mv -f tmpstruct.o "$outfile"		|| exit 1
+	;;
+*.so)	set -f
+	echo "struct offstable *offstab[] = {${structname}offs,0};">>tmpstruct.c
+	$cc $ccargs -Kpic -c tmpstruct.c	|| exit 1
+	rm -f tmpstruct.c
+	ld -G -dy -o "$outfile" tmpstruct.o	|| exit 1
+	rm -f tmpstruct.o
+	;;
+esac
+exit 0
+
+#endif	/* end addstruct shell script: begin offstruct C source */
+
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+
+char usage[] = "usage: offstruct structname cppcbfile\n";
+
+islabel(char *ptr)
+{
+	static int parens;
+	if (*ptr == ']') {
+		parens++;
+		return 0;
+	}
+	if (*ptr == '[') {
+		parens--;
+		return 0;
+	}
+	if (parens)
+		return 0;
+	while (isdigit(*ptr))
+		--ptr;
+	return (*ptr == '_' || isalpha(*ptr));
+}
+
+main(int argc, char *argv[])
+{
+	char *filename, *structname;
+	char buf[BUFSIZ+1];
+	char *ptr, *eptr;
+	FILE *ifp, *ofp;
+	size_t namelen;
+	long typeoffset;
+	int parens, bitfield;
+
+	if (argc != 3) {
+		fprintf(stderr, usage);
+		exit(2);
+	}
+	structname = argv[1];
+	filename = argv[2];
+	namelen = strlen(structname);
+	if ((ifp = fopen(filename, "r")) == NULL) {
+		fprintf(stderr,
+			"offstruct: cannot open %s for reading\n", filename);
+		exit(1);
+	}
+	if ((ofp = fopen(filename, "a")) == NULL) {
+		fprintf(stderr,
+			"offstruct: cannot open %s for writing\n", filename);
+		exit(1);
+	}
+	typeoffset = 0;
+	while ((ptr = fgets(buf+1, BUFSIZ, ifp)) != NULL) {
+		while (isspace(*ptr))
+			ptr++;
+		if (*ptr == '#' || *ptr == '\0')
+			continue;
+		if (typeoffset) {
+			if (*ptr++ != '}')
+				continue;
+			while (isspace(*ptr))
+				++ptr;
+			if (strncmp(ptr, structname, namelen) == 0
+			&& (ptr[namelen] == ';' || isspace(ptr[namelen]))) {
+				fseek(ifp, typeoffset, SEEK_SET);
+				break;
+			}
+			else {
+				typeoffset = 0;
+				continue;
+			}
+		}
+		if (strncmp(ptr, "typedef", 7) == 0
+		&&  isspace(ptr[7])) {
+			ptr += 8;
+			while (isspace(*ptr))
+				++ptr;
+			typeoffset = 1;
+		}
+		if (strncmp(ptr, "struct", 6) == 0
+		&&  isspace(ptr[6])) {
+			ptr += 7;
+			while (isspace(*ptr))
+				++ptr;
+			if (strncmp(ptr, structname, namelen) == 0
+			&&  isspace(ptr[namelen])) {
+				typeoffset = 0;
+				ptr += namelen;
+			}
+			else if (typeoffset) {
+				while (*ptr == '_'
+				|| isalpha(*ptr) || isdigit(*ptr))
+					++ptr;
+			}
+			else
+				continue;
+			while (isspace(*ptr))
+				++ptr;
+			if (*ptr == '\0')
+				parens = -1;
+			else if (*ptr == '{')
+				parens = 0;
+			else {
+				typeoffset = 0;
+				continue;
+			}
+			if (typeoffset)
+				typeoffset = ftell(ifp);
+			else
+				break;
+		}
+		else
+			typeoffset = 0;
+	}
+	if (ptr == NULL) {
+		fprintf(stderr, "offstruct: cannot find struct %s in %s\n",
+			structname, filename);
+		exit(1);
+	}
+
+	fprintf(ofp, "setoff(structptr)\nchar *structptr;\n{\n");
+	fprintf(ofp, "\tchar *fieldptr = structptr - 1;\n");
+	fprintf(ofp, "\twhile (*++fieldptr == 0);\n");
+	fprintf(ofp, "\treturn fieldptr - structptr;\n}\n\n");
+	fprintf(ofp, "main()\n{\n");
+	if (typeoffset != 0)
+		fprintf(ofp, "\t%s temp;\n", structname);
+	else
+		fprintf(ofp, "\tstruct %s temp;\n", structname);
+	fprintf(ofp, "\tprintf(\"#ifndef _OFFSTABLE\\n#define _OFFSTABLE\\n\");\n");
+	fprintf(ofp, "\tprintf(\"struct offstable {long offset; char *name;};\\n\");\n");
+	fprintf(ofp, "\tprintf(\"#endif\\n\");\n");
+	fprintf(ofp, "\tprintf(\"struct offstable %soffs[] = {\\n\");\n", structname);
+	fprintf(ofp, "\tprintf(\"0x%%04x,\\\"%s\\\",\\n\"", structname);
+	fprintf(ofp, ",sizeof(temp));\n");
+	fprintf(ofp, "\tmemset(&temp,0,sizeof(temp));\n");
+
+	eptr = NULL;
+	bitfield = 0;
+	while ((ptr = eptr) || (ptr = fgets(buf+1, BUFSIZ, ifp))) {
+		eptr = NULL;
+		while (isspace(*ptr))
+			ptr++;
+		if (*ptr == '#' || *ptr == '\0')
+			continue;
+		if ((eptr = strpbrk(ptr, ",;")) != NULL)
+			*eptr++ = '\0';
+		*(ptr-1) = '\0';
+		while (*ptr) {
+			if (*ptr == '}') {
+				*ptr = '\0';
+				--parens;
+			}
+			if (*ptr == '{')
+				++parens;
+			++ptr;
+		}
+		if (parens < 0)
+			break;
+		if (parens > 0)
+			continue;
+		while (*--ptr) {
+			if (*ptr == ':' && bitfield++)
+				break;
+			if (islabel(ptr))
+				break;
+		}
+		if (*ptr == '\0'
+		||  *ptr == ':')
+			continue;
+		*++ptr = '\0';
+		while (*--ptr) {
+			if (!islabel(ptr))
+				break;
+		}
+		++ptr;
+		if (bitfield == 1) {
+			bitfield = 2;
+			fprintf(ofp, "\ttemp.%s = 1;\n", ptr);
+			fprintf(ofp, "\tprintf(\"0x%%04x,\\\"%s\\\",\\n\"",ptr);
+			fprintf(ofp, ",setoff((char *)&temp));\n", ptr);
+			fprintf(ofp, "\ttemp.%s = 0;\n", ptr);
+		}
+		else {
+			bitfield = 0;
+			fprintf(ofp, "\tprintf(\"0x%%04x,\\\"%s\\\",\\n\"",ptr);
+			fprintf(ofp, ",(int)&temp.%s - (int)&temp);\n", ptr);
+		}
+	}
+	if (ptr == NULL) {
+		fprintf(stderr, "offstruct: cannot find end of struct %s\n",
+			structname);
+		exit(1);
+	}
+	fprintf(ofp, "\tprintf(\"0x%%04x,0};\\n\",sizeof(temp));\n");
+	fprintf(ofp, "\texit(0,0);\n}\n");
+	exit(0);
+}
+/* end offstruct C source and file */

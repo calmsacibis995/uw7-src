@@ -1,0 +1,289 @@
+#ident	"@(#)ppp.merge	1.2"
+
+#
+# ROOT = root directory
+# FILENAME = full path name of file being merged(does not include root)
+# UP_ORIG = dir of original file that was installed(ppphosts was never installed)
+# UP_USER = dir of old file...that must be converted to the new format
+# MERGEDFILE = full path name of file that will contain the merged data
+#
+
+#
+# only do this if the ppphosts file exists..
+# if not then ppp was not setup...
+#
+if [ ! -f $ROOT/$FILENAME ]
+then
+	exit
+fi
+
+>/tmp/new.ppphosts
+ERROR=0
+
+#
+# this routine will convert the options
+#
+convert()
+{
+	case $1 in
+	idle=*|conf=*|term=*|nak=*|mru=*|accm=*|nomgc|rfc1172addr|old)
+		interout="$interout $1";;
+	tmout=*)
+		interout="$interout req$1";;
+	paptmout=*)
+		papval=`echo $1 | awk '{ FS = "="; print $2 }'`;
+		interout="$interout authtmout=$papval";;
+	debug=*)
+		debval=`echo $1 | awk '{ FS = "="; print $2 }'`;
+		if [ "$debval" != "0" ] 
+		then 
+			interout="$interout debug=1" 
+		fi ;;
+	pap) 
+		interout="$interout auth=$1";;
+	protcomp)
+		protoflag=1;;
+	accomp)
+		accflag=1;;
+	ipaddr)
+		ipflag=1;;
+	VJ)
+		vjflag=1;;
+	*)
+		nomatch=`expr $nomatch + 1`;;
+	esac
+
+}
+#
+# extract ppp interfaces from the interface file
+#
+egrep  "^[      ]*ppp:" $UP_USER/etc/confnet.d/inet/interface >/tmp/ppp_interfaces
+if [ ! -s /tmp/ppp_interfaces ]
+then
+	exit
+fi
+
+#
+# convert the ppp interfaces to the new format...
+# netmask not specified..then must be class B(old ppp default)
+#
+/usr/bin/awk ' { FS = ":|[ ]|\t"
+        { printf ("%s:%s",$5,$3) }
+         if ($6 == "netmask" && $7 == "255.255.255.0") { printf("\n") } 
+
+         if ($6 == "netmask" && $7 != "255.255.255.0") { printf(" mask=%s\n",$7) }
+        if ($6 == "add_ppp") { printf(" mask=255.255.0.0\n") }
+        }' /tmp/ppp_interfaces  >/tmp/ppp_interfaces2
+
+#
+# copy the new sample file
+#
+cp $ROOT/$FILENAME.samp $MERGEDFILE
+
+#
+# seperate the old ppphosts to incomming and outgoing
+#
+egrep  "^[ 	]*[^# 	]" $UP_USER/$FILENAME >/tmp/ppphosts
+egrep "^\*" /tmp/ppphosts >/tmp/ppphosts.in
+egrep -v "remote=" /tmp/ppphosts.in >/tmp/ppphosts.in.noremote
+egrep "remote=" /tmp/ppphosts.in >/tmp/ppphosts.in2
+mv /tmp/ppphosts.in2 /tmp/ppphosts.in
+egrep -v "^\*" /tmp/ppphosts >/tmp/ppphosts.out
+
+#
+# match outgoing interfaces and merge in the options..
+#
+outip=`awk '{ print $1 }' /tmp/ppphosts.out`
+if [ -s /tmp/ppphosts.out ] && [ -n "$outip" ]
+then 
+for i in $outip
+do
+	interout=`egrep "^$i" /tmp/ppp_interfaces2`
+	if [ -z "$interout" ]
+	then
+		ERROR=1
+		continue
+	fi
+	uucp=`egrep "^$i" /tmp/ppphosts.out|awk '{ print $3 }'`
+	if [ "$uucp" != "-" ]
+	then
+		interout="$interout uucp=$uucp"
+	fi
+
+	protoflag=0
+	accflag=0
+	ipflag=0
+	vjflag=0
+	nomatch=0
+	for j in `egrep "^$i" /tmp/ppphosts.out`
+	do
+		convert $j
+	done
+
+	if [ $protoflag != 1 ]
+	then
+		interout="$interout noprotcomp"
+	fi
+	if [ $accflag != 1 ]
+	then
+		interout="$interout noaccomp"
+	fi
+	if [ $ipflag != 1 ]
+	then
+		interout="$interout noipaddr"
+	fi
+	if [ $vjflag != 1 ]
+	then
+		interout="$interout novj"
+	fi
+
+	grep -v "^$i" /tmp/ppphosts.out >/tmp/ppphosts.out2
+	mv /tmp/ppphosts.out2 /tmp/ppphosts.out
+
+	grep -v "^$i" /tmp/ppp_interfaces2 >/tmp/ppp_interfaces3
+	mv /tmp/ppp_interfaces3 /tmp/ppp_interfaces2
+
+	echo "$interout" >>/tmp/new.ppphosts
+
+done
+fi
+		
+#
+# convert/merge the incomming interfaces...
+#
+if [ -s /tmp/ppphosts.in ] && [ `egrep -c "remote" /tmp/ppphosts.in` != 0 ]
+then 
+	allin=`egrep "remote" /tmp/ppphosts.in`
+	for i in $allin
+	do
+		case $i in
+		remote=*) tmpip=`echo $i | cut -d= -f2`;
+			  inip="$inip $tmpip";;
+		*) ;;
+		esac
+	done
+
+[ -n "$inip" ] && for i in $inip
+do
+	interout=`egrep "^$i" /tmp/ppp_interfaces2`
+	if [ -z "$interout" ]
+	then
+		ERROR=1
+		continue
+	fi
+
+	protoflag=0
+	accflag=0
+	ipflag=0
+	vjflag=0
+	nomatch=0
+	for j in `egrep "remote=$i" /tmp/ppphosts.in`
+	do
+		convert $j
+	done
+
+	if [ $protoflag != 1 ]
+	then
+		interout="$interout noprotcomp"
+	fi
+	if [ $accflag != 1 ]
+	then
+		interout="$interout noaccomp"
+	fi
+	if [ $ipflag != 1 ]
+	then
+		interout="$interout noipaddr"
+	fi
+	if [ $vjflag != 1 ]
+	then
+		interout="$interout novj"
+	fi
+
+	grep -v "remote=$i" /tmp/ppphosts.in >/tmp/ppphosts.in2
+	mv /tmp/ppphosts.in2 /tmp/ppphosts.in
+
+	grep -v "^$i" /tmp/ppp_interfaces2 >/tmp/ppp_interfaces3
+	mv /tmp/ppp_interfaces3 /tmp/ppp_interfaces2
+
+	echo "$interout" >>/tmp/new.ppphosts
+
+done
+fi
+
+#
+# if there is only one incomming ppp interface left 
+# in ppphosts file and if there is a entry in the interface file
+# then we can ASSUME that these two match...
+#
+if [ -s /tmp/ppphosts.in.noremote ] && [ `egrep -c "^\*" /tmp/ppphosts.in.noremote` == 1 ] 
+then
+	if [ `wc -l /tmp/ppp_interfaces2 | awk ' { print $1 }'` == 1 ]
+	then
+		interout=`cat /tmp/ppp_interfaces2`
+
+		protoflag=0
+		accflag=0
+		ipflag=0
+		vjflag=0
+		nomatch=0
+
+		for j in `cat /tmp/ppphosts.in.noremote`
+		do
+			convert $j
+		done
+
+		if [ $protoflag != 1 ]
+		then
+			interout="$interout noprotcomp"
+		fi
+		if [ $accflag != 1 ]
+		then
+			interout="$interout noaccomp"
+		fi
+		if [ $ipflag != 1 ]
+		then
+			interout="$interout noipaddr"
+		fi
+		if [ $vjflag != 1 ]
+		then
+			interout="$interout novj"
+		fi
+
+		echo "$interout" >>/tmp/new.ppphosts
+
+		>/tmp/interfaces2
+		>/tmp/ppphosts.in.noremote
+
+	else
+		ERROR=1
+	fi
+else
+	if [ -s /tmp/ppphosts.in.noremote ] && [ `egrep -c "^\*" /tmp/ppphosts.in.noremote` >= 2 ] 
+	then
+		ERROR=1
+	fi
+fi
+
+#
+# copy the merged entries to MERGEDFILE
+#
+cat /tmp/new.ppphosts >>$MERGEDFILE
+
+rm -f /tmp/ppphosts.* /tmp/ppp_interface* /tmp/new.ppphosts
+
+#
+# if ERROR is set then something went wrong...
+# we will copy the merged file to $ROOT/$FILENAME so that the merged
+# entries are there...but we will also exit with 1 so that the upgrade
+# scripts will send mail indicating that something went wrong...
+#
+if [ $ERROR != 0 ]
+then
+	cp $MERGEDFILE $ROOT/$FILENAME
+	exit 1
+fi
+
+#
+# else all is well...exit with 0 so the merged file will get copied
+#
+exit 0

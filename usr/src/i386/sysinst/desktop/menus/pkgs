@@ -1,0 +1,406 @@
+#ident	"@(#)pkgs	15.1"
+
+function pkgs
+{
+	typeset tmp i j exit off flag
+	integer pkgitems=0 pkglines
+
+	case $1 in
+	"default")
+		if [ "$NOND" = "yes" ]
+		then
+			# We only want to turn on packages that are
+			# already installed.  prep_for_nond listed
+			# these in /tmp/pkgs.
+			for i in $ALLPKGS platform handbooks alldocs
+			do
+				if grep "^$i\$" /tmp/pkgs >/dev/null 2>&1
+				then
+					let $i=1
+				else
+					let $i=0
+				fi
+			done
+		else
+			pkginit
+		fi
+		PLATFORM=$PLATFORM_SAVE
+		;;
+	"all")
+		for i in $ALLPKGS platform alldocs
+		do
+			# Do not automatically turn on platform-specific packages.
+			[ "$i" = "compaq" ] || [ "$i" = ast ] || [ "$i" = tricord ] || let ${i}=1
+		done
+		let osmp=0
+		let handbooks=0	
+		[ "$NOND" = "yes" ] && {
+			# Turn osmp on if it is already installed
+			sh_grep "^osmp\$" /tmp/pkgs >/dev/null 2>&1 && let osmp=1
+		}
+		PLATFORM=$PLATFORM_SAVE
+		;;
+	*)
+		;;
+	esac
+
+	open_check -fg $COMBO2_FG -bg $COMBO2_BG -exit 'chk_pkgs'
+	PKGCID=$CID
+	for i in $ALL_DISP
+	do
+		let j=$i
+		case $j in
+		0)
+			flag=
+			;;
+		1)
+			flag=-is_selected
+			;;
+		-1)
+			flag=-gray
+			;;
+		*)
+			continue
+			;;
+		esac
+		eval tmp="\"\$${i}_name\""
+		off="$i=0"
+		on="$i=1"
+		exit=
+		[ "$i" = "base" ] && {
+			off="msg $PKG_REQ_MSG;call check_input $PKGCID 32; beep"
+			on="$i=1"
+			exit="-exit msg"
+		}
+		$BACK_END_MANUAL && {
+			if [ "$i" = "platform" ] 
+			then
+				off="msg $PKG_REQ_MSG;call check_input $PKGCID 32; beep"
+				on="$i=1"
+				exit="-exit msg"
+			fi
+		}
+
+# Upgrade/Overlay special case -
+# Do not allow the user to de-select any packages that are in the file
+# '/tmp/pkgs', because they are currently installed on the system and
+# must be re-installed from the boot floppy install.  This ensures that
+# all packages on the boot floppy get installed from the boot floppy
+# during non-destructive installation.
+
+		if [ "$NOND" = "yes" -a $i -eq 1 ]
+		then
+			[ "$i" != "alldocs" ] && \
+			sh_grep "^$i\$" /tmp/pkgs >/dev/null && {
+				off="msg $NOND_PKG_REQ;call check_input $PKGCID 32; beep"
+				exit="-exit msg"
+			}
+		fi
+
+		add_check -entry "CURPKG=$i; CURPKGNAME=\"$tmp\"" -help "helpwin $i" -on "$on" -off "$off" $flag "$tmp" $exit
+		let pkgitems+=1
+	done
+	let pkgitems+=1  #round up to even items
+	let pkglines=pkgitems/2
+	check_runparms $PKGCID $pkglines
+	place_window $CHECK_WIN_WIDTH 20 -left 0 -below 0 -fg $COMBO2_FG -bg $COMBO2_BG -title "$PKG_TITLE" -current 'msg; footer "$PKG_FOOTER"'
+	set_hotkey 5 'footer "$GENERIC_WAIT_FOOTER"; wclose $CURWIN; pkgs all'
+	set_hotkey 6 'footer "$GENERIC_WAIT_FOOTER"; wclose $CURWIN; pkgs default'
+	run_check $PKGCID 0 $pkglines
+}
+
+function tunable
+{
+	if (( $CURPKG ))
+	then
+		if [ -f "$SCRIPTS/$CURPKG.tune" ]
+		then
+			. $SCRIPTS/$CURPKG.tune
+		else
+			eval display -w "\"$NOPARAM\""
+		fi
+	else
+		errmsg "$NOSELECT"
+	fi
+}
+
+function chk_pkgs
+{
+	typeset tmp i error=0
+
+	for i in $ALLPKGS platform handbooks alldocs
+	do
+		if (( $i ))
+		then
+			case $i in
+
+				acp)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$acp_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				atm)
+					(( $dtxt )) || {
+						DEP1=$dtxt_name
+						PKG=$atm_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				bkrs)
+					(( $oam )) || {
+						DEP1=$oam_name
+						PKG=$bkrs_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				bsdcompat)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$bsdcompat_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				cmds)
+					(( $nsu)) || {
+						DEP1=$nsu_name
+						PKG=$cmds_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				desktop)
+					(( $dtxt )) || {
+						DEP1=$dtxt_name
+						PKG=$desktop_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				display)
+					(( $dtxt )) || {
+						DEP1=$dtxt_name
+						PKG=$display_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				dtclients)
+					(( $dtxt && $desktop)) || {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $dtxt )) || DEP1=$dtxt_name
+						(( $desktop )) || DEP2=$desktop_name
+						PKG=$dtclients_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				dtxt)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$dtxt_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				dtxtfonts)
+					(( $desktop )) || {
+						DEP1=$desktop_name
+						PKG=$dtxtfonts_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				dynatext)
+					(( $dtxt && $desktop)) || {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $dtxt )) || DEP1=$dtxt_name
+						(( $desktop )) || DEP2=$desktop_name
+						PKG=$dynatext_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					dtext_icon=0
+					FULL=YES
+					;;
+				inet)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$inet_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				server)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$server_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				mele|frle|itle|dele|esle|jale)
+					(( $ls )) || {
+						DEP1=$ls_name
+						eval PKG=\${${i}_name}
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				ls)
+					(( $acp )) || {
+						DEP1=$acp_name
+						PKG=$ls_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				nics)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$nics_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				nis)
+					(( $nsu && $inet && $rpc )) ||  {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $nsu )) || DEP1=$nsu_name
+						(( $inet )) || DEP2=$inet_name
+						(( $rpc )) || DEP3=$rpc_name
+						PKG=$nis_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				nfs)
+					(( $nsu && $inet && $rpc && $dfs )) ||  {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $nsu )) || DEP1=$nsu_name
+						(( $inet )) || DEP2=$inet_name
+						(( $rpc )) || DEP3=$rpc_name
+						(( $dfs )) || DEP4=$dfs_name
+						PKG=$nfs_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				nuc)
+					(( $desktop && $lp && $nsu && $nwnet )) ||  {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $desktop )) || DEP1=$desktop_name
+						(( $lp )) || DEP2=$lp_name
+						(( $nsu )) || DEP3=$nsu_name
+						(( $nwnet )) || DEP4=$nwnet_name
+						PKG=$nuc_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				nwnet)
+					(( $lp && $nsu )) ||  {
+						DEP1="";DEP2="";DEP3="";DEP4=""
+						(( $lp )) || DEP1=$lp_name
+						(( $nsu )) || DEP2=$nsu_name
+						PKG=$nwnet_name
+						eval display -w "\"$DEP_FAIL\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				oam)
+					(( $cmds )) || {
+						DEP1=$cmds_name
+						PKG=$oam_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				platform)
+					[ "${PLATFORM:=none}" = "none" ] && {
+						platform_choice
+					}
+					;;
+				rpc)
+					(( $nsu )) || {
+						DEP1=$nsu_name
+						PKG=$rpc_name
+						eval display -w "\"$DEP_FAIL1\"" -bg $ERROR_BG -fg $ERROR_FG
+						error=1
+					}
+					;;
+				handbooks)
+					# If FIGS handbooks are chosen, then 
+					# English handbooks are still required,
+					# since there are links to English files
+					UWdocs=1
+					[ "$LANG" = C ] || [ -z "$LANG" ] || {
+						let ${LANG}UWdocs=1
+					}
+					UWDOC_SELECT="handbooks"
+					;;
+				alldocs)
+					# If FIGS alldocs is chosen, English
+					# docs must also be installed since not
+					# all the docs are translated..
+					UWdocs=1
+					[ "$LANG" = C ] || [ -z "$LANG" ] || {
+						let ${LANG}UWdocs=1
+					}
+					UWDOC_SELECT="all"
+					;;
+				*)
+					;;
+			esac
+		else
+			case $i in
+
+				platform)
+					PLATFORM=none
+					;;
+				dynatext)
+					# If dynatext is NOT selected (and desktop is
+					# selected), dynatext is silently selected, 
+					# but just the icon stubs will be installed. 
+					# We cannot turn dynatext on yet since the
+					# menu may appear again. Instead set a flag. 
+					dtext_icon=0
+					(( $desktop )) && {
+						dtext_icon=1
+						FULL=NO
+					}
+					;;
+				alldocs)
+					(( $handbooks )) || {
+					# Do this if both handbooks and 
+					# alldocs are off.  (If either is 
+					# selected, then all these variables 
+					# are already set properly.
+						UWdocs=0
+						[ "$LANG" = C ] || [ -z "$LANG" ] || {
+							let ${LANG}UWdocs=0
+						}
+					unset UWDOC_SELECT
+					}
+					;;
+				*)
+					;;
+			esac
+		fi
+	done
+	if (( error )) 
+	then
+		return 1
+	else
+		if keyb_chk
+		then size_chk
+		fi
+		return 0
+	fi	
+
+}

@@ -1,0 +1,127 @@
+#!/usr/bin/ksh
+#ident	"@(#)dssetup	15.1	98/03/04"
+
+workdir=$1
+imagedir=$2
+getpkginfo=$3
+shift 3
+
+. $getpkginfo
+
+has_locale()
+{
+	x=`GREP "^$1	" | cut -f5`
+	if [ "X$x" = "Xyes" ]
+	then
+		return 0
+	else
+		return 1
+	fi
+}
+
+#
+# make sure loadmods are up to date for those being placed into .extra.d
+#
+for i in bfs sfs ufs dow vxfs s5 fd dosfs
+do
+	if [ $ROOT/$MACH/etc/conf/pack.d/$i/Driver.o -nt \
+			 $ROOT/$MACH/etc/conf/modnew.d/$i ]
+	then
+		print -u2 "WARNING: loadable module $i may be out of date" 
+	fi
+done
+
+cd $PROTO/ds_tools
+rm -rf root
+mkdir -p \
+	root/diskset \
+	root/etc/conf/mod.d \
+	root/etc/inst/locale/C/menus \
+	root/etc/inst/locale/de/menus \
+	root/etc/inst/locale/es/menus \
+	root/etc/inst/locale/fr/menus \
+	root/etc/inst/scripts \
+	root/etc/fs/bfs \
+	root/etc/fs/s5 \
+	root/etc/fs/sfs \
+	root/etc/fs/ufs \
+	root/etc/fs/vxfs \
+	root/sbin \
+	root/usr/bin \
+	root/usr/sbin \
+	root/usr/sbin/pkginst
+cd $PROTO/ds_tools/root
+while read source dest
+do
+	[ $source != "#" ] || continue
+	ln -s $source $dest
+	echo $dest >> cpio.list
+done <<-!!
+	# There is no labelit for bfs.
+	$ROOT/$MACH/etc/fs/s5/labelit		diskset/labelit.s5
+	$ROOT/$MACH/etc/fs/sfs/labelit		diskset/labelit.sfs
+	$ROOT/$MACH/etc/fs/ufs/labelit		diskset/labelit.ufs
+	$PROTO/locale/C/menus/postreboot.txtstrings etc/inst/locale/C/menus/postreboot.txtstrings
+	$PROTO/locale/de/menus/postreboot.txtstrings etc/inst/locale/de/menus/postreboot.txtstrings
+	$PROTO/locale/es/menus/postreboot.txtstrings etc/inst/locale/es/menus/postreboot.txtstrings
+	$PROTO/locale/fr/menus/postreboot.txtstrings etc/inst/locale/fr/menus/postreboot.txtstrings
+	$PROTO/locale/C/menus/mouse.txtstrings	etc/inst/locale/C/menus/mouse.txtstrings
+	$PROTO/locale/de/menus/mouse.txtstrings	etc/inst/locale/de/menus/mouse.txtstrings
+	$PROTO/locale/es/menus/mouse.txtstrings	etc/inst/locale/es/menus/mouse.txtstrings
+	$PROTO/locale/fr/menus/mouse.txtstrings	etc/inst/locale/fr/menus/mouse.txtstrings
+	$PROTO/desktop/scripts/postreboot	etc/inst/scripts/postreboot
+	$PROTO/desktop/scripts/postreboot.sh	etc/inst/scripts/postreboot.sh
+	$ROOT/$MACH/usr/lib/fs/vxfs/labelit	diskset/labelit.vxfs
+	$ROOT/$MACH/etc/fs/bfs/mkfs.dy		diskset/mkfs.bfs
+	$ROOT/$MACH/etc/fs/s5/mkfs.dy		diskset/mkfs.s5
+	$ROOT/$MACH/etc/fs/sfs/mkfs.dy		diskset/mkfs.sfs
+	$ROOT/$MACH/etc/fs/ufs/mkfs.dy		diskset/mkfs.ufs
+	$ROOT/$MACH/etc/fs/vxfs/mkfs.dy		diskset/mkfs.vxfs
+	$ROOT/$MACH/etc/conf/modnew.d/bfs	etc/conf/mod.d/bfs
+	$ROOT/$MACH/etc/conf/modnew.d/dosfs	etc/conf/mod.d/dosfs
+	$ROOT/$MACH/etc/conf/modnew.d/dow	etc/conf/mod.d/dow
+	$ROOT/$MACH/etc/conf/modnew.d/sfs	etc/conf/mod.d/sfs
+	$ROOT/$MACH/etc/conf/modnew.d/ufs	etc/conf/mod.d/ufs
+	$ROOT/$MACH/etc/conf/modnew.d/vxfs	etc/conf/mod.d/vxfs
+	$ROOT/$MACH/etc/conf/modnew.d/s5	etc/conf/mod.d/s5
+	$ROOT/$MACH/etc/conf/modnew.d/fd	etc/conf/mod.d/fd
+	$ROOT/$MACH/etc/fs/bfs/fsck.dy		etc/fs/bfs/fsck
+	$ROOT/$MACH/etc/fs/s5/fsck.dy		etc/fs/s5/fsck
+	$ROOT/$MACH/etc/fs/sfs/fsck.dy		etc/fs/sfs/fsck
+	$ROOT/$MACH/etc/fs/ufs/fsck.dy		etc/fs/ufs/fsck
+	$ROOT/$MACH/etc/fs/vxfs/fsck.dy		etc/fs/vxfs/fsck
+	$PROTO/desktop/files/pkg.LIST		etc/pkg.LIST
+	$PROTO/desktop/files/pkg201.LIST	etc/pkg201.LIST
+	$ROOT/$MACH/sbin/memsize		sbin/memsize
+	$PROTO/bin/getcylsize			sbin/getcylsize
+	$ROOT/$MACH/usr/sbin/disksetup		usr/sbin/disksetup
+	$ROOT/$MACH/usr/sbin/prtvtoc		usr/sbin/prtvtoc
+	$ROOT/$MACH/sbin/swap.dy		usr/sbin/swap
+	$ROOT/$MACH/usr/sbin/pkginst/chkpkgrel		usr/sbin/pkginst/chkpkgrel
+	$ROOT/$MACH/usr/sbin/pkginst/pkgsavfiles		usr/sbin/pkginst/pkgsavfiles
+!!
+
+# For tape and diskette installation, the files in .extra.d need to
+# be copied from the datastream into ramdisk or memfs before they can
+# be run.  For CD-ROM installation, the files in .extra.d can be run
+# directly from the CD without copying them.
+#
+# Intentionally not following symbolic links here.
+# cpioout (called in dsmpaps) follows the symbolic links.
+
+rm -rf $workdir/.extra.d 
+mkdir -p  $workdir/.extra.d
+find * -print | cpio -pdu $workdir/.extra.d
+
+for i 
+do
+	[ -d $workdir/$i ] || mkdir -p $workdir/$i
+	cd $workdir/$i
+	if has_locale $i
+	then
+		IMAGE=${i}_${LOCALE}.IMAGE
+	else
+		IMAGE=${i}.IMAGE
+	fi
+	cpio -iumDZ pkginfo pkgmap setinfo < $imagedir/$IMAGE 2>/dev/null
+done

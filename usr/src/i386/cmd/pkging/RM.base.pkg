@@ -1,0 +1,129 @@
+#ident	"@(#)RM.base.pkg	15.1"
+#ident  "$Header$"
+
+trap '[ ! -s /etc/conf/bin/idbuild ] && mv /etc/conf/bin/S.idbuild /etc/conf/bin/idbuild; [ ! -s /etc/conf/bin/idreboot ] && mv /etc/conf/bin/S.idreboot /etc/conf/bin/idreboot; exit 3' 1 2 3 15
+
+set -a
+PKG_DEFAULT=/tmp/deflt.$$
+IDCMD=/etc/conf/bin
+PKG_CURRENT=""
+REBOOT=0
+. /opt/unix/PKG_INFO
+
+make_default () {
+cat >$PKG_DEFAULT << END
+mail=root
+instance=unique
+partial=nocheck
+runlevel=ask
+idepend=ask
+rdepend=ask
+space=nocheck
+setuid=nocheck
+conflict=nocheck
+action=nocheck
+basedir=default
+list_files=nocheck
+END
+}
+
+find_pkg () {
+	PKG_CURRENT=`pkginfo|while read type name des
+	do
+		case $name in	#don't list the unremovable packages
+			sys)	continue;;
+			dfm)	continue;;
+		    usrenv)	continue;;
+			Yes)	continue;;
+			No)		continue;;
+			Part)	continue;;
+			Packages) continue;;
+			'')		continue;;
+		esac
+		echo $name
+	done`
+}
+display_pkg (){
+	pkginfo|while read type name des
+	do
+		case $name in	#don't list the unremovable packages
+			sys)	continue;;
+			dfm)	continue;;
+		    usrenv)	continue;;
+		esac
+		echo "$type\t$name\t$des" >> /tmp/rfiles.$$
+	done
+	[ -s /tmp/rfiles.$$ ] && {
+		cat /tmp/rfiles.$$
+		echo "\nThe above packages must be removed manually, prior to "
+		echo "attempting an overinstallation"
+		rm -f /tmp/rfiles.$$
+	}
+}
+
+reverse_dependency () {
+	PKG_BASE=""
+	for i in $PKG_GROUPS
+	do
+		set `eval echo \\$$i`
+		while [ $# -gt 0 ]
+		do
+			PKG_BASE="$1 $PKG_BASE"
+			shift
+		done
+	done
+}
+
+remove_unknown_pkg () {
+	[ -f $IDCMD/S.idbuild ] || cp $IDCMD/idbuild $IDCMD/S.idbuild
+	>$IDCMD/idbuild
+	for i in $PKG_CURRENT
+	do
+		echo $PKG_BASE|grep -s $i>/dev/null 2>&1  && continue
+		echo "Removing Package $i"
+		pkgrm -a $PKG_DEFAULT -n $i 2>/dev/null
+		case $? in
+			0) echo "Removal of $i was successful";;
+		       10) echo "Removal of $i was successful";REBOOT=1;;
+		esac
+	done
+	cp /etc/conf/bin/S.idbuild /etc/conf/bin/idbuild
+	>/etc/conf/cf.d/sdevice
+}
+
+remove_base_pkg () {
+	[ -f $IDCMD/S.idbuild ] || cp $IDCMD/idbuild $IDCMD/S.idbuild
+	[ -f $IDCMD/idbuild.save ] && {
+		cp $IDCMD/idbuild.save $IDCMD/S.idbuild
+		rm -f $IDCMD/idbuild.save
+	}
+	>$IDCMD/idbuild
+
+	for i in $PKG_BASE
+	do
+		echo $PKG_CURRENT|grep -s $i>/dev/null 2>&1  || continue
+		echo "Removing Package $i"
+		case $i in
+			geus) echo "y\n\n"|pkgrm -a $PKG_DEFAULT -n $i 2>/dev/null;;
+			*) pkgrm -a $PKG_DEFAULT -n $i 2>/dev/null;;
+		esac
+		case $? in
+			0) echo "Removal of $i was successful";;
+		       10) echo "Removal of $i was successful";REBOOT=1;;
+		esac
+	done
+	cp /etc/conf/bin/S.idbuild /etc/conf/bin/idbuild
+	>/etc/conf/cf.d/sdevice
+	[ $REBOOT -eq 1 ] && /etc/conf/bin/idbuild
+}
+message -c "This utility removes all packages from the \
+system without further user interaction.  If \
+you wish to remove packages interactively use the \
+pkgrm utility." 
+make_default 
+find_pkg 
+reverse_dependency
+remove_unknown_pkg
+remove_base_pkg
+rm -f $PKG_DEFAULT
+display_pkg

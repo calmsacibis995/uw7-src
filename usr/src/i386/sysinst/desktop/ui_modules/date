@@ -1,0 +1,355 @@
+#!/sbin/sh
+#ident "@(#)date	15.1	97/12/19"
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	#
+	# What language?
+	#
+	LANG=`ivar get LANG`
+	[ -z "$LANG" ] && LANG=C
+	export LANG
+
+	# set up our strings
+        . /etc/inst/locale/$LANG/menus/date.txtstrings
+	. /etc/inst/scripts/winrc
+
+	dateinit
+
+# we don't want to grab the time from the ifile, it will be
+# very inaccurate by now!
+#	YEAR=`ivar get year`
+#	MONTH=`ivar get month`
+#	DAY=`ivar get day`
+#	HOUR=`ivar get hour`
+#	MINUTE=`ivar get minute`
+	TIMEZONE_AREA=`ivar get timezone_area`
+	TIMEZONE_ID=`ivar get timezone_id`
+	DST=`ivar get is_dst`
+
+	# set the time and zone
+	timecalc
+	ivar set year		"$YEAR"
+	ivar set month		"$MONTH"
+	ivar set day		"$DAY"
+	ivar set hour		"$HOUR"
+	ivar set minute		"$MINUTE"
+	ivar set timezone_area	"$TIMEZONE_AREA"
+	ivar set timezone_id	"$TIMEZONE_ID"
+	ivar set is_dst		"$DST"
+}
+
+
+	typeset month
+	set -A month 0 31 28 31 30 31 30 31 31 30 31 30 31
+
+################################################################################
+
+function chk_tz
+{
+	case "$nl${NASAtz}$nl${EURtz}$nl${ASIAAUStz}$nl" in
+	*"$nl$TIMEZONE_ID$tab"*)
+		return 0
+	esac
+	errmsg "$TIME_ERR_TZ"
+	return 1
+}
+
+function set_date_time
+{
+[ -n "$debug" ] && set -x
+	cdecl 'int *' clock=$CLOCK
+	call uadmin 8 $CORRECTION
+	call -c stime clock
+	export TZ=:$TIMEZONE
+	ivar set TZ "$TZ"
+}
+
+function do_tz
+{
+	typeset area="$CHOICE"
+	if [ -z "$area" ]
+	then
+		return 0
+	fi
+	typeset OIFS="${IFS}" IFS="${nl}" line=0 tzchoices i
+	case "$area" in
+	"$NASAname")
+		set -A tzchoices $NASAtz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	"$EURname")
+		set -A tzchoices $EURtz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	"$ASIAAUSname")
+		set -A tzchoices $ASIAAUStz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	esac
+	IFS="$OIFS"
+	CHOOSE_TITLE="$TZ_CHOICE_TITLE"
+	CHOOSE_FOOTER="$TZ_CHOICE_FOOTER"
+ 	choose -f -winparms "-above 4 -below 1" "$TIMEZONE_ID" "${tzchoices[@]}"
+	TIMEZONE_AREA=$area
+# Why unset CHOICE?  Why test -n $CHOICE ?  
+# Won't it always be set, since we are coming from do_area_tz's "choose" ?
+#	if [ -n "$CHOICE" ]
+#	then
+#		TIMEZONE_AREA=$area
+#	else
+#		unset CHOICE
+#	fi
+	return 0
+}
+
+function do_area_tz
+{
+	typeset CHOOSE_TITLE="$AREA_CHOICE_TITLE"
+	CHOOSE_FOOTER="$AREA_CHOICE_FOOTER"
+	choose -exit 'do_tz' -e -f -winparms "-above 3 -below 1" "$TIMEZONE_AREA" "$NASAname" "$EURname" "$ASIAAUSname"
+}
+
+function timecalc
+{
+[ -n "$debug" ] && set -x
+	typeset OIFS="$IFS" ALL tz_all j
+
+	# Find the TIMEZONE from the TIMEZONE_ID
+	ALL="${NASAtz}$nl${EURtz}$nl${ASIAAUStz}"
+	IFS="${nl}"
+	set -A tz_all $ALL
+	IFS="$OIFS"
+	for j in "${tz_all[@]}"
+	do
+		IFS="${tab}"
+		set -- $j
+		IFS="$OIFS"
+		[ "$TIMEZONE_ID" = $1 ] && {
+			TIMEZONE=$2
+			break
+		}
+	done	
+
+	call strdup "TZ=:$TIMEZONE"
+	call -c putenv $_RETX
+	call tzset
+	integer clock=0 i
+	i=1970
+	while (( i < $YEAR ))
+	do
+		if (( i % 4 ))
+		then
+			clock=clock+365
+		else
+			clock=clock+366
+		fi
+		i=i+1
+	done
+	if (( ! ( YEAR % 4 ) && ( MONTH >= 3) ))
+	then
+		clock=clock+1
+	fi
+	i=MONTH-1
+	while (( i != 0 ))
+	do
+		clock=clock+${month[i]}
+		i=i-1
+	done
+	clock=clock+DAY-1
+	clock=clock'*'24
+	clock=clock+HOUR
+	clock=clock'*'60
+	clock=clock+MINUTE
+	clock=clock'*'60
+	cdecl 'int *' timezone='&timezone' altzone='&altzone'
+	typeset tmp
+	cdecl 'int *' usetime=$clock
+	call -c localtime usetime
+	cprint -v DST tm.tm_isdst
+	if (( DST ))
+	then
+		cprint -v tmp altzone
+	else
+		cprint -v tmp timezone
+	fi
+	clock=clock+tmp
+	CORRECTION=$tmp
+	CLOCK=$clock
+	set_date_time
+}
+
+function range_chk
+{
+[ -n "$debug" ] && set -x
+	a="$2"
+	warn="$1 $MUST_BE_BETWEEN $3 $AND $4."
+	#BADNUM="$1 $MUST_BE_BETWEEN $3 $AND $4."  # may be displayed by numrange
+	BADNUM=" "
+	numrange "$a" "$3" "$4"
+	# BADNUM is the variable that numrange will display if
+	# the $3 is not between $a and $4.
+	x=$?
+	if [[ $x != 0 ]] ; then
+		msg "$warn"
+	else
+		
+	[[ $x = 0 ]] && {
+		#BADNUM="                                       "
+		#BADNUM="$OK_DATE"
+		warn="$OK_DATE"
+		[[ "$1" = "Day" ]] && {
+			(( leap = ( $YEAR / 4 ) * 4 ))
+			m=${month[$MONTH]}
+			[[ $MONTH = 2 && $leap = $YEAR ]] && m=29
+			[[ "$a" -gt $m ]] && {
+				(( m += 1 )) 
+				#BADNUM="$DAY_LESS_THAN $m."
+				warn="$DAY_LESS_THAN $m."
+				x=1
+			}
+		}
+	}
+	fi
+	msg "$warn"
+	#numrange 3 1 2	   # force display of BADNUM (which might OK)
+	#[ $x = 0 ] && msg "   "
+	return $x
+}
+
+function asktime
+{
+[ -n "$debug" ] && set -x
+#	typeset RIGHT
+#	if [ "$1" = "center" ]
+#	then
+#		RIGHT=1
+#		BELOW=1
+#	else
+#		RIGHT=0
+#		BELOW=0
+#	fi
+	#place_window -right $RIGHT -below $BELOW $TIME_WIN_LEN+2 8 -current 'footer "$TIME_DIRECTIONS"' -fg $COMBO2_FG -bg $COMBO2_BG -title "$TITLE_TIME"
+	place_window -above 1 -below 10 60 8 -title "$TITLE_TIME"
+	win=$CURWIN
+	#clockinit
+	open_form -exit timecalc
+	TIMEFID=$FID
+
+	#add_field -entry 'sethelp datetime; footer "$TIME_DIRECTIONS"' -exit 'range_chk Year "$YEAR" 1970 2070' -ilen 4 -p "$Year" -px 1 -py 1 -ix $TIME_COL1_LEN+3 YEAR
+	#add_field -help 'helpwin datetime' -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Year "$YEAR" 1970 2070' -ilen 4 -p "$Year" -px 1 -py 1 -ix $TIME_COL1_LEN+3 YEAR
+
+	add_field -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Year "$YEAR" 1970 2070' -ilen 4 -p "$Year" -px 1 -py 1 -ix $TIME_COL1_LEN+3 YEAR
+	add_field -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Month "$MONTH" 1 12' -ilen 2 -p "$Month" MONTH
+	add_field -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Day "$DAY" 1 31' -ilen 2 -p "$Day" DAY
+	add_field -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Hour "$HOUR" 0 23' -ilen 2 -p "$Hour" HOUR
+	add_field -entry 'footer "$TIME_DIRECTIONS"' -exit 'range_chk Minute "$MINUTE" 0 59' -ilen 2 -p "$Minute" MINUTE
+	add_field -choice do_area_tz -entry 'footer "$TIME_TZ_DIRECTIONS"' -exit chk_tz -ilen $MAXTZ_NAME -p "$Timezone" TIMEZONE_ID
+	msg "$OK_DATE"
+	run_form $TIMEFID
+}
+
+#function sethelp
+#{
+#	set_hotkey  1 "ivar set help_topic $1; save_exit HELP"
+#}
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	range_chk Year	 "$YEAR"  1970 2070 ;	[ $? = 1 ] && return
+	range_chk Month	 "$MONTH"  1 12 ;	[ $? = 1 ] && return
+	range_chk Day	 "$DAY"	   1 31 ;	[ $? = 1 ] && return
+	range_chk Hour	 "$HOUR"   0 23 ;	[ $? = 1 ] && return
+	range_chk Minute "$MINUTE" 0 59 ;	[ $? = 1 ] && return
+	timecalc
+	chk_tz;					[ $? = 1 ] && return
+wclose $win
+	ivar set year		"$YEAR"
+	ivar set month		"$MONTH"
+	ivar set day		"$DAY"
+	ivar set hour		"$HOUR"
+	ivar set minute		"$MINUTE"
+	ivar set timezone_area	"$TIMEZONE_AREA"
+	ivar set timezone_id	"$TIMEZONE_ID"
+	ivar set is_dst		"$DST"
+	ii_exit $1
+}
+
+function clockinit
+{
+[ -n "$debug" ] && set -x
+	call time
+	CLOCK=$_RETD
+	cdecl 'int *' time=$_RETX
+	call -c localtime time
+	# This is permanent because localtime returns a static buffer
+	cdecl -g tm tm=p$_RETX
+	cprint -v YEAR tm.tm_year
+	(( ( YEAR += 1900 ) < 1970 )) && (( YEAR += 100 ))
+	cprint -v MONTH tm.tm_mon
+	let MONTH=MONTH+1
+	cprint -v DAY tm.tm_mday
+	cprint -v HOUR tm.tm_hour
+	cprint -v MINUTE tm.tm_min
+	cprint -v DST tm.tm_isdst
+}
+
+function dateinit
+{
+[ -n "$debug" ] && set -x
+	setclk >/dev/null 2>&1
+	clockinit
+	[ -z "$TIMEZONE_AREA" ] && TIMEZONE_AREA=$NASAname
+	set -- $NASAtz
+	[ -z "$TIMEZONE_ID" ] && TIMEZONE_ID="$1"
+}
+
+
+
+#
+# Main
+#
+. /isl/ui_modules/common.rc
+
+TIMEZONE_AREA=`ivar get timezone_area`
+TIMEZONE_ID=`ivar get timezone_id`
+DST=`ivar get is_dst`
+dateinit
+y=$YEAR
+m=$MONTH
+d=$DAY
+asktime
+set_hotkey  1 "ivar set help_topic date; save_exit HELP"
+set_hotkey  9 "save_exit PREV"
+set_hotkey 10 "save_exit NEXT"
+input_handler
+

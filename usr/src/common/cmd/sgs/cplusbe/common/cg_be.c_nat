@@ -1,0 +1,1077 @@
+#ident	"@(#)cplusbe:common/cg_be.c_nat	1.1"
+
+#define EXTERN /*empty*/
+#define VAR_INITIALIZERS 1
+#define STANDALONE_UTILITY_PROGRAM 1
+
+#include "glue.h"
+#include "elfdebug.h"
+#include "cg_eh.h"
+#include "lang.h"
+#include "debug.h"
+#include <unistd.h>
+#include <locale.h>
+#include <pfmt.h>
+#include "sgs.h"
+
+#ifndef	CPL_PKG
+#define	CPL_PKG "package"
+#endif
+#ifndef	CPL_REL
+#define	CPL_REL	"release"
+#endif
+
+
+extern int do_inline;			/* inline options flag */
+extern int db_language;			/* debugging language designation */
+extern int db_format;			/* debugging information format */
+extern int db_symlevel;
+
+SX static_guard_start_func;	/* SIDs of static guard ASM functions */
+SX static_guard_end_func;
+
+int cplusplus_threads = FALSE;		/* TRUE if C++ and -Kthreads */
+
+static int vstamp = 0;			/* 0:  no version stamp, 1:  stamp */
+
+int chars_signed; /* used by ../../cg/i386/cg.o and ../../amigo/i386/amigo.o */
+
+static FILE *f_il_input;
+static char *infname = "";	/* Presumed input filename (standard in) */
+
+static void
+cgbe_init(void)
+{
+	cgeh_call_made_in_stmt_expr = FALSE;
+
+	cgeh_in_function_containing_try_block = FALSE;
+}
+
+static void
+cgbe_primarytypes(void)
+{
+	a_scope_orphaned_list_header_ptr solhp;
+
+	cgty_mktypes(il_header.primary_scope->types);
+	/* Process any types from function or block scopes. */
+	for (solhp = il_header.scope_orphaned_list_headers;
+		solhp != 0; solhp = solhp->next)
+	{
+		a_type_ptr ty_ptr;
+		if ((ty_ptr = solhp->orphaned_types) != NULL)
+			cgty_mktypes(ty_ptr);
+	}
+}
+
+static void
+cgbe_file_scope_symbols()
+/* Make prelimiary entries for all file scope variables into the symbol
+   table.  This is done so that initializations referencing another
+   variable can be completed in the order that definitions occur within	
+   the source code.
+
+   Also make symbol table entries for all functions referenced
+   or defined in the module.
+*/
+{
+	a_variable_ptr vp;
+	a_routine_ptr  rp;
+	a_scope_orphaned_list_header_ptr op;
+
+	for (vp = il_header.primary_scope->variables;
+	     vp != NULL;
+	     vp = vp->next) {
+		cgsm_seq_to_file_and_line(
+					vp->source_corresp.decl_position.seq);
+		vp->source_corresp.assoc_info =
+			      (char *)cgsy_enter(vp->source_corresp.name,
+						 cgty_t1type(vp->type),
+						 SC_EXTERN, 0);
+	}  /* for */
+
+	/* Also walk the lists of orphaned local static variables. This
+	   is done to get a SX for the compiler-generated guard variable
+	   around the dynamic initialization of a local static object. */
+	cgsy_inclev();
+	cgsy_inclev();
+	for (op = il_header.scope_orphaned_list_headers;
+	     op != NULL;
+	     op = op->next) {
+		for (vp = op->orphaned_variables; vp != NULL; vp = vp->next) {
+			if (   vp->storage_class == (a_storage_class)sc_static
+			    && vp->source_corresp.name == NULL)
+				cgsm_seq_to_file_and_line(
+					vp->source_corresp.decl_position.seq);
+				vp->source_corresp.assoc_info =
+				     (char *)cgsy_enter(vp->source_corresp.name,
+						        cgty_t1type(vp->type),
+						        SC_STATIC, 0);
+				SY_OFFSET((SX)vp->source_corresp.assoc_info) =
+					sm_genlab();
+		}  /* for */
+	}  /* for */
+	cgsy_declev();
+	cgsy_declev();
+	
+
+	for (rp = il_header.primary_scope->routines;
+	     rp != NULL;
+	     rp = rp->next) {
+		if (rp->assoc_scope != 0 || rp->source_corresp.referenced)
+			(void) cgsy_func(rp);
+	}  /* for */
+}
+
+static void
+cgbe_file_pragma(void)
+/*
+** Make a pass through the file scope pragmas checking for the presence
+** of a #file pragma.  If found, use the contents to establish the .file
+** assembler directive generated.
+*/
+{
+	a_scope_ptr file = il_header.primary_scope;
+	a_pragma_ptr pp;
+
+	/* Any #file preprocessing directive encountered "should" come
+	   before any other pragma-type directive.  Unfortunately some
+	   preprocessing filter (fsipp in Standard Components) may 
+	   insert a #ident directive before it.  Since a #ident will
+	   trigger the start of the assembly output and a default .file
+	   statement, it is imperative to process the pk_file pragma
+	   before any other pragma on the list.  Make a separate pass
+	   looking for pk_file. */
+	for (pp = file->pragmas; pp != 0; pp = pp->next) {
+		if (pp->kind == pk_file) {
+			char * file_name = pp->variant.ident_or_file_string->
+						variant.string.value;
+			cg_filename(file_name);
+			er_filename(file_name, 1);
+			DB_S_FILE(file_name);
+			break;
+		}  /* if */
+	}  /* for */
+}
+
+int found_working_directory;
+
+static void
+process_directory_pragmas(void)
+/*
+** Make a pass through the file scope pragmas checking for the presence
+** of several pragmas (working_directory and include_directory)
+** that must be processed before the line number section can be started.
+*/
+{
+	a_scope_ptr	file = il_header.primary_scope;
+	a_constant_ptr	cp;
+	a_pragma_ptr	pp;
+	char		*file_name;
+
+	for (pp = file->pragmas; pp != 0; pp = pp->next)
+	{
+		switch (pp->kind)
+		{
+		case pk_working_directory:
+			DB_S_CWD(pp->pragma_text);
+			found_working_directory = 1;
+			break;
+		case pk_include_directory:
+			DB_REG_INCDIR(pp->pragma_text);
+			break;
+		default:
+			break;
+		}
+	}  /* for */
+} /* process_directory_pragmas */
+
+static void
+cgbe_pragmas(void)
+{
+	a_scope_ptr file = il_header.primary_scope;
+	a_constant_ptr cp;
+	a_pragma_ptr pp;
+
+	for (pp = file->pragmas; pp != 0; pp = pp->next)
+	{
+		switch (pp->kind)
+		{
+		default:
+			cerror("cgbe_pragmas():unexpected ptr->kind");
+			/*NOTREACHED*/
+		case pk_ident:
+			cp = pp->variant.ident_or_file_string;
+			cgbe_ident(cp->variant.string.value,
+				cp->variant.string.length);
+			break;
+		case pk_weak:
+			cgbe_weak(pp->pragma_text); /*for now*/
+			break;
+		case pk_include_directory:
+		case pk_working_directory:
+		case pk_file:
+			/* Nothing to do; already processed. */
+			break;
+		}
+	}  /* for */
+}
+
+
+static char * static_guard_start_body = "\n"
+	"%con lab(xlab); mem guard_addr;\n"
+	".again.xlab:\n"
+	"	movl	guard_addr,%eax\n"
+	"	testl	$1,(%eax)\n"
+	"	jnz	.done.xlab\n"
+	"	lock;	btsl	$1,(%eax)\n"
+	"	jc	.busy.xlab\n";
+
+static char * static_guard_end_body = "\n"
+	"%con lab(xlab); mem guard_addr;\n"
+	"	movl	guard_addr,%eax\n"
+	"	movl	$3,(%eax)\n"
+	"	jmp	.done.xlab\n"
+	".busy.xlab:\n"
+	"	pushl	%eax\n"
+	"	call1	__static_init_wait\n"
+	"	testl	%eax,%eax\n"
+	"	popl	%ecx\n"
+	"	jnz	.again.xlab\n"
+	".done.xlab:\n";
+
+
+static void
+cgbe_static_guard_asms()
+/* Create the enhanced ASM functions/macros that will be used for 
+   C++ static initialization guard code in thread safe  code.
+*/
+{
+	T1WORD ty_func;
+	T1WORD ptr_to_int = ty_mkptrto(TY_INT);
+
+	cgsm_seq_to_file_and_line(0);
+	/* Build function type - void () (int, int) */
+	ty_func = ty_mkfunc(TY_VOID);
+	ty_mkparm(ty_func, TY_INT, FALSE);
+	ty_mkparm(ty_func, ptr_to_int, FALSE);
+
+	static_guard_start_func  = cgsy_enter("__cpp_static_guard_start",
+					      ty_func, SC_ASM, 
+					      SY_DEFINED | SY_ASM_FULL_OPT);
+	static_guard_end_func    = cgsy_enter("__cpp_static_guard_end",
+					      ty_func, SC_ASM, 
+					      SY_DEFINED | SY_ASM_FULL_OPT);
+	as_start("__cpp_static_guard_start");
+	as_param("lab");
+	as_param("guard_addr");
+	as_e_param();
+	as_entire(static_guard_start_body, strlen(static_guard_start_body));
+	as_end();
+	as_start("__cpp_static_guard_end");
+	as_param("lab");
+	as_param("guard_addr");
+	as_e_param();
+	as_entire(static_guard_end_body, strlen(static_guard_end_body));
+	as_end();
+
+}  /* cgbe_static_guard_asms */
+
+
+static void
+cgbe_asmfunc(int fsid, a_routine_ptr rp, a_scope_ptr scope)
+{
+	a_statement_ptr sp;
+	a_variable_ptr vp;
+
+	as_start(rp->source_corresp.name);
+	for (vp = scope->variant.routine.parameters; vp != 0; vp = vp->next)
+		as_param(vp->source_corresp.name);
+	as_e_param();
+	sp = scope->assoc_block;
+	as_entire(sp->variant.asm_func_body,
+		strlen(sp->variant.asm_func_body));
+	as_end();
+}
+
+
+static void
+cgbe_dovstamp()
+/* Output version stamp into output file.  cg_ident()
+** expects "-enclosed string.
+*/
+{
+	char va[200];			/* presumed big enough */
+	sprintf(va, "\"c++be: %s\"", CPL_REL);
+	cg_ident(va);			/* generate .ident for this string */
+	return;
+}
+
+
+static int
+cgbe_cleanup()
+/* Clean up after processing, check for finaly errors.
+** Return non-zero on errors.
+*/
+{
+	if (vstamp)
+		cgbe_dovstamp();	/* put out version stamp */
+
+	cgsy_declev();			/* flush symbols at external level */
+	DB_E_FILE();			/* do debug stuff for end of file */
+
+	if( p2done() )			/* close off CG stuff */
+		/* p2done() returns non-zero if file I/O errors occurred. */
+		UERROR(gettxt(":275","error writing output file"));
+
+	if (nerrors) {
+		return( 1 );		/* had errors */
+	}
+
+	if (tcheck()) {
+		tshow();		/* check for lost nodes */
+		return( 2 );
+	}
+#ifndef NODBG
+#ifndef NO_AMIGO
+	{ extern void amigo_time_print(); amigo_time_print(); }
+#endif
+#endif
+
+	return( 0 );
+}
+
+debug_updates	**region_updates;	/* array of per-function information needed
+					   for copying and updating debugging entries */
+
+static update_list *
+copy_updates(a_debug_mark_ptr mark, a_scope_ptr scope)
+/* Translate the debug marks in the IL into internal format with SX values */
+{
+	update_list	*head = 0;
+	update_list	*tail;
+	a_variable_ptr	ret_var = scope ? scope->variant.routine.return_value_variable : 0;
+	a_variable_ptr	ret_var_ptr = 0;
+
+	for (; mark; mark = mark->next) {
+		update_list	*update;
+		if ((update = (update_list *)malloc(sizeof(update_list))) == 0)
+			cerror("copy_updates: cannot malloc");
+		if (!head)
+			head = update;
+		else
+			tail->next = update;
+		tail = update;
+		update->offset = mark->offset;
+		update->next = 0;
+		switch (mark->kind) {
+		case iek_variable:
+			update->item_type = db_il_symbol;
+			if (mark->return_value_ptr)
+				ret_var_ptr = mark->variant.variable;
+			if (ret_var == mark->variant.variable) {
+				update->variant.symbol.sid = (SX)ret_var_ptr
+							->source_corresp.assoc_info;
+				update->variant.symbol.return_val_opt = TRUE;
+				update->variant.symbol.addr_only = FALSE;
+			} else {
+				update->variant.symbol.sid = (SX)mark->variant.variable
+							->source_corresp.assoc_info;
+				update->variant.symbol.addr_only = mark->address_only;
+				update->variant.symbol.return_val_opt = FALSE;
+			} /* if */
+			break;
+		case iek_routine:
+			update->variant.symbol.sid = (SX)mark->variant.routine
+						->source_corresp.assoc_info;
+			update->variant.symbol.addr_only = mark->address_only;
+			update->item_type = db_il_symbol;
+			update->variant.symbol.return_val_opt = FALSE;
+			break;
+		case iek_label:
+			update->variant.symbol.sid = (SX)mark->variant.label
+						->source_corresp.assoc_info;
+			update->variant.symbol.addr_only = mark->address_only;
+			update->item_type = db_il_symbol;
+			update->variant.symbol.return_val_opt = FALSE;
+			break;
+		case iek_scope:
+		{
+			a_scope_ptr scope = mark->variant.scope;
+			update->variant.scope.scope_id = scope->number;
+			update->variant.scope.child
+				= copy_updates(scope->debug_marks->marks, 0);
+			if (IS_DWARF_1())
+				update->item_type = db_il_block;
+			else if (scope->variant.assoc_handler)
+				update->item_type = db_il_catch_block;
+			else if (scope->next && scope->next->kind == sck_block
+				&& scope->next->variant.assoc_handler)
+				update->item_type = db_il_try_block;
+			else
+				update->item_type = db_il_block;
+		}
+		} /* switch */
+	} /* for */
+
+	return head;
+} /* copy_updates */
+
+void
+cgbe_copy_updates(a_debug_mark_list_ptr mark_list, a_routine_ptr rp, a_scope_ptr scope)
+/* Translate the per-function debug marks in the IL into internal format,
+** and store in by region number in the region_update array */
+{
+	debug_updates		*node;
+
+	if (db_symlevel != DB_LEVEL2)
+		return;
+
+	if ((node = (debug_updates *)malloc(sizeof(debug_updates))) == 0)
+		cerror("cgbe_copy_updates: cannot allocate space");
+
+	if (rp)
+		region_updates[rp->assoc_scope] = node;
+	else
+		region_updates[1] = node;
+	if (mark_list) {
+		node->first_offset = mark_list->first_offset;
+		node->last_offset = mark_list->last_offset;
+		node->routine_offset = mark_list->routine_offset;
+		node->inline_insert = mark_list->inline_insert;
+		node->updates = copy_updates(mark_list->marks,
+					(rp && scope) ? scope : 0);
+		node->debug_id = mark_list->definition_id;
+	} else {
+		node->first_offset = node->last_offset = node->routine_offset = 0;
+		node->inline_insert = 0;
+		node->updates = 0;
+		node->debug_id = 0;
+	} /* if */
+
+	node->has_been_inlined = 0;
+	node->out_of_line_instance = 0;
+} /* cgbe_copy_updates */
+
+
+#define NEXT_NONE	0	/* nothing left to generate */
+#define NEXT_ASM	1	/* do an old-style asm */
+#define NEXT_TEXT	2	/* do a routine definition */
+#define NEXT_DATA	3	/* do a data definition */
+
+static void
+cgbe_codegen(void)
+{
+	a_source_position pos, min;
+	an_asm_entry_ptr aep;
+	a_variable_ptr vp;
+	a_routine_ptr rp;
+	a_scope_ptr sp;
+	int next;
+	SX fsid;
+
+	/*
+	* Generate definitions in the order they occurred.
+	*/
+	sp = il_header.primary_scope;
+	aep = sp->asm_entries;
+	vp = sp->variables;
+	rp = sp->routines;
+	for (;;)
+	{
+		min.seq = 0;
+		min.column = 0;
+		next = NEXT_NONE;
+		if (aep != 0)
+		{
+			if (aep->source_corresp.decl_position.seq == 0)
+				goto next_asm;
+			min = aep->source_corresp.decl_position;
+			next = NEXT_ASM;
+		}
+		if (rp != 0)
+		{
+			pos = rp->source_corresp.decl_position;
+			if (pos.seq == 0)
+				goto next_text;
+			if (min.seq == 0 || min.seq > pos.seq ||
+				min.seq == pos.seq && min.column >= pos.column)
+			{
+				min = pos;
+				next = NEXT_TEXT;
+			}
+		}
+		if (vp != 0)
+		{
+			pos = vp->source_corresp.decl_position;
+			if (pos.seq == 0 || (vp->source_corresp.name_linkage == nlk_none && vp->init_kind != initk_function_local)) 
+				/* this includes local static variables with
+				   non-dynamic init, because otherwise the
+				   functions containing them will appear first
+				   in sequence number order */
+				goto next_data;
+			if (min.seq == 0 || min.seq > pos.seq ||
+				min.seq == pos.seq && min.column >= pos.column)
+			{
+				goto next_data;
+			}
+		}
+		switch (next)
+		{
+		case NEXT_NONE:
+			cgbe_copy_updates(il_header.primary_scope->debug_marks, 0, 0);
+			return;
+		next_asm:;
+		case NEXT_ASM:
+			cgbe_oldasm(aep);
+			aep = aep->next;
+			break;
+		next_text:;
+		case NEXT_TEXT:
+			/*
+			* Don't bother with functions that have no code
+			*/
+			if (rp->assoc_scope != 0)
+			{
+				a_scope_ptr routine_sp;
+
+				SET_CPLUSPLUS_CATALOG;
+				read_memory_region(rp->assoc_scope);
+				SET_C_CATALOG;
+				routine_sp = il_header.region_scope_entry[
+					rp->assoc_scope];
+
+				/* Don't need to generate code for functions that
+				** weren't referenced.  (If the function has external
+				** linkage, referenced is TRUE.)  However, set up to
+				** copy through information on inlined functions, even
+				** if never referenced, so that information is available
+				** to debug when printing class types, etc.
+				*/
+				if (rp->source_corresp.referenced) {
+					fsid = CGSY_FUNC(rp);
+					if (rp->storage_class
+						== (a_storage_class)sc_asm)
+					{
+						cgbe_asmfunc(fsid, rp, routine_sp);
+						cgbe_copy_updates(routine_sp->debug_marks,
+							rp, routine_sp);
+					}
+					else
+						cgsm_routine(fsid, rp, routine_sp);
+				} else if (db_symlevel == DB_LEVEL2 && rp->is_inline) {
+					cgbe_copy_updates(routine_sp->debug_marks, rp,
+						routine_sp);
+				}
+				SET_CPLUSPLUS_CATALOG;
+				free_memory_region(rp->assoc_scope);
+				SET_C_CATALOG;
+			}  /* if */
+			rp = rp->next;
+			break;
+		next_data:;
+		case NEXT_DATA:
+			/*
+			* Don't bother with unreferenced symbols.
+			*/
+			/*for now*/
+			if (vp->source_corresp.referenced)
+			{
+				cgsy_variable(vp, sp);
+			}
+			vp = vp->next;
+			break;
+		}
+	}
+}
+
+
+static int
+setup(int argc, char ** argv)
+/* Do initializations of compiler -- only those option that pertain to
+** code generation with the EDG C/C++ frontend/
+*/
+{
+    static void setsig();
+    extern char * optarg;
+    extern int optind;
+    int c;
+    char * outfname = "";		/* Presumed output filename */
+    char * errfname = "";		/* Filename for error messages. */
+
+#define	COMP_ARGS "1:2:G:OF:X:L:Vac:d:bf:g:i:l:o:vwpQ:R:Z:K:"
+
+    static char args[100] = COMP_ARGS;
+
+
+#ifndef NODBG
+    {   /* Hackwork to control inlining from environment */
+#ifndef __STDC__
+	long strtol();
+	extern char *getenv();
+#endif  /* __STDC__ */
+	extern inline_expansion;
+	char *str, **ptr = (char **)malloc(sizeof(char *));
+	str = getenv("IL_EXPANSION");
+	if(str) {
+		long val = strtol(str,ptr,10);
+		if(*ptr != str)
+			inline_expansion = (int)val;
+	}
+    }
+#endif  /*  !defined(NODBG) */
+
+    while (optind < argc) {
+	extern int do_amigo_flag;	
+	extern int suppress_div_to_mul;
+	extern int print_cgq_flag;
+	extern int err_dump;
+	extern int const_strings;
+#ifndef NODBG
+	extern void init_save_aflags();
+#endif  /* !defined(NODBG) */
+
+	c = getopt(argc, argv, args);
+	switch( c ) {
+	    char * cp;			/* for walking optarg */
+	case '1':
+	    /* Pass 1 flags. */
+	    cp = optarg;
+	    while(*cp) {
+		switch( *cp ) {
+#ifndef NODBG
+		case 'a':	++a1debug; break;
+		case 'c':	++const_strings; break;
+		case 'b':	++b1debug; break;
+		case 'd': {		/* was declaration debug flag
+					   - now process C/C++ FE debugging 
+					     options. */
+#if 0
+			if (proc_debug_option(++cp))
+			{
+				SET_CPLUSPLUS_CATALOG;
+				command_line_error(
+					ec_cl_error_in_debug_option_argument);
+				SET_C_CATALOG;
+			}
+#endif
+			break;
+		}
+		case 'e':	++cgeh_annotate; break;
+		case 'f': {
+				/* Don't do the div to
+				** mul conversion even if
+				** under noieee
+				*/
+			suppress_div_to_mul = 1;
+			break;
+		}
+		case 'i':	++i1debug; break;
+		case 'm': {
+			int *p;
+			p = 0;  p = (int *)(*p);
+			mprotect(0,4096,0);
+			break;
+		}
+		case 'o':	++o1debug; break;
+		case 's':	++s1debug; break;
+		case 'y':	break;		/* yacc debugging option. */
+		case 't': ++print_cgq_flag; break;
+#endif  /* !defined(NODBG) */
+
+		case 'h':	
+		    cgeh_no_host = (*++cp == '0'); 
+		    break;
+		case 'z':
+		    p2flags("z");		/* really a Pass 2 flag */
+		    break;
+		case 'I':
+		    inline_flags(++cp);
+		    break;
+		case 'R':
+		    ++cp;
+		    set_parms_in_regs_flag(cp);
+		    break;
+		}
+		++cp;
+	    }
+	    break;
+	case '2':
+	    /* Pass 2 (CG) debugging flags. */
+	    p2flags(optarg);
+	    break;
+#ifndef NO_AMIGO
+	case 'G':
+	    amigo_flags(optarg);
+	    break;
+	case 'O':
+#ifndef NODBG
+	    init_save_aflags();
+#endif  /* !defined(NODBG) */
+	    do_amigo = do_amigo_flag;	/*
+					** If -G was seen first and the no_amigo
+					** option was parsed ( ~all ) we
+					** don't want do_amigo turned back
+					** on just because cc passed us the
+					** -O flag.
+					*/
+	    break;
+#endif  /* !defined(NO_AMIGO) */
+	case 'a':
+	{
+	    err_dump = 1;		/* force dump on compiler error */
+	    break;
+	}
+	case 'V':
+	    pfmt(stderr,MM_INFO,":380:%s %s\n", CPL_PKG,CPL_REL);
+	    break;
+	case 'Q':
+	    if (optarg[1] == '\0') {
+		if (optarg[0] == 'y') {
+		    vstamp = 1;
+		    break;
+		}
+		else if (optarg[0] == 'n') {
+		    vstamp = 0;
+		    break;
+		}
+	    }
+	    UERROR(gettxt(":265","bad -Q"));
+	    break;
+	case 'R':
+	    /* Choose register allocation style. */
+#ifdef FAT_ACOMP
+	    switch (*optarg) {
+	    case 'g':	al_regallo = RA_GLOBAL; break;
+	    case 'o':	al_regallo = RA_OLDSTYLE; break;
+	    case 'n':	al_regallo = RA_NONE; break;
+	    default:	WERROR(gettxt(":266","unknown allocation style '%c'"), *optarg); break;
+	    }
+#endif  /* defined(FAT_ACOMP) */
+	    break;
+	case 'X':
+	    /* Choose language version. */
+	    switch (*optarg) {
+	    case 't':	version = V_CI4_1; break;	/* Transition */
+	    case 'a':	version = V_ANSI; break;	/* ANSI interp. */
+	    case 'c':	version = (V_ANSI|V_STD_C); break; /* strict */
+	    default:	UERROR(gettxt(":267","unknown language version '%c'"), *optarg);
+	    }
+	    if (optarg[1] != '\0')
+		UERROR(gettxt(":268","language version \"%s\"?"), optarg);
+	    break;
+	case 'Z':
+#ifdef	PACK_PRAGMA
+	    if (optarg[0] == 'p' && optarg[1] != '\0') {
+		int tempalign = atoi(&optarg[1]);
+		/* must be power of 2 */
+		if (   tempalign <= 0
+		    || tempalign > PACK_PRAGMA
+		    || (tempalign & (tempalign-1)) != 0) {
+		    WERROR(gettxt(":293","bad #pragma pack value: %d"), tempalign);
+		    tempalign = Pack_align;
+		}
+		else
+		    tempalign *= SZCHAR;	/* actual value is bits */
+    
+		Pack_align = Pack_default = tempalign;
+	    } else
+#endif  /* defined(PACK_PRAGMA) */
+	    {
+		WERROR(gettxt(":269","invalid -Z"));
+	    }
+	    break;
+	case 'v':
+	    ++verbose; break;
+	case 'w':
+	    ++suppress_warnings; break;
+	case 'p':			/* Turn on profiling. */
+	    cg_profile(); break;
+	case 'L':
+	{
+	    int code;
+
+	    /* Select loop generation code. */
+	    switch (optarg[0]) {
+	    case 't':	code = LL_TOP; break;
+	    case 'b':	code = LL_BOT; break;
+	    case 'd':	code = LL_DUP; break;
+	    default:
+		WERROR(gettxt(":270","loop code type %c?"), *optarg);
+		goto noselect;
+	    }
+	    if (optarg[1] == ',') {
+		switch( optarg[2] ) {
+		case 'w':	sm_while_loop_code = code; break;
+		case 'f':	sm_for_loop_code = code; break;
+		default:
+		    WERROR(gettxt(":271","loop type %c?"), optarg[2]);
+		}
+	    }
+	    else
+		sm_while_loop_code = sm_for_loop_code = code;
+noselect:;
+	    break;
+	}
+	case 'c':
+	    /* Specify "signedness" of "plain" chars */
+	    switch (*optarg) {
+	    case 's':	chars_signed = 1; break;
+	    case 'u':	chars_signed = 0; break;
+	    default:	UERROR(gettxt(":0","illegal -c option to acomp, '%c'"), *optarg);
+	    }
+	    if (optarg[1] != '\0')
+		UERROR(gettxt(":0","-c option to acomp ? \"%s\"?"), optarg);
+	    break;
+	case 'd':
+	{
+	    for (cp = optarg; *cp; ++cp) {
+		switch(*cp) {
+                case '1':
+                    /*db_format = DB_DWARF_1;*/
+                    break;
+                case '2':
+                    /*db_format = DB_DWARF_2;*/
+                    set_module_at_a_time();
+                    break;
+                case 'n':       /* lookup by name option */
+                    if (IS_DWARF_1()) {
+                        WERROR(gettxt(":0",
+				      "option -dn is valid only for Dwarf 2"));
+                    }  else {
+                        db_name_lookup = 1;
+                    }  /* if */
+                    break;
+                case 'a':       /* generate address ranges option */
+                    if (IS_DWARF_1()) {
+                        WERROR(gettxt(":0",
+				      "option -da is valid only for Dwarf 2"));
+                    }  else {
+                        db_addr_ranges = 1;
+                    }  /* if */
+                    break;
+
+
+		default:
+		    WERROR(gettxt(":272","-d%c?"), *cp);
+		}
+	    }
+	}
+	    break;
+
+	case 'i':			/* Set input filename. */
+	    infname = optarg; break;
+	case 'o':			/* Set output filename. */
+	    outfname = optarg; 
+	    break;
+	case 'f':
+	    errfname = optarg; 
+	    break;
+	case 'g':
+	    db_symbols_file = optarg;
+	    break;
+	case 'K':
+	    if(strcmp("thread", optarg) == 0) {
+		cplusplus_threads = TRUE;
+	    }  else {
+		UERROR(gettxt(":0","invalid -K option: \"%s\""), optarg);
+	    }  /* if */
+
+	default:
+	    break;			/* ignore other options */
+	} /* end switch */
+
+#ifndef NO_AMIGO
+	if (do_amigo) sm_while_loop_code = sm_for_loop_code = LL_DUP;
+#endif  /* defined(NO_AMIGO) */
+	
+	if (c == EOF) {
+	    /* Assume there may be further arguments, but that what
+	    ** we're looking at are filename arguments.
+	    */
+	    if (*infname == '\0')
+		infname = argv[optind];
+	    else if (*outfname == '\0')
+		outfname = argv[optind];
+	}
+
+	if (c == EOF)
+	    ++optind;			/* bump past current arg. */
+    } /* end while */
+    if (*infname == '\0' || (f_il_input = fopen(infname, "rb")) == NULL)
+    {
+	SET_CPLUSPLUS_CATALOG;
+	str_command_line_error(ec_cl_could_not_open_il_file,
+			infname);
+	SET_C_CATALOG;
+    }
+    if (*outfname && freopen(outfname, "w", stdout) == NULL) {
+	UERROR(gettxt(":274","cannot open %s"), outfname);
+	printf("UERROR=%s\n",gettxt(":274","cannot open %s"));
+	exit( 2 );
+    }
+
+    if (!db_symbols_file) {
+	/* turn off debugging information generation */
+	db_symlevel = DB_LEVEL0;
+    }
+    return( 0 );
+}
+
+
+static void
+process_file_info(a_source_file_ptr file_ptr)
+/* Enter the file information for the list of files pointed to by file_ptr
+   into the code generator/debug information file table.  Process
+   any children files as encountered.
+*/
+{
+    a_source_file_ptr child_ptr;
+    int seq_number;
+    int file_number;
+
+    seq_number = (int)file_ptr->first_seq_number;
+    if (   (file_ptr != il_header.primary_source_file)
+	&& ( ! file_ptr->is_include_file)) {
+	/* This represents a #line directive in the source file; treat
+	   as if the sequence number is where the #line would be. */
+	seq_number--;
+    }  /* if */
+    file_number = record_start_of_src_file(seq_number,
+			     file_ptr->first_line_number,
+			     (file_ptr->full_name ? file_ptr->full_name
+						  : file_ptr->file_name),
+			     file_ptr->is_include_file);
+    if (db_symlevel != DB_LEVEL0 && file_ptr->index != file_number)
+	cerror("process_file_info(): file indices don't match\n");
+    child_ptr = file_ptr->first_child_file;
+    while (child_ptr != 0) {
+	process_file_info(child_ptr);
+	child_ptr = child_ptr->next;
+    }  /* while */
+    if (file_ptr->is_include_file) {
+	/* This is an include file; treat as if the current sequence
+	   is one beyond the last line of the file. */
+	record_end_of_src_file(file_ptr->last_seq_number + 1);
+    }  /* if */
+    file_ptr = file_ptr->next;
+}
+   
+
+static void 
+process_file_incdir_info(void)
+/* Process the individual source file information in IL region 0. */
+{
+char * pathname;
+
+ 	/* Establish the primary source file name. */
+	primary_source_file_name = il_header.primary_source_file->file_name;
+	DB_S_FILE(primary_source_file_name);
+	cg_filename(primary_source_file_name);
+	er_filename(primary_source_file_name, 1);
+
+	/* Establish the working directory of the compilation. */
+	if (!found_working_directory) {
+		pathname = getcwd((char *) 0, PATH_MAX + 1);
+		DB_S_CWD(pathname);
+		free(pathname);
+	}
+
+	/* Now enter the sequence number range for the source files
+	   used in this compilation. */
+	process_file_info(il_header.primary_source_file);
+}
+
+
+/* STUB for the current cg_eof() call to record_end_of_src_file to
+   set the final sequence number of the primary source file.  It is
+   already set, but this is needed to work with the code in acomp.
+*/
+unsigned int
+bf_curseqno()
+{
+    return il_header.primary_source_file->last_seq_number + 1;
+}
+
+int
+main(int argc, char **argv)
+{
+	a_memory_region_number region_number;
+	char  label[256];
+
+	/* Set the position for errors to "unknown". */
+	error_position.seq = 0;
+	error_position.column = SP_COL_UNKNOWN;
+	/* The source file name is unknown until the IL is read correctly. */
+	primary_source_file_name = NULL;
+
+	(void)setlocale(LC_MESSAGES,"");
+	SET_C_CATALOG;
+	(void)sprintf(label,"UX:%sc++be",SGS);
+	(void)setlabel(label);
+
+	/* Do the basic setup and scan options. */
+	setup(argc, argv);
+
+#if CHECKING
+	check_target_configuration();
+#endif /*CHECKING*/
+
+	cgbe_init();
+	cg_main_init(infname);
+	/* First handle file scope IL. */
+	SET_CPLUSPLUS_CATALOG;
+	il_read(f_il_input);
+	SET_C_CATALOG;
+	/* set language for code generation */
+	language = (il_header.source_language == sl_Cplusplus ?
+		    Cplusplus_language : C_language);
+	process_directory_pragmas();
+	process_file_incdir_info();
+
+	if (db_symlevel == DB_LEVEL2) {
+		if (il_header.dbg_level == Dwarf2) {
+		    db_format = DB_DWARF_2;
+                    set_module_at_a_time();
+		    debug_can_handle_inlines = 1;
+		} else {
+		    db_format = DB_DWARF_1;
+		} /* if */
+		/* create region table for per-function debugging info */
+		if ((region_updates = (debug_updates **)calloc(highest_used_region_number+1,
+					sizeof(debug_updates *))) == 0)
+			cerror("main: cannot allocate space");
+	} /* if */
+	if (db_symlevel == DB_LEVEL0 || IS_DWARF_1()) {
+		if (db_name_lookup)
+                    WERROR(gettxt(":0", "option -dn is valid only for Dwarf 2"));
+                if (db_addr_ranges)
+                    WERROR(gettxt(":0", "option -da is valid only for Dwarf 2"));
+	} /* if */
+
+	chars_signed = il_header.plain_chars_are_signed;
+	cgeh_exceptions_enabled = doing_eh = il_header.exceptions_enabled;
+	cgbe_file_pragma();
+	cg_begfile();
+	db_begfile(il_header.dbg_prologue_length);
+	cgbe_primarytypes();
+	cgbe_file_scope_symbols();
+	cgbe_pragmas();
+	if (cplusplus_threads) {
+		if (language != Cplusplus_language) {
+			cplusplus_threads = FALSE;
+		} else {
+			cgbe_static_guard_asms();
+		}  /* if */
+	}  /* if */
+	cgbe_codegen();
+	(void)fclose(f_il_input);
+	cg_eof(C_TOKEN);
+	if (cgbe_cleanup() == 0)
+		return (0);
+	else
+		return (2);
+	/*NOTREACHED*/
+}
+
+
+

@@ -1,0 +1,443 @@
+#!/bin/tcl
+
+#
+#	@(#)grafdetect 11.4
+#
+#       Copyright (C) 1992-1993 The Santa Cruz Operation, Inc.
+#               All Rights Reserved.
+#       This Module contains Proprietary Information of
+#       The Santa Cruz Operation and should be treated as Confidential.
+#
+
+##############################################################################
+# NAME:
+# 	grafdetect - Uniquely detects the currently installed graphics
+#	adapter(s).  Returns the name of the grafinfo file that should
+#	be used for the graphics adapter.
+#
+# SYNOPSYS:
+#	grafdetect [-r database_root]
+#
+#	Grafdetect accesses a data base that contains information
+#	to uniquely detect graphics adapters.  The database consists
+#	of a set of one or more files containing database entries
+#	written in tcl (that's right - tcl).  If all the database
+#	files are sourced then you end up with an array named 'ADAPTER'.
+#	The keys for accessing individual adapter elements are grafinfo
+#	file names (relative to grafinfo root: i.e. /usr/X11R6.1/lib/grafinfo).
+#	Each array element consists of a keyed list (struct) that
+#	at minimum must contains the key 'UNIQUE_ID'.  'UNIQUE_ID' is
+#	a list of the remaining keys in the keyed list that must
+#	be matched in order to uniquely identify the installed graphics
+#	adapter.
+#
+#	The keys that are currently recognized by 'grafdetect' are:
+#
+#		BIOS_ID - number that must match sum -r of the adapter bios
+#		BIOS_STR - list of strings that must be matched in the bios
+#		NOT_BIOS_STR - list of strings that must not be matched
+#			in the bios
+#		PCI_SLOT - (sub)string that must match output from `pcislot`
+#		OEM_STRING - string that must exactly match the oem string
+#			queried from bios
+#		OEM_VENDOR_NAME - string that must exactly match the
+#			vendor name queried from the bios (VBE 2.0)
+#		OEM_PRODUCT_NAME - string that must exactly match the 
+#			product name queried from the bios (VBE 2.0)
+#		OEM_PRODUCT_REV - string that must exactly match
+#			the product revision queried from the bios (VBE 2.0)
+#		OEM_SOFTWARE_REV - string that must exactly match
+#			software revision queried from the bios (VBE 2.0)
+#		SAFE_EXEC - absolute pathname to an exectuable that returns 0
+#			if it uniquely detects the installed graphics
+#			adapter.  This will only be executed if all other
+#			UNIQUE_ID entries have already been satisfied.
+#			A side effect of this function is that if it
+#			returns successfully then the resulting grafinfo
+#			file should be ready for use *without* having
+#			to run the VIDSETUP file in the grafinfo file.
+#
+#	For each of the keys that is listed in 'UNIQUE_ID' an exact 
+#	match must exist.  If an exact match does exist for every key
+#	then the card is assumed to be uniquely detected. (Pretty cool!)
+#	If a card is uniquely detected then 'grafdetect' returns the
+#	grafinfo file name(s) that should be used to configure the X server.
+#	The grafinfo file name is the ADAPTER array key for the ADAPTER array 
+#	element that uniquely matched the installed adapter. You can override 
+#	the grafinfo value via an GRAFINFO key for the adapter array element.
+#
+#	Example of an ADAPTER entry for instance 0 and 1 of Mach64 (VT):
+#
+#		set ADAPTER(mach64vt_0) {
+#			{UNIQUE_ID {OEM_PRODUCT_NAME PCI_SLOT}}
+#			{OEM_PRODUCT_NAME {MACH64VT}}
+#			{PCI_SLOT {10025654080010025654}}
+#			{GRAFINFO {ati/mach64vt.xgi}}
+#		}
+#		set ADAPTER(mach64vt_1) {
+#			{UNIQUE_ID {OEM_PRODUCT_NAME PCI_SLOT}}
+#			{OEM_PRODUCT_NAME {MACH64VT}}
+#			{PCI_SLOT {10025654080110025654}}
+#			{GRAFINFO {ati/mach64vt_1.xgi}}
+#		}
+#
+# 	
+#
+# FLAGS:
+#	-r database_root:
+#
+#		NOTE: This option is only available to user root.
+#
+#		By default 'grafdetect' will build its database
+#		from the contents of the files in the tree rooted
+#		at /usr/X11R6.1/lib/vidconf/uniqueDB.  You can 
+#		override the tree root with the '-r' option.
+#
+# RETURN STATUS:
+#	== 0 if a card was uniquely detected
+#	== 1 if no cards were uniquely detected
+#	== 2 if an error occured
+#       == 3 if more that one card is detected
+#
+# NOTES:
+#	It works perfect.
+#	In their future we may add more UNIQUE_ID entries as we discover
+#	new methods of detecting cards.
+#
+# MODIFICATIONS:
+#
+# S000	Thu Jan 23 20:30:50 PST 1997	kylec@sco.com
+#	- Created
+#
+##############################################################################
+
+# Exit status
+set EXIT_FOUND 0
+set EXIT_ERROR 1
+set EXIT_NOT_FOUND 2
+set EXIT_TOO_MANY 3
+
+# Message catalogue 
+set GDETECT(catalogue) "grafdetect"
+set GDETECT(fd) [catopen $GDETECT(catalogue)]
+
+set GDETECT(error) {1}
+set GDETECT(usage.id) {1}
+set GDETECT(usage.str) {UX:grafdetect: USAGE: grafdetect [-r database_root]}
+set GDETECT(parse.id) {2}
+set GDETECT(parse.str) {UX:grafdetect: ERROR: file '%s'}
+set GDETECT(userid.id) {3}
+set GDETECT(userid.str) {UX:grafdetect: ERROR: permission denied}
+set GDETECT(args.id) {4}
+set GDETECT(args.str) {UX:grafdetect: ERROR: too many arguments}
+
+set GDETECT(warning) {2}
+set GDETECT(badfile.id) {1}
+set GDETECT(badfile.str) {UX:grafdetect: WARNING: file %s: %s}
+set GDETECT(toomany.id) {2}
+set GDETECT(toomany.str) {UX:grafdetect: WARNING: more than one graphics adapter was matched}
+
+
+
+proc Usage {} {
+    global GDETECT
+    puts stderr [catgets $GDETECT(fd) $GDETECT(error) \
+            $GDETECT(usage.id) $GDETECT(usage.str)]
+}
+
+proc UniqueDetect {db varRetList} {
+
+    upvar $db ADAPTER
+    upvar $varRetList adapterList
+
+    global BIOS_ID
+    global BIOS_STR
+    global PCI_SLOT
+    global OEM_STRING
+    global OEM_VENDOR_NAME
+    global OEM_PRODUCT_NAME
+    global OEM_PRODUCT_REV
+    global OEM_SOFTWARE_REV
+
+    unset adapterList
+    set totalAdaptersMatched 0
+
+    for_array_keys graf ADAPTER {
+        if {[catch {set unique_ids [keylget ADAPTER($graf) UNIQUE_ID]} err] == 0} {
+            set matched_ids {}
+            set weight 0
+            set safe_exec {/bin/true}
+            foreach id $unique_ids {
+                switch $id {
+                    PCI_SLOT {
+                        if {[catch {set pci_slot \
+                                [keylget ADAPTER($graf) $id]}] == 0} {
+                            foreach slot $PCI_SLOT {
+                                # Match a substring
+                                if {[string first $pci_slot $slot] == 0} {
+                                    lappend matched_ids $id
+                                    set weight [expr $weight + 1]
+                                    break
+                                }
+                            }
+                        }
+                    }
+                    BIOS_STR {
+                        set matched_str 1
+                        if {[catch {set bios_str \
+                                [keylget ADAPTER($graf) $id]}] == 0} {
+                            foreach str $bios_str {
+                                if {[string first $str $BIOS_STR] != -1} {
+                                    lappend matched_str $str
+                                    set weight [expr $weight + 1]
+                                } else {
+                                    set matched_str 0
+                                    break
+                                }
+                            }
+                            if { $matched_str != 0 } {
+                                lappend matched_ids $id
+                            }
+                        }
+                    }
+                    NOT_BIOS_STR {
+                        set not_matched_str 1
+                        if {[catch {set not_bios_str \
+                                [keylget ADAPTER($graf) $id]}] == 0} {
+                            foreach str $not_bios_str {
+                                if {[string first $str $BIOS_STR] == -1} {
+                                    lappend not_matched_str $str
+                                } else {
+                                    set not_matched_str 0
+                                    break
+                                }
+                            }
+                            if { $not_matched_str != 0 } {
+                                lappend matched_ids $id
+                                set weight [expr $weight + 1]
+                            }
+                        }
+                    }
+                    SAFE_EXEC {
+                        if {[catch {set safe_exec \
+                                [keylget ADAPTER($graf) $id]}] == 0} {
+                            lappend matched_ids $id
+                            set weight [expr $weight + 1]
+                        }
+                    }
+                    default {
+                        if {[catch {set str [keylget ADAPTER($graf) $id]}] == 0} {
+                            if {[string compare $str [set $id]] == 0} {
+                                lappend matched_ids $id
+                                set weight [expr $weight + 1]
+                            }
+                        }
+                    }
+                }
+	    }
+            
+            if {([string compare $unique_ids $matched_ids] == 0) && \
+                    ([catch {exec -- $safe_exec} err] == 0)} {
+                # It's a match
+                if {[catch {set grafname [keylget ADAPTER($graf) GRAFINFO]}] == 0} {
+                    keylset card GRAFINFO $grafname
+                } else {
+                    keylset card GRAFINFO $graf
+                }
+                keylset card WEIGHT $weight
+                lappend adapterList $card
+                set totalAdaptersMatched [expr {${totalAdaptersMatched} + 1}]
+            }
+        }
+    }
+    return ${totalAdaptersMatched}
+}
+
+proc BuildDataBase {db varADAPTER} {
+
+    upvar $varADAPTER ADAPTER
+
+    foreach db_entry [glob -nocomplain ${db}/*] {
+        if {[file isdirectory $db_entry]} {
+            BuildDataBase $db_entry ADAPTER
+        } else {
+            set err [catch {source $db_entry} warning]
+            if {$err != 0} {
+                global GDETECT
+                set str [catgets $GDETECT(fd) $GDETECT(warning) \
+                        $GDETECT(badfile.id) $GDETECT(badfile.str)]
+                puts stderr [format $str $db_entry "$warning"]
+            }
+        }
+    }
+}
+
+
+
+proc QueryBiosId {varBIOS_ID} {
+
+    upvar $varBIOS_ID BIOS_ID
+
+    if {([catch {set bios [exec -- \
+            vrom | /bin/sum -r | /bin/awk {{print $1}}]}] == 0)} {
+            set BIOS_ID $bios
+    } else {
+        set BIOS_ID {-1}
+    }
+
+    return $BIOS_ID
+
+}
+
+proc QueryBiosStr {varBIOS_STR} {
+
+    upvar $varBIOS_STR BIOS_STR
+    set tmp /tmp/vstr[pid]
+
+    if { ([catch {exec -- vrom > ${tmp}}] == 0) && \
+            ([catch {set bios_str [exec -- \
+            /bin/strings -a ${tmp}]} err] == 0) } {
+        set BIOS_STR $bios_str
+        exec -- rm -f ${tmp}
+    } else {
+        set BIOS_STR {-1}
+    }
+
+    return $BIOS_STR
+
+}
+
+proc QueryPCISlot {varPCI_SLOT} {
+
+    upvar $varPCI_SLOT PCI_SLOT
+    global AOFBIN
+    set err 0
+
+    if { [catch {set pci [exec -- \
+            ${AOFBIN}/pcislot | /bin/awk {{print $4}}]}] == 0 } {
+        set PCI_SLOT $pci
+    } else {
+        set PCI_SLOT {-1}
+    }
+    
+    return $PCI_SLOT
+
+}
+
+proc QueryVESAInfo {
+    varOEM_STRING 
+    varOEM_VENDOR_NAME
+    varOEM_PRODUCT_NAME
+    varOEM_PRODUCT_REV
+    varOEM_SOFTWARE_REV } {
+
+        upvar $varOEM_STRING OEM
+        upvar $varOEM_VENDOR_NAME OEM_VENDOR_NAME
+        upvar $varOEM_PRODUCT_NAME OEM_PRODUCT_NAME
+        upvar $varOEM_PRODUCT_REV OEM_PRODUCT_REV
+        upvar $varOEM_SOFTWARE_REV OEM_SOFTWARE_REV
+
+        if {[catch {set vesainfo [exec -- vesa -v]}] == 0} {
+            eval $vesainfo
+            return 0
+        } else {
+            return {-1}
+        }
+
+}
+
+
+##############################################################################
+#
+# Main
+#
+##############################################################################
+
+# Init environment
+set LIBDIR	{/usr/X11R6.1/lib}
+set AOFDIR	${LIBDIR}/vidconf/AOF
+set AOFBIN	${AOFDIR}/bin
+set env(PATH) 	${AOFBIN}:$env(PATH)
+
+# Set defaults
+set DB_ROOT	${AOFDIR}/UNIQUE
+set BIOS_ID	{-1}
+set BIOS_STR	{-1}
+set PCI_SLOT	{-1}
+set OEM_STRING	{-1}
+set OEM_VENDOR_NAME {-1}
+set OEM_PRODUCT_NAME {-1}
+set OEM_PRODUCT_REV {-1}
+set OEM_SOFTWARE_REV {-1}
+set ADAPTER(0) {}
+unset ADAPTER(0)
+
+# Process command line
+while { ([lindex $argv 0] == "-r") } {
+
+	case [lvarpop argv] in {
+            -r { 
+                # Must be root to change database root
+                if {[id userid] != 0} {
+                    global GDETECT
+                    puts stderr [catgets $GDETECT(fd) $GDETECT(error) \
+                            $GDETECT(userid.id) $GDETECT(userid.str)]
+                    Usage 
+                    exit $EXIT_ERROR
+                }
+                set DB_ROOT [lvarpop argv] }
+            }
+}
+
+# Too many args?
+if { [llength $argv] >= 1 } {
+    global GDETECT
+    puts stderr [catgets $GDETECT(fd) $GDETECT(error) \
+            $GDETECT(args.id) $GDETECT(args.str)]
+    Usage 
+    exit $EXIT_ERROR
+}
+
+# Obtain unique identifiers
+QueryBiosId BIOS_ID
+QueryBiosStr BIOS_STR
+QueryPCISlot PCI_SLOT 
+QueryVESAInfo OEM_STRING OEM_VENDOR_NAME OEM_PRODUCT_NAME \
+        OEM_PRODUCT_REV OEM_SOFTWARE_REV
+BuildDataBase $DB_ROOT ADAPTER
+
+set adapterList {}
+set detected [UniqueDetect ADAPTER adapterList]
+
+switch ${detected} {
+    0 { exit ${EXIT_NOT_FOUND} }
+    default {
+        set weight 0
+        set cnt 0
+        foreach adapter $adapterList {
+            if { $weight < [keylget adapter WEIGHT] } {
+                set weight [keylget adapter WEIGHT]
+                set grafinfo [keylget adapter GRAFINFO]
+                set cnt 1
+            } elseif { $weight == [keylget adapter WEIGHT] } {
+                if { [string first [keylget adapter GRAFINFO] $grafinfo] == -1 } {
+		    # Only notice distinct grafinfo files
+                    set cnt [expr $cnt + 1]
+                    lappend grafinfo [keylget adapter GRAFINFO]
+                }
+            }
+        }
+        if { $cnt > 1 } {
+            global GDETECT
+            puts stderr [catgets $GDETECT(fd) $GDETECT(warning) \
+                    $GDETECT(toomany.id) $GDETECT(toomany.str)]
+            foreach card $grafinfo {
+                puts stdout $card
+            }
+            exit ${EXIT_TOO_MANY}
+        } else {
+            puts stdout $grafinfo
+            exit ${EXIT_FOUND}
+        }
+    }
+}

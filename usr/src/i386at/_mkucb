@@ -1,0 +1,63 @@
+#ident	"@(#)mk:i386at/:mkucb	1.2.1.3"
+#ident	"$Header$"
+
+#
+#	Shell script for rebuilding the UNIX System Compatibility Package
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+UID_NAME=`id|sed 's/[()]/ /gp'|awk '{print $2}'`
+
+# Check for the existance of target directories
+cat -s ucb.dirs	|	# print contents of the target directory list
+egrep -v "^$|^#"	|	# get rid of blank lines and comments
+while read TARGETDIR MODE OWNER GROUP
+do
+	if [ ! -d ${Root}/${Mach}/$TARGETDIR ]
+	then
+		mkdir ${Root}/${Mach}/$TARGETDIR
+		if [ ! -d ${Root}/${Mach}/$TARGETDIR ]
+		then
+			echo "$0: stop: make of directory ${Root}/${Mach}/$TARGETDIR failed"
+			exit 1
+		fi
+			
+	fi
+	if [ "$UID_NAME" = "root" ]
+	then
+		if [ ! -z "$MODE" -a "$MODE" != "-" ]
+		then
+			chmod $MODE ${Root}/${Mach}/$TARGETDIR
+		fi
+		if [ ! -z "$OWNER" -a "$OWNER" != "-" ]
+		then
+			chown $OWNER ${Root}/${Mach}/$TARGETDIR
+		fi
+		if [ ! -z "$GROUP" -a "$GROUP" != "-" ]
+		then
+			chgrp $GROUP ${Root}/${Mach}/$TARGETDIR
+		fi
+	fi
+done
+
+# give execute permission to the :mkucbhead :mkucblib :mkucbcmd
+chmod +x :mkucbhead :mkucblib :mkucbcmd
+
+#	install /usr/ucbinclude and /usr/ucbinclude/sys header files
+./:mkucbhead ${Root} ${Mach} ${Work} ${Tools} ${Cpu}
+
+#	build and install the Compatibility Package library
+./:mkucblib ${Root} ${Mach} ${Work} ${Tools} ${Cpu}
+
+#	build all the Compatibility Package commands
+./:mkucbcmd ${Root} ${Mach} ${Work} ${Tools} ${Cpu}
+
+echo "ENDED `basename $0` `date`"
+exit 0

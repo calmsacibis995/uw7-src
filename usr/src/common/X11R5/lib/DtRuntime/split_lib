@@ -1,0 +1,32 @@
+#!/bin/sh
+#ident	"@(#)DtRuntime:split_lib	1.5"
+#
+# split_lib.sh - split a given library into two pieces using a given prefix.
+#
+# This script relies on 4 commands, du, cut, expr, split, and mv.
+# They are getting from /usr/bin now. Shall we take them from
+# $ROOT/$MACH/usr/bin (now is /usr/bin)?
+#
+# Usage - split_lib.sh [lib name] [prefix] [dest]
+#
+
+if [ $# != 3 ]
+then
+	echo "Usage: $0 [lib name] [prefix] [dest]"
+	exit 1
+else
+	LibName=$1
+	Prefix=$2.
+	Dest=$3
+fi
+
+# Assume du uses 512K as the block size!!!
+TotalBlocks=`/usr/bin/du -a $LibName | /usr/bin/cut -f1 -d"	"`
+Half=`/usr/bin/expr $TotalBlocks / 4 + 1`k
+
+# Note that `split -b' is only available in sbird 2.0 or above.
+#echo "/usr/bin/split -b $Half $LibName $Prefix"
+/usr/bin/split -b $Half $LibName $Prefix
+
+#echo "/usr/bin/mv -f ${Prefix}aa ${Prefix}ab $Dest"
+/usr/bin/mv -f ${Prefix}aa ${Prefix}ab $Dest

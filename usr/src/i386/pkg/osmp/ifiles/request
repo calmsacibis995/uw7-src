@@ -1,0 +1,53 @@
+#ident  "@(#)pkg.osmp:ifiles/request	1.24.2.3"
+
+#exec 2>/tmp/osmp.err
+#set -x
+
+PKG_I18N_SCRIPTS=${REQDIR}/inst/locale/${LOCALE}/${PKGINST}
+REQ_SCRIPTS=${REQDIR}/${PKGINST}
+
+[ ! -d /etc/inst/locale/C/menus/${PKGINST} ] && mkdir -p /etc/inst/locale/C/menus/${PKGINST}
+
+# No need to copy file to /tmp if it's already copied
+[ ! -f /tmp/${PKGINST}.req.sh ] && {
+
+	if [ -f ${PKG_I18N_SCRIPTS}/${PKGINST}.req.sh ]
+	then
+		cp ${PKG_I18N_SCRIPTS}/${PKGINST}.req.sh /tmp
+		cp ${PKG_I18N_SCRIPTS}/${PKGINST}.post.sh /tmp
+		cp ${PKG_I18N_SCRIPTS}/${PKGINST}_wininit /tmp
+		cp ${PKG_I18N_SCRIPTS}/${PKGINST}_winexit /tmp
+		cp ${PKG_I18N_SCRIPTS}/txtstrings /etc/inst/locale/${LOCALE}/menus/${PKGINST}
+	else
+		cp ${REQ_SCRIPTS}/${PKGINST}.req.sh  /tmp
+		cp ${REQ_SCRIPTS}/${PKGINST}.post.sh  /tmp
+		cp ${REQ_SCRIPTS}/${PKGINST}_wininit  /tmp
+		cp ${REQ_SCRIPTS}/${PKGINST}_winexit  /tmp
+		cp ${REQ_SCRIPTS}/txtstrings /etc/inst/locale/C/menus/${PKGINST}
+	fi
+
+	chmod +x /tmp/${PKGINST}.req.sh
+	chmod +x /tmp/${PKGINST}.post.sh
+
+	#
+	# Do not run request script at this time if package is being
+	# installed as part of the initial boot floppy installation and
+	# this is the request script being invoked. 
+	#
+	# We use the existence of postreboot.sh file as an indicator whether
+	# we are in system installation phase or post pkgadd phase.  
+
+	[ -f /etc/inst/scripts/postreboot.sh ] && exit 0
+
+}
+
+#
+# Only get here if installing OSMP package after initial system installation
+#
+
+/tmp/${PKGINST}.req.sh
+rc=$?
+rm -f /tmp/${PKGINST}.req.sh 1>/dev/null 2>&1
+rm -f /tmp/${PKGINST}_wininit /tmp/${PKGINST}_winexit 1>/dev/null 2>&1
+exit $rc
+

@@ -1,0 +1,150 @@
+#!/sbin/sh
+#ident "@(#)change_slices	15.1	98/03/04"
+
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /globals.sh
+. /isl/ui_modules/disk.rc
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func {
+[ -n "$debug" ] && set -x
+
+	change_slices=`ivar get change_slices`
+	[ -z "$change_slices" ] && change_slices=false
+
+	# if they want to use the default slice setup,
+	# re-initialise to make sure everything is ok.
+	# This allows you to use a different disk size
+	# with this ifile, and still have everything work.
+	if [ ! $change_slices ]
+	then
+		load_disk_info
+		fsinit 1
+		save_disk_info
+	fi
+}
+
+. /isl/ui_modules/common.rc
+
+#--------------------------------------------------------
+
+#
+# Use the default slices or change them?
+#
+function get_choice
+{
+[ -n "$debug" ] && set -x
+	msg
+	footer "$CHANGE_SLICE_FOOTER"
+	display "$CHANGE_SLICE_CUSTOM" -above 1 -below 4
+	open_radio -exit choice_done 
+	radio_wid=$RID
+	add_radio -entry "set_choice false"  "$USE_DEFAULT_SLICE"
+	add_radio -entry "set_choice true"   "$CUSTOMIZE_SLICE"
+	if $change_slices
+	then
+		current=1
+	else
+		current=0
+	fi
+	radio_runparms $radio_wid 2
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		 -above 6 -below 1 -title "$CHOOSE_SLICE"
+	run_radio $radio_wid $current 2
+	main_window=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	set_hotkey 10 go_next
+	input_handler	
+}
+
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	if [ "$1" = true ]
+	then
+		change_slices=true
+		msg "$CHANGE_USR_TMP"
+	else
+		change_slices=false
+		msg "$KEEP_USR_TMP"
+	fi
+}
+
+function choice_done
+{
+:
+}
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_slices "$change_slices"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_slices "$change_slices"
+	#
+	# Tell the sequencer to go on
+	#
+	if $change_slices
+	then
+		ii_exit SLICE
+	else
+		load_disk_info
+		fsinit 1
+		save_disk_info
+		ii_exit NEXT
+	fi
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_slices "$change_slices"
+	#
+	ivar set help_topic change_slices
+	ii_exit HELP
+}
+
+#
+# Main
+#
+#
+# Get the initial choice (if any).
+#
+change_slices=`ivar get change_slices`
+[ -z "$change_slices" ] && change_slices=false
+
+#
+# Let the user decide.
+#
+get_choice
+input_handler
+go_next

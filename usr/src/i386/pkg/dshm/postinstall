@@ -1,0 +1,70 @@
+#ident	"@(#)pkg.dshm:postinstall	1.3"
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+MODULE=segshm
+
+ERROR=/tmp/dshm.err
+
+rm -f $ERROR > /dev/null 2>&1
+
+exitstat=0
+
+# modify tunables
+
+#/etc/conf/bin/idtune -f foo_tunable bar_value > ${ERROR} 2>&1
+
+# install the drivers
+cd /tmp/${MODULE}
+
+# Check if a driver for ${MODULE} already exists 
+${CONFBIN}/idcheck -p ${MODULE} > ${ERROR} 2>&1
+RC=$?
+if [ "$RC" = 0 ]; then
+	${CONFBIN}/idinstall -P ${PKGINST} -a ${MODULE} 2> ${ERROR}
+else
+	${CONFBIN}/idinstall -P ${PKGINST} -u ${MODULE} 2> ${ERROR}	
+fi
+
+if [ "$?" != "0" ]; then
+	message `pfmt -s nostd "The installation of the %s \
+	cannot be completed due to an error in the driver \
+	installation. The file %s contains the errors." \
+	${NAME} ${ERROR} 2>&1`;
+	exitstat=${FAILURE}
+fi
+
+if [ ${exitstat} = 0 ]; then
+	# Rebuild the kernel
+	${CONFBIN}/idbuild 2>> $ERROR
+	if [ "$?" -ne "0" ]; then
+
+		message `pfmt -s nostd "The installation cannot be \
+		completed due to an error in  the kernel \
+		reconfiguration. %s Please try the  installation \
+		again.  If the error occurs again,  contact your \
+		Service Representative" $ERROR 2>&1`;
+
+		exitstat=${FAILURE}
+	else
+		exitstat=10
+	fi
+fi
+
+#
+# Now clean up
+#
+rm -rf /tmp/${MODULE} >/dev/null 2>&1
+removef	$PKGINST /tmp/${MODULE}/Driver_mp.o \
+		/tmp/${MODULE}/Master \
+		/tmp/${MODULE}/System \
+		>/dev/null 2>&1
+removef $PKGINST /tmp/${MODULE}  >/dev/null 2>&1
+
+removef -f $PKGINST >/dev/null 2>&1
+
+installf -f $PKGINST >/dev/null 2>&1
+
+exit ${exitstat}

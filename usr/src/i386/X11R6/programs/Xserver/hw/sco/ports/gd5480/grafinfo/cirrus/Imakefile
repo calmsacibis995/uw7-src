@@ -1,0 +1,31 @@
+/*
+ *	@(#) Imakefile 65.2 97/07/25 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1996-1997.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+#include <Server.tmpl>
+
+GRAFDIR=$(USRLIBDIR)/grafinfo/cirrus
+SCRIPTDIR=$(USRLIBDIR)/vidconf/scripts
+AOFDIR=$(USRLIBDIR)/vidconf/AOF/ID/cirrus
+
+all: gd5480pci.tmpl
+
+gd5480pci.tmpl: gd5480pci.template modes.list buildgrafinfo
+	rm -f gd5480pci.tmpl
+	egrep -v '^#' modes.list | sort -r -n +1 | \
+	    $(SHELL) buildgrafinfo gd5480pci.template > gd5480pci.tmpl
+
+clean::
+	rm -f gd5480pci.tmpl
+
+depend::
+
+MakeDirectories(install,$(GRAFDIR) $(SCRIPTDIR) $(AOFDIR))
+InstallMultipleFlags(gd5480pci,$(SCRIPTDIR),$(INSTBINFLAGS))
+InstallNonExec(gd5480pci.tmpl,$(GRAFDIR))
+InstallNonExec(gd5480pci.xgi,$(GRAFDIR))
+InstallNonExec(../AOF/ID/gd5480pci,$(AOFDIR))
+InstallNamedNonExec(gd5480pci.unq,gd5480pci,$(USRLIBDIR)/vidconf/AOF/UNIQUE/cirrus)

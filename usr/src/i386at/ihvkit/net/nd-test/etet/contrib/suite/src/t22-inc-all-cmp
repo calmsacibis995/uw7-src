@@ -1,0 +1,41 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api all");
+	@all_output=@output;
+	@all_journal=@journal;
+	&run("-e contrib/api include");
+
+#	process both output files to remove known differences
+	grep(s!results/.*/journal!results/0000e/journal!,@all_output);
+	grep(s/tmp\/.*/tmp/g,@all_output);
+	
+	grep(s!results/.*/journal!results/0000e/journal!,@output);
+	grep(s/tmp\/.*/tmp/g,@output);
+
+	&verify(&compare_arrays(*all_output,*output));
+}
+
+
+sub tp2 {
+	$tp=tp2;
+
+# 	process both journal files to remove known differences
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@all_journal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@all_journal);
+	grep(s/tmp\/.*/tmp/g,@all_journal);
+
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@journal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@journal);
+	grep(s/include/all/,@journal);
+	grep(s/tmp\/.*/tmp/g,@journal);
+
+	&verify(&compare_arrays(*all_journal,*journal));
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

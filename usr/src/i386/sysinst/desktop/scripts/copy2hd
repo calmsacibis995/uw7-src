@@ -1,0 +1,77 @@
+#ident	"@(#)copy2hd	15.1"
+
+function copy2hd
+{
+[ -f /tmp/mnttab ] && {
+	call unlink /mnt/etc/mnttab
+	cp /tmp/mnttab /mnt/etc/mnttab
+}
+
+#Before we copy the /dev/*px* device nodes from the memfs filesystem to the
+#hard disk, we have to remove the spx devices already on the hard disk,
+#because the majors/minors might not match (especially in the case of upgrade
+#installations).  That would cause the re-invocation of 'npsd' to fail.
+#This is because 'cpio' will NOT overwrite a character-special file that 
+#exists, even with the '-u' option.
+#
+#Also the /etc/confnet.d/netdrivers file has to be removed, because when
+#'npsd' starts it tries to match the device name from the entries in that
+#file, if present.  If the driver name changed from one release to the next,
+#'npsd' would fail.  If that file is not present, 'npsd' starts without it.
+
+[ "${SEC_MEDIUM_TYPE}" = "spx" ] && {
+	(. /var/sadm/dist/ii.parms; rm -f $HDROOT/dev/${DRIVER_NAME}_0)
+	rm -f $HDROOT/dev/*px* $HDROOT/etc/confnet.d/netdrivers
+}
+
+cpio -pdLmvu /mnt </hd.list >/dev/null 2>&1
+call unlink /mnt/usr/lib/libdl.so.1 #for OVERLAY install
+call symlink /usr/lib/libc.so.1 /mnt/usr/lib/libdl.so.1
+/etc/scsi/bmkdev -r /mnt >/dev/null 2>&1
+
+[ -d /mnt/tmp ] || call mkdir /mnt/tmp
+call unlink /mnt/usr/bin/ksh
+cp /usr/bin/ksh     /mnt/usr/bin/ksh
+cp /usr/bin/winxksh /mnt/usr/bin/xksh
+cp /usr/bin/winxksh /mnt/tmp/winxksh
+cp /usr/bin/cpio /mnt/tmp/ncp
+call link /mnt/dev/dsk/f0q15dt /mnt/dev/fd0
+call link /mnt/dev/rdsk/f0q15dt /mnt/dev/rfd0
+[ "$PKGINSTALL_TYPE" = "NEWINSTALL" ] && print $ROOTFS > /mnt/etc/.fstype
+sh_mkdir /mnt/var /mnt/var/adm /mnt/var/tmp /mnt/usr /mnt/usr/options /mnt/home \
+	/mnt/home2 /mnt/etc /mnt/usr/bin /mnt/dev/fd >/dev/null 2>&1 || :
+{
+	print "/proc -   /proc   proc    -   no  -"
+	print "/processorfs -   /system/processor   profs    -   yes  -"
+	print "/dev/fd   -   /dev/fd fdfs    -   no  -"
+	print "/dev/dsk/f0t  /dev/rdsk/f0t   /install    s5  -   no  -"
+	print "/dev/dsk/f1t  /dev/rdsk/f1t   /install    s5  -   no  -"
+	print "/dev/dsk/f0   /dev/rdsk/f0    /install    s5  -   no  -"
+	print "/dev/dsk/f1   /dev/rdsk/f1    /install    s5  -   no  -"
+	if [ "${SLTYPE[13]}" = memfs ]
+	then
+		integer TMP_SIZE=SLSIZE[13]*1048576
+		print "/tmp	-	/tmp	memfs	-	yes	swapmax=${TMP_SIZE},rootmode=1777"
+	fi
+	if [ "${SLTYPE[14]}" = memfs ]
+	then
+		integer TMP_SIZE=SLSIZE[14]*1048576
+		print "/tmp	-	/tmp	memfs	-	yes	swapmax=${TMP_SIZE},rootmode=1777"
+	fi
+	if [ "${SLTYPE[16]}" = memfs ]
+	then
+		integer VAR_TMP_SIZE=SLSIZE[16]*1048576
+		print "/var/tmp	-	/var/tmp	memfs	-	yes	swapmax=${VAR_TMP_SIZE},rootmode=1777"
+	fi
+} >> /mnt/etc/vfstab
+# Populate /etc/swaptab
+{
+	print "#swapname		offset(in blocks)	size(in blocks)"
+	print "/dev/swap		0			-"
+} > /mnt/etc/swaptab
+
+# Set a flag so that the upgrade and overlay tools know we're
+# installing from inst and pkginst, rather than from /usr/sbin/pkgadd.
+> /mnt/tmp/boot.96587
+
+}

@@ -1,0 +1,59 @@
+#!/bin/ksh
+#ident	"@(#)option7	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+REMOVED=0
+
+getname "option7" $1
+
+if [ $? -ne 0 ]
+then
+  exit 1
+else
+  NAME=`cat $TMP/NAME`
+  rm -- "$TMP/NAME"
+fi
+
+SHORTNAME=`echo $NAME | awk -F. '{print $1}'`
+
+if rmbootpentry $SHORTNAME
+then
+  REMOVED=1
+else
+  echo "\n$SHORTNAME not present in $BOOTPTABLE" | tee -a $LOG
+fi
+
+if [ -f "$CONFIGDIR/$SHORTNAME.cfg" ]
+then
+  REMOVED=1
+  echo "" | tee -a -- $LOG
+  echo "Removing network printer configuration file" >> $LOG
+  echo "" >> $LOG
+  echo rm -f $CONFIGDIR/$SHORTNAME.cfg >> $LOG
+  rm -f -- "$CONFIGDIR/$SHORTNAME.cfg" >> $LOG
+  echo "$SHORTNAME.cfg removed from $CONFIGDIR"
+fi
+
+echo "" | tee -a -- $LOG
+if [ $REMOVED -eq 1 ]
+then
+  echo "The printer BOOTP/TFTP configuration removal is complete."
+fi
+echo "Press the return key to continue ... $NL"
+read -r RESP
+exit 0
+

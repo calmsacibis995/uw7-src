@@ -1,0 +1,263 @@
+/*
+ *    @(#) clvga.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ * Copyright (c) Cirrus Logic, Inc., 1991,1992
+ *
+ */
+
+/* ************************************************************************* *
+ * CIRRUS/CLVGA.XGI - XEGIA(tm) GrafInfo File for Cirrus Logic VGA - 6410    *
+ *                                                                           *
+ *  LAST UPDATE: 6 April, 1992 by Cirrus Logic                               * 
+ *                                                                           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   *
+ *                                                                           *
+ *   CIRRUS.CLVGA.VGA.640x480-16       VGA 640x480 16-color                  *
+ *   CIRRUS.CLVGA.VGA.800x600-16       VGA 800x600 16-color                  *
+ *                                                                           *
+ * ************************************************************************* */
+
+/* ********************************************************************* */
+
+VENDOR CIRRUS "Cirrus Logic"
+ MODEL  CLVGA "VGA"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16  "640x480 16-color"         /* VGA 640x480 16 color */
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0d;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+
+         /* Enable Extended Registers */
+         out (0x3CE, 0xA); out (0x3CF, 0xEC);
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xEF);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         /* Select standard VGA clock frequency for 640x480 */
+         out (0x3CE, 0x84); out (0x3CF, 0x10);
+
+         out(0x3D4,0x11); out(0x3D5,0x20);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEA;  r17 = 0xAC;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out (0x3C6, 0xFF);               /* palette mask */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* Enable extended registers */
+	 out (0x3CE, 0xA); out (0x3CF, 0xEC);
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         out (0x3CE, 0x84); out (0x3CF, 0x10);  /* Select VGA clock freq */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x20);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0b;  r7  = 0x3e;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xea;  r17 = 0xac;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xe7;  r22 = 0x04;  r23 = 0xe3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         /* Protect extended registers */
+         out (0x3CE, 0xA); out (0x3CF, 0xCE);
+         }
+
+/* ********************************************************************* */
+
+VENDOR CIRRUS "Cirrus Logic"
+ MODEL  CLVGA "VGA"
+  CLASS  VGA         "VGA"
+   MODE   800x600-16 "800x600 16 color"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0d;            /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+	 COMMENT = 
+"WARNING!!  Do not choose this resolution if your Cirrus Logic VGA
+is connected to a panel display.  Running a resolution other than
+640x480 may damage your panel hardware.";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+
+         /* Enable Extended Registers */
+         out (0x3CE, 0xA); out (0x3CF, 0xEC);
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x2B);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         /* Select clock frequency for 800x600 */
+         out (0x3CE, 0x84); out (0x3CF, 0x9C);
+
+         out(0x3D4,0x11); out(0x3D5,0x20);   /* unprotect crtc regs 0-7 */
+         r0  = 0x7F; r1  = 0x63; r2  = 0x64; r3  = 0x82;
+         r4  = 0x6B; r5  = 0x1B; r6  = 0x72; r7  = 0xf0;
+         r8  = 0;    r9  = 0x60; r10 = 0x0;  r11 = 0x0;
+         r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;   
+         r16 = 0x5D; r17 = 0xA1; r18 = 0x57; r19 = 0x32;
+         r20 = 0x00; r21 = 0x5C; r22 = 0x70; r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out (0x3C6, 0xFF);               /* palette mask */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         /* protect extended regs */
+         out (0x3CE, 0xA);  out (0x3CF, 0xCE);
+
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* Enable extended registers */
+	 out (0x3CE, 0xA); out (0x3CF, 0xEC);
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         out (0x3CE, 0x84); out (0x3CF, 0x10);  /* Select VGA clock freq */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0b;  r7  = 0x3e;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xea;  r17 = 0xac;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xe7;  r22 = 0x04;  r23 = 0xe3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         /* Protect extended registers */
+         out (0x3CE, 0xA); out (0x3CF, 0xCE);
+         }
+
+/* End of File - CLVGA.XGI */
+

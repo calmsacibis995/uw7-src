@@ -1,0 +1,211 @@
+#!/usr/bin/ksh
+#==============================================================================
+# ldapstart
+# ~~~~~~~~~
+#
+# synopsis:
+#	ldapstart all
+#	ldapstart -d n
+#	ldapstart boot
+#
+# EXIT STATES:
+#	
+# 	100	- Cannot include ldaptabProcedures
+#	180	- Must be root to execute this command
+#	181	- Invalid arguments to ldapstart
+#------------------------------------------------------------------------------
+LDAPTABPROCS=/usr/lib/ldap/ldaptabProcedures
+PIDDIR=/var/ldap/pid
+LDAPINFO=/usr/lib/ldap/ldapinfo
+SLAPD=/usr/lib/ldap/slapd
+SLURPD=/usr/lib/ldap/slurpd
+
+exitVal=0
+
+#Check permissions to run this command
+UID=`id -u`
+if [ "$UID" != 0 ]
+then
+	pfmt  -s info -g ldapmisc:2 "You must be root to run this command\n"
+	exit 180
+fi
+
+if [ -f $LDAPTABPROCS ]
+then    
+        . $LDAPTABPROCS
+else    
+        pfmt -s halt -g ldapmisc:3 "Fatal error, cannot find file %s\n" "$LDAPTABPROCS"
+        exit 100
+fi
+
+usage() {
+        pfmt -s nostd -g ldapmisc:4 "Usage: %s: ldapstart all\n" "$0";
+        pfmt -s nostd -g ldapmisc:5 "Usage: %s: ldapstart -d number\n" "$0";
+        pfmt -s nostd -g ldapmisc:6 "Usage: %s: ldapstart -i id\n" "$0";
+        pfmt -s nostd -g ldapmisc:7 "Usage: %s: ldapstart boot\n" "$0";
+}
+
+startSlapd() {
+		masterfile=`$LDAPINFO -v masterfile -i "$1"`
+                port=`$LDAPINFO -v port -i "$1"`
+                sysloglevel=`$LDAPINFO -v sysloglevel -i "$1"`
+
+
+                SLAPDARGS="$SLAPD"
+                SLURPDARGS="$SLURPD"
+                [ ! -z "$masterfile" ] && {
+                        SLAPDARGS=$SLAPDARGS" -f $masterfile"
+                        SLURPDARGS=$SLURPDARGS" -f $masterfile"
+		}
+                [ ! -z "$port" ] && \
+                        SLAPDARGS=$SLAPDARGS" -p $port"
+                [ ! -z "$sysloglevel" ] && \
+                        SLAPDARGS=$SLAPDARGS" -s $sysloglevel"
+
+		if [ -z "$port" ]
+		then
+			port=389
+		fi
+		if [ -z "$quietflag" ]
+		then
+			pfmt -s nostd -g ldapmisc:8 "Starting slapd on port %s\n" $port
+		fi
+		eval "$SLAPDARGS"
+		if [ $? != 0 ]
+		then
+			return 1
+		fi
+		sleep 1
+
+		# Now check if slurpd needs to be started
+		replicas=`$LDAPINFO -v replicas -i "$1"`
+		if [ $? == 0 ] && [ ! -z "$replicas" ]
+		then
+			if [ -z "$quietflag" ]
+			then
+				pfmt -s nostd -g ldapmisc:9 "Starting slurpd\n"
+			fi
+			eval "$SLURPDARGS"
+			if [ $? != 0 ]
+			then
+				return 1
+			fi
+		fi
+}
+
+if [ $# -eq 0 ]
+then
+        usage $0
+	exit 181
+fi
+
+allflag=
+dflag=
+iflag=
+bootflag=
+quietflag=
+while [ $# != 0 ]
+do
+        name=$1
+	case $name in
+	all)
+		allflag=1;;
+	boot)
+		bootflag=1;;
+	-\?)
+		usage $0
+		exit 0;;
+	-d)
+		shift
+                if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 181; fi
+                dflag=1
+                dval=$1;;
+	-i)
+		shift
+                if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 181; fi
+                iflag=1
+                ival=$1;;
+	-q)
+		quietflag=1;;
+	*)
+		pfmt -s error -g ldapmisc:11 "Unrecognised argument: %s\n" $name
+		usage $0
+		exit 181;;
+	esac
+	shift
+done
+
+if [ ! -z "$bootflag" ]
+then
+	dnum=`$LDAPINFO -v noofdaemons`
+        if [ "$dnum" -gt 0 ]
+        then
+		let i=1
+		let bootcount=0
+		canReadLDAPTAB
+                while [ $i -le $dnum ]
+                do
+			daemonNumberIsValid $i -e
+			ival=`commentFilter $LDAPTAB | printLine "$i" | \
+				awk -F ":" '{print $1; exit;}' `
+			daemonIdentifierIsValid "$ival" -e
+			if [ `$LDAPINFO -v startatboot -i "$ival"` = "on" ]
+			then
+				let bootcount=$bootcount+1
+                        	startSlapd "$ival"
+				if [ $? != 0 ]
+				then
+					exitVal=1
+				fi
+			fi
+                        let i=$i+1
+                done
+        fi
+        exit $exitVal
+fi
+
+
+if [ ! -z "$allflag" ] 
+then
+	dnum=`$LDAPINFO -v noofdaemons`
+	if [ "$dnum" -gt 0 ] 
+	then
+		if [ -z "$quietflag" ]
+		then
+			pfmt -s nostd -g ldapmisc:10 "Starting all slapd processes\n"
+		fi
+		canReadLDAPTAB
+		let i=1
+		while [ $i -le $dnum ]
+		do
+			daemonNumberIsValid $i -e
+			ival=`commentFilter "$LDAPTAB" | printLine "$i" | \
+				awk -F ":" '{print $1; exit;}' ` 
+			daemonIdentifierIsValid "$ival" -e
+			startSlapd "$ival"
+			if [ $? != 0 ]
+			then
+				exitVal=1
+			fi
+			let i=$i+1
+		done
+	fi
+	exit $exitVal
+fi
+
+if [ -z "$iflag" ] && [ ! -z "$dflag" ]
+then
+	canReadLDAPTAB
+	daemonNumberIsValid $dval -e
+	ival=`commentFilter $LDAPTAB | printLine "$dval" | \
+		awk -F ":" '{print $1; exit;}' `
+	iflag=1
+fi
+
+# start 
+if [ ! -z "$iflag" ]
+then
+	daemonIdentifierIsValid "$ival" -e
+	startSlapd "$ival"
+	return $?
+fi

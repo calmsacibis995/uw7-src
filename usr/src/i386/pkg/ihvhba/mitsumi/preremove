@@ -1,0 +1,22 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/mitsumi/preremove	1.3"
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+for MODULE in $PKGINST
+do
+        ${CONFBIN}/idcheck -p ${MODULE}
+        RES="$?"
+        if
+                [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+        then
+		${CONFBIN}/idinstall -P ${PKGINST} -d ${MODULE} 2>> /tmp/${MODULE}.err
+        fi
+done
+
+sed -e "/^6:1:${PKGINST}:${PKGINST}$/d" /etc/loadmods >/tmp/$$.loadmods
+mv /tmp/$$.loadmods /etc/loadmods
+removef $PKGINST /etc/loadmods
+removef -f $PKGINST
+
+exit 0

@@ -1,0 +1,285 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/ammort	1.6.1.1"
+
+# Set up textfield options for the "addfields" subroutine
+# so that traversal occurs on return (-r), autoblank mode is
+# enabled (-b), leading and trailing whitespace is clipped (-w),
+# and the cursor is removed when the field does not have the focus
+# (-c)
+
+TFOPTS="-r -b -w -c"
+
+STDMSG="Fill in each field followed by <Enter>"
+
+# Ammortization: Calculate the monthly payment
+
+# $1=Widget $2=lower_range $3=upper_range $4=warn
+
+do_ammort() {
+if [ -x /bin/nawk ]
+then AWK=nawk
+else AWK=awk
+fi
+$AWK '
+END {
+rate=rate/100
+mrate=rate/12
+periods=mperiods/12
+
+fmt="%-25s %12s\n"
+fmt_data="%-25s %12.2f\n"
+fmt_hdr="%-7s %-8s   %-7s   %-6s     %-8s   %-9s   %-9s\n"
+fmt_ldata="%4d    %2.2d-%2.2d-%2.2d   %7.2f   ______   %8.2f   %9.2f     %9.2f\n"
+
+printf "======================================================================\n"
+len = length(purpose)
+if (len >= 69) {
+	pad = len
+} else {
+	pad = (69 + len)/2
+}
+printf "%s%s\n", substr("                                                                         ", 1, pad), purpose 
+printf "======================================================================\n\n" 
+close("/tmp/debug")
+printf fmt_data, "Amount Borrowed", prin
+printf fmt_data, "Annual Percentage Rate", rate*100
+printf fmt_data, "Number of Months", mperiods
+printf fmt_data, "Monthly Percentage Rate", mrate*100 
+
+mpayment=mrate/(1-(exp (log(1+mrate)*-mperiods)))*prin
+payment=mpayment*12
+
+printf fmt_data, "Monthly Payment", mpayment
+printf("\n")
+printf fmt_data, "Annual Payment", payment 
+printf "----------------------------------------------------------------------\n\n"
+
+printf(fmt_hdr, "Payment",	"Payment",	"Payment",	"Check",	"Interest", 	"Principle",	"Principle");
+printf(fmt_hdr,	"Number",	" Date",	"Amount",	"Number",	"  Paid", 	"  Paid",	"Remaining")
+printf(fmt_hdr,	"-------",	"--------",	"-------",	"------",	"--------",	"---------", 	"---------") 
+
+	new_prin=prin
+	ytd_int=0.0
+
+	for (i = 1; i <= mperiods; i++) {
+		this_int = 0
+		this_prin_pay = 0
+
+		interest=mrate*new_prin
+		if (mpayment > new_prin+interest) 
+			mpayment = new_prin+interest
+		this_int += interest
+		prin_pay=mpayment-interest
+		this_prin_pay += prin_pay
+		new_prin=new_prin-prin_pay
+		ytd_int=ytd_int+interest
+		total_int = total_int + interest
+		printf(fmt_ldata, i, month, day, year%100, mpayment, interest, prin_pay, new_prin) 
+		need_summary = 1
+		month++
+		if (month > 12) {
+			printf("\nTOTAL INTEREST PAID IN %4.4d: $%.2f\n\n", 1900+year, ytd_int) 
+			month = 1
+			year++
+			ytd_int = 0.0;
+			need_summary = 0
+		}
+	}
+	if (need_summary) {
+		printf("\nTOTAL INTEREST PAID IN %4.4d: $%.2f\n\n", 1900+year, ytd_int);
+	}
+	printf("TOTAL INTEREST PAID OVER LIFE OF LOAN: $%.2f\n\n", total_int);
+}
+' purpose="$1" prin="$2" rate="$3" mperiods=$4 month=$5 day=$6 year=$7 < /dev/null
+}
+
+update_monthly() {
+	gv $RATE string:int
+	gv $PRINCIPLE string:prin
+	gv $PERIOD string:period
+	if [ "$int" = "" -o "$prin" = "" -o "$period" = "" ]
+	then return
+	fi
+	if [[ "$BYYEAR" -eq 1 ]]
+	then let period=period*12
+	fi
+	monthly=`awk "END { printf(\"$%.2f\", ($int/1200)/(1-(exp(log(1+($int/1200))*-$period)))*$prin) }" < /dev/null`
+	sv $MONTHLY string:"$monthly"
+}
+
+verify_interest() {
+	verify_data $RATE 0 100 "Bad Interest" && update_monthly
+}
+
+verify_principle() {
+	verify_data $PRINCIPLE 1 9999999  "Bad Principle" && update_monthly
+}
+
+verify_period() {
+	verify_data $PERIOD 1 1200  "Bad Period" && update_monthly
+}
+
+verify_data() {
+	gv $1 string:data
+	case "$data" in
+	[0-9]*) if [[ "$data" -ge "$2" && "$data" -le "$3" ]]
+		then
+			:
+		else
+			warn "$4"	
+			sv "$1" string:""
+			return 1
+		fi
+		;;
+	*) warn "$4"
+	   sv "$1" string:""
+	   return 1
+		;;
+	esac
+	focmv $1 nextfield
+	return 0
+}
+	
+do_print() {
+	cat /tmp/AMMORT$$ | eval $LPCOMMAND || warn "Print Command Failed!"
+}
+
+do_p() {
+	gv $1 string:LPCOMMAND
+	do_print
+}
+
+do_print_s() {
+	if [ "$PRINT" = "" ]
+	then
+		cps PRINT Print popupWindowShell $TOPLEVEL
+		cmw PRINTER caption caption $PRINT_UCA label:"Print command: "
+		cmw CMD cmd textField $PRINTER
+		sv $CMD string:"$LPCOMMAND"
+		addbuttons $PRINT_LCA Print 'do_p $CMD'  Cancel "pd $PRINT"
+		mnsetup $PRINT_LCA
+	fi
+	XtPopup $PRINT GrabNone
+}
+
+do_schedule() {
+	sv $MESSAGE string:"Please wait"
+	XFlush
+	curbusy $TOPLEVEL
+
+	gv $PURPOSE string:PUR
+	gv $PRINCIPLE string:P
+	gv $RATE string:R
+	gv $PERIOD string:PD
+	if [ "$BYYEAR" = 1 ]
+	then
+		let PD=PD*12
+	fi
+	gv $DATE_MM string:M
+	gv $DATE_DD string:D
+	gv $DATE_YY string:Y
+
+	let D=1
+	let M=M+1
+	if [ "$M" -gt 12 ]
+	then
+		let Y=Y+1
+		let M=M%12
+	fi
+	# create the popup shell
+	if [ "$SCHEDULE" = "" ]
+	then
+		cps SCHEDULE SCHEDULE popupWindowShell $TOPLEVEL title:"Schedule of Payments" pushpin:in
+	
+		cmw LIST scroll scrolledWindow $SCHEDULE_UCA
+		cmw TEXT text textEdit $LIST charsVisible:80 \
+			sourceType:disksource editType:textread font:8x13
+		cmw PRN1 prn oblongButton $SCHEDULE_LCA label:Print select:do_print
+		cmw PRN2 prn oblongButton $SCHEDULE_LCA label:"Print As..." select:do_print_s
+		mnsetup $SCHEDULE_LCA
+
+	fi
+	do_ammort "$PUR" "$P" "$R" "$PD" "$M" "$D" "$Y" > /tmp/AMMORT$$
+	sv $TEXT cursorPosition:0 selectStart:0 selectEnd:0 \
+		source:/tmp/AMMORT$$
+
+	XtPopup $SCHEDULE
+
+	sv $MESSAGE string:"$STDMSG"
+	curstand $TOPLEVEL
+}
+
+do_period() {
+	BYYEAR=$CB_INDEX
+	focmv $EXC nextfield
+}
+
+if [ -f $HOME/.ammort ]
+then . $HOME/.ammort
+fi
+
+BYYEAR=1
+LPCOMMAND="${LPCOMMAND:-lp}"
+
+unset PRINT SCHEDULE
+
+oi TOPLEVEL ammort Ammort "$@"
+cmw CA ca controlArea $TOPLEVEL layoutType:fixedcols measure:1 \
+		alignCaptions:true borderWidth:1 center:true  sameSize:all
+
+cmw CMDBAR ca controlArea $CA
+addbuttons $CMDBAR \
+	"Make Schedule" do_schedule
+
+addfields $CA \
+	PURPOSE 	"Purpose of Loan:" 		: 	20 \
+	PRINCIPLE 	"Principle:" 			: 	10 \
+	RATE 		"Annual Interest Rate:"		:	5
+
+TextFieldOp -v '[0-9]' $PRINCIPLE
+TextFieldOp -v '[0-9.]' $RATE
+
+cmw CAP3 caption caption $CA label:"Payback Period: "
+
+cmw FORM f form $CAP3 
+
+cmw PERIOD number textField $FORM verification:verify_period charsVisible:4
+TextFieldOp $TFOPTS -v '[0-9]' $PERIOD
+
+cmw EXC exclusives flatExclusives $FORM `rightof $PERIOD 10`  borderWidth:5 \
+	itemFields:'{label}' items:'{years},{months}' 
+sv $EXC selectProc:do_period
+
+adddatefields $CA \
+	DATE "First Payment Date:" 
+
+cmw CAP5 cap caption $CA label:"Monthly Payment (calculated):"
+cmw MONTHLY s staticText $CAP5
+
+typeset -Z2 m
+m=`date +%m`
+y=`date +%y`
+let m=m+1
+if [[ $m -gt 12 ]]
+then	m=1; let y=y+1
+fi
+sv $DATE_MM string:$m
+sv $DATE_DD string:"01"
+sv $DATE_YY string:$y
+
+cmw FP fp footerPanel $CA borderWidth:1
+cmw MESSAGE message staticText $FP string:"$STDMSG"
+
+mnsetup $CA
+
+rw $TOPLEVEL
+ml

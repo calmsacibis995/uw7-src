@@ -1,0 +1,351 @@
+#!/sbin/sh
+#ident "@(#)keyboard	15.5	98/01/14"
+
+# This function takes a keyboard code as a parameter and returns the
+# codeset the keyboard belongs to in a variable called KEYBOARD_CODESET
+
+function get_keyboard_codeset {
+	[ -n "$debug" ] && set -x
+
+	KEYBOARD_CODESET=
+
+	typeset CODESET KBD=$1
+	typeset KBDS OIFS i
+
+	for CODESET in 88591 88592 88595 88597 88599 C
+	do
+		eval KBDS="\$KEYBOARDS_FOR_CODESET_$CODESET"
+		for i in $KBDS
+		do
+			if [[ " $i " = " $KBD "* ]]
+			then
+				KEYBOARD_CODESET=$CODESET
+				break
+			fi
+		done
+		[ -n "$KEYBOARD_CODESET" ] && break
+	done
+
+# If for some strange reason, keyboard cannot be matched, then leave 
+# KEYBOARD_CODESET blank and hope for the best
+
+	if [ "$KEYBOARD_CODESET" != "C" ] && [ -n "$KEYBOARD_CODESET" ] 
+	then
+		KEYBOARD_CODESET="8859-${CODESET#????}"
+	fi
+	export KEYBOARD_CODESET
+}
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	#
+	# Have we already mapped the current keyboard choice?
+	#
+	k=`ivar get KEYBOARD`
+	last_k=`ivar get KEYBOARD_MAPPED`
+	LOCALE_CODESET=`ivar get LOCALE_CODESET`
+	
+	get_keyboard_codeset $k
+
+	if [ "$last_k" != "$k" ]
+	then
+		#
+		# Even though we are skipping the user interaction, we
+		# still have to do some work (on the install kernel).
+		#
+		if [ "$k" = NONE ]
+		then
+			#
+			# Handle US-ASCII as a special case
+			#
+			k_file=\"\"
+			k_remap=US
+		else
+			k_file=$k
+			k_remap=$k
+		fi
+		echo "KEYBOARD=$KEYBOARD_CODESET/$k_file" > /etc/default/keyboard
+		if [ $? -ne 0 ] 
+		then
+			ivar set dead_info "$err1"
+			ii_exit DIE
+		fi
+		/usr/bin/kb_remap -f $LOCALE_CODESET
+		/usr/bin/kb_remap -k "$k_remap" vt00 vt01
+		if [ $? -ne 0 ]
+		then
+			ivar set dead_info "$err2"
+			ii_exit DIE
+		fi
+		ivar set KEYBOARD_MAPPED "$k"
+	fi
+
+	#
+	# If we got here by going forward, keep going forward. 
+	# If we got here by going back, keep going back. (If we got
+	# here by going back, we probably don't need to re-map the
+	# keyboard.)
+	#
+	# we don't need to ii_exit, common.rc will do it for us
+	# ii_exit $direction
+}
+
+. /isl/ui_modules/common.rc	
+
+# Display an error screen if a keyboard other than "US (ASCII)" 
+# was selected but the Language Supplement package (ls) was not 
+# selected. The ls package contains the commands needed to map 
+# a non-ASCII keyboard once the system is rebooted.
+#
+#function keyb_chk
+#{
+#[ -n "$debug" ] && set -x
+#	[ -z "$ls" ] || (( ls )) || [ "${KEYBOARD}" = "NONE" ] || {
+#		display -w "$KEYBOARD_ERR" -bg $ERROR_BG -fg $ERROR_FG
+#		return 1
+#	}
+#	return 0	
+#}
+#
+
+
+#
+# Find the mapping for selected (KBCUR) keyboard.
+#
+function keyboard_set
+{
+[ -n "$debug" ] && set -x
+	typeset OIFS="$IFS"
+	IFS="${tab}"
+	set -- ${KBS[KBCUR]}
+	IFS="$OIFS"
+	KEYBOARD=$1
+	KEYBOARD_ID=$2
+
+	if [ "${KEYBOARD}" = "NONE" ]
+	then
+		#
+		# The standard (US ASCII) keyboard has been chosen.
+		#
+ 		echo "KEYBOARD=\"\"" > /etc/default/keyboard
+		[ $? -eq 0 ] || keyfile_error
+		#
+		# If the keyboard was previously mapped, it must be remapped 
+		# back to "US (ASCII)". Since no "US (ASCII)" mapping is in 
+		# the keyboards directory, we use "US (Latin-1)".  Once the 
+		# system is rebooted, the desired "US (ASCII)" keyboard will 
+		# be mapped.
+		/usr/bin/kb_remap -f 88591
+		/usr/bin/kb_remap -k "US" vt00 vt01
+		[ $? -eq 0 ] || remap_error
+	else
+		#
+		# A non-us-ascii keyboard has been chosen
+		#
+
+		get_keyboard_codeset $KEYBOARD
+ 		echo "KEYBOARD=$KEYBOARD_CODESET/$KEYBOARD" > /etc/default/keyboard
+		[ $? -eq 0 ] || keyfile_error
+		/usr/bin/kb_remap -f $LOCALE_CODESET
+		/usr/bin/kb_remap -k "$KEYBOARD" vt00 vt01
+		[ $? -eq 0 ] || remap_error
+	fi
+	#
+	# Save the selection, and the mapped keyboard to the ifile.
+	#
+	ivar set KEYBOARD "$KEYBOARD"
+	ivar set KEYBOARD_MAPPED "$KEYBOARD"
+	ivar set KEYBOARDNAME "$KEYBOARD_ID"
+
+	footer "$keys"
+	msg
+	return 0
+}
+
+function keyboard
+{
+[ -n "$debug" ] && set -x
+	initial_choice=$1
+	if [ -z "${KBS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		#set -A KBS ${KEYBOARDS}
+		if [ C = $LOCALE ] ; then
+			eval set -A KBS '$'KEYBOARDS_FOR_CODESET_C
+		else
+			eval set -A KBS '$'KEYBOARDS_FOR_CODESET_C '$'KEYBOARDS_FOR_CODESET_$LOCALE_CODESET
+		fi
+		IFS="$OIFS"
+	fi
+	#msg "$KEYBOARD_FOOTER"
+	footer "$keys"
+	if [ -z "$KEYBOARDRID" ]
+	then
+		open_radio -exit keyboard_set 
+		KEYBOARDRID=$RID
+		typeset i line=0
+		for i in "${KBS[@]}"
+		do
+			[ -z "$i" ] && continue
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			add_radio "$2" -entry "KBCUR=$line; msg \"$current_is:  $2\""
+			if [ "$initial_choice" = "NONE" ]
+			then
+				[ "$1" = "$LOCALE" ]	&& best1=$line
+				[ "$1" = "$country" ]	&& best2=$line
+				[ "$1" = "$language" ]	&& best3=$line
+			elif [ "$initial_choice" = "$1" ]
+			then
+				best1=$line
+			fi
+			(( line += 1 ))
+		done
+	fi
+
+	[ -n "$best3" ] && initial_n=$best3
+	[ -n "$best2" ] && initial_n=$best2
+	[ -n "$best1" ] && initial_n=$best1
+	[ -z "$initial_n" ] && initial_n=0
+
+	(( line > 16 )) && (( line = ( line / 2 ) + 1 ))
+	(( line > 16 )) && line=16
+	radio_runparms $KEYBOARDRID $line
+
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -current 'footer "$keys"' -title "$KEYBOARD_ENTRY"
+	main_window=$CURWIN
+	run_radio $KEYBOARDRID $initial_n $RADIO_ROWS
+	set_hotkey 9 go_back
+	set_hotkey 1 get_help
+}
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	keyboard_set
+	#
+	# Save their choice, so it will be selected when we
+	# get run again later.
+	#
+	ivar set KEYBOARD "$KEYBOARD"
+	ivar set KEYBOARD_MAPPED "$KEYBOARD"
+	ivar set KEYBOARDNAME "$KEYBOARD_ID"
+	
+	# bye bye
+	wclose $main_window
+	msg
+	footer
+	ii_exit PREV
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save their choice, so it will be selected when we
+	# get get run after the help.
+	#
+	ivar set KEYBOARD "$KEYBOARD"
+	ivar set KEYBOARD_MAPPED "$KEYBOARD"
+	ivar set KEYBOARDNAME "$KEYBOARD_ID"
+	#
+	ivar set help_topic keyboard
+	msg
+	footer
+	ii_exit HELP
+}
+
+
+#
+# The cat > /etc/default/keyboard failed. 
+#
+function keyfile_error
+{
+[ -n "$debug" ] && set -x
+	display -w "$err1"
+	msg 
+	footer "$fatal"
+	wclose $main_window
+	input_handler
+	ii_exit DIE
+}
+
+#
+# The kb_remap failed. 
+#
+function remap_error
+{
+[ -n "$debug" ] && set -x
+	display -w "$err2"
+	msg
+	footer "$fatal"
+	wclose $main_window
+	input_handler
+	ii_exit DIE
+}
+
+
+#
+# Get the initial choice of keyboards (if any) 
+#
+k=`ivar get KEYBOARD`
+[ "$k" = "" ] && k="NONE"
+
+LOCALE=`ivar get LOCALE`
+[ "$LOCALE" = "" ] && LOCALE=C
+language="${LOCALE%%_*}"
+country="${LOCALE##*_}"
+
+
+LOCALE_CODESET=`ivar get LOCALE_CODESET`
+[ "$LOCALE_CODESET" = "" ] && LOCALE_CODESET=88591
+
+#
+# Let the user choose one
+#
+keyboard "$k"
+input_handler
+
+#
+# Save their choice
+#
+ivar set KEYBOARD "$KEYBOARD"
+ivar set KEYBOARDNAME "$KEYBOARD_ID"
+
+#
+# Done
+#
+msg
+footer
+wclose $main_window
+
+for i in C fr de es ja
+do
+        if [ "$i" != "$LANG" ]
+        then
+                [ -d /etc/inst/locale/$i/menus ] && {
+                        cd /etc/inst/locale/$i/menus
+                        for j in *
+                        do
+				if [[ "$j" != +(global|generic|boot2|sequencer|colors|lang)* ]]
+                                then
+                                        rm -rf $j
+                                fi
+                        done
+                }
+                [ -d /etc/dcu.d/locale/$i ] && {
+                        cd /etc/dcu.d/locale/$i
+                        rm -rf *
+                }
+        fi
+done
+svar set LANG_FILES gone
+ii_exit NEXT
+

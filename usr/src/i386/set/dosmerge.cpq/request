@@ -1,0 +1,1181 @@
+#ident	"@(#)request	16.1	98/03/03"
+# set installation package (SIP) request script
+
+
+PKGMSG=${SETINST}.pkg				
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+SYSLOC=`grep LANG /etc/default/locale`
+
+if [ "x$SYSLOC" = "x" ]
+then
+	SYSLOC="LANG=C"
+fi
+
+#
+#  If this script exits normally or if DEL is pressed, clean up /tmp
+#  If DEL is pressed, make sure we exit 77 so pkgadd knows no packages
+#  were selected.
+#
+trap `rm /tmp/*$$ > /dev/null 2>&1; EXITCODE=77; exit` 2
+trap `rm /tmp/*$$ > /dev/null 2>&1; exit $EXITCODE` 0
+
+#
+#  Definitions of files we're going to use.  They all end in $$ for
+#  easy cleanup (see trap stmt, above)
+#
+DEP_SUCC=/tmp/succ$$
+DEP_FAIL=/tmp/fail$$
+MENU_OUT=/tmp/out$$
+MENU_FILE=/tmp/menu$$
+PKGS_FILE=/tmp/pkglist$$
+PKG_RM=/tmp/pkgrm$$
+TAB='	'
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+#
+#  Set up the menu directory to be locale specific
+#
+MENU_DIR=/etc/inst/locale/${LOCALE}/menus/${PKG}
+[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+
+MENUS="set.1 set.2 set.3 set.4 set.5 set.6 set.7 set.8 set.9"
+
+for i in $MENUS
+do
+   if [ ! -f ${MENU_DIR}/$i ]
+   then
+      if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ]
+      then
+           cp ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ${MENU_DIR}
+      else
+           cp ${REQDIR}/$i ${MENU_DIR}
+      fi
+   fi
+done
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+#####	Begin UPNOVER	######
+
+SCRIPTSDIR=/usr/sbin/pkginst
+. ${SCRIPTSDIR}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+# chk_upnover <resp_file> <pkginst>
+#
+# This routine returns 1 if AUTO/CUSTOM question is asked
+#              returns 0 if AUTO/CUSTOM question not to be asked
+chk_upnover () {
+	# $1 is the response file
+	# $2 is the pkgabbrev.  (a.k.a PKGINST)
+
+	# chkpkgrel needs to know the VERSION being installed.
+	# grep VERSION from pkginfo for this pkg and export it.
+
+	# save current VERSION if set.
+	[ "$VERSION" ] && O_VERSION=$VERSION
+	
+	grep "^VERSION=" $REQDIR/${2}/pkginfo >/tmp/$$.ver
+	[ -s /tmp/$$.ver ] && . /tmp/$$.ver
+	rm -f /tmp/$$.ver
+	export VERSION
+
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	# Set CALLED_FROM_SET and export it. When chkpkgrel finds a newer 
+	# version of a package already installed, it will not do the warning
+	# screen to tell the user to pkgrm the pkg, before the older version is
+	# installed, if CALLED_FFROM_SET is set. In this case a single warning
+	# screen 'set.8' is done in this request screen for all such packages.
+
+	CALLED_FROM_SET=YES
+	export CALLED_FROM_SET
+
+	${SCRIPTSDIR}/chkpkgrel $2
+	PKGVERSION=$?
+	unset CALLED_FROM_SET
+
+	unset VERSION
+	[ "$O_VERSION" ] && {
+		VERSION=$O_VERSION
+		unset O_VERSION
+	}
+
+	# chkpkgrel returns 0: if pkg not installed
+	#	            1: if pkg installed is neither SVR4.0 V4 nor SVR4.2
+	#		    2: if SVR4.2 pkg installed
+	#	            4: if SVR4.0 V4 pkg installed
+	#	            9: if a newer version of SVR4.2 pkg is installed, 
+	#			in which case, tell'm to pkgrm it.
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	# If AUTOMERGE is the only question to be asked, then AUTO/CUSTOM
+	# question should only be displayed for non-destructive installation.
+	# The response file for such a package must define ONLYVAR=UPNOVER.
+
+	[ $PKGVERSION -lt 2 ] && {
+		grep "^ONLYVAR=UPNOVER" $1 >/dev/null 2>&1 || return 1
+		return 0
+	}
+
+	# chkpkgrel exits with code, 9 they have to pkgrm this pkg.
+	[ $PKGVERSION -eq 9 ] && {
+		# list the pkg name in the file $PKG_RM. 
+		# It will be used in set.8 screen.
+
+		echo $2 >>$PKG_RM
+		return 0
+	}
+	return 1
+}
+
+check_oam_version ()
+{ 
+	# check_oam_version $RESPDIR/${1}
+	# This procedure is run for packages run in AUTOMATIC install mode.
+	# It checks the version of oam package installed.
+	# If an OAM package other than SVR4.2 OAM is installed, it
+	# removes OAMadmin from the CLASSES defined in the response file.
+	# This should happen for nfs and inet packages. 
+	# The reason is that OAM interface will not be installed 
+	# for these packages, if non-SVR4.2 OAM is installed.
+	# This will be done by excluding OAMadmin from CLASSES.
+	#
+	# This is done here, because CLASSES can only be reset
+	# in the request script and request script is not run in 
+	# AUTOMATIC mode.
+
+	# $1 is the response in which CLASSES may have OAMadmin defined
+
+	# return codes: 0 if  non-SVR4.2 OAM was not detected
+	#               1 if  non-SVR4.2 OAM was detected.
+	#               2 if  non-SVR4.2 was detected and CLASSES for reset
+	#                     in the response file to eliminate OAMadmin
+
+	#		9 if a newer oam was detected than the version of 
+	#		  this set, in which chkpkgrel shows warning screen
+	#		  if CALLED_FROM_SET in not set.
+
+	RESPFL=$1
+
+	# Set CALLED_FROM_SET and export it. When chkpkgrel finds a newer 
+	# version of a package already installed, it will not do the warning
+	# screen to tell the user to pkgrm the pkg, before the older version is
+	# installed, if CALLED_FFROM_SET is set. In this case a single warning
+	# screen 'set.8' is done in this request screen for all such packages.
+
+	CALLED_FROM_SET=YES
+	export CALLED_FROM_SET
+
+	${SCRIPTSDIR}/chkpkgrel oam
+	PKGVERSION=$?
+
+	unset CALLED_FROM_SET
+
+	# chkpkgrel returns 0: if pkg not installed
+	#	            1: if pkg installed is neither SVR4.0 V4 nor SVR4.2
+	#		    2: if SVR4.2 pkg installed
+	#	            4: if SVR4.0 V4 pkg installed
+	#	            9: if a newer version of SVR4.2 pkg is installed, 
+	#			in which case, tell'm to pkgrm it.
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	[ $PKGVERSION -eq 0 -o $PKGVERSION -eq 2 ] && return 0
+
+	grep  "^CLASSES=.*OAMadmin" $RESPFL >/tmp/$$.newresp 2>&1 || return 1
+
+	. /tmp/$$.newresp
+
+	for i in `echo $CLASSES`
+	do 
+		[ "$i" = OAMadmin ] && continue
+
+		NCLASSES="$NCLASSES$i "
+	done
+
+	grep  -v "^CLASSES=.*OAMadmin" $RESPFL >/tmp/$$.newresp
+
+	echo CLASSES="\"$NCLASSES\"" >>/tmp/$$.newresp
+
+	mv /tmp/$$.newresp $RESPFL
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	return 2
+}
+
+#####	End UPNOVER	######
+#
+#  This routine creates the business end of the first menu, where the
+#  user selects Yes (install) or No (don't install) for each pkg in set.
+#
+mk_pkgs_menu1() {
+
+	exec 3<&0
+	#
+	#  Create the form section of the first set menu.
+	#
+	echo ".form"
+
+	#
+	#  First, get the list of pkgs installed by default
+	#  The first one-choice ENUM TYPE fields are used as labels for
+	#  the form.  The variable FOO is just a dummy so that the line
+	#  parses correctly.
+	#
+	MSGBUF1=`pfmt -s nostd -g ${PKGMSG}:51 "Install?" 2>&1`
+	MSGBUF2=`pfmt -s nostd -g ${PKGMSG}:52 "Package Name" 2>&1`
+	echo "//6//${MSGBUF1}//${MSGBUF2}//FOO//"
+	echo "//  //"
+	echo "//6//--------//------------------------------------------//FOO//"
+	echo "//  //"
+	i=0
+	PKGS_PER_SCREEN=8
+	last=`expr $start + $PKGS_PER_SCREEN`
+	exec </tmp/name_dflt_y
+	while read PKGABBREV PKGNAME && [ "$i" -lt "$last" ]
+	do
+		if [ "$i" -ge $start ]
+		then
+			#
+			#  Set up the choice field for this package.
+			#
+			MSGBUF1=`pfmt -s nostd -g ${PKGMSG}:53 "Right" 2>&1`
+			MSGBUF2=`pfmt -s nostd -g ${PKGMSG}:54 "Left arrow keys for new choice (2 choices)" 2>&1`
+			YES_MSG=`pfmt -s nostd -g ${PKGMSG}:57 "Yes" 2>&1`
+			NO_MSG=`pfmt -s nostd -g ${PKGMSG}:58 "No" 2>&1`
+
+			# Use cplusplus instead.
+			if [ "$PKGABBREV" = "mergeulic" ]; 
+			then 
+
+				echo "//2 2//YES::${YES_MSG}//YES::${YES_MSG}//${PKGNAME}://TAG_${PKGABBREV}//"
+				echo "//${MSGBUF1}/${MSGBUF2}//"
+			else
+				echo "//2 2//YES::${YES_MSG}//NO::${NO_MSG}//${PKGNAME}://TAG_${PKGABBREV}//"
+				echo "//${MSGBUF1}/${MSGBUF2}//"
+			fi
+
+			#
+			#  We're going to set the default for this package to
+			#  "Yes" (install), so we echo to a file and source it
+			#  in after this routine is finished, so the TAG_'s don't
+			#  vanish with this subshell.
+			#
+			echo eval TAG_${PKGABBREV}=\"YES\" export TAG_${PKGABBREV} >> ${MENU_OUT}
+		fi
+		i=`expr $i + 1`
+	done
+
+
+	#
+	#  Now, get the list of pkgs NOT installed by default
+	#  The first one-choice ENUM TYPE fields are used as labels for
+	#  the form.  The variable FOO is just a dummy so that the line
+	#  parses correctly.
+	#
+	exec </tmp/name_dflt_n
+	while read PKGABBREV PKGNAME && [ "$i" -lt "$last" ]
+	do
+		if [ "$PKGABBREV" = "base" ]
+		then 
+			# Do not list base in menu since it cannot be reinstalled.
+			echo eval TAG_${PKGABBREV}=\"NO\" export TAG_${PKGABBREV} >> ${MENU_OUT}
+			continue
+		fi
+
+		if [ "$i" -ge $start ]
+		then
+			#
+			#  Set up the choice field for this package.
+			#
+			MSGBUF1=`pfmt -s nostd -g ${PKGMSG}:53 "Right" 2>&1`
+			MSGBUF2=`pfmt -s nostd -g ${PKGMSG}:54 "Left arrow keys for new choice (2 choices)" 2>&1`
+			YES_MSG=`pfmt -s nostd -g ${PKGMSG}:57 "Yes" 2>&1`
+			NO_MSG=`pfmt -s nostd -g ${PKGMSG}:58 "No" 2>&1`
+
+			# Use cplusplus instead.
+			if [ "$PKGABBREV" = "mergeulic" ]
+			then
+				echo "//2 2//YES::${YES_MSG}//YES::${YES_MSG}//${PKGNAME}://TAG_${PKGABBREV}//"
+				echo "//${MSGBUF1}/${MSGBUF2}//"
+			else
+				echo "//2 2//YES::${YES_MSG}//NO::${NO_MSG}//${PKGNAME}://TAG_${PKGABBREV}//"
+				echo "//${MSGBUF1}/${MSGBUF2}//"
+			fi
+
+			#
+			#  We're going to set the default for this package to
+			#  "No" (don't install), so we echo to a file and source it
+			#  in after this routine is finished, so the TAG_'s don't
+			#  vanish with this subshell.
+			#  Se
+			#
+			echo eval TAG_${PKGABBREV}=\"NO\" export TAG_${PKGABBREV} >> ${MENU_OUT}
+		fi
+		i=`expr $i + 1`
+	done
+	exec <&3
+	exec 3<&-
+	echo start=$i >> ${MENU_OUT}
+
+}
+
+#
+#  This routine creates the business end of the second menu, where the
+#  user selects Automatic or Custom installation for any package that
+#  has both a request script and a response file.
+#
+mk_pkgs_menu2()
+{
+	#
+	#  Create the form section of the first set menu.
+	#
+	echo ".form"
+
+	#
+	#  First, get the list of pkgs installed by default
+	#  The first one-choice ENUM TYPE fields are used as labels for
+	#  the form.  The variable FOO is just a dummy so that the line
+	#  parses correctly.
+	#
+	MSGBUF1=`pfmt -s nostd -g ${PKGMSG}:55 "Options" 2>&1`
+	MSGBUF2=`pfmt -s nostd -g ${PKGMSG}:56 "Package Name" 2>&1`
+	echo "//6//${MSGBUF1}//${MSGBUF2}//FOO//"
+	echo "//  //"
+	echo "//6//--------//----------------------------------------//FOO//"
+	echo "//  //"
+	while read PKGABBREV PKGNAME
+	do
+
+		#
+		#  If there are both a request and response file for this
+		#  pkg, give option of Auto or Custom install.
+		#
+		if [ -f ${REQDIR}/${PKGABBREV}/response -a -f ${REQDIR}/${PKGABBREV}/request ]
+		then
+			#####	Begin UPNOVER	######
+			# chk_upnover returns 0 to skip AUTO/CUSTOM question
+
+			chk_upnover ${REQDIR}/${PKGABBREV}/response $PKGABBREV
+			[ $? = 0 ] && continue
+
+			#####	End UPNOVER	######
+
+			#
+			#  Create the form field for this package.
+			#
+			MSGBUF1=`pfmt -s nostd -g ${PKGMSG}:53 "Right" 2>&1`
+			MSGBUF2=`pfmt -s nostd -g ${PKGMSG}:54 "Left arrow keys for new choice (2 choices)" 2>&1`
+			AUTO=`pfmt -s nostd -g ${PKGMSG}:59 "Automatic" 2>&1`
+			CUST=`pfmt -s nostd -g ${PKGMSG}:60 "Custom" 2>&1`
+
+			# If PKGABBREV is "c++", we cannot construct environment variable name.
+			# Use cplusplus instead.
+			if [ "$PKGABBREV" = "c++" ]; then PKGABBREV=cplusplus; fi
+
+			echo "//2 2//AUTO::${AUTO}//CUST::${CUST}//${PKGNAME}://TAG_${PKGABBREV}//"
+			echo "//${MSGBUF1}/${MSGBUF2}//"
+
+			#
+			#  We're going to set the default for this package to
+			#  "Automatic", so we echo to a file and source it
+			#  in after this routine is finished, so the TAG_'s
+			#  don't vanish with this subshell.
+			#
+			echo eval TAG_${PKGABBREV}=\"AUTO\" export TAG_${PKGABBREV} >> ${MENU_OUT}
+		fi
+	done < /tmp/name_final_y
+
+}
+
+#
+#  This is where we actually run request scripts for each package,
+#  unless the user selected AUTO for this pkgs installation or
+#  there is no response file.
+#
+process_default_install () {
+
+	[ "$UPDEBUG" = YES ] && set -x
+	#
+	#  If there's a request script...
+	#
+	if [ -f $REQDIR/${1}/request ]
+	then
+
+		# If argument is "c++", environment variable is TAG_cplusplus.
+		if [ "$1" = "c++" ] 
+		then RANS=`eval echo $"TAG_cplusplus"`
+		else RANS=`eval echo $"TAG_${1}"`
+		fi
+
+		#
+		#  ...and the user selected AUTOMATIC install, then...
+		#
+		if [ "$RANS" = "AUTO" ]
+		then
+
+			#
+			#  ...if there's a response file, use that.
+			#
+			if [ -f $REQDIR/${1}/response ]
+			then
+				cp $REQDIR/${1}/response $RESPDIR/${1} 
+
+				# delete OAMadmin from CLASSES in $RESPDIR/$1
+				# if non-SVR4.2 OAM is installed
+
+				check_oam_version $RESPDIR/${1}
+
+				check_oam_rc=$?
+
+				[ "$UPDEBUG" = YES ] && {
+					echo check_oam_rc=$check_oam_rc >/dev/console
+					goany
+				}
+			#
+			#  Otherwise, run the request script.
+			#
+			else
+				# This section takes care of using the set member package's
+   				# pkginfo file to set up its own environment.  So that these
+   				# values are not used to overwrite the SIPs, we do this in
+   				# a subshell.
+   				(
+   				# Mark vars yet to be set to be automatically exported
+   				set -a
+   				pkgparam -v -f $REQDIR/${1}/pkginfo >/tmp/params.$$
+   				. /tmp/params.$$
+   				PKGINST=$PKG  # Reset PKGINST to set member PKG inst
+   				sh $REQDIR/${1}/request $RESPDIR/${1} </dev/tty >/dev/tty 2>/dev/tty
+
+				[ $? != 0 ] && {
+					echo 1>/tmp/req.rc
+					return 1
+				}
+
+   				)
+   				rm -f /tmp/params.$$
+   			fi
+
+		#
+		#  If the user selected CUSTOM, run the request script.
+		#
+		else
+			# This section takes care of using the set member package's
+   			# pkginfo file to set up its own environment.  So that these
+   			# values are not used to overwrite the SIPs, we do this in
+   			# a subshell.
+   			(
+   			# Mark vars yet to be set to be automatically exported
+   			set -a
+   			pkgparam -v -f $REQDIR/${1}/pkginfo >/tmp/params.$$
+   			. /tmp/params.$$
+   			PKGINST=$PKG  # Reset PKGINST to set member PKG inst
+   			sh $REQDIR/${1}/request $RESPDIR/${1} </dev/tty >/dev/tty 2>/dev/tty
+			[ $? != 0 ] && {
+				echo 1 >/tmp/req.rc
+				return 1
+			}
+   			)
+   			rm -f /tmp/params.$$
+		fi
+	#
+	#  If there's no request script and just a response file, use that.
+	#
+	else
+		if [ -f $REQDIR/${1}/response ]
+		then
+			cp $REQDIR/${1}/response $RESPDIR/${1} 
+		fi
+	fi
+	retcode=0
+	[ -f /tmp/req.rc ] && {
+		read retcode </tmp/req.rc
+		rm -f /tmp/req.rc
+	}
+	[ "$UPDEBUG" = YES ] && goany "retcode for process_default=$retcode"
+	return $retcode
+
+}
+
+#
+#  Read in initial information about the set.  Creates files for later
+#  use.
+#
+read_setinfo() {
+	> /tmp/name_dflt_y
+	> /tmp/name_dflt_n
+	while read pkginst parts default category package_name
+	do
+  		case ${pkginst} in
+		'#'*) 	continue ;;
+
+		merge)
+			if [ "$SYSLOC" = "LANG=C" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		demerge)
+			if [ "$SYSLOC" = "LANG=de" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		esmerge)
+			if [ "$SYSLOC" = "LANG=es" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		frmerge)
+			if [ "$SYSLOC" = "LANG=fr" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		itmerge)
+			if [ "$SYSLOC" = "LANG=it" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		jamerge)
+			if [ "$SYSLOC" = "LANG=ja" ]
+			then
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+
+		[a-zA-Z+]*)     	
+			if [ "${default}" = "y" -o "${default}" = "yes" ]
+			then	
+				echo $pkginst >>/tmp/dflt_y$$ 
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_y
+			else	
+				echo $pkginst >>/tmp/dflt_n$$
+				echo "${TAB}${pkginst}${TAB}${package_name}              " >>/tmp/name_dflt_n
+			fi
+			;;
+		*)	continue ;;
+		esac 
+	done <$SETINFO
+}
+
+#
+#  This recursive routine does dependency checking.  It doesn't let any
+#  dependency go unchecked, and if a dependency was already checked, it
+#  won't check it again (avoids multiple prompts for same packages).
+do_dependencies() {
+	PKG=$1
+
+	#
+	#  If we've already succeeded, don't bother checking again
+	#
+	grep $PKG $DEP_SUCC > /dev/null 2>&1
+	if [ $? = 0 ]
+	then
+		return 0
+	fi
+
+	#
+	#  If we've already failed, don't bother checking again
+	#
+	grep $PKG $DEP_FAIL > /dev/null 2>&1
+	if [ $? = 0 ]
+	then
+		return 1
+	fi
+
+
+	#
+	#  first make the list of dependencies
+	#  If there are none, return success.
+	#
+
+	if [ ! -f ${REQDIR}/${PKG}/depend ]
+	then
+		return 0
+	fi
+	rm -rf /tmp/dependlist$$ 
+
+	while read prerequisite abbreviation full_name
+	do
+		case ${prerequisite} in
+		'#'*) continue ;;
+		P) 
+			echo ${abbreviation} >> /tmp/dependlist$$
+			;;
+		*)   continue;;
+		esac
+	done <${REQDIR}/${PKG}/depend
+
+	#
+	#  For every dependency there is,
+	#
+	LIST=`cat /tmp/dependlist$$`
+	for  DEPENDENCY  in ${LIST}
+	do
+		pkginfo -i ${DEPENDENCY} > /dev/null 2>&1
+		if [ $? -eq 0 ] 
+		then
+			continue
+		fi
+		#
+		#  Check if we're installing it in this pkglist.
+		#
+		grep "^${DEPENDENCY}${TAB}" /tmp/name_selected_y > /dev/null 2>&1
+		INSTALLING=$?
+
+		#
+		#  And check if it's in this set.
+		#
+		grep "\<${DEPENDENCY}\>" /tmp/name_dflt_y > /dev/null 2>&1
+		INSET=$?
+
+		#
+		#  We haven't yet selected it, and it is in the set.
+		#  Give the option to install.
+		#
+		if [ $INSTALLING != 0 -a $INSET = 0 ]
+		then
+			INST_DEP="YES"
+			export PKG DEPENDENCY INST_DEP
+			menu_colors warn
+			menu -f ${MENU_DIR}/set.4 -o ${MENU_OUT} < /dev/tty >/dev/tty
+			. ${MENU_OUT}
+
+			#
+			#  If we chose to install a package we hadn't
+			#  yet selected, we had better check IT'S dependencies
+			#  so we know if we can install any of this.
+			#
+			if [ "${INST_DEP}" = "YES" ]
+			then
+				( do_dependencies $DEPENDENCY )
+				if [ $? = 0 ]
+				then
+					echo $DEPENDENCY >> ${PKGS_FILE}
+					echo $DEPENDENCY$TAB$DEPENDENCY >> /tmp/name_selected_y
+					echo $DEPENDENCY >> $DEP_SUCC
+					continue 
+				else
+					echo $DEPENDENCY >> $DEP_FAIL
+					return 1
+				fi
+			else
+				echo $DEPENDENCY >> $DEP_FAIL
+				return 1
+			fi
+		else
+			#
+			#  It is not in this set.  If it is not installed
+			#  already, give the option.
+			#
+			if [ $INSET = 1 ]
+			then
+				#
+				#  Check if it's installed already.
+				#
+				pkginfo -i ${DEPENDENCY} > /dev/null 2>&1
+				if [ $? -ne 0 ] 
+				then
+					#
+					#  If not, warn user.  Otherwise
+					#  go on.
+					#
+					export PKG DEPENDENCY
+					menu_colors warn
+					menu -f ${MENU_DIR}/set.5 -o ${MENU_OUT} < /dev/tty >/dev/tty
+						echo $DEPENDENCY >> $DEP_FAIL
+						return 1;
+				else
+					echo $DEPENDENCY >> $DEP_SUCC
+					continue ;
+				fi
+			fi
+		fi
+	done
+
+	#
+	#  The dependency was not a problem for the package we wanted to
+	#  install, so before we let ourselves out of here, we make sure
+	#  that this dependency is really installable, else we can;t install
+	#  the package we came here to check dependencies for.
+	#
+	return 0
+}
+
+# MAIN starts here
+
+#
+#  Zero out files we're going to use in this script.
+#
+> ${PKGS_FILE}
+> ${DEP_SUCC}
+> ${DEP_FAIL}
+> ${PKGS_FILE}
+
+############## Begin UPGRADE/OVERLAY Support ####################
+
+#
+#  If the user is upgrading and this is the ADMIN set, then if they
+#  have the V4 OA&M package installed, we have to tell them to remove
+#  it, and then exit.
+#  
+
+[ "${PKGINST}" = "admin" ] && {
+
+	SCRIPTS=/usr/sbin/pkginst
+	${SCRIPTS}/chkpkgrel oam
+	PKGVERSION=$?
+	[ $PKGVERSION != 2 -a $PKGVERSION != 0 ] && {
+
+		#
+		#  Send the menus out to the correct directory
+		#
+		[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+		if [ ! -f ${MENU_DIR}/menu.remove ]
+		then
+		   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKG}/menu.remove ]
+		   then
+		        cp ${REQDIR}/inst/locale/${LOCALE}/${PKG}/menu.remove ${MENU_DIR}
+		   else
+		        cp ${REQDIR}/menu.remove ${MENU_DIR}
+		   fi
+		fi
+
+		menu -f ${MENU_DIR}/menu.remove -o /dev/null >/dev/tty 2>/dev/null < /dev/tty
+		exit 3
+	}
+}
+
+#
+# We need to enforce the assumption that if they currently have nsu
+# and/or acp installed on their Version 4 box, they MUST upgrade them.
+#
+# If the Version 4 nsu and/or acp packages are installed and they
+# don't chose them.  We'll warn them and then install them anyhow.
+#
+# The file /tmp/upgrade.sh will only exist if we're installing via
+# the boot floppies.
+#
+
+[ -f /tmp/upgrade.sh ] && . /tmp/upgrade.sh
+
+[ "$PKGINSTALL_TYPE" = "UPGRADE" ] && {
+
+	NSUNAME="Network Support Utilities"
+	ACPNAME="Enhanced Application Compatibility"
+
+	$SCRIPTSDIR/chkpkgrel nsu
+	[ "$?" = "4" ] && NSU=Y
+
+	$SCRIPTSDIR/chkpkgrel acp
+	[ "$?" = "4" ] && ACP=Y
+
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	export NSU ACP NSUNAME ACPNAME
+}
+
+read_setinfo
+
+DFLT_Y=`cat /tmp/dflt_y$$ 2>/dev/null`
+DFLT_N=`cat /tmp/dflt_n$$ 2>/dev/null`
+ALL_PKGS="${DFLT_Y} ${DFLT_N}"
+
+cp ${MENU_DIR}/set.1 ${MENU_FILE}
+
+#
+#  $MENU_OUT is going to get a list of eval stmts in mk_pkgs_menu1
+#  about how to set defaults and will then be sourced back into this shell
+#  (There's a comment up in mk_pkgs_menu1 about this...)
+#
+start=0
+while :
+do
+	ostart=$start
+	> ${MENU_OUT}
+	mk_pkgs_menu1 >> ${MENU_FILE}
+	. ${MENU_OUT}
+
+	#
+	# No more packages left
+	#
+	if [ "$ostart" = "$start" ]
+	then
+		break
+	fi
+	#
+	#  We actually run the first menu, where the user chooses what packages
+	#  to install, then source the answers back in.
+	#
+	menu_colors regular
+	menu -f ${MENU_FILE} -o ${MENU_OUT} 2> /dev/null </dev/tty >/dev/tty
+	. ${MENU_OUT}
+done
+
+#
+#  Get all the package names into /tmp/name_dflt_y, and zero out
+#  the file of selected packages.
+#
+cat /tmp/name_dflt_n >> /tmp/name_dflt_y
+> /tmp/name_selected_y
+> /tmp/name_final_y
+
+#
+#  For every package that was selected for installation, place
+#  the pkg abbreviation and the name into the selected file.
+#
+while read PKGABBREV PKGNAME
+do
+	# For "c++", the environment variable name is TAG_cplusplus.
+	if [ "$PKGABBREV" = "c++" ]
+	then eval [ $"TAG_cplusplus" = "YES" ]
+	else eval [ $"TAG_${PKGABBREV}" = "YES" ]
+	fi
+	if [ $? = 0 ]
+	then
+		echo "${PKGABBREV}	${PKGNAME}" >> /tmp/name_selected_y
+	fi
+done < /tmp/name_dflt_y
+
+#
+# If the user is upgrading and they have either nsu and/or acp installed
+# on there system AND they failed to select these packages to be upgrades,
+# we're going to warn them and add them to the list of packages to
+# upgrade anyhow.
+#
+
+[ "$PKGINSTALL_TYPE" = "UPGRADE" ] && {
+
+	TAB='	'
+	SPACE=' '
+	unset WARNEM
+	grep "^nsu[${TAB}${SPACE}]*" /tmp/name_selected_y >/dev/null 2>&1
+	rc=$?
+
+	[ $rc != 0 -a "$NSU" = "Y" ] && {
+
+		echo "nsu	${NSUNAME}" >> /tmp/name_selected_y
+		WARNEM=Y
+	}
+
+	[ $rc = 0 ] && NSU=N		# Eliminate it from warning message
+
+	grep "^acp[${TAB}${SPACE}]*" /tmp/name_selected_y >/dev/null 2>&1
+	rc=$?
+
+	[ $rc != 0 -a "$ACP" = "Y" ] && {
+
+		echo "acp	${ACPNAME}" >> /tmp/name_selected_y
+		WARNEM=Y
+	}
+
+	[ $rc = 0 ] && ACP=N		# Eliminate it from warning message
+
+	[ "$WARNEM" ] && menu -f ${MENU_DIR}/set.7 -o ${MENU_OUT} < /dev/tty >/dev/tty
+}
+
+#
+#  If no package was selected, then let the user know and exit.
+#
+if [ ! -s /tmp/name_selected_y ]
+then
+	menu_colors regular
+	menu -f ${MENU_DIR}/set.3 -o ${MENU_OUT} 2>/dev/null < /dev/tty > /dev/tty
+	EXITCODE=77; export EXITCODE
+	exit 77
+fi
+
+
+#
+#  For each package selected, check dependencies until there are none left
+#
+while read PKGABBREV PKGNAME
+do
+	do_dependencies $PKGABBREV
+	if [ $? = 0 ] 
+	then
+		echo $PKGABBREV >> ${PKGS_FILE}
+		echo $PKGABBREV $PKGNAME >> /tmp/name_final_y
+	fi
+done < /tmp/name_selected_y
+
+#
+#  Reorder PKGLIST so that it accurately reflects the order of the
+#  packages as listed in the setinfo file. Create two versions:
+#  one where entries are separated by new-lines (this will be used
+#  internally to this script and is called PKGLIST), and one
+#  where entries are separated by spaces called NPKG_LIST.
+#  PKGLIST will ultimately be set to NPKG_LIST for preinstall and
+#  postinstall scripts since they "." the response file, and hence
+#  a PKGLIST in the format below will not be viable:
+#  PKGLIST=pkg1
+#  pkg2
+#  pkg3
+#
+#  Rather, PKGLIST should be set PKGLIST=pkg1 pkg2 pkg3.
+#  This code should be cleaned up for the next load and
+#  was implemented this way to reduce the amt of change.
+
+
+PKGLIST=`cat ${PKGS_FILE}`
+export PKGLIST
+> ${PKGS_FILE}
+NPKG_FILE=/tmp/npkglist.$$
+> ${NPKG_FILE}
+
+NPKG_SEP=""	# 1st entry in NPKGFILE should not have space 
+		# in front of it.
+NPKG_SPACE=" "
+
+> /tmp/name_final_y
+
+while read pkginst parts default category package_name
+do
+	case ${pkginst} in
+	'#'*) continue ;;
+	[a-zA-Z+]*)     	
+		echo ${PKGLIST} | grep "\<${pkginst}\>" > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			echo "${pkginst}${TAB}${package_name}" >> /tmp/name_final_y
+			echo "${pkginst}" >> ${PKGS_FILE}
+			echo -n "${NPKG_SEP}${pkginst}" >> ${NPKG_FILE}
+			# after 1st time through, make sure NPKG_SEP is " "
+			NPKG_SEP="${NPKG_SPACE}"
+		fi
+		;;
+	*)	continue ;;
+	esac 
+done < ${SETINFO}
+
+#
+#  $MENU_OUT is going to get a list of eval stmts in mk_pkgs_menu2
+#  about how to set defaults and will then be sourced back into this shell
+#  (There's a comment up in mk_pkgs_menu1 about this...)
+#
+cp ${MENU_DIR}/set.2 ${MENU_FILE}
+mk_pkgs_menu2 >> ${MENU_FILE}
+. ${MENU_OUT}
+
+
+# Delete pkgs that are listed in the file $PKG_RM from the list
+# of the selected packages in the file $PKGS_FILE. Newer version of the packages
+# listed in $PKG_RM is already installed. The user must pkgrm these packages.
+
+[ -f "$PKG_RM" ] && {
+	TMP_PKGS_FILE=/tmp/pkg.$$
+	while read P
+	do
+		grep $P $PKG_RM >/dev/null 2>&1
+		[ $? -eq 0 ] || {
+			echo $P >>$TMP_PKGS_FILE #temp file with selected pkgs
+		} 
+	done <$PKGS_FILE
+	[ -f $TMP_PKGS_FILE ] && cp $TMP_PKGS_FILE $PKGS_FILE
+
+	# Warn the user that some or all packages have newer versions already
+	# installed. These pkgs must be pkgrm'ed to install older version.
+
+	[ -f $TMP_PKGS_FILE ] || {
+		ALL_NEW=YES		# ALL_NEW is set when all pkgs selected
+		export ALL_NEW		# have older versions installed.
+	}
+	export PKG_RM
+	menu_colors warn
+	menu -f ${MENU_DIR}/set.8 -o /dev/null 2>/dev/null </dev/tty >/dev/tty
+	
+	# If ALL_NEW is set, there is nothing to install. Exit with code 77
+
+	[ "$ALL_NEW" ] && {
+		EXITCODE=77; export EXITCODE
+		rm -f $PKG_RM $TMP_PKGS_FILE
+		exit 77
+	}
+
+	rm -f $PKG_RM $TMP_PKGS_FILE
+}
+
+#
+#  Check to see if we actually created a menu for selecting Custom vs
+#  Automatic installation.  There may be no response files in this
+#  whole set, thus no possibility for Auto install.
+#  If we did create a menu, execute it.
+#
+grep TAG_ ${MENU_FILE} > /dev/null 2>&1
+if [ $? = 0 ]
+then
+	menu_colors regular
+	menu -f ${MENU_FILE} -o ${MENU_OUT} 2> /dev/null </dev/tty >/dev/tty
+	. ${MENU_OUT}
+fi
+
+PKGLIST=`cat ${PKGS_FILE}`
+export PKGLIST
+
+
+############################################
+# Display copyright messages for the selected packages 
+# up front and all at once. Also, eliminate duplicate copyrights 
+# being displayed. 
+# Advanced tools like (n)awk cannot be used as they
+# will not be available yet for installing the foundation set.
+# We like to keep set/request scripts identical for all sets. 
+
+if [ -f ${REQDIR}/copyright ] 
+then
+	cp ${REQDIR}/copyright /tmp/setcopyright
+else
+	> /tmp/setcopyright
+fi
+for i in ${PKGLIST}
+do 
+	while read LINE 
+	do
+		case ${LINE} in
+		'#'*) continue ;;
+		[a-zA-Z]*) 
+			grep "${LINE}" /tmp/setcopyright > /dev/null 2>&1
+			if [ ${?} -ne 0 ]
+			then 
+				echo ${LINE} >> /tmp/setcopyright 2> /dev/null
+			fi
+			;;
+		*) continue ;;
+		esac
+	done < ${REQDIR}/${i}/copyright
+done
+############################################
+#
+#  If no package was selected, then let the user know and exit.
+#
+if [ -z "${PKGLIST}" ]
+then
+	menu_colors regular
+	menu -f ${MENU_DIR}/set.3 -o ${MENU_OUT} 2>/dev/null </dev/tty >/dev/tty
+	EXITCODE=77; export EXITCODE
+	exit 77
+fi
+
+#
+#  Now that we have a complete list of packages to install, and all
+#  the dependencies have been weeded out, go ahead and do the request
+#  scripts if appropriate.
+#
+[ "$UPDEBUG" = YES ] && set -x
+for PKG in ${PKGLIST}
+do
+	# If !I-Lock! exists for a pkg, it is partially installed.
+	# Create a lock file  in /tmp to indicate this fact.
+	# chkpkgrel, an upnover tool, will return the code for
+	# newinstall, if the lock file /tmp is detected.
+	# The lock file in /tmp is needed, because in automatic
+	# install mode, by the time chkpkgrel looks for the lock
+	# file in /var/sadm/pkg/$PKG, pkgadd has already dropped
+	# one for the current installation.
+	# chkpkgrel will clean the lock file in /tmp. 
+	# Oherwise, for pkgs for which chkpkgrel is not run, this
+	# file will be blown away when the system is rebooted.
+
+	[ -f /var/sadm/pkg/$PKG/!I-Lock! ] && >/tmp/$PKG.Lock
+
+	# Remove the file /var/sadm/upgrade/$PKG.env, which is around
+	# if the user del'ed out before a pkg installation completed. 
+	# This file should not exist when pkg. installation begins.
+
+	rm -f /var/sadm/upgrade/$PKG.env
+
+	process_default_install ${PKG}
+
+	## if rtn code is non-zero, remove that pkg from PKGLIST
+ 	## we do this by creating another pkglist.
+	## (if sed is available this would be simpr)
+
+	[ "$?" = "0" ] && {
+
+		NEWPKGLIST="${NEWPKGLIST}${PKG} "
+
+	}
+done
+[ "$UPDEBUG" = YES ] && goany
+[ "$NEWPKGLIST" ] || {
+	exit 77
+}
+PKGLIST=${NEWPKGLIST}
+echo $PKGLIST >$NPKG_FILE
+unset NEWPKGLIST
+
+# update /tmp/name_final_y to match updated PKGLIST. Grep for 
+# "^${PKG}[<space><TAB>]" in /tmp/name_final_y  to remove any pkg from
+# /tmp/name_final_y for which request script returned a non-zero code. 
+
+rm -f /tmp/$$.y
+for PKG in ${PKGLIST}
+do
+	grep "^${PKG}[ 	]" /tmp/name_final_y >>/tmp/$$.y
+done
+#mv /tmp/$$.y /tmp/name_final_y
+
+#
+#  Make sure correctly ordered PKGLIST is exported to the environment,
+#  the shell statment to assign the PKGLIST is written to the response
+#  file, and setsizecvt is run, which creates a file of the format of
+#  a pkg's space(4) file, so the packaging tools can take care of 
+#  space checking for us.
+#
+#  Exit cleanly when we're done.
+#
+
+NPKG_LIST=`cat ${NPKG_FILE}`
+export PKGLIST NPKG_LIST
+echo "PKGLIST=${NPKG_LIST}" >> $1 
+[ ! -f /etc/inst/scripts/sgauge.sh ] || . /etc/inst/scripts/sgauge.sh
+/usr/sadm/install/bin/setsizecvt
+exit 0

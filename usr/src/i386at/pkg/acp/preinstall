@@ -1,0 +1,146 @@
+#ident	"@(#)pkg.acp:preinstall	1.1.3.13"
+#ident	"$Header$"
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+#add the group dos to /etc/group for the dos commands
+grep "^dos:" /etc/group 2>&1 >/dev/null
+if [ $? -eq 0 ]
+then
+	# Stay the DOS gid as it was.
+	:
+else
+	_GROUP=`cat /etc/group | grep ":100:" | cut -f3`
+	if [ -z "${_GROUP}" ]
+	then
+		groupadd -g 100 dos 2>&1 > /dev/null
+	else
+		groupadd dos 2>&1 > /dev/null
+	fi
+fi
+
+UPINSTALL=/etc/conf.sav
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=${UPGRADE_STORE}/${PKGINST}.env
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && {
+	set -x
+	goany
+}
+
+# The boot-floppy scripts will create $UPGFILE when an upgrade or
+# overlay is done. $UPGFILE will contain $NSCO if the
+# request script was run and only if the request is run. 
+# If $NSCO is not present, set it in this preinstall.
+
+[ -f "$UPGFILE" ] && . $UPGFILE
+
+[ "$NSCO" ] || {
+
+	# Since NSCO is not set, this is either a boot-floppy
+	# installation or we are pkgadding a set and installing
+	# acp in automatic mode. Do not determine PKGINSTALL_TYPE
+	# or AUTOMERGE if this is a boot-floppy install since these
+	# variables are in UPGFILE already.
+	if [ ! -f /etc/inst/scripts/postreboot.sh ]
+	then
+		#We are installing acp by pkgadding a set.
+		PKGINSTALL_TYPE=NEWINSTALL
+		
+		# Call chkpkgrel to determine installation type.
+		${SCRIPTS}/chkpkgrel
+		PKGVERSION=$?
+		
+		case $PKGVERSION in
+			2)	PKGINSTALL_TYPE=OVERLAY	;;
+			4)	PKGINSTALL_TYPE=UPGRADE	;;
+			6)	PKGINSTALL_TYPE=UPGRADE2	;;
+			*)	;;
+		esac
+		rm -f $UPGFILE
+	fi
+        # Since the new mtune.d/ptm is not installed yet, we get the
+        # number of default SCO pseudo-ttys from the pkginfo file.
+        # The default we use depends on the number of licensed users.
+        NUM_USERS=`keyadm -g USERS|cut -f1`
+        if [ "$NUM_USERS" = "2" ]
+	then
+		DFLT_SCO=$DFLT_SCO_PE
+	else
+		DFLT_SCO=$DFLT_SCO_AS
+	fi
+	NSCO=$DFLT_SCO
+	
+	[ "$PKGINSTALL_TYPE" = OVERLAY -o "$PKGINSTALL_TYPE" = UPGRADE2 ] && {
+                if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+                        PTM=$UPINSTALL
+                        NSCO=`cut -f2 $PTM/node.d/pts|grep ttyp|wc -l`
+                        [ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+		else
+		# We are installing using pkgadd.
+                        PTM=/etc/conf
+                        if [ -f $PTM/mtune.d/ptm ]
+                        then
+                            	line=`/etc/conf/bin/idtune -g NUMSCOPT`
+                                set - $line
+                                NSCO=$1
+                                [ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+ 			else
+                        # This is the odd case when we cannot find the old values.
+			# Use the defaults.
+                                continue
+                        fi
+		fi
+		}
+
+	[ "$PKGINSTALL_TYPE" = UPGRADE ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+                        PTM=$UPINSTALL
+		else
+			PTM=/etc/conf
+		fi
+
+		# We are upgrading from a pre-UnixWare 2.0 release that used
+		# different drivers for SCO and regular ptys. The sdevice.d/ptm
+		# file will have only the number of regular ptys.
+		if [ -f $PTM/sdevice.d/mpt ]
+		then
+			grep "^mpt	" $PTM/sdevice.d/mpt >/tmp/mpt.$$ 2>/dev/null
+			OFS=$IFS
+			IFS="	"	#tab
+			read Dev Conf LAST_SCO x4 </tmp/mpt.$$
+			[ "$Conf" = N ] && LAST_SCO=$DFLT_SCO
+			IFS=$OFS
+			rm -f /tmp/mpt.$$
+
+			[ "$LAST_SCO" -gt "$DFLT_SCO" ] && NSCO=$LAST_SCO
+			[ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+		else
+		# This is the odd case when we cannot find the old values.
+		# Use the defaults.
+                                continue
+		fi
+		}
+}
+
+# Save volatile files
+${SCRIPTS}/pkgsavfiles ${PKGINST}
+
+# pkgsavfiles may change AUTOMERGE to NULL if there are not
+# files to merge or if it is a new installation.  Therefore,
+# find out what value it set.  Don't just overwrite it.
+. $UPGFILE
+
+echo "PKGINSTALL_TYPE=${PKGINSTALL_TYPE}" >$UPGFILE || exit 1
+echo "AUTOMERGE=${AUTOMERGE}" >>$UPGFILE || exit 1
+echo "NSCO=$NSCO" >>$UPGFILE || exit 1
+
+exit 0
+

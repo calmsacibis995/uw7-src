@@ -1,0 +1,47 @@
+#!/sbin/sh
+#
+#ident	"@(#)installpkg	15.1"
+#ident  "$Header$"
+#
+PATH=/sbin:/usr/sbin:/etc:/usr/bin
+export PATH
+
+trap "trap '' 1 2 3 9 15; cd /; [ -f /usr/bin/IDld ] && mv /usr/bin/IDld /usr/bin/idld> /dev/null 2>&1; sync; exit 1" 1 2 3 9 15
+#################################################################################################
+# The IEM tools will fail to install because a check of the output of 'idld -V' is made to
+# determine if the compiler is COFF or ELF, and only 5.X is allowed.  To handle this problem,
+# use a temporary trojan version of idld to produce the desired results.  This trojan version
+# is created if SCOMPAT is set.    In addition, since VPIX itself will not install if SCOMPAT
+# is simply set (resulting in uname -a producing Release 3.2 Version 2), SCOMPAT must explici-
+# tely as "SCOMPAT=`uname -r`:`uname -v'" in the environment before this command is invoked.
+#################################################################################################
+if [ "$SCOMPAT" != "" ]
+then
+	mv /usr/bin/idld /usr/bin/IDld
+	cat >/usr/bin/idld <<!
+#!/sbin/sh
+while getopts V c 2>/dev/null
+do
+	case \$c in
+	V)
+		echo "ld: Standard C Development Environment  (SCDE) 5.0  10/11/91 (d7)" 1>&2
+		exit 0
+		;;
+	esac
+done
+
+exec /usr/bin/IDld "\$@"
+!
+	chmod 755 /usr/bin/idld
+fi
+
+sh -c "/usr/lbin/installpkg.r"
+
+
+########################################################################
+# Move the real idld back
+########################################################################
+if [ "$SCOMPAT" != "" ]
+then
+	mv /usr/bin/IDld /usr/bin/idld
+fi

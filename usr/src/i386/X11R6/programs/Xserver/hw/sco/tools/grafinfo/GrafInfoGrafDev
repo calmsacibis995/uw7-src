@@ -1,0 +1,56 @@
+#!/bin/sh
+#
+#	@(#)GrafInfoGrafDev	11.1	11/21/97	15:44:55
+#
+#	/usr/lib/X11/testtools/GrafInfoGrafDev <filename(s)>
+#
+#	GrafInfoGrafDev - extract modes and driver information from
+#	- grafinfo files, displayed in a format that would be found
+#	- in the /usr/lib/grafinfo/grafdev file
+#	- argument(s): - fully qualified grafinfo file names
+#	- e.g.: GrafInfoGrafDev /usr/lib/grafinfo/ibm/vga.xgi
+#
+cat << _EOF_
+Format of listing:		`date`
+
+vendor.xgifile_name.class.resolution - XDriver.o name
+
+This format is identical to what you would find for
+entries in /usr/lib/grafinfo/grafdev
+(without the " - XDriver.o name" comment)
+___________________________________________________________________________
+
+_EOF_
+
+for Fname in $*
+do
+awk \
+'
+{
+	if ( match ( $1, "VENDOR" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "MODEL" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "CLASS" ) ) {
+			printf "%s.", $2
+			CRYN="No"
+	}
+	if ( (length($1) == 4) && match ( $1, "MODE" ) ) {
+			printf "%s", $2
+			CRYN="No"
+	}
+	if ( match ( $1, "XDRIVER" ) ) {
+			printf " - %s\n", $3
+			CRYN="Yes"
+	}
+}
+END {
+	if ( match ( CRYN, "No" ) ) printf "\n"
+}
+' $Fname
+done | tr "[A-Z]" "[a-z]" | sed -e "s/\"//g" -e "s/;//g"
+

@@ -1,0 +1,282 @@
+# @(#)cmd.vxvm:unixware/voladm/disk.menu.help	1.1 1/24/97 21:57:46 - cmd.vxvm:unixware/voladm/disk.menu.help
+#ident	"@(#)cmd.vxvm:unixware/voladm/disk.menu.help	1.1"
+#
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+#
+ Operations provided in the Volume Manager disk operations menu:
+
+  Add or initialize one or more disks
+
+      Use this menu operation to add disks to the system. The disks
+      must already have been formatted (format(1M) and have a valid
+      VTOC (prtvtoc(1M)).
+
+      You will be prompted to enter a disk device address pattern list
+      which may be used to specify one or more disks. The operation
+      will then prompt for a disk group name and disk name for the
+      disks. A disk group name of 'none' may be specified which will
+      cause the disks to be left as unassigned replacement disks. If a
+      new disk group name is specified the disk group will be created
+      and the disks added to the new disk group. By default disks are
+      added to the root disk group, rootdg. If a disk group is
+      specified for the disks, you may specify that the disks be
+      designated as spares for the disk group.
+
+      If a disk is found to already contain non-Volume Manager
+      partitioning, you will be asked whether the disk should be
+      encapsulated. Encapsulation will turn each partition of the disk
+      into a volume. A disk should be encapsulated if it contains file
+      systems or data that should not be overwritten. If encapsulation
+      is not desired for a disk the disk can be initialized as a new
+      disk for use by the Volume Manager. For new disks all space on
+      the disk becomes free space in the disk's disk group. The menu
+      operation interactively allows encapsulation or initialization to
+      be decided for all the disks specified.
+
+  Encapsulate one or more disks
+
+      Use this menu operation to place under Volume Manager control one
+      or more disks that were added to the system before installing the
+      Volume Manager.
+      
+      You will be prompted to enter a disk device address pattern list
+      which may be used to specify one or more disks. The operation
+      will then prompt for a disk group name and disk name for the
+      disks. The disk will be added to the given disk group with the
+      specified disk name.  The disk will be examined in search of
+      partitions that are used for file systems, or for other
+      purposes.  Volumes will be created to replace disk partitions as
+      the means of accessing the data.  If the encapsule operation
+      cannot determine the purpose for a partition automatically, you
+      will be asked what to do with it.  You can choose to replace the
+      partition with a volume, keep the partition as-is, or remove the
+      partition.
+
+      You will be required to reboot the system if any partitions are
+      in use for mounted file systems or for running applications.  You
+      may have to modify application configuration files to use
+      volumes, rather than direct disk devices, to access the disk
+      partitions.  File system mount information in /etc/vfstab will
+      be adjusted automatically.
+
+  Remove a disk
+
+      Use this menu operation to remove a disk from a disk group.  You
+      will be prompted for the name of a disk to remove.  You cannot
+      remove a disk if any volumes use storage on the disk.  If any
+      volumes are using storage on the disk, you have the option of
+      asking the Volume Manager to move that storage to other disks in
+      the disk group.
+
+      NOTE:  You cannot remove the last disk in a disk group using
+             this operation.  If you wish to use all the remaining disks
+             in a disk group for some purpose, you should disable
+             (deport) the disk group.  You will then be able to reuse
+             the disks.
+
+  Remove a disk for replacement
+
+      Use this menu operation to remove a physical disk from a disk
+      group, while retaining the disk name.  This changes the state
+      for the disk name to a "removed" disk.  If there are any
+      initialized disks that are not part of a disk group, you will be
+      given the option of using one of these disks as a replacement.
+
+  Replace a failed or removed disk
+
+      Use this menu operation to specify a replacement disk for a disk
+      that you removed with the Remove a disk for replacement menu
+      entry, or that failed during use.  You will be prompted for a
+      disk name to replace and a disk device to use as a replacement.
+      You can choose an uninitialized disk, in which case the disk
+      will be initialized, or you can choose a disk that you have
+      already initialized using the Add or initialize a disk menu
+      operation.
+
+  Mirror volumes on a disk
+
+      This menu option prompts for a disk, by media name.  It then
+      prompts for a destination disk within the same disk group, also
+      by media name.  Specifying no destination  disks indicates that
+      any disk is suitable.  The operation proceeds by calling vxmirror
+      to mirror the volumes.
+
+      Mirroring volumes from the boot disk will produce a disk that can
+      be used as an alternate boot disk. This will be done by calling
+      the vxrootmir command.
+
+  Move volumes from a disk
+
+      Use this menu operation to move any volumes that are using a
+      disk onto other disks.  Use this menu immediately prior to
+      removing a disk, either permanently or for replacement.
+
+      NOTE:  Simply moving volumes off of a disk, without also removing
+             the disk, does not prevent volumes from being moved onto
+             the disk by future operations.  For example, using two
+             consecutive move operations may move volumes from the
+             second disk to the first.
+
+  Enable access to (import) a disk group
+
+      Use this menu operation to enable access by this system to a
+      disk group.  If you wish to move a disk group from one system to
+      another, you must first disable (deport) it, on the original
+      system.  Then, move the disk between systems and enable (import)
+      the disk group.  You will be prompted for the disk device of a
+      disk containing the disk group.  All enabled (online) disks will
+      be searched to locate disks that are in the same disk group as
+      the given device.
+
+  Remove access to (deport) a disk group
+
+      Use this menu operation to disable access to a disk group that
+      is currently enabled (imported) by this system.  Deport a disk
+      group if you intend to move the disks in a disk group to another
+      system.  Also, deport a disk group if you want to use all of the
+      disks remaining in a disk group for some new purpose.
+
+      You will be prompted for the name of a disk group.  You will
+      also be asked if the disks should be disabled (offlined).  For
+      removable disk devices on some systems, it is important to
+      disable all access to the disk before removing the disk.
+
+  Enable (online) a disk device
+
+      If you move a disk from one system to another during normal
+      system operation, the Volume Manager will not recognize the
+      disk automatically.  Use this menu operation to tell the
+      Volume Manager to scan the disk to find what disk it is, and
+      to determine if this disk is part of a disk group.  Also, use
+      this operation to re-enable access to a disk that was disabled
+      by either the disk group deport operation or the disk device
+      disable (offline) operation.
+
+   Disable (offline) a disk device
+
+      Use this menu operation to disable all access to a disk device
+      through the Volume Manager.  This operation can be applied only
+      to disks that are not currently in a disk group.  Use this
+      operation if you intend to remove a disk from a system without
+      rebooting.
+
+      NOTE:  Many systems do not support disks that can be removed from
+             a system during normal operation.  On such systems, the
+             offline operation is seldom useful.
+
+   Mark a disk as a spare for a disk group
+
+      This option sets up a disk to be used as a spare device for
+      its disk group. A spare disk can be used to automatically
+      relocate a subdisk that has failed. No space can be used on a disk
+      that is marked as a spare.
+
+  Turn off the spare flag for a disk
+
+      This option removes a disk from those that can be used as a
+      spare and returns its space to the general pool of available
+      space.
+
+  List disk information
+
+      Use this menu operation to display the list of disks attached
+      to your system.  This will also list removed or failed disks.
+      Removed and failed disks are disconnected from specific devices.
+      Such disks are candidates for the Replace a failed or removed
+      disk menu operation.
+
+      You can also use this operation to list detail for a particular
+      disk.  This detail includes, among other things, the disk group
+      of which the disk is a member, even if that disk group is
+      currently disabled.
+
+ Glossary:
+
+  Disk device address: a system-dependent name that defines the
+      hardware address of a disk.  Disk devices for this operating
+      system are defined by a controller number, a bus number, a target
+      address number, and a disk number, in the form:
+
+		c<controller>b<bus number>t<target>d<disks>
+
+      If you have disks attached to a SCSI disk controller, the target
+      number for a disk is the target ID defined by switch settings on
+      the disk, ranging from 0 to 7.  Some SCSI devices can attach
+      several disks under a single target ID.  For such devices, each
+      disk is assigned a different disk number, ranging from 0 to 7.
+
+  Disk group: a collection of disks that are maintained with a common
+      configuration.  Volumes are defined within a disk group, and can
+      be composed only from disks in that disk group.  One disk group,
+      named rootdg, is provided on all systems.  You can create
+      additional disk groups, if you want.  Disk groups other than
+      rootdg can be moved between two systems by disconnecting the
+      disks from the first system and attaching them to the second.
+
+  Disk name: A disk in a disk group has special identifiers stored on
+      it by the Volume Manager.  These identifiers are used to
+      identify a physical disk independent of its location.  A disk
+      can be moved between controllers, or to different target IDs on
+      a controller.  The Volume Manager will recognize that the disk
+      has moved without additional intervention.
+
+      Because disks can be moved, the Volume Manager requires a
+      location-independent name, assigned by the system administrator,
+      to identify a particular physical disk within a disk group.
+      This name does not change if the disk is moved, even if the disk
+      group is moved between two systems.
+
+  Removed disk: A disk can be removed from a disk group temporarily,
+      either with the intention of adding the same disk back to the
+      disk group or of replacing the disk with a new physical disk.
+      Removal for replacement is a special type of removal.
+      Typically, you will remove a disk group from a disk group if the
+      disk fails and you want to replace it.  If a disk is removed for
+      replacement, the disk name is retained as a place-holder, which
+      retains the configuration of subdisks on the disk.  When the
+      disk is replaced, data for the subdisks is recovered from other
+      sources, where possible.
+
+  Failed disk: If a disk is physically removed from the system without
+      telling the Volume Manager, or if a cabling failure or other
+      major disk failure prevents the Volume Manager from being able
+      to read the special identifiers stored on a disk, then the
+      Volume Manager will not be able to match up a disk name within a
+      disk group to a particular physical disk.  If this happens, the
+      disk will not be usable and is considered to be "failed".
+      Failed disks can be replaced, just like removed disks.  However,
+      if the failure condition goes away (for example, if the cable is
+      reconnected), then a reboot will handle the fix without
+      additional user intervention.
+
+  Disk partition: Disk partitioning splits a disk into pieces for
+      different uses.  Partitions represent file systems, swapping
+      areas, or areas for use by applications that use raw disk
+      directly, such as some database products that do not use file
+      systems.  Typically, the system must be rebooted to recognize
+      changes made to the list of partitions on a disk.
+
+      The Volume Manager does not use disk partitioning to split a
+      disk for different uses.  Instead, the Volume Manager uses
+      configuration objects called subdisks, which are a more general
+      concept that can be created and removed on a running system.
+      The Volume Manager slices a UNIX partition into internally-defined
+      subdisks, which it dynamically creates and deletes based on user
+      Volume Manager commands.

@@ -1,0 +1,72 @@
+/**/#pragma ident	"@(#)DtRuntime:Imakefile	1.5"
+
+#include <Motif.rules>
+#include <Motif.tmpl>
+
+#undef Concat
+#define Concat(a,b) b
+
+#ifndef InstallDtRuntimeLibrary
+#define	InstallDtRuntimeLibrary(lib,dest,soloc)				@@\
+install:: soloc/lib							@@\
+	(cd $(DESTDIR)dest; $(RM) lib)			 		@@\
+	(cd $(DESTDIR)dest; $(LN) $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) lib)
+#endif /* InstallDtRuntimeLibrary */
+
+#define CHECK_DTRUNTIME
+#ifdef CHECK_DTRUNTIME
+
+#define CheckDtRuntimeSyms(lib)						@@\
+AllTarget(check_undefs)							@@\
+									@@\
+check_undefs: lib							@@\
+	$(RM) *new_undefs*						@@\
+	chmod +x ./check_undefs						@@\
+	./check_undefs lib						@@\
+									@@\
+clean::									@@\
+	$(RM) *new_undefs*
+
+PreciousObject(check_undefs)
+
+#else /* CHECK_DTRUNTIME */
+
+#define CheckDtRuntimeSyms(lib)
+
+#endif /* CHECK_DTRUNTIME */
+
+ /* For backwards compatibility, force shared library to access its
+  * own copy of _XmStrings array.
+  */
+ SHLIBLDFLAGS = SharedLibraryLoadFlags -Bsymbolic=_XmStrings
+
+LIBNAME=dtruntime
+
+OBJS =\
+	$(XLIBSRC)/$(LIBDTRUNTIMEPFX).X11\
+	$(EXTENSIONSRC)/lib/$(LIBDTRUNTIMEPFX).Xext\
+	$(XMUSRC)/$(LIBDTRUNTIMEPFX).Xmu\
+	$(TOOLKITSRC)/$(LIBDTRUNTIMEPFX).Xt\
+	$(LIBSRC)/Xm/$(LIBDTRUNTIMEPFX).Xm\
+	$(LIBSRC)/DtWidget/$(LIBDTRUNTIMEPFX).DtWidget\
+	$(LIBSRC)/MGizmo/$(LIBDTRUNTIMEPFX).MGizmo\
+	$(TOP)/uslclients/libMDtI/$(LIBDTRUNTIMEPFX).MDtI
+
+SharedLibraryTarget($(LIBNAME),$(SODTRUNTIMEREV),$(OBJS),.,.)
+CheckDtRuntimeSyms($(DTRUNTIMELIB))
+FurSharedLibraryTarget($(LIBNAME),$(SODTRUNTIMEREV),$(OBJS),.,.)
+
+InstallSharedLibrary1($(DTRUNTIMELIB),$(DTRUNTIMELIBDEST))
+InstallFurLibrary($(LIBNAME),$(SODTRUNTIMEREV),$(DTRUNTIMELIBDEST))
+SplitDtRuntime($(DTRUNTIMELIB),$(LIBNAME),$(DTRUNTIMELIBDEST))
+
+InstallDtRuntimeLibrary(libX11.so.$(SOXLIBREV),$(USRLIBDIR),$(XLIBSRC))
+InstallDtRuntimeLibrary(libXext.so.$(SOXEXTREV),$(USRLIBDIR),$(EXTENSIONSRC)/lib)
+InstallDtRuntimeLibrary(libXmu.so.$(SOXMUREV),$(USRLIBDIR),$(XMUSRC))
+InstallDtRuntimeLibrary(libXt.so.$(SOXTREV),$(USRLIBDIR),$(TOOLKITSRC))
+InstallDtRuntimeLibrary(libXm.so.$(SOXMREV),$(USRLIBDIR),$(LIBSRC)/Xm)
+InstallDtRuntimeLibrary(libDtWidget.so.$(SODTWIDGETREV),$(USRLIBDIR),$(LIBSRC)/DtWidget)
+InstallDtRuntimeLibrary(libMGizmo.so.$(SODTREV),$(USRLIBDIR),$(LIBSRC)/MGizmo)
+InstallDtRuntimeLibrary(libMDtI.so.$(SODTIREV),$(USRLIBDIR),$(TOP)/uslclients/libMDtI)
+
+depend::

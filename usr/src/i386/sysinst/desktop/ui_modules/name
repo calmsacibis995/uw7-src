@@ -1,0 +1,133 @@
+#!/sbin/sh
+#ident "@(#)name	15.1	97/12/19"
+
+# name -- ISL UI module: user enters hostname
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	hostname=`ivar get NODE`
+        if [ -z "$hostname" ] 
+	then
+		#
+		# Get the user to enter a hostname by calling ourselves
+		# again, interactively.
+		#
+		ivar set silent_name "false"
+		ivar set skip_name "false"
+		. /isl/ui_map
+		exec $module_path/$module $direction
+
+	fi
+}
+
+
+#
+# Create the winxksh form containing the Hostname: textfield prompt.
+#
+function get_hostname
+{
+[ -n "$debug" ] && set -x
+	footer "$NAME_KEYS"
+	msg "$NAME_PROMPT"
+	open_form
+	form=$FID
+	(( ix = 2 + ${#System_Name} + 2 ))
+	(( sz = $ix + 2 + 63 ))
+	add_field hostname -p "$System_Name" -ilen 63 \
+		-px 2 -py 2 -ix $ix -iy 2 -exit check_hostname
+	(( field = FIELDCNT - 1 ))
+	place_window $sz 5 -title "$INITIAL_NAME_TITLE" -fg $COMBO2_FG -bg $COMBO2_BG
+	run_form $form
+	set_hotkey 9 go_back
+	set_hotkey 1 get_help
+}
+
+
+#
+# Check the validity of $hostname.
+# If     ok, return 0, allowing exit from the entry form.
+# If not ok, return 1, denying  exit from the entry form.
+#
+function check_hostname
+{
+[ -n "$debug" ] && set -x
+	# show mercy: strip leading and trailing spaces
+	x=`echo $hostname`
+	fld_change $form $field "$x"
+		# cannot assign to hostname because add_field makes it read-only
+	len=${#hostname}
+# See tcpconf for information about the next line.
+        [[ $hostname = @(*[!-A-Za-z0-9]*|[-0-9]*|*-) ]] &&
+	{
+		msg "$BAD_CHAR_NAME"
+		return 1
+	}
+	(( len < 3 || len > 63 )) && {
+		msg "$SHORT_NAME"
+		return 1
+	}
+	msg "$OK_NAME"
+	return 0
+}
+
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever they had entered (even if it's not valid)
+	# so when they come back, it will be the default text.
+	#
+	ivar set NODE "$hostname"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever they had entered (even if it's not valid)
+	# so when they come back, it will be the default text.
+	#
+	ivar set NODE "$hostname"
+	#
+	ivar set help_topic name
+	ii_exit HELP
+}
+
+
+#
+# Main
+#
+
+. /isl/ui_modules/common.rc
+
+#
+# Get the initial hostname, if any.
+#
+hostname=`ivar get NODE`
+
+#
+# Let the user enter a hostname.
+#
+get_hostname
+input_handler
+
+#
+# Save their choice
+#
+ivar set NODE "$hostname"
+
+#
+# Done
+#
+ii_exit NEXT
+

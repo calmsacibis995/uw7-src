@@ -1,0 +1,584 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxsparecheck.sh	1.2 3/3/97 03:17:15 - cmd.vxvm:common/support/vxsparecheck.sh
+#ident	"@(#)cmd.vxvm:common/support/vxsparecheck.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+__VXVM_CONNECT_WAIT=WAIT
+export __VXVM_CONNECT_WAIT
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+prog=vxsparecheck
+
+doit()
+{
+	[ "$verbose" ] && cat <<-% >&3
+			! $*
+			%
+	[ -z "$noexec" ] && "$@"
+}
+
+usage()
+{
+	egettxt >&2 \
+"Usage: $prog [mail-address ...]" \
+	vxvmshm:524
+	exit 1
+}
+
+# list stuff
+list_member()
+{
+	_lname=$1
+	_lwant=$2
+	shift 2
+
+	_lfind=
+
+	eval "set -- \$$_lname"
+	for _item in $*
+	do
+		if [ X"$_lwant" = X"$_item" ]
+		then
+			return 0
+		fi
+	done
+	return 1
+}
+
+list_append()
+{
+	_list=$1
+	shift
+	eval "set -- \$$_list $*"
+	eval "$_list=\$*"
+}
+
+list_remove()
+{
+	_lname=$1
+	_lkill=$2
+	shift 2
+
+	eval "set -- \$$_lname"
+	_lfound=0
+	_lhold=
+	for _item in $*
+	do
+		if [ $_lfound = 0 -a X"$_lkill" = X"$_item" ]
+		then
+			_lfound=1
+		else
+			list_append _lhold $_item
+		fi
+	done
+	eval "$_lname=\"$_lhold\""
+}
+
+# Find all dead volumes that have storage on a speficic DM
+deadvols()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -nv -e 'v_read_pol!=V_RAID &&
+			!(any aslist.pl_kstate=ENABLED) &&
+			(any aslist.aslist.sd_dmname="'$dmname'")'
+}
+
+deadraids()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -p -F"%vname" \
+		-e '(any aslist.sd_dmname="'$dmname'") &&
+		    pl_layout=RAID && assoc.v_unusable'	
+}
+
+# Find all affected volumes that have storage on a specific DM but
+# are not completely bashed
+affvols()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -nv -e '(v_read_pol!=V_RAID) && 
+			(any aslist.pl_kstate=ENABLED) && 
+			(any aslist.aslist.sd_dmname="'$dmname'")'
+
+	vxprint -g $dgname -p -F'%vname' \
+		-e '(any aslist.sd_dmname="'$dmname'") &&
+		    pl_layout=RAID && !assoc.v_unusable'
+}
+
+while getopts :v c
+do
+	case $c in
+	v)	verbose="on";;
+	?)	usage;;
+	esac
+done
+
+shift `expr $OPTIND - 1`
+[ $# -eq 0 ] && set root
+
+recipients="$@"
+
+shift $#
+
+# set the da_name for root disk
+set_OS_variables
+
+#
+# spare_from_sparelist - get a spare for a disk from a sparelist file
+# Usage:
+#	spare_from_sparelist dmname dgname file minlen
+#
+# Prints the dm names of usable spare disks in the order listed in
+# the sparecheck file.
+#
+spare_from_sparelist()
+{
+	if [ $# -ne 4 ]
+	then
+		echo "Usage: spare_from_sparelist <dm> <dg> <sparefile> <minlength> <varname>" >&2
+		return
+	fi
+
+	dm_name=$1
+	dg_name=$2
+	sparefile=$3
+	minlen=$4
+	shift 4
+
+	[ ! -s $sparefile ] && return
+
+	sline=`egrep -v '^[ 	]*$|^#' $sparefile | \
+		awk -F: '
+			( NF == 3 && $1 == "'$dg_name'" && \
+				$2 ~ /'$dm_name'/ ) {
+					print $3
+			}
+			( NF == 2 && "'$dg_name'" == "rootdg" && \
+				$1 ~ /'$dm_name'/ ) {
+					print $2
+			}'`
+
+	[ -z "$verbose" ] || echo "spareline: $dm_name $sline"
+
+	for sp_dm in $sline
+	do
+		# Validate the dm names from the hotspare file
+		eval `vxprint -g $dg_name -a \
+			-F "sp_da=%daname sp_spare=%spare" $sp_dm`
+
+		if [ X"$sp_spare" != "Xon" -o -z "$sp_da" ]
+		then
+			continue
+		fi
+
+		freesp=`vxdg -qa -g $dg_name free $sp_dm | \
+			awk '{sum += $5}; END {print 0+sum}'`
+
+		if [ $freesp -ge $minlen ]
+		then
+			dogi_slice_to_device $sp_da
+		fi
+	done
+}
+
+#
+# find_spares - find a list of spares from among the disks marked as hot-spares
+#
+# Usage:
+#	find_spares dmname dgname minlen varname
+#
+# Leaves the list in the variable named varname
+find_spares()
+{
+	if [ $# -ne 3 ]
+	then
+		echo "Usage: find_spares <dm> <dg> <min-length>" >&2
+		return
+	fi
+	
+	dmname=$1
+	dgname=$2
+	minlen=$3
+	shift 3
+
+	collect=
+	vxdisk -qa -g $dgname list | \
+	while read da type dm grp rest
+	do
+		if [ "$dm" = "-" -o "$da" = "-" ]
+		then
+			continue
+		fi
+
+		expr "$rest" : ".*error" 2>&1 >/dev/null && continue
+
+		expr "$rest" : '.*spare' 2>&1 >/dev/null || continue
+
+		freesp=`vxdg -aq -g $dgname free $dm | \
+			awk '{sum += \$5}; END {print 0+sum}'`
+
+		[ "$freesp" -lt $minlen ] && continue
+		dogi_slice_to_device $da
+	done
+}
+
+#
+# hot_spare - attempt the hot-spare switch
+#
+# Usage:
+#	hot_spare dmname dgname spareda
+#
+# Do the actual work involved in hot-sparing once a suitable spare
+# has been found. Will return non-zero to indicate that the hot
+# spare has failed and the caller should try another disk.
+#
+hot_spare()
+{
+
+	[ -z "$FAILSPARES" ] || return 1
+	if [ $# -ne 3 ]
+	then
+		echo "Usage: hot_spare <dm> <dg> <spareda>" >&2
+		return 1
+	fi
+
+	dmname=$1
+	dgname=$2
+	spareda=$3
+	shift 3
+
+	spareda="${spareda}${VOL_FULL_SLICE}"
+	sparedm=`vxdisk list | awk '$1 == "'$spareda'" {print $3}'`
+
+	doit vxdisk check $sparedm
+	[ $? -eq 0 ] || return 1
+
+	doit vxedit -g $dgname set "spare=off" "reserve=on" $sparedm
+	[ $? -eq 0 ] || return 1
+
+	doit vxdg -g $dgname -k repldisk $dm_name=$sparedm 2>$htmpfile1
+	[ $? -eq 0 ] || return 1
+    (
+
+	# Find any volumes that occupy space on the disk
+	# and need to be restored (have no enabled plexes).
+	badvols=`deadvols $dmname $dgname`
+	badraid=`deadraids $dmname $dgname`
+	allbad="${badvols}${badvols:+ }${badraid}"
+
+	if [ $? -eq 0 ]
+	then
+		# Thigs are now beyond the point of no return. If any of the
+		# following fail, it is assumed that they will kick off
+		# another hot spare round on their own.
+		retval=0
+
+		doit vxbootsetup $dmname
+		doit vxrecover -sb -g $dgname $dmname
+		doit vxdg -g $dgname rmdisk $sparedm
+
+		export dmname dgname sparedm spareda; egettxt \
+"Replacement of disk $dmname in group $dgname with disk device
+$spareda has successfully completed and recovery is under way.
+
+" vxvmshm:339
+
+		if [ ! -z "$badvols" ]
+		then 
+			export badvols; egettxt "\
+The following volumes:
+
+$badvols
+
+occupy space on the replaced disk, but have no other enabled mirrors
+on other disks from which to perform recovery. These volumes must have
+their data restored." vxvmshm:438
+		fi
+
+		if [ ! -z "$badraid" ]
+		then
+			export badraid; egettxt "\
+The following RAID-5 volumes:
+
+$badraid
+
+have subdisks on the replaced disk and have experienced other failures
+that prevent recovery. These RAID-5 volumes must have their data 
+restored." vxvmshm:406
+		fi
+
+		if [ ! -z "$allbad" ]
+		then
+			egettxt "\
+To restore the contents of any volumes listed above, the volume should
+be started with the command:
+
+	vxvol -f start <volume-name>
+
+and the data restored from backup." vxvmshm:502
+		fi
+
+	else
+		retval=1
+		export dmname dgname sparedm spareda; egettxt \
+"Replacement of disk $dmname in group $dgname with the disk device
+$spareda has failed. The error is:
+
+" vxvmshm:340
+		cat $htmpfile1
+
+		if [ ! -z "$allbad" ]
+		then
+			export $allbad; egettxt "\
+The following volumes:
+
+$badvols
+
+occupy space on the failed disk and have no other available mirrors or
+have experienced other failres. These volumes are unusable, and the
+data they contain is unavailable." vxvmshm:437
+		fi
+	fi
+    ) | mailx -s "$_ms" "$recipients"
+	doit rm -f $htmpfile1 $htmpfile2 $htmpfile3
+	return $retval
+}
+
+#
+# try_spare - attempt hot-sparing
+#
+# Look for a valid spare disk, and if one is found, attempt to
+# hot-spare it.
+try_spare() {
+
+	[ -n "$verbose" ] && echo "connect_spare $*" >&2
+
+	htmpfile1=/tmp/hs-1$$
+	htmpfile2=/tmp/hs-2$$
+	htmpfile3=/tmp/hs-3$$
+	
+	trap "rm -f $htmpfile1 $htmpfile2 $htmpfile3" 1 2 3
+
+	dm_name=$1
+	dg_name=$2
+	shift 2
+
+	da_name=`vxprint -g $dg_name -F'%lastdevice' $dm_name`
+	dogi_slice_to_device $da_name da_name
+	#da_name=`expr $da_name : '\(c[0-9]*t[0-9]*d[0-9]*\).*'`
+	_ms="`egettxt \"Attempted VxVM recovery on host \`uname -n\`\" vxvmshm:127`"
+	sprlist=${SPARELIST:=$VOL_CONFIG_DIR/sparelist}
+
+	# If there are no subdisks on the disk, then there's nothing
+	# to do.
+	sdp=`vxprint -g $dg_name -qtsAQF "%assoc" -e sd_dm_name==\"$dm_name\"`
+
+	if [ "X$sdp" = "X" ] ; then
+		return
+	fi
+
+	# Calculate the minimum space required on the hot-spare disk
+	minlen=`vxprint -g $dg_name -F '%dm_offset %len %name' -se \
+		sd_dm_name=\"$dm_name\" | \
+		awk '( $1 !~ /'$dm_name'Priv/ ) { sum+=$2 }; END {print sum}'`
+ 
+	# If there is a hot-spare file, see if there are any valid
+	# spares listed in it
+
+	[ -s $sprlist ] && \
+		splist=`spare_from_sparelist $dm_name $dg_name $sprlist $minlen`
+
+	# If spares were found, attempt hotsparing here. hot_spare()
+	# returns non-zero if it couldn't use a disk as a hot-spare.
+	for sdisk in $splist
+	do
+		hot_spare $dm_name $dg_name $sdisk && return
+	done
+
+	# If no spares were found or none were usable, look for spares
+	# lying around the system.
+
+	sdisklist=`find_spares $dm_name $dg_name $minlen`
+
+	while [ ! -z "$sdisklist" ]
+	do
+		sdisk=`vxspare -f $da_name $sdisklist`
+
+		# If the best of the list has been tried already
+		# 'cuz it was in the sparelist file, skip it now.
+		if list_member splist $sdisk
+		then
+			list_remove sdisklist $sdisk
+		else
+		
+			hot_spare $dm_name $dg_name $sdisk && return
+
+			# If hot_spare didn't return success, remove this
+			# disk from the list and move on to the next
+			list_remove sdisklist $sdisk
+		fi
+	done
+
+	# If we've gotten here, there no hotspares were successful,
+	# so send mail
+   	(
+		export dm_name dg_name; egettxt \
+"No hot spare could be found for disk $dm_name in $dg_name. No
+replacement was made and the disk is still unusable." vxvmshm:291
+
+		avols=`affvols $dm_name $dg_name`
+		dvols=`deadvols $dm_name $dg_name`
+		draid=`deadraids $dm_name $dg_name`
+		alldead="${dvols}${dvols:+ }${draid}"
+
+		if [ ! -z "$avols" ] 
+		then
+			export avols dm_name; egettxt "
+The following volumes have storage on ${dm_name}:
+
+$avols
+
+These volumes are still usable, but the the redundancy of
+those volumes is reduced. Any RAID-5 volumes with storage on 
+the failed disk may become unusable in the face of further 
+failures." vxvmshm:621
+		fi
+
+		if [ ! -z "$dvols" ]
+		then
+			 export dvols dm_name; egettxt "
+The following volumes:
+
+$dvols
+
+have data on $dm_name but have no other usable mirrors on other
+disks. These volumes are now unusable and the data on them is
+unavailable." vxvmshm:622
+		fi
+
+		if [ ! -z "$draid" ]
+		then
+			export draid dm_name; egettxt "
+
+The following RAID-5 volumes:
+
+$draid
+
+have storage on $dm_name and have experienced other failures. These
+RAID-5 volumes are now unusable and the data on them is unavailable." \
+vxvmshm:626
+		fi
+	) | mailx -s "$_ms" "$recipients"
+}
+
+
+# checkdetach - look for failed objects and send the administrator mail
+
+checkdetach() {
+	htmpfile4=/tmp/hs-4$$
+	rm -f $htmpfile4
+
+	_ms="`egettxt \"Volume Manager failures on host \`uname -n\`\" vxvmshm:565`"
+
+	vxprint -AQdF '%name %nodarec %dgname' 2> /dev/null | \
+		awk '$2=="on" {print " " $1 " " $3}' > $htmpfile4
+	d=`awk '{print " " $1}' < $htmpfile4`
+
+	p=`vxprint -AQpe 'pl_kdetach || pl_nodarec' -F ' %name' 2>/dev/null`
+	v1=`vxprint -AQvF ' %name' -e "v_read_pol!=V_RAID &&
+		((any aslist.pl_kdetach==true) || (any aslist.pl_nodarec)) &&
+		 !(any aslist.pl_kstate==ENABLED)" 2> /dev/null`
+	v2=`vxprint -AQpF ' %name' -e "pl_layout=V_RAID && assoc.v_unusable"`
+	v="${v1}${v2}"
+	s=`vxprint -AQsF ' %name' \
+		-e'assoc.assoc.v_read_pol=V_RAID && (sd_kdetach||sd_nodarec)'`
+
+	if [ ! -z "$d" ] || [ ! -z "$p" ] || [ ! -z "$v" ] || [ ! -z "$s" ]
+	then
+		( egettxt "\
+Failures have been detected by the VERITAS Volume Manager:" \
+vxvmshm:235
+		[ -z "$d" ] || \
+			d="$d" egettxt "\\nfailed disks:\\n$d" vxvmshm:601
+		[ -z "$p" ] || \
+			p="$p" egettxt "\\nfailed plexes:\\n$p" vxvmshm:603
+		[ -z "$s" ] || \
+			s="$s" egettxt "\\nfailed subdisks:\\n$s" vxvmshm:604
+		[ -z "$v" ] || \
+			v="$v" egettxt "\\nfailed volumes:\\n$v" vxvmshm:605
+
+		[ -s $htmpfile4 ] && egettxt "\
+
+The Volume Manager will attempt to find hot-spare disks to replace any
+failed disks and attempt to resyncrhonize the data in the failed plexes
+from plexes on other disks.
+" vxvmshm:618
+		if [ ! -z "$v" ]
+		then
+			egettxt "\
+The data in the failed volumes listed above is no longer available. It
+will need to be restored from backup.
+" vxvmshm:393
+		else
+			egettxt "No data appears to have been lost." vxvmshm:286
+		fi
+
+		) | mailx -s "$_ms" "$recipients"
+
+		if [ -s $htmpfile4 ]
+		then
+			cat $htmpfile4 | \
+			while read dm_name dg_name
+			do
+				try_spare $dm_name $dg_name "$@"
+			done
+		fi
+	fi
+}
+ 
+# get events from vold, waiting for 15 seconds of quiescence before
+# checking for failed objects.
+ 
+docheck=yes
+vxnotify -f -w 15 | while read code more
+do
+    [ -z "$verbose" ] || echo "Code: $code"
+    case $code in
+    waiting)    if [ "$docheck" = yes ]
+                then
+                        checkdetach "$@"
+                        docheck=no
+                fi;;
+    detach|more|connected)
+                docheck=yes;;
+    esac
+done

@@ -1,0 +1,61 @@
+#ident	"@(#)minimum_hw	15.1"
+
+function minimum_hw
+{
+	# Make sure integral hard disk is large enough
+	integer HD_SZ=0
+	integer rc _t
+	HD_SZ=`partsize -s ${CHAR_DISK_NODES[0]}`
+	rc=$?
+	if [ "${rc}" != "0" -o  "$HD_SZ" -lt "$MIN_HARDDISK" ]
+	then
+
+		$SILENT_INSTALL && return $rc
+
+		faultvt "$DISKerror"
+		halt # Never returns.
+
+		# The rest of this file is dead code,
+		# but I'm leaving it here in case someone gets
+		# things working such that we can run floppy2()
+		# more than once.
+
+		footer
+		display "$DISKerror" -bg $ERROR_BG -fg $ERROR_FG
+		_t=$CURWIN
+		minihw_choice
+		input_handler
+		wclose $_t
+		$DO_REBOOT && halt
+		rc=1
+	fi
+	return $rc
+}
+
+function minihw_choice
+{
+	typeset minihwopt
+
+	if [ -z "${MINIHW_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A MINIHW_OPT ${MINIHW_CHOOSE}
+		IFS="$OIFS"
+	fi
+	minihwopt=$MINIHW_OPT
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	choose -f -e -exit minihw_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$minihwopt" "${MINIHW_OPT[@]}"
+}
+
+function minihw_exit
+{
+	case $CHOICE in
+	${MINIHW_OPT[0]})
+		DO_REBOOT=false
+		;;
+	${MINIHW_OPT[1]})
+		DO_REBOOT=true
+		;;
+	esac
+}

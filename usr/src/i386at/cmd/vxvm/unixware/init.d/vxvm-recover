@@ -1,0 +1,56 @@
+# @(#)cmd.vxvm:unixware/init.d/vxvm-recover.sh	1.2 3/3/97 03:26:01 - cmd.vxvm:unixware/init.d/vxvm-recover.sh
+#ident	"@(#)cmd.vxvm:unixware/init.d/vxvm-recover.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+# attach plexes, as needed, and start the volume manager watch daemons.
+
+
+PATH=/sbin:/usr/sbin:/usr/bin
+
+# if the volume manager hasn't yet been initialized, don't bother
+# starting vold.  The install-db file indicates that initialization
+# has NOT yet happened.
+
+if [ -f "/etc/vx/reconfig.d/state.d/install-db" ]
+then
+	exit 0
+fi
+
+# attach plexes, as needed, and start the volume manager watch daemons.
+
+# restart vold 
+/usr/sbin/vxdctl enable 2> /dev/null
+if [ $? -eq 4 ]; then
+	/sbin/vxconfigd -k -m enable
+fi
+
+# attach stale plexes and recover plex synchronization.
+# Don't start volumes.  Volumes should have been started out of the
+# vol-startup script, which is run out of inittab early in the boot
+# sequence.
+/usr/sbin/vxrecover -b -o iosize=64k > /dev/null
+
+# start the watch daemon.  This sends E-mail to the administrator when
+# any problems are found.  To change the address used for sending problem
+# reports, change the argument to vxrelocd.
+/usr/lib/vxvm/bin/vxrelocd root &
+
+exit 0

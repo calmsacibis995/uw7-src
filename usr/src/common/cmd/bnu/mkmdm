@@ -1,0 +1,69 @@
+#!/bin/sh
+
+. ./mdm.include
+
+
+#
+# Create a list of vendors, format:
+#
+#      Directory_name Description
+#
+mkvendors()
+{
+	[ -d ${MDMDBASE} ] || mkdir ${MDMDBASE}
+	[ -f ${VENDORS} ] && rm ${VENDORS}
+	for VENDOR in ${INFDBASE}/*
+	do
+		[ -f ${VENDOR}/vendor ] && {
+			echo "`basename ${VENDOR}` \c" >> ${VENDORS}
+			cat ${VENDOR}/vendor >> ${VENDORS}
+		}
+	done
+}
+
+#
+# Create a per vendor file containing the modem dbase, also create
+# a dialer per modem.
+#
+# If an entry for a modem exists in the support database, then any
+# variables set there will override those in the Inf database.
+#
+mkmdmdbase()
+{
+	[ -d ${DIALERS} ] || mkdir ${DIALERS}
+
+	for VENDOR in ${INFDBASE}/*
+	do
+		$TOOLS/usr/bin/tcl ./mkmdm.tcl ${INFDBASE} ${SUPPORT} ${MDMDBASE} \
+			${DIALERS} `basename ${VENDOR}`
+			
+	done
+}
+
+
+#
+# Find any dialers with AUTODETECT set ...
+#
+mkautodbase()
+{
+	[ -f $DETECT ] && rm $DETECT
+	_cwd=`pwd`
+	cd $SUPPORT		
+	grep AUTO * | sed 's/:AUTODETECT[ 	]*/ /' >> $_cwd/$DETECT
+	cd $_cwd
+}
+
+#
+# Create the Vendor list
+#
+mkvendors 
+
+#
+# Create the Modem database
+#
+mkmdmdbase
+
+#
+# Create the auto-detection database
+#
+mkautodbase

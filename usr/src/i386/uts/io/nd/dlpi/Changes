@@ -1,0 +1,196 @@
+#ident "@(#)Changes	3.1"
+#ident "$Header$"
+
+drv/dlpi/Makefile
+
+    - Cranked up error checking
+    ## Need dependancies
+
+drv/dlpi/include.h
+
+    - Changes for exporting media support interface
+    - Added missing system prototypes
+    - Took out all the #includes so that each .c can decide what it needs
+    - defined DLPI_PRINTF for debugging
+
+drv/dlpi/prototype.h
+
+    - Changes for exporting media support interface
+    - Updated prototype for mdi_register_media()
+    - Took out items relating to sr.c - Put into sr.h
+
+sys/dlpimod.h
+
+    - Changes for exporting media support interface
+    - Redefined struct per_media_info
+
+    - Changed cp->media_make_hdr to MEDIA_SPECIFIC(cp).make_hdr
+    - Changed cp->media_rx_parse to MEDIA_SPECIFIC(cp).rx_parse
+    - Changed cp->media_hdr_sz to MEDIA_SPECIFIC(cp).hdr_sz
+    - Changed cp->media_flags to MEDIA_SPECIFIC(cp).flags
+
+    - Added DLPI_MEDA_REGISTER ioctl
+    - Moved MAX_MEDIA_TYPE here so that third party media support can use it.
+    - Increased MAX_MEDIA_TYPE from 0x10 to 0x20 to allow for ISDN ...
+
+sys/mdi.h
+
+    - Added MAC_ISDN_BRI and MAC_ISDN_PRI
+    - Added MDI_DEV_TO_CARD(dev) and MDI_DEV_TO_CHANNEL(dev)
+    - Added typedef union MAC_primitives mac_prim_t;
+    - Added mac_capi_msg_t into mac_prim_t
+    - Added MAC_CAPI_MSG_SIZE
+    - Added mac_stats_isdn_t
+
+drv/dlpi/ksl.c
+
+    - Changes for exporting media support interface
+    - Added prototypes
+
+drv/dlpi/mdilib.c
+
+    - Changes for exporting media support interface
+    - Added #include "include.h"
+
+drv/dlpi/trylock.c
+
+    - Changes for exporting media support interface
+    - Added #include "include.h"
+
+drv/dlpi/sr.c
+
+    - Changes for exporting media support interface
+    - Changed
+	void dlpiSR_init(struct route_table *rt, uint nroutes, uint max_pdusz)
+      to
+	void dlpiSR_init(struct per_card_info *cp)
+
+    - Changed
+	int dlpiSR_make_header(struct route_table *rt, unchar *dest,
+						unchar *src,unchar *ri_field)
+      to
+	int dlpiSR_make_header(struct per_card_info *cp, unchar *dest,
+						unchar *ri_field)
+
+    - Changed
+	int dlpiSR_primitives(struct route_table *rt, queue_t *q, mblk_t *mp)
+      to
+	int dlpiSR_primitives(struct per_card_info *cp, queue_t *q, mblk_t *mp)
+
+    - Changed
+	void dlpiSR_rx_parse(struct per_frame_info *f)
+      to
+	void dlpiSR_rx_parse(struct per_card_info *cp, struct per_frame_info *f)
+
+    - Changed
+	void dlpiSR_auto_rx(struct route_table *rt, struct per_frame_info *f)
+      to
+	void dlpiSR_auto_rx(struct per_card_info *cp, struct per_frame_info *f)
+
+    - Delete empty routine dlpiSR_halt(cp->route_table)
+
+    dlpiSR_rx_parse
+
+sys/sr.h
+
+    - Changes for exporting media support interface
+    - Changed prototype for dlpiSR_init()
+
+    - Change dlpiSR_halt(cp->route_table); to dlpiSR_halt(cp)
+
+dlpi/main.c
+
+    - Changes for exporting media support interface
+    - Added missing prototypes
+
+    - mdi_register_media()
+      Must be called from the init routine of other media support drivers.
+      Provide global init in first registration.
+
+    - Changed arguments to register_media() and mdi_register_media()
+      to take struct per_media_info.
+
+    - media types supported are defined in sys/mdi.h
+	      MAC_CSMACD MAC_TPR MAC_FDDI
+      other media types are defined in sys/attdlpi.h
+	      DL_CSMACD DL_TPB DL_TPR DL_METRO DL_ETHER
+	      DL_HDLC DL_CHAR DL_CTCA  DL_FDDI DL_OTHER
+      other media types are defined in sys/lli34/dlpi.h
+	      DL_CSMACD DL_TPB DL_TPR DL_METRO DL_ETHER
+	      DL_HDLC DL_CHAR DL_CTCA DL_SLIP DL_PPP DL_LOOP
+      other media types are defined in sys/scodlpi.h
+	      DL_SLIP DL_PPP DL_LOOP <- Note value conflict ##
+      Added compiler check that the values are the same
+
+    - Changed #include "media.h" to "ether.h" "token.h" "fddi.h"
+
+drv/dlpi/mdi.c
+
+    - Changes for exporting media support interface
+    - Reformatted some cmn_err messages for readability
+    - Changed dlpiSR_halt() to MEDIA_SPECIFIC(cp).media_halt(cp);
+
+drv/dlpi/ether.c
+
+    - Changes for exporting media support interface
+    - Changed #include "media.h" to "ether.h"
+    - Added struct per_card_info *cp to mdi_ether_rx_parse()
+
+drv/dlpi/token.c
+
+    - Changes for exporting media support interface
+    - Changed #include "media.h" to "token.h"
+    - Added struct per_card_info *cp to mdi_fddi_rx_parse()
+
+drv/dlpi/fddi.c
+
+    - Changes for exporting media support interface
+    - Changed #include "media.h" to "fddi.h"
+    - Added struct per_card_info *cp to mdi_fddi_rx_parse()
+    - Added MEDIA_SOURCE_ROUTING to registered flags
+
+dlpi/dlpi.c
+
+    - Changes for exporting media support interface
+    - Added more system includes and missing prototypes
+
+Replace file media.h with files ether.h token.h fddi.h
+    ## Update RON
+
+drv/dlpi/util.c
+
+    - Changes for exporting media support interface
+    - Fixed bug where one SAP can never be used.	## do bugsco
+
+############# Not Yet #################
+
+cmd/llistat/hwdep.c
+    display_hw_dep_stats()	hwdep_type
+      reports statistics and must be prepared to report unknown
+      media types. Currently it reports an error.  Maybe pipe to
+      an external program provided by the vendor.
+
+cmd/llistat/lli.c
+    display_statistics()	DL_CSMACD DL_TPR DL_FDDI
+
+cmd/llistat/stats.c
+    do_lli31_stats()	DL_CSMACD DL_ETHER
+
+We may need more sap structures Space.c YYYY_UNITS
+    cp->maxsaps
+    dlpi_allocsap
+
+Need:
+
+    Change media type enum to a ulong (magic cookie)
+    and register by adding to a linked list
+
+    drawing on dlpi data and control flow
+
+
+Oct 23, 1995 - bhf:
+	ported dlpi module to UnixWare 2.01
+	changes surrounded by #...def UNIXWARE (except Makefile - "make uw")
+
+Jun 24, 1996 - bhf:
+	modified to build in unified gemini source tree (after mkmerge)

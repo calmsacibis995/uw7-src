@@ -1,0 +1,175 @@
+#ident	"@(#)debugger:tutorial.d/common/traverse.doc	1.1"
+
+#define _REENTRANT 1
+
+#include <dirent.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <thread.h>
+#include <synch.h>
+
+struct info
+{
+	char	*path;
+	DIR	*dir;
+};
+
+typedef struct info INFO;
+
+
+static char **list;
+static int  cnt;
+static int  current;
+
+#define GROW_SIZE	50
+static void
+grow()
+{
+	cnt += GROW_SIZE;
+	if (!current)
+		list = (char **)malloc(cnt * sizeof(char **));
+	else
+		list = (char **)realloc(list, cnt * sizeof(char **));
+	if (!list)
+	{
+		(void) fprintf(stderr, "malloc failed\n");
+		exit(1);
+	}
+}
+
+static void
+print_list()
+{
+	char	**ptr = list;
+	int	i;
+	if (!current)
+		return;
+	for(i = 0; i < current; i++, ptr++)
+		printf("%s\n", *ptr);
+}
+
+static mutex_t	mutex;
+
+static void
+add_to_list(const char *name)
+{
+	char		*ptr;
+
+	mutex_lock(&mutex);
+
+	if (current >= cnt)
+		grow();
+	
+	if ((ptr = malloc(strlen(name) + 1)) == 0)
+	{
+		(void) fprintf(stderr, "malloc failed\n");
+		exit(1);
+	}
+	strcpy(ptr, name);
+	list[current++] = ptr;
+}
+
+/* read each directory entry, printing file names and traversing subtrees */
+static void *
+traverse(void *info)
+{
+	const char	*path = ((INFO *)info)->path;
+	DIR		*dir = ((INFO *)info)->dir;
+	DIR		*subdir;
+	char		fullpath[PATH_MAX];
+	struct dirent	*dirp;
+	char		*cptr;
+
+	dirp = (struct dirent *)malloc(sizeof(struct dirent) + PATH_MAX);
+	if (!dirp)
+	{
+		(void) fprintf(stderr, "malloc failed\n");
+		exit(1);
+	}
+	(void) sprintf(fullpath, "%s/", path);
+	cptr = fullpath + strlen(fullpath);
+
+	while (readdir_r(dir, dirp) != 0)
+	{
+		if (dirp->d_name[0] == '.')
+			continue;
+
+		(void) strcpy(cptr, dirp->d_name);
+		if ((subdir = opendir(fullpath)) != 0)
+		{
+			INFO sinfo;
+			sinfo.path = fullpath;
+			sinfo.dir = subdir;
+			if (!traverse((void *)&sinfo))
+				return 0;
+		}
+		else
+		{
+			add_to_list(fullpath);
+		}
+	}
+
+	(void) closedir(dir);
+	free(dirp);
+	return (void *)1;
+}
+
+main(int argc, char *argv[])
+{
+	int		exit_code = 0;
+	void		*ret_val;
+	int		i;
+	thread_t	tid;
+
+	if (argc < 2)
+	{
+		(void) fprintf(stderr, "Usage: traverse directory ...\n");
+		exit(1);
+	}
+
+	if (mutex_init(&mutex, USYNC_THREAD, 0) != 0)
+	{
+		(void) fprintf(stderr, "mutex_init failed\n");
+		exit(1);
+	}
+
+	for (i = 1; i < argc; i++)
+	{
+		INFO	*info = malloc(sizeof(INFO));
+		DIR	*dir;
+
+		if ((dir = opendir(argv[i])) == 0)
+		{
+			(void) fprintf(stderr, "Cannot open %s\n", argv[i]);
+			exit(2);
+		}
+
+		info->path = argv[i];
+		info->dir = dir;
+		if (thr_create(NULL, 0, traverse, info, 0, &tid)
+			!= 0)
+		{
+			(void) fprintf(stderr, "Thread create failed\n");
+			exit(1);
+		}
+	}
+
+	for (i = 1; i < argc; i++)
+	{
+		if (thr_join(NULL, NULL, &ret_val) != 0)
+		{
+			(void) fprintf(stderr, "Thread join failed\n");
+			exit(2);
+		}
+		exit_code |= (int)ret_val;
+	}
+
+        printf("This is the final print routine\n");
+	print_list();
+
+	exit(exit_code);
+	/*NOTREACHED*/
+}

@@ -1,0 +1,41 @@
+_m4_dnl_	ident	"@(#)libc-i386:mcount.def	1.4"
+_m4_dnl_
+_m4_dnl_   This file is to be run through the m4 macro processor along with
+_m4_dnl_   a i286 assembly language program in the C library to generate a
+_m4_dnl_   profiled version of the C library function.
+_m4_dnl_
+_m4_define_(`_UNIQ_', 0)_m4_dnl_
+_m4_define_(`MCOUNT', `
+	_m4_ifdef_(`_EBX_IS_GOT_', `
+	.data	/ profiling after PIC prologue
+	.align	4
+M._UNIQ_:
+	.long	0
+	.text
+	leal	M._UNIQ_@GOTOFF(%ebx),%edx
+	call	*_mcount@GOT(%ebx)
+', _m4_ifdef_(`DSHLIB', ``
+	.data	/ profiling dynamic without pic prologue
+	.align	4
+M._UNIQ_:
+	.long	0
+	.text
+	pushl	%ebx
+	call	.PIC._UNIQ_
+.PIC._UNIQ_:
+	popl	%ebx
+	addl	$_GLOBAL_OFFSET_TABLE_+[.-.PIC._UNIQ_],%ebx
+	leal	M._UNIQ_@GOTOFF(%ebx),%edx
+	call	*_mcount@GOT(%ebx)
+	popl	%ebx
+'', ``
+	.data	/ profiling for unshared library
+	.align	4
+M._UNIQ_:
+	.long	0
+	.text
+	movl	$M._UNIQ_,%edx
+	call	_mcount
+''))
+	_m4_define_(`_UNIQ_', _m4_incr_(_UNIQ_))_m4_dnl_
+')_m4_dnl_

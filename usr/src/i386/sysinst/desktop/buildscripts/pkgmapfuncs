@@ -1,0 +1,173 @@
+#!/usr/bin/ksh
+#ident	"@(#)pkgmapfuncs	15.1"
+
+function pathproc
+{
+	case "$1" in
+	\'*)
+		path=${1%?}
+		path=${path#?}
+		;;
+	*)
+		path=$1
+		;;
+	esac
+}
+
+function lpathproc
+{
+	case "$1" in
+	\'*)
+		path=${1#?}
+		path=${path%%\'*}
+		lpath=${1#\'*\'=}
+		case "$lpath" in
+		\'*)
+			lpath=${lpath#?}
+			lpath=${lpath%?}
+			;;
+		esac
+		;;
+	*)
+		path=${1%=*}
+		lpath=${1#*=}
+		;;
+	esac
+}
+
+function iline
+{
+	pathproc "$1"
+	size=$2
+	sum=$3
+	time=$4
+}
+
+function vline
+{
+	class=$1
+	pathproc $2
+	mode=$3
+	owner=$4
+	group=$5
+	size=$6
+	sum=$7
+	time=$8
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function eline
+{
+	class=$1
+	pathproc $2
+	mode=$3
+	owner=$4
+	group=$5
+	size=$6
+	sum=$7
+	time=$8
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function bline
+{
+	class=$1
+	pathproc $2
+	major=$3
+	minor=$4
+	mode=$5
+	owner=$6
+	group=$7
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function cline
+{
+	class=$1
+	pathproc $2
+	major=$3
+	minor=$4
+	mode=$5
+	owner=$6
+	group=$7
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function xline
+{
+	class=$1
+	pathproc $2
+	mode=$3
+	owner=$4
+	group=$5
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function dline
+{
+	class=$1
+	pathproc $2
+	mode=$3
+	owner=$4
+	group=$5
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function fline
+{
+	class=$1
+	pathproc $2
+	mode=$3
+	owner=$4
+	group=$5
+	size=$6
+	sum=$7
+	time=$8
+	macid=$9
+	priv_fix=$10
+	priv_inh=$11
+}
+
+function sline
+{
+	class=$1
+	path=${2%%=*}
+	lpath=${2#*=}
+}
+
+function lline
+{
+	class=$1
+	path=${2%%=*}
+	lpath=${2#*=}
+}
+
+function mapline
+{
+	set -- $1
+	part=$1
+	type=$2
+	shift 2
+	${type}line "$@"
+}
+
+function add_builtin_script
+{
+
+	ACTIONCLASSES="$ACTIONCLASSES $class"
+	let PART$class=0
+	/usr/bin/cp $ROOT/$MACH/usr/sadm/install/scripts/i.$class \
+	    	install/i.$class
+}

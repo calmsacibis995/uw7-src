@@ -1,0 +1,1247 @@
+#ident	"@(#)postinstall	16.2	98/03/03"
+
+# For an UPGRADE/OVERLAY, I may want to see what's going on here
+errflg=0
+
+DEBUGFILE=/etc/inst/up/updebug.sh
+
+[ -f $DEBUGFILE ] && {
+	# if UPDEBUG is set to YES in updebug.sh on the boot floppy,
+	# cp it over so that we can see what's going on in pkg installation 
+	# of other packages.  This if for debugging only.
+
+	grep "UPDEBUG=YES"  $DEBUGFILE >/dev/null 2>&1
+	[ $? -eq 0 ] && cp $DEBUGFILE /usr/sbin/pkginst/updebug
+
+	. $DEBUGFILE
+}
+
+[ "$UPDEBUG" = "YES" ] && set -x && goany
+
+turnoff () {
+cd /etc/conf/sdevice.d
+for i in $*
+do
+if [ -f $i ]
+then
+ed $i << END > /dev/null 2>&1
+1,\$s/	Y	/	N	/
+w
+w
+q
+END
+fi
+done
+}
+
+turnon () {
+cd /etc/conf/sdevice.d
+for i in $*
+do
+if [ -f $i ]
+then
+ed $i << END > /dev/null 2>&1
+1,\$s/	N	/	Y	/
+w
+w
+q
+END
+fi
+done
+}
+
+turnon cdfs clone connld fdfs intp ipc lp nmi osm prf weitek
+
+error=no
+while read from to comment
+do
+	echo $to 		# for installf
+
+	# The following is being added to support Upgrade Installation.
+	# This eliminates lots of WARNINGS about identical files.
+	rm -f $to
+
+	cp $from $to >&2 || error=yes
+done <<!ENDOFLIST! | installf $PKGINST -
+	/etc/fs/bfs/mkfs /usr/lib/fs/bfs/mkfs
+	/etc/fs/sfs/mkfs /usr/lib/fs/sfs/mkfs
+	/sbin/fstyp /usr/sbin/fstyp
+	/sbin/mkfs /usr/sbin/mkfs
+	/sbin/rc1 /usr/sbin/rc1
+	/sbin/rc3 /usr/sbin/rc3
+!ENDOFLIST!
+
+# /sbin/jsh is now hard-linked to /sbin/sh in sysutil file
+
+# Set up node name.
+# Note:  uname -S creates the file /etc/nodename.
+#
+/bin/uname -S ${NODE:=`/bin/uname -n`}
+installf ${PKGINST} /etc/nodename
+
+# Create files for the TCB and set security attributes.
+#
+# NOTE: files that are being installed by the OAM-EU, that also
+# require privilege, are candidates for having their privilege
+# set fall out of sync with those specified in the prototype file.
+# Since there isn't a user level command to see the privileges
+# set for those files at this point, this script *must* be kept
+# in sync with the prototype files.
+
+while read from to mac fixed inher
+do
+	# Check for comments.
+	test "$from" = "#" && continue
+
+	# The following is being added to support Upgrade Installation.
+	# This eliminates lots of WARNINGS about identical files.
+	rm -f $to
+
+	cp $from $to >&2 || error=yes
+
+	installf ${PKGINST} $to f \? \? \? $mac $fixed $inher
+done <<!ENDOFLIST! 
+	/etc/fs/bfs/fsck /usr/lib/fs/bfs/fsck 2 NULL allprivs
+	/etc/fs/bfs/mount /usr/lib/fs/bfs/mount 2 NULL allprivs
+	/etc/fs/sfs/fsck /usr/lib/fs/sfs/fsck 2 NULL dacread,dacwrite,dev,compat,macread,macwrite
+	/etc/fs/sfs/mount /usr/lib/fs/sfs/mount 2 NULL mount,dacwrite,macwrite,setflevel,macread,dacread
+	/sbin/bcheckrc /usr/sbin/bcheckrc 2 NULL sysops,macwrite,dacwrite,setflevel,dev,mount,macread,dacread,compat,owner
+	/sbin/brc /usr/sbin/brc 2 NULL NULL
+	/sbin/fsck /usr/sbin/fsck 2 NULL macread,macwrite,dacread,dacwrite,dev,compat
+	/sbin/init /usr/sbin/init 2 NULL audit,owner,dev,dacwrite,macwrite,macread
+	/sbin/mknod /usr/sbin/mknod 1 NULL dacread,macread,dacwrite,macwrite,fsysrange,filesys,owner
+	/sbin/mount /usr/sbin/mount 1 NULL mount,dacwrite,dacread,macwrite,macread,setflevel,owner
+	/sbin/mountall /usr/sbin/mountall 2 NULL mount,dacwrite,dacread,macwrite,macread,setflevel,dev,compat,setspriv,setupriv,owner
+	/sbin/rc0 /usr/sbin/rc0 2 NULL mount,setflevel,macwrite,dacwrite,macread,dacread,compat,owner,dev,sysops,driver,fsysrange,audit,setplevel
+	/sbin/rc2 /usr/sbin/rc2 2 NULL sysops,macread,macwrite,dacwrite,dev,compat,mount,setflevel,setspriv,setupriv,dacread,filesys,multidir,driver,fsysrange,setplevel,audit,setuid,owner
+	/sbin/rc6 /usr/sbin/rc6 2 NULL mount,setflevel,macwrite,dacwrite,macread,dacread,compat,owner,dev,sysops,driver,fsysrange
+	# Although /sbin/sh is being installed by the ICD we're
+	# not going to mark it here since it requires a seperate
+	# set of privileges than the other shells.
+	/sbin/shutdown /usr/sbin/shutdown 2 NULL mount,setflevel,macwrite,dacwrite,macread,dacread,compat,owner,dev,sysops,driver,fsysrange,audit,setplevel
+	/sbin/uadmin /usr/sbin/uadmin 2 NULL sysops
+	/sbin/umount /usr/sbin/umount 2 NULL mount,setflevel,macwrite,macread,dacread,owner,dacwrite
+	/sbin/umountall /usr/sbin/umountall 2 NULL mount,setflevel,macwrite,dev,dacwrite,macread,dacread,owner,compat
+	/etc/fs/sfs/df /usr/lib/fs/sfs/df 1 NULL macread,dacread,compat,dev
+	/sbin/creatiadb /usr/sbin/creatiadb 2 NULL dacwrite,macwrite,setflevel
+	/sbin/filepriv /usr/sbin/filepriv 1 NULL NULL
+!ENDOFLIST!
+
+installf ${PKGINST} /sbin/sh f ? ? ? 1 NULL allprivs
+installf ${PKGINST} /usr/bin/chmod f ? ? ? 1 NULL owner,macread,macwrite,dacread
+installf ${PKGINST} /usr/bin/cpio f ? ? ? 1 NULL macread,macwrite,dacwrite,dacread,fsysrange,filesys,compat,owner,multidir,setplevel,setflevel
+installf ${PKGINST} /usr/bin/false f ? ? ? 1 NULL NULL
+installf ${PKGINST} /usr/bin/find f ? ? ? 1 NULL dacread,dacwrite,macread,macwrite,compat
+installf ${PKGINST} /usr/bin/mkdir f ? ? ? 1 macupgrade multidir,setflevel,macread,dacread,macwrite,dacwrite,fsysrange
+installf ${PKGINST} /usr/bin/true f ? ? ? 1 NULL NULL
+installf ${PKGINST} /sbin/sync f ? ? ? 2 NULL NULL
+installf ${PKGINST} /etc/TIMEZONE f ? ? ? 1 NULL NULL
+installf ${PKGINST} /etc/loadmods f ? ? ? 2 NULL NULL
+
+# In the prototype file, mv is listed as having inheritable
+# privileges, and ln/cp are listed as being links to mv.  ln/cp don't
+# have privileges listed (can't specify attributes of a link), but
+# since they are all the same vnode -- and privs are associated with a
+# vnode, not a path -- they all have privs.  This is what we want.
+#
+# But we also need explicit entries for ln and cp in the Privilege
+# Data File (PDF).  This is needed, for example, by the code later in
+# this file that puts entries in the TFM based on the privileges
+# listed in the PDF.  This filepriv puts ln/cp in the PDF.
+/sbin/filepriv -i macread,macwrite,dacread,dacwrite,owner,compat,fsysrange,filesys /usr/bin/ln /sbin/ln /usr/bin/cp /sbin/cp 2>/dev/null
+
+#make necessary links for files copied above
+if [ -f /usr/sbin/switchout ]
+then
+	rm /usr/sbin/switchout 
+fi
+installf $PKGINST /usr/sbin/switchout=/usr/sbin/mkfs l
+
+## hard link the other shells
+if [ -f /usr/bin/jsh ]
+then
+	rm /usr/bin/jsh 
+fi
+if [ -f /usr/lib/rsh ]
+then
+	rm /usr/lib/rsh 
+fi
+if [ -f /usr/sbin/sh ]
+then
+	rm /usr/sbin/sh 
+fi
+if [ -f /usr/sbin/jsh ]
+then
+	rm /usr/sbin/jsh 
+fi
+installf $PKGINST /usr/bin/jsh=/usr/bin/sh l
+installf $PKGINST /usr/lib/rsh=/usr/bin/sh l
+installf $PKGINST /usr/sbin/sh=/usr/bin/sh l
+installf $PKGINST /usr/sbin/jsh=/usr/bin/sh l
+
+# These files do not reside in the TCB and are installed by ICD.
+
+#   Installf the ICD portion which is not a part of TCB files. 
+
+if [ -d /dev/rmt ]
+then
+	installf ${PKGINST} /dev/rmt d \? \? \? 1 NULL NULL
+fi
+
+# nodes for log devices are made in nodes.d so we need to give labels now.
+
+installf ${PKGINST} /dev/log c 9 5 444 root root 1 NULL NULL
+installf ${PKGINST} /dev/conslog c 9 0 222 root root 1 NULL NULL
+
+# SFS lost+found dirs get level from special file: SYS_PRIVATE
+
+cat /etc/vfstab | while read dev rdev dir fstype junk
+do
+	case "${dev}" in
+	/dev/dsk/c1d*s* | /dev/dsk/c1t1d*s* | /dev/idsk* )
+		if [ ${fstype} = "sfs" ]
+		then
+			installf ${PKGINST} ${dir}/lost+found d \? \? \? 2 NULL NULL
+		fi
+		;;
+	esac
+done
+installf ${PKGINST} /lost+found d \? \? \? 2 NULL NULL
+
+# cmds with level: USER_PUBLIC
+
+while read file type
+do
+	installf ${PKGINST} $file $type
+done <<!ENDOFLIST!
+	/etc/fs/s5/mount f
+	/etc/fs/bfs/mkfs f
+	/usr/bin/rmdir f
+!ENDOFLIST!
+
+# /sbin/setmnt sets these attributes for /etc/mnttab
+installf ${PKGINST} /etc/mnttab v 0444 root sys 1 NULL NULL
+
+#run creatiadb for new IA data files
+/sbin/creatiadb
+
+if [ ! -d /proc ]
+then
+	# make directory node for /proc since we
+	# don't want to modify /proc if it is
+	# already up and running!
+	installf $PKGINST /proc d 555 root root || error=yes
+fi
+
+if [ ! -d /dev/fd ]
+then
+	installf $PKGINST /dev/fd d 555 root root || error=yes
+fi
+
+#
+# install /var/sadm/install/contents since this file cannot be in pkgmap
+# and needs to be contained in itself(two installf lines are needed)
+
+# For an OVERLAY, the contents file already contains itself
+
+[ "$PKGINSTALL_TYPE" != "OVERLAY" ] && {
+
+	installf -c inst $PKGINST /var/sadm/install/contents v 0644 root root 
+	installf -c inst $PKGINST /var/sadm/install/contents v ? ? ?
+}
+
+############################################
+#
+#
+# echo directories to /etc/security/MLD/pkgcore file for 
+# MLD creation, if ES gets installed.
+#
+echo "/var/mail" >/etc/security/MLD/pkgcore
+echo "/var/spool/cron/crontabs" >>/etc/security/MLD/pkgcore
+echo "/var/spool/cron/atjobs" >>/etc/security/MLD/pkgcore
+echo "/var/preserve" >>/etc/security/MLD/pkgcore
+
+installf ${PKGINST} /etc/security/MLD/pkgcore f 0644 root sys 2 NULL NULL
+rm -f /etc/emulator.dflt
+
+###############################################
+## this portion is taken from BNU's postinstall
+################################################
+
+#
+#	Postinstall for "Basic Networking Utilities"
+#
+#	Carefully install new local uucp information files if none exist or
+#	old style files exist.
+
+INSPATH=/install/new
+PKGNAME=$NAME
+
+TEMPROOT=/usr/tmp/root.$$
+TEMPUUCP=/usr/tmp/uucp.$$
+
+#### Make sure the spools have been converted to the new format
+
+/usr/lib/uucp/bnuconvert
+
+#### Setup initialization cleanup script for rc2
+
+installf $PKGINST /var/spool/cron/crontabs/uucp v 0600 uucp uucp 1 NULL NULL || error=yes
+
+#### These are the default crontab entries
+
+CLEANUP='45 23 * * * $TFADMIN /usr/lib/uucp/uudemon.clean  > /dev/null 2>&1'
+HOUR='41,11 * * * * $TFADMIN /usr/lib/uucp/uudemon.hour > /dev/null'
+POLL='1,30 * * * * $TFADMIN /usr/lib/uucp/uudemon.poll > /dev/null'
+
+### The $TFADMIN will allow them to gain privilege on an ES system
+
+#### Install crontab entries if crontab exists and entries do not exist
+
+crontab -l root >$TEMPROOT 2>/dev/null
+crontab -l uucp >$TEMPUUCP 2>/dev/null
+
+if grep "uudemon.admin" $TEMPUUCP >/dev/null 2>&1
+then  :
+else
+    if grep "uudemon.admin" $TEMPROOT >>$TEMPUUCP 2>&1
+    then :
+    else :
+    fi
+fi
+
+
+if grep "uudemon.clean" $TEMPUUCP >/dev/null 2>&1
+then  :
+else
+    if grep "uudemon.clean" $TEMPROOT >>$TEMPUUCP 2>&1
+    then :
+    else
+	echo "$CLEANUP" >> $TEMPUUCP 2>/dev/null
+    fi
+fi
+
+if grep "uudemon.hour" $TEMPUUCP >/dev/null 2>&1
+then  :
+else
+    if grep "uudemon.hour" $TEMPROOT >>$TEMPUUCP 2>&1
+    then :
+    else
+	echo "$HOUR" >> $TEMPUUCP 2>/dev/null
+    fi
+fi
+
+if grep "uudemon.poll" $TEMPUUCP >/dev/null 2>&1
+then  :
+else
+    if grep "uudemon.poll" $TEMPROOT >>$TEMPUUCP 2>&1
+    then :
+    else
+	echo "$POLL" >> $TEMPUUCP 2>/dev/null
+    fi
+fi
+
+# remove uudemon entries from root's crontab
+
+crontab -l root 2>/dev/null | grep -v uudemon > $TEMPROOT 2>/dev/null
+
+# replace uucp's crontab, and (if successful) root's
+
+if [ -r /var/spool/cron/crontabs/uucp ]
+then
+	/usr/bin/chown uucp /var/spool/cron/crontabs/uucp >/dev/null 2>&1
+fi
+
+if /sbin/su uucp -c "crontab $TEMPUUCP" >/dev/null 2>&1
+then
+	/sbin/su root -c "crontab $TEMPROOT" >/dev/null 2>&1
+else
+    	echo "**WARNING**   ${PKGNAME} cannot install crontab entries."
+	echo "Demons will not be running when installation is finished."
+	echo "They will have to be added later."
+fi
+# change level of uucp if chlvl is installed
+# also remove root file if it is empty
+if [ -x /sbin/chlvl ]
+then
+	/sbin/chlvl SYS_PRIVATE /var/spool/cron/crontabs/uucp
+	if [ ! -s /var/spool/cron/crontabs/root ]
+	then
+		/usr/bin/rm -f /var/spool/cron/crontabs/root
+	fi
+fi
+
+rm -f $TEMPUUCP $TEMPROOT >/dev/null 2>&1
+
+#
+# We need to convert the /etc/device.tab file created 
+# by the boot floppies from a 4.0 version to a "DDB"
+# version.  Run ddbconv to do so.
+# This command will be run again with the "-s" option
+# if and when the "es" package is installed.
+#
+
+ddbconv
+
+### allow uucp to get privilege for cron shell scripts
+
+############### Begin UPGRADE AND OVERLAY #################
+#
+# For an OVERLAY case, we need to check if the user has already been
+# adminuser'ed.  I could special case this for JUST the case where
+# PKGINSTALL_TYPE=OVERLAY, but that seems like a waste of effort.
+#
+# We can't just skip this for an OVERLAY, becasue the theory behind
+# doing an OVERLAY install if to recover a corrupted system.  If the
+# TFM database is corrupted, then we need to add uucp again !
+#
+
+adminuser uucp >/dev/null 2>&1
+
+[ $? != 0 ] && /usr/bin/adminuser -n uucp
+
+/usr/bin/adminuser -a uudemon.poll:/usr/lib/uucp/uudemon.poll:macread:setplevel:sysops uucp >/dev/null 2>&1
+/usr/bin/adminuser -a uudemon.hour:/usr/lib/uucp/uudemon.hour:macread:setplevel:sysops uucp >/dev/null 2>&1
+/usr/bin/adminuser -a uudemon.clean:/usr/lib/uucp/uudemon.clean:macread:setplevel:sysops uucp >/dev/null 2>&1
+
+#
+# add entries for MLDs to the /etc/security/MLD/bnu file
+#
+echo "/var/uucp" >>/etc/security/MLD/bnu
+echo "/var/spool/uucp" >>/etc/security/MLD/bnu
+echo "/var/spool/uucppublic" >>/etc/security/MLD/bnu
+echo "/var/spool/locks" >>/etc/security/MLD/bnu
+
+installf ${PKGINST} /etc/security/MLD/bnu f 0644 root sys 2 NULL NULL
+
+##############################################
+# make sure serial mouse module configured, other
+# mice types are not configured.
+##############################################
+
+turnon mse
+turnoff smse bmse m320
+
+##############################################
+# portion of this is taken from lp postinstall
+##############################################
+
+LPSCHED=/usr/lib/lp/lpsched
+VARSPOOLLP=/var/spool/lp
+
+nodename=`uname -n`
+VARSPOOLLP_TMP=${VARSPOOLLP}/tmp/${nodename}
+VARSPOOLLP_REQUESTS=${VARSPOOLLP}/requests/${nodename}
+
+cd /
+${LPSCHED} >/dev/null 2>&1
+
+echo "copy_files: nocopy" > /etc/default/lp
+/usr/bin/chmod 664 /etc/default/lp
+/usr/bin/chown lp /etc/default/lp
+/usr/bin/chgrp lp /etc/default/lp 
+installf ${PKGINST} /etc/default/lp v 0664 lp lp
+
+# Upgrade/Overlay case
+# postinstall - must be executed after the driver files have been copied from
+# the distribution media.
+#
+# Copy the files that have been installed into the /etc/conf tree
+# by the installation scripts so that they can be installed into the
+# system via idtools.
+#
+# NOTE: Header files should have been copied by the install.
+#
+[ "$PKGINSTALL_TYPE" != "NEWINSTALL" ] && {
+PATH=${PATH}:/etc/conf/bin
+MFPD_DIR=/etc/inst/up/mfpdlp/mfpd
+LP_DIR=/etc/inst/up/mfpdlp/lp
+
+# Move the files for the mfpd driver
+mv /etc/conf/pack.d/mfpd/Driver.o 	$MFPD_DIR/Driver.o	>/dev/null 2>&1
+mv /etc/conf/pack.d/mfpd/Driver_atup.o 	$MFPD_DIR/Driver_atup.o	>/dev/null 2>&1
+mv /etc/conf/pack.d/mfpd/Driver_mp.o 	$MFPD_DIR/Driver_mp.o	>/dev/null 2>&1
+mv /etc/conf/pack.d/mfpd/space.c 	$MFPD_DIR/Space.c	>/dev/null 2>&1
+mv /etc/conf/drvmap.d/mfpd 		$MFPD_DIR/Drvmap	>/dev/null 2>&1
+mv /etc/conf/mdevice.d/mfpd 		$MFPD_DIR/Master	>/dev/null 2>&1
+mv /etc/conf/sdevice.d/mfpd 		$MFPD_DIR/System	>/dev/null 2>&1
+mv /etc/conf/node.d/mfpd 		$MFPD_DIR/Node		>/dev/null 2>&1
+
+# Move the files for the lp driver
+mv /etc/conf/pack.d/lp/Driver.o 	$LP_DIR/Driver.o	>/dev/null 2>&1
+mv /etc/conf/pack.d/lp/Driver_atup.o 	$LP_DIR/Driver_atup.o	>/dev/null 2>&1
+mv /etc/conf/pack.d/lp/Driver_mp.o 	$LP_DIR/Driver_mp.o	>/dev/null 2>&1
+mv /etc/conf/mdevice.d/lp 		$LP_DIR/Master		>/dev/null 2>&1
+mv /etc/conf/sdevice.d/lp 		$LP_DIR/System		>/dev/null 2>&1
+mv /etc/conf/node.d/lp 			$LP_DIR/Node		>/dev/null 2>&1
+
+cd $MFPD_DIR
+if [ -f ./System.mfpd.save ]
+then
+	# Replace the System file from the package with the saved one
+	cp ./System.mfpd.save ./System
+	rm -f ./System.mfpd.save
+else
+	# There was no previous mfpd System file to use, so use the one from
+	# a previous lp if it is available. If not available, then enable
+	# the first default entry that does not have a HW conflict.
+	if [ -f ./System.lp.save ]
+	then
+		# Update the mfpd System file with the HW config from the
+		# old lp driver.
+		grep -v "^mfpd" System > System.tmp
+
+		# Change the name of each entry to mfpd and raise its
+		# ipl to 5
+		grep "^lp" ./System.lp.save | awk '{ \
+		printf("mfpd\t%s\t%s\t5\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", \
+			$2, $3, $5, $6, $7, $8, $9, $10, $11, $12) \
+			}' >> System.tmp
+		mv System.tmp System
+
+		# Enable the lp driver
+		grep "^lp" ./System.lp.save | read aa conf_field bb
+		[ "$conf_field" = "Y" ] && {
+			sed -e 's/N/Y/' $LP_DIR/System > $LP_DIR/System.tmp
+			mv $LP_DIR/System.tmp $LP_DIR/System
+		}
+	fi
+fi
+
+idinstall -d mfpd >/dev/null 2>&1
+idinstall -a mfpd
+
+cd $LP_DIR
+
+idinstall -d lp >/dev/null 2>&1
+idinstall -a lp
+}
+
+### End of Upgrade/Overlay of lp and mfpd drivers
+
+
+### end of LP portion of postinstall
+
+# Run hbacompat to determine whether SVR4.2 drivers are installed
+# in the current kernel. hbacompat does this by getting the value of 
+# the symbol:  	sdi_phystokv_hbacnt
+# Remove hbacompat after execution.
+
+/tmp/hbacompat
+[ $? -ge 1 ] && {
+	/etc/conf/bin/idtune -f PHYSTOKVMEM	1 >/dev/null 2>&1
+}
+rm /tmp/hbacompat
+removef ${PKGINST} /tmp/hbacompat
+
+
+# Now, make sure root fs is not loadable and others are
+
+SDEVICE=/etc/conf/sdevice.d
+read ROOTFS < /etc/.fstype
+case $ROOTFS in
+ufs) sed '/$version/a\
+$static' $SDEVICE/ufs > /tmp/ufs;
+     sed '/$version/a\
+$static' $SDEVICE/sfs > /tmp/sfs;
+     mv /tmp/ufs $SDEVICE/ufs;
+     mv /tmp/sfs $SDEVICE/sfs;
+     chmod 644  $SDEVICE/ufs $SDEVICE/sfs;
+     chgrp sys  $SDEVICE/ufs $SDEVICE/sfs;
+     chown root $SDEVICE/ufs $SDEVICE/sfs;;
+*) sed '/$version/a\
+$static' $SDEVICE/$ROOTFS > /tmp/$ROOTFS;
+   mv /tmp/$ROOTFS $SDEVICE/$ROOTFS;
+   chmod 644  $SDEVICE/$ROOTFS;
+   chgrp sys  $SDEVICE/$ROOTFS;
+   chown root $SDEVICE/$ROOTFS;;
+esac
+
+# Some file sustems depend on DOW 
+case $ROOTFS in
+sfs|ufs)
+     sed '/$version/a\
+$static' $SDEVICE/dow > /tmp/dow;
+     mv /tmp/dow $SDEVICE/dow;
+     chmod 644  $SDEVICE/dow;
+     chgrp sys  $SDEVICE/dow;
+     chown root $SDEVICE/dow;;
+esac
+
+# need this to configure multiple protocols for multiple boards. 
+
+> /etc/confnet.d/netdrivers
+installf ${PKGINST} /etc/confnet.d/netdrivers v 0644  root sys 
+
+############### Begin UPGRADE AND OVERLAY #################
+
+# Potential problem: 3 premature exits before we get here !!
+
+ETCINST=/etc/inst
+UPINSTALL=$ETCINST/up
+SBINPKGINST=/usr/sbin/pkginst
+UPGRADE_STORE=/etc/inst/save.user
+UP_MSGS=$ETCINST/locale/C/menus/upgrade
+
+UPDEBUG_SCRIPT=$SBINPKGINST/updebug
+
+#
+# For all other scripts, I can edit updebug to turn debugging
+# on when I need it.  The postinstall script is a special case,
+# since it will be executed right after installing a verison of
+# /usr/sbin/pkginst/updebug with debugging off, but before I can
+# make the edit. So, I'm giving myself a little back door to
+# still allow debugging this script.
+#
+
+[ -f $UPINSTALL/updebug.sh ] && UPDEBUG_SCRIPT=$UPINSTALL/updebug.sh
+
+. $UPDEBUG_SCRIPT
+
+[ "$PKGINSTALL_TYPE" != "NEWINSTALL" ] && {
+
+	# Restore Version 4 ip Master file if it was saved.
+
+	[ -f /etc/conf/mdevice.d/ip.v4 ] &&
+		mv -f /etc/conf/mdevice.d/ip.v4 /etc/conf/mdevice.d/ip
+
+	# Do special stuff for "merge"
+
+	[ -f /etc/conf/mdevice.d/merge.save ] && {
+
+		mv -f /etc/conf/mdevice.d/merge.save /etc/conf/mdevice.d/merge
+		turnon dosx
+		chmod 644 /etc/conf/sdevice.d/dosx
+	}
+
+	[ "$UPDEBUG" = "YES" ] && set -x
+
+	#
+	#  Make sure we replace the stashed backup and restore commands.
+	#    1) 4.2 bkrs version replaced, else
+	#    2) V4 OA&M version replaced, else
+	#    3) base package version already replaced above.
+	#
+	[ "${UPDEBUG}" = "YES" ] && set -x && goany
+	if [ -f /usr/bin/.backup.4.2 ]
+	then
+		ln /usr/bin/.backup.4.2 /usr/bin/backup 2> /dev/null
+		installf ${PKGINST} /usr/bin/.backup.4.2 
+		ln /usr/bin/.restore.4.2 /usr/bin/restore 2> /dev/null
+		installf ${PKGINST} /usr/bin/.restore.4.2
+	else
+		[ -f /usr/bin/.backup.V4 -o -f /usr/sbin/.restore.V4 -o -f /sbin/.restore.V4 ] && {
+			ln /usr/bin/.backup.V4 /usr/bin/backup 2> /dev/null
+			installf ${PKGINST} /usr/bin/.backup.V4
+			ln /usr/sbin/.restore.V4 /usr/sbin/restore 2> /dev/null
+			installf ${PKGINST} /usr/sbin/.restore.V4
+			ln /sbin/.restore.V4 /sbin/restore 2> /dev/null
+			installf ${PKGINST} /sbin/.restore.V4
+		}
+	fi
+
+	[ "${UPDEBUG}" = "YES" ] && goany
+
+	#
+	#  We also need to replace any of the config files for the SAC
+	#  that we stashed away in the request script.
+	#
+	DBFCONV=/usr/lib/saf/dbfconv
+
+	# For UPGRADE, UPGRADE2 and OVERLAY cases
+	SAVE=${UPGRADE_STORE}
+
+	TAB='	'
+	SPACE=' '
+
+	#
+	#  Lastly, 'kick' the sac for every service in the _sactab
+	#  so that the new file is read and acted on.
+	#
+	SACLIST=`cut -d ':' -f 1 < /etc/saf/_sactab | \
+		grep -v "[${SPACE}${TAB}]*#"`
+
+	for SVC in ${SACLIST}
+	do
+		sacadm -x -p ${SVC} 2>>${UPERR}
+	done
+			
+
+	[ "$AUTOMERGE" != "NULL" ] && {
+
+		[ "$PKGINSTALL_TYPE" = "UPGRADE" ] && {
+
+			#
+			# We need to do this here, because we don't go
+			# through the generic scripts that would have
+			# created a base.sav file when the installation
+			# is an upgrade of Version 4.
+			#
+
+			cp $UPINSTALL/patch/base.LIST $UPGRADE_STORE/base.sav
+
+			#
+			# Another UPGRADE specific thing we have to do is
+			# remove the "nobody" login from the saved Version 4
+			# passwd file before we merge volatile files.  We
+			# need to do this because in v4, "nobody" was added
+			# by the inet package, and in SVR4.2, it's in the
+			# base passwd file.  Since in v4 it could be added
+			# after many other logins had been added, our generic
+			# merge tool could NOT guarantee to correctly delete
+			# the this login.  Since passwd is such a critical
+			# file, we thought it best to special case it here
+			# to guarantee it ends up in a sane condition.
+			#
+
+			cp $UPGRADE_STORE/etc/passwd /tmp/passwd.$$
+			grep -v "^nobody:" /tmp/passwd.$$ \
+					> $UPGRADE_STORE/etc/passwd
+		}
+
+		#
+		# We need to add boot.LIST to our file because those
+		# files are not reflected in our base.sav file and
+		# they do require merging.
+		#
+
+		cat $ETCINST/scripts/boot.LIST >>$UPGRADE_STORE/base.sav
+
+		ed $UPGRADE_STORE/base.sav <<- EOF >>$UPERR 2>&1
+			?var/sadm/install/contents
+			d
+			w
+			q
+			EOF
+
+		[ "$UPDEBUG" = "YES" ] && goany && set +x
+
+		$SBINPKGINST/pkgmrgconf "base" "$AUTOMERGE" "Base System"
+
+		[ "$UPDEBUG" = "YES" ] && set -x
+
+		[ "$PKGINSTALL_TYPE" = "UPGRADE" ] && {
+
+			#
+			# Now I need to clean up /etc/shadow.  Due to the
+			# changing nature of the encrypted passwd field,
+			# our generic merge tool cannot purge obsolete
+			# entries.
+			#
+
+			OIFS=$IFS
+			IFS=" "
+
+			rm -f /tmp/shadow.$$
+
+			while read LINE
+			do
+				#
+				# I need set IFS=: to get the set to work
+				# correctly and then I have to reset IFS
+				# so the echo will put the correct line
+				# in the shadow file.  If I don't reset
+				# IFS everytime, the the echo LINE will
+				# lack all the :'s.
+				#
+
+				IFS=:
+				set $LINE
+				IFS=" "
+				
+				grep "^${1}:" /etc/passwd >/dev/null 2>&1
+
+				[ $? = 0 ] && echo $LINE >>/tmp/shadow.$$
+
+				[ "$UPDEBUG" = "YES" ] && goany
+
+			done </etc/shadow
+
+			# I'm doing a cp to preserve owner and group
+
+			chmod 666 /etc/shadow
+			cp /tmp/shadow.$$ /etc/shadow
+			chmod 400 /etc/shadow
+			rm /tmp/shadow.$$
+
+			/usr/sbin/pwconv
+			/sbin/creatiadb
+
+			IFS=$OIFS
+
+			#
+			# If it's NOT an UPGRADE, the upgrade specific files
+			# were never installed, so we only need to cleanup
+			# if we get to this section.
+			#
+
+			$SBINPKGINST/up_cleanup base
+		}
+	}
+
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	#
+	#    At this point, creatiadb needed to propogate the old 
+ 	#    passwd/shadow entries to M&I files for OVERLAY case. 
+	#
+
+	[ "$PKGINSTALL_TYPE" = "OVERLAY" -o "$PKGINSTALL_TYPE" = "UPGRADE2" ] \
+		&& /sbin/creatiadb
+
+	#
+	# By removing /etc/scsi/pdi_edt, we're forcing pdimkdev to create
+	# new /dev nodes next time it's run.  There are two cases:
+	#
+	# 1) We're "overlaying" via the boot floppy installation process.
+	#
+	#    In this case, pdimkdev will run after the foundation set has
+	#    been installed, in the script that rebuilds the the kernel.
+	#    We need to do this, because we currently blow the original
+	#    /dev directory away and recreate it from scratch.  Then when
+	#    pdimkdev runs, it notices that the scsi configuration has not
+	#    changed by checking pdi_edt, and decides it would be a waste
+	#    of effort to recreate the nodes since the system configuration
+	#    has not changed since the last reboot.  This leads to
+	#    incorrect and missing /dev nodes.
+	#
+	#    An alternative that requires some more thought, would be to
+	#    leave the existing /dev in place for an overlay.  One problem
+	#    with this may be trouble trying to overlay from tape off the
+	#    boot floppies, since the boot floppies know what tape nodes
+	#    have just been created.
+	#
+	# 2) We're "overlaying" via pkgadd from the shell.
+	#
+	#    In this case, pdimkdev will run the next time the system is
+	#    rebooted.  Overlaying the base package without going through
+	#    the boot floppies will create new nodes, overwrite others and
+	#    leave other exisiting nodes alone.  By forcing pdimkdev to run
+	#    in this case will allow the removal of nodes that are not
+	#    required.
+	# 
+
+	[ "$PKGINSTALL_TYPE" = "OVERLAY" -o "$PKGINSTALL_TYPE" = "UPGRADE2" ]\
+		 && rm -f /etc/scsi/pdi_edt
+
+	[ "$UPDEBUG" = "YES" ] && goany && set +x
+}
+
+################ End UPGRADE AND OVERLAY ##################
+
+if [ -d /stand ]
+then
+	chmod 755 /stand
+fi
+
+if [ ! -f /stand/unix ]
+then
+	touch /stand/unix
+fi
+
+echo "Editing Package" > /usr/options/ed.name
+installf $PKGINST /usr/options/ed.name f 0644 root sys 1 NULL NULL
+
+echo "Form and Menu Language Interpreter" > /usr/options/fmli.name
+installf $PKGINST /usr/options/fmli.name f 0644 root sys 1 NULL NULL
+
+echo "Mouse Driver Package" > /usr/options/mouse.name
+installf $PKGINST /usr/options/mouse.name f 0644 root sys 1 NULL NULL
+
+echo "Cartridge Tape Utilities" > /usr/options/qt.name
+installf $PKGINST /usr/options/qt.name f 0644 root sys 1 NULL NULL
+
+echo "Termcap Compatibility Package" > /usr/options/termcap.name
+installf $PKGINST /usr/options/termcap.name f 0644 root sys 1 NULL NULL
+
+# Set up the base locale files.
+cd /usr/lib/locale/C
+montbl montbl_C
+colltbl colltbl_C
+chrtbl chrtbl_C
+mkmsgs -o -i C time_C Xopen_info >/dev/null 2>&1 
+
+installf ${PKGINST} /usr/lib/locale/C/LC_MONETARY f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/C/LC_COLLATE f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/C/LC_CTYPE f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/C/LC_NUMERIC f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/C/LC_MESSAGES/Xopen_info f 444 root bin 1 NULL NULL
+
+cd /usr/lib/locale/POSIX
+montbl montbl_POSIX
+colltbl colltbl_POSIX
+chrtbl chrtbl_POSIX
+mkmsgs -o -i POSIX time_POSIX Xopen_info >/dev/null 2>&1 
+
+installf ${PKGINST} /usr/lib/locale/POSIX/LC_MONETARY f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/POSIX/LC_COLLATE f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/POSIX/LC_CTYPE f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/POSIX/LC_NUMERIC f 444 root bin 1 NULL NULL
+installf ${PKGINST} /usr/lib/locale/POSIX/LC_MESSAGES/Xopen_info f 444 root bin 1 NULL NULL
+
+# Add marker file to user directory skeleton so that all newly created
+# users are considered upgraded.  Done here instead of through prototype
+# file so that can use uname -v and not have to update manually every release
+> /etc/skel/.UpgradeVer`uname -v`
+installf $PKGINST /etc/skel/.UpgradeVer`uname -v` f 0644 root sys 1 NULL NULL
+
+installf -f ${PKGINST} 
+
+############################################
+#
+#The following defines the users for the TFM database.
+#
+#
+for user in root bin sys adm 	lp
+do
+    adminuser $user >/dev/null 2>&1 || adminuser -n $user
+done
+#
+#The following while-loop reads the commands and the users
+#to which these commands are to be assigned.  If privileges, 
+#separated by a colon, appear next to the user in the script that 
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the user.
+#
+#
+while read cmd users
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |       # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |         # delete the fixed privs
+    sed 's/,/:/gp'                           # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+	echo $cmd $users >> /tmp/userlist
+	continue
+    else
+        prvd="yes"
+    fi
+    set $users
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        user=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            user=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/[a-z]*:\(.*\)$/\1/p'`
+                shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+                fullset=`echo "$save"|sed 's/:/ /gp'`
+                for i in $shutoff    #check if privileges to be shut off
+                do                   #are in full set of privilges
+                    found="false"
+                    for j in $fullset
+                    do
+                        if [ "$i" = "$j" ]
+                        then
+                            found="true"
+                            break
+                        fi
+                    done
+                    privs=""
+                    if [ "$found" = "false" ]
+                    then
+                        echo "Warning: \c"
+                        echo "$i privilege specified to be shut off for $cmd,"
+                        echo "         but it is NOT in its set of privileges."
+                        break
+                    fi
+                done
+                if [ -z "$shutoff" ]
+                then
+                    privs="$save"
+                else
+                    for i in $fullset
+                    do
+                        found="false"
+                        for j in $shutoff
+                        do
+                            if [ "$i" = "$j" ]
+                            then
+                                found="true"
+                                break
+                            fi
+                        done
+                        if [ "$found" = "false" ]
+                        then
+                            if [ -z "$privs" ]
+                            then
+                                privs=$i
+                            else
+                                privs=$privs:$i
+                            fi
+                        fi
+                    done
+                fi
+            fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminuser -a $base:$cmd $user
+        else
+            adminuser -a $base:$cmd:$privs $user
+        fi
+        shift
+    done
+done <<!
+/usr/bin/ps	root
+/sbin/metreg	sys
+!
+
+#
+#The following defines the roles for the TFM database.
+#
+#
+for role in AUD OP SOP SSO
+do
+        test -d /etc/security/tfm/roles/$role && adminrole -d $role
+        adminrole -n $role
+done
+
+
+#The following while-loop reads the commands and the roles
+#to which these commands are to be assigned.  If privileges, 
+#separated by a colon, appear next to the role in the script that 
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the role.
+
+while read cmd roles
+do
+    echo $cmd | egrep "^#" > /dev/null 2>&1 && continue	# Skip comments
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |         	# delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+	echo $cmd $roles >> /tmp/rolelist
+	continue
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						echo "Warning: \c"
+						echo "$i privilege specified to be shut off for $cmd,"
+						echo "         but it is NOT in its set of privileges."
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role
+        else
+            adminrole -a $base:$cmd:$privs $role
+        fi
+        shift
+    done
+done <<!
+/sbin/df	OP	SOP	SSO
+/sbin/fsck	OP	SOP	SSO
+/sbin/init	SOP	SSO
+/sbin/mknod	SOP	SSO
+/sbin/mount	SOP	SSO
+/sbin/putdev	SSO
+/sbin/umount	SOP	SSO
+/usr/bin/cancel		SOP	SSO
+/usr/bin/cat	SSO
+/usr/bin/chgrp	SSO
+/usr/bin/chmod	SSO
+/usr/bin/chown	SSO
+/usr/bin/cp	SSO
+/usr/bin/cpio	SOP:dacwrite:macwrite	SSO
+/usr/bin/crontab	SOP	SSO
+/usr/bin/date	SSO
+/usr/bin/defadm	SSO
+/usr/bin/devattr	SOP	SSO
+/usr/bin/disable	SOP	SSO
+/usr/bin/du	SOP	SSO
+/usr/bin/enable		SOP	SSO
+/usr/bin/find	SOP	SSO
+/usr/bin/ipcrm	SSO
+/usr/bin/ipcs	SSO
+/usr/bin/kill	SOP	SSO
+/usr/bin/ln	SSO
+/usr/bin/lp			SSO
+/usr/bin/ls	SOP	SSO
+/usr/bin/mkdir	OP	SOP	SSO
+/usr/bin/mv	SSO
+/usr/bin/passwd	SSO
+/usr/bin/priocntl	SSO
+/usr/bin/ps	SOP	SSO
+/usr/bin/rm	SSO
+/usr/lib/lp/lpsched	OP	SOP	SSO
+/usr/lib/saf/sac	SSO
+/usr/lib/saf/ttymon	SSO
+/usr/sbin/cron	SSO
+/usr/sbin/dispadmin	SSO
+/usr/sbin/fuser	SOP	SSO
+/usr/sbin/groupadd	SSO
+/usr/sbin/groupdel	SSO
+/usr/sbin/groupmod	SSO
+/usr/sbin/lpadmin	SOP	SSO
+/usr/sbin/lpshut	SOP	SSO
+/usr/sbin/pmadm	SOP	SSO
+/usr/sbin/prtconf	OP	SOP	SSO
+/usr/sbin/sacadm	SOP	SSO
+/usr/sbin/shutdown	SOP	SSO
+/usr/sbin/ttyadm	SSO
+/usr/sbin/useradd	SSO
+/usr/sbin/userdel	SSO
+/usr/sbin/usermod	SSO
+/usr/sbin/wall	OP	SOP	SSO
+!
+
+# mail goes here KMH if needed
+(cd /etc/mail; ./newaliases)
+
+#
+# Remove files in contents database.
+#
+# /dev/console, /dev/syscon, /dev/systty - pkgchk will always complain because
+# the owner changes depending on who logs in.
+
+removef ${PKGINST} /dev/console
+removef ${PKGINST} /dev/syscon
+removef ${PKGINST} /dev/systty
+
+removef -f ${PKGINST}
+
+#
+# basic backup links, done here so that extended backup
+# pkg can adjust.
+# Only do this if we're not replacing backup and restore
+# commands from 4.2 bkrs or V4 OA&M...
+# Before creating the link, check that it does not exist
+#
+[ ! -f /usr/bin/.backup.4.2 -a ! -f /usr/bin/.backup.V4 ] && {
+	[ -f /usr/bin/backup   ] || ln /usr/bin/.backup /usr/bin/backup
+	[ -f /usr/bin/restore  ] || ln /usr/bin/.restore /usr/bin/restore
+	[ -f /usr/sbin/backup  ] || ln /usr/sbin/.backup /usr/sbin/backup
+	[ -f /usr/sbin/restore ] || ln /usr/sbin/.restore /usr/sbin/restore
+	cp /usr/bin/restore /sbin/restore
+}
+
+[ "$PKGINSTALL_TYPE" = "UPGRADE" ] && {
+
+	#
+	# Let's talk "kludge" -- I don't like them either,
+	# but what can I say, I even used a "goto" once.
+	#
+	# An upgrade produces a pile of WARNING messages
+	# that are really NO problem.  We could just let
+	# them stay in the log file, but if a real problem
+	# occurs and the user is directed to the log, all
+	# these WARNINGS could overwhelm a naive user and
+	# they may not see what the REAL problem is.
+	#
+
+	LOGS=/var/sadm/install/logs
+
+	[ -f $LOGS/$PKGINST.log ] && {
+
+		cat $LOGS/$PKGINST.log |
+		grep -v "^WARNING: /usr/share/lib/terminfo/" > $LOGS/$PKGINST.nlog
+
+		mv -f $LOGS/$PKGINST.nlog $LOGS/$PKGINST.log
+	}
+}
+
+if [ -f /etc/inst/scripts/postreboot.sh ]
+then
+
+	serialid=`grep "^SerialID=" /isl/ifile`
+	eval $serialid
+	actkey=`grep "^ActKey=" /isl/ifile`
+	eval $actkey
+	licdata=`grep "^LicenseData=" /isl/ifile`
+	eval $licdata
+
+	if [ -z "$SerialID" ]
+	then
+		SerialID="UW7EVAL60"
+		ActKey="ixazkcpi"
+		LicenseData="d60;maz1g4b"
+	fi
+
+	if [ -z "$LicenseData" ]
+	then
+		/usr/sbin/brand -g $SerialID $ActKey
+	else
+		/usr/sbin/brand -g -a "$LicenseData" $SerialID $ActKey
+	fi
+
+	/etc/ifor_pmd -k
+fi
+
+exit $errflg

@@ -1,0 +1,56 @@
+#ident	"@(#)seq_error	15.1	98/03/04"
+
+#!/sbin/sh
+
+# This module is called by the sequencer when it encounters any error.
+# Previously, the sequencer would die when it encountered an error. Now
+# it will call this module and attempt to recover by backing up.
+# Parameters: Error code [module name]
+
+. /isl/ivar.ksh
+. /isl/exit_codes.ksh
+
+LANG=`ivar get LANG`
+[ -z "$LANG" ] && LANG=C
+
+MODULE=$2
+MOD_EXIT_CODE=$3
+export INIT_SCREEN=true
+. /etc/inst/locale/$LANG/menus/global.txtstrings
+. /etc/inst/locale/$LANG/menus/sequencer.txtstrings
+. /etc/inst/scripts/winrc
+. /etc/inst/scripts/scr_init
+
+case $1 in
+	1)
+# Popped from an empty stack. Abort
+		display -w "$POP_ERR $MSG1" -bg $ERROR_BG -fg $ERROR_FG
+		;;
+	2)
+# Module not found
+		display -w "$NOT_FOUND $MSG1" -bg $ERROR_BG -fg $ERROR_FG 
+		;;
+	3)
+# Module not executable
+		display -w "$NOT_EXEC $MSG1" -bg $ERROR_BG -fg $ERROR_FG
+		;;
+	4)
+# Module exited abnormally
+		display -w "$ABNORMAL_EXIT $MSG1" -bg $ERROR_BG -fg $ERROR_FG
+		;;
+	5)
+# Undefined transition
+		display -w "$NO_TRANS $MSG1"  -bg $ERROR_BG -fg $ERROR_FG
+		;;
+	6)
+# stack is emty
+		display -w "$EMPTY_STACK $MSG1" -bg $ERROR_BG -fg $ERROR_FG
+		;;
+	7)
+# First module is not found
+		display -w "$FIRST_MOD $MSG1"  -bg $ERROR_BG -fg $ERROR_FG
+		;;
+esac
+call getkey
+wclose $CURWIN
+exit 0

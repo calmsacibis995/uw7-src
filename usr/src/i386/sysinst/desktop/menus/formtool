@@ -1,0 +1,289 @@
+#ident	"@(#)formtool	15.1"
+
+detagify() {
+	eval typeset "tagval=\"\$$1\"" val=
+	if [ -z "$tagval" ]
+	then
+		return 0
+	fi
+	case "$2" in
+	*//"$tagval"::*)
+		;;
+	*)
+		return 0
+	esac
+	val=${2##*//$tagval::}
+	eval _STR$1=\'${val%%//*}\'
+}
+tagify() {
+	eval typeset "strval=\"\$_STR$1\"" val
+	case "$2" in
+	*::"$strval"//*)
+		;;
+	*)
+		msgnoerr "$GENERIC_BAD_CHOICE"
+		return 1
+	esac
+	val=${2%%::$strval//*}
+	eval $1=\'${val##*//}\'
+}
+donecheck() {
+	typeset i OUTFILE
+	for i in $vars
+	do
+		eval echo $i="\"\$$i\""
+	done >$respfile
+	export OUTFILE=$respfile
+	( ${_DONECHECK%%$nl*} )
+	integer ret=$?
+	if [ "$ret" = 0 ]
+	then
+		return 0
+	fi
+	typeset IFS="$nl"
+	set -- ${_DONECHECK}
+	ret=ret+1
+	eval errmsg \"\$$ret\"
+	return 1
+}
+alpha() {
+	:
+}
+alnum() {
+	:
+}
+num() {
+	:
+}
+fsplit()
+{
+	typeset fld="$field"
+	unset s
+	integer i=0
+	while [ -n "$fld" ]
+	do
+		s[i]="${fld%%//*}"
+		fld="${fld#*//}"
+		let i=i+1
+	done
+}
+function formtool
+{
+	typeset OIFS="$IFS" IFS="$IFS" y i j wid field respfile= file=
+	while [ -n "$1" ]
+	do
+		case "$1" in
+		-d)
+			;;
+		-f)
+			shift
+			file=$1
+			;;
+		-o)
+			shift
+			respfile=$1
+			;;
+		esac
+		shift
+	done
+	. $file
+	footer "$GENERIC_FORM_FOOTER"
+	open_window 0 3 79 20 -noborder -fg $COMBO2_FG -bg $COMBO2_BG
+	wid=$CURWIN
+	IFS="$nl"
+	set -- $_TOP
+	IFS="$OIFS"
+	let y=$#+2
+	if [ -n "$_DONECHECK" ]
+	then
+		open_form -exit donecheck
+	else
+		open_form
+	fi
+	wprintf "$wid" "$_TOP"
+	let max=0
+	let maxlab=0
+	typeset preread=
+	echo "${_FORM}" | while :
+	do
+		if [ -n "$preread" ]
+		then
+			field="$preread"
+			preread=
+		else
+			read field
+		fi
+		if [ -z "$field" ]
+		then
+			break
+		fi
+		read preread
+		case "$preread" in
+		//*)
+			desc="$preread"
+			preread=
+		esac
+		field="${field##*([ ])}"
+		fsplit
+		set -- ${s[0]}
+		case "$field" in
+		0*) # ALPHA min max
+			if (( max < ${#2} ))
+			then
+				max=${#2}
+			fi
+			if (( maxlab < ${#s[1]} ))
+			then
+				maxlab=${#s[1]}
+			fi
+			;;
+		1*) # ALNUM min max
+			if (( max < ${#2} ))
+			then
+				max=${#2}
+			fi
+			if (( maxlab < ${#s[1]} ))
+			then
+				maxlab=${#s[1]}
+			fi
+			;;
+		2*) # ENUM num
+			i=1
+			let num=$2
+			while (( i <= num ))
+			do
+				tmp=${s[i]##*::}
+				if (( max < ${#tmp} ))
+				then
+					max=${#tmp}
+				fi
+				let i=i+1
+			done
+			if (( maxlab < ${#s[i]} ))
+			then
+				maxlab=${#s[i]}
+			fi
+			;;
+		3*) # INTEGER min max precision
+			if (( max < ${#2} ))
+			then
+				max=${#2}
+			fi
+			if (( maxlab < ${#s[1]} ))
+			then
+				maxlab=${#s[1]}
+			fi
+			;;
+		4*) # NUMERIC min max precision
+			if (( max < ${#2} ))
+			then
+				max=${#2}
+			fi
+			if (( maxlab < ${#s[1]} ))
+			then
+				maxlab=${#s[1]}
+			fi
+			;;
+		5*) # REGEXP min max
+			if (( max < ${#2} ))
+			then
+				max=${#2}
+			fi
+			if (( maxlab < ${#s[2]} ))
+			then
+				maxlab=${#s[1]}
+			fi
+			;;
+		6*) # DISPLAY ONLY
+			;;
+		esac
+	done
+	integer 'px=(79-maxlab-3-max)/2' ix=px+maxlab+3
+	preread=
+	echo "${_FORM}" | while :
+	do
+		if [ -n "$preread" ]
+		then
+			field="$preread"
+			preread=
+		else
+			read field
+		fi
+		if [ -z "$field" ]
+		then
+			break
+		fi
+		read preread
+		case "$preread" in
+		//*)
+			desc="$preread"
+			desc=${desc#??}
+			desc=${desc%??}
+			preread=
+			;;
+		*)
+			desc=
+		esac
+		field="${field##*([ ])}"
+		fsplit
+		set -- ${s[0]}
+		typeset vars
+		case "$field" in
+		0*) # ALPHA min max
+			add_field -help helpwin -entry "msgnoerr \"$desc\"" -exit "alpha \$${s[2]} $2 $3" -ix "$ix" -px "$px" -ilen $3 -iy "$y" -py "$y" -p "${s[1]}" "${s[2]}"
+			vars="$vars ${s[2]}"
+			;;
+		1*) # ALNUM min max
+			add_field -help helpwin -entry "msgnoerr \"$desc\"" -exit "alnum \$${s[2]} $2 $3" -ix "$ix" -px "$px" -iy "$y" -py "$y" -ilen $3 -p "${s[1]}" "${s[2]}"
+			vars="$vars ${s[2]}"
+			;;
+		2*) # ENUM num
+			i=1
+			let num=$2
+			list=
+			while (( i <= num ))
+			do
+				list="$list \"${s[i]##*::}\""
+				let i=i+1
+			done
+			detagify ${s[i+1]} "$field"
+			add_field -exit "tagify ${s[i+1]} \"$field\"" -help helpwin -entry "msgnoerr \"$desc\"" -choice "choose \"\$_STR${s[i+1]}\" $list" -ix "$ix" -px "$px" -iy "$y" -py "$y" -ilen $max -p "${s[i]}" "_STR${s[i+1]}"
+			vars="$vars ${s[i+1]}"
+			;;
+		3*) # INTEGER min max precision
+			if [ -z "${s[2]}" ]
+			then
+				s[2]="$desc"
+				desc=
+			fi
+			add_field -help helpwin -entry "msgnoerr \"$desc\"" -exit "num \$${s[2]} $2 $3" -ix "$ix" -px "$px" -iy "$y" -py "$y" -ilen $1 -p "${s[1]}" "${s[2]}"
+			vars="$vars ${s[2]}"
+			;;
+		4*) # NUMERIC min max precision
+			add_field -help helpwin -entry "msgnoerr \"$desc\"" -exit "num \$${s[2]} $2 $3" -ix "$ix" -px "$px" -iy "$y" -py "$y" -ilen $3 -p "${s[1]}" "${s[2]}"
+			vars="$vars ${s[2]}"
+			;;
+		5*) # REGEXP
+			add_field -help helpwin -entry "msgnoerr \"$desc\"" -ix "$ix" -px "$px" -iy "$y" -py "$y" -ilen $3 -p "${s[1]}" "${s[2]}"
+			vars="$vars ${s[2]}"
+			;;
+		6*) # DISPLAY_ONLY
+			typeset -L$maxlab use
+			use=${s[2]}
+			add_field -ilen 0 -help helpwin -entry "msgnoerr \"$desc\"" -px "$px" -py "$y" -p "$use   ${s[1]}"
+		esac
+		let y=y+1
+	done
+	msg "$_BOT"
+	run_form -exit form_setvals
+}
+
+function form_setvals
+{
+	for i in $vars
+	do
+		eval echo $i="\"\$$i\""
+	done >$respfile
+	unset $vars
+	unset respfile
+}

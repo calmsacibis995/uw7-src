@@ -1,0 +1,616 @@
+#!/sbin/sh
+#ident	"@(#)dcu	15.2	98/01/14"
+
+#
+# SKIPPING THE DCU
+#
+# If the variable skip_dcu is set, then we proceed with the non-interactive
+# case without asking the user what they want to do. They still see the
+# winxksh ui output.
+#
+#
+# Since we read in at least one hba disk in the hba module,
+# we must run the dcu. It figures out what drivers should go with
+# the various hardware busses and cards it detects. It tells the
+# res-manager (in the kernel). After we run the dcu we need to
+# load the drivers, then clean up some.
+#
+# We only need to run it if new drivers have been coppied to the
+# system since last time it was ran. If this is the case, then
+# we need to run it and then load all the new drivers.
+# HBA disks 1..NUM_HBA have been loaded. This module has
+# processed 1..dcu_num_disks. So, if NUM_HBA > dcu_num_disks,
+# then we know we need to process the new ones.
+#
+
+
+. /isl/ui_modules/common.rc
+
+#-------------------------------------------------------
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	ii_exit PREV
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic dcu
+	ii_exit HELP
+}
+
+
+#
+#--------------------------------------------------------------------------
+#
+
+function gethba
+{
+[ -n "$debug" ] && set -x
+# gethba ( IHVHBAMODS_indx )
+
+[ -n "$SH_VERBOSE" ] && set -x
+integer _t
+typeset mods module loadname 
+integer hba_err
+
+HBA_PROMPT="${IHVHBAS[$1]}"
+
+while :
+do
+	hba_err=0
+	if sh_mount -Fs5 -r /dev/dsk/f0t ${FLPY} 2>/dev/null || sh_mount -Fdosfs -r /dev/dsk/f0t ${FLPY} 2>/dev/null|| sh_mount -Fs5 -r /dev/dsk/f1t ${FLPY} 2>/dev/null || sh_mount -Fdosfs -r /dev/dsk/f1t ${FLPY} 2>/dev/null
+	then
+		if [ -f ${FLPY}/etc/loadmods -a -f ${FLPY}/etc/load.name ]
+		then
+			loadname=`grep -v '^$' ${FLPY}/etc/load.name` 
+			[ ! "${IHVHBAS[$1]}" = "$loadname" ] && hba_err=1
+		else
+			hba_err=1
+
+		fi
+
+		sh_umount ${FLPY}
+	else
+		hba_err=1
+	fi
+
+	case $hba_err
+	in
+	0 ) 	footer ""	#clear footer on exit
+		break ;;
+	*) # inserted the hba diskette.
+		place_window $HBA_REINSERTCols $HBA_REINSERTLines+5 -fg $WHITE -bg $BLUE
+		wprintf $CURWIN "$DCU_HBA_REINSERT"
+		_t=${#HBA_PROMPT}/2
+		wgotoxy $CURWIN $HBA_REINSERTCols/2-$_t  $HBA_REINSERTLines+1
+		wprintf $CURWIN "$HBA_PROMPT\n"
+		footer "$DCU_HBA_FOOTER"
+		call getkey
+		wclose $CURWIN
+		;;
+	esac
+done
+
+for module in ${IHVHBAMODS[$1]} ${IHVHBASTUBS[$1]}
+do
+	[ ! -f /etc/conf/mod.d/$module ] && mods="$mods $module"
+done
+
+(( HBA_MEM_LIMIT < 0 )) && let HBA_MEM_LIMIT*=-1
+loadihv LOAD_MOD "$mods"
+
+}
+
+#
+# $1 = Ask for disk? (else fail if missing)
+# Ask the user if they want to run the dcu. If so, run it interactivly.
+# Otherwise, run it non-interactivly. Load all the modules loadad in
+# the hba module. If they are missing, and $1 is true, then ask for the
+# disk they were on, and re-copy them.
+# Remove unused modules. Then clean up (?).
+#
+function dcuprompt
+{
+[ -n "$debug" ] && set -x
+	typeset _t module lmod
+	integer indx=1 cnt
+#	typeset -L20 ffn
+Floppy2WaitCols=60
+Floppy2WaitLines=6
+typeset -L$Floppy2WaitCols ffn2
+	typeset num_modules
+
+	if ivar check skip_dcu
+	then
+		#
+		# skip_dcu -> just run it silently
+		#
+		do_DCU=false
+	else
+		#
+		# Ask if they want to run the DCU
+		#
+		do_DCU=false
+		display "$DCU_PROMPT" -below 5
+		_t=$CURWIN
+		DCU_choice
+		input_handler
+foo=$do_DCU
+		wclose $_t
+	fi
+	
+	#
+	# Should we run it interactivly?
+	#
+	if $do_DCU 
+	then
+		#
+		# Interactive case
+		#
+		[ -z "$*" ] && wclose $CURWIN
+		footer
+		msg
+		save_ihv_info
+cp /tmp/ihv_info /tmp/i1
+		msg "$DCU_DRIVER_FOOTER"
+
+# Turn shadows off or risk losing msg line
+		export SHADOW_BOXES=0
+		/sbin/dcu -N 2>/dev/null
+# Turn shadows back on
+		export SHADOW_BOXES=1
+
+		msg
+cp /tmp/ihv_info /tmp/i2
+		load_ihv_info
+
+# Jeremy's change: I think we want the "-below 3" part here, so
+# that the interactive case doesn't get hidden by the thermometer
+
+		place_window  $Floppy2WaitCols $Floppy2WaitLines -below 4
+		main_dcu_window=$CURWIN
+		_t="$CURWIN"
+		wprintf $CURWIN "$DCU_Floppy2Wait"
+#		footer "$DCU_WAIT_FOOTER"
+		footer
+	else
+		#
+		# Non-interactive case
+		#
+		place_window  $Floppy2WaitCols $Floppy2WaitLines -below 4
+		_t="$CURWIN"
+		main_dcu_window=$CURWIN
+		wprintf $CURWIN "$DCU_Floppy2Wait"
+#		footer "$DCU_WAIT_FOOTER"
+		footer
+		msg
+		save_ihv_info
+cp /tmp/ihv_info /tmp/i1
+		msg "$DCU_DRIVER_FOOTER"
+		/sbin/dcu -N -S 2>/dev/null
+		msg
+cp /tmp/ihv_info /tmp/i2
+		load_ihv_info
+	fi
+
+	#
+	# First count how many modules we will operate on
+	# Include hba disk 0... it will be handled last.
+	#
+	indx=0
+	num_modules=0
+	while  [ "${IHVHBAS[indx]}" != END ]
+	do
+		for module in ${IHVHBAMODS[indx]} ${IHVHBASTUBS[indx]}
+		do
+			(( num_modules += 1 ))
+		done
+		(( indx += 1 ))
+	done
+
+	#
+	# Put up a thermomitor to monitor progress
+	#
+#	place_window 70 3 -title "$DCU_LOAD_DRIVERS" -above 3
+	gauge_start $num_modules -title "$DCU_LOAD_DRIVERS" -above 3
+	PROGRESS=$CURWIN
+
+	#
+	# Now load the modules!
+	#
+	indx=1
+	while  [ "${IHVHBAS[indx]}" != END ]
+	do
+		cnt=0
+		for module in ${IHVHBAMODS[indx]} ${IHVHBASTUBS[indx]}
+		do
+			#
+			# Show this one's name
+			#
+			ffn="$DCU_TRYING $module                   "
+			wgotoxy $main_dcu_window 1 4
+			wprintf $main_dcu_window "%s $ffn  "
+			ffn2="$DCU_LOADED $LOADED_MODS             "
+			wgotoxy $main_dcu_window 1 5
+			wprintf $main_dcu_window "%s $ffn2  "
+	
+			# Skip it if we already tried this module
+			for lmod in $LOADED_MODS $NOT_LOADED_MODS
+			do
+				if [ $module = $lmod ] 
+				then
+					gauge_add
+					continue 2
+				fi
+			done
+
+			(( $1 == 0 )) && \
+				[ ! -f /etc/conf/mod.d/${module} ] && \
+				gethba $indx
+			if [ ! -f /etc/conf/mod.d/${module} ]
+			then
+				badhba $module
+				rm /etc/conf/mod.d/$module  # memfs work-around
+				>/etc/conf/mod.d/$module  # keep a dummy 
+				gauge_add
+				continue
+			fi
+			
+			if sh_modadmin -l /etc/conf/mod.d/${module} >/dev/null 2>&1
+			then
+				LOADED_MODS="$LOADED_MODS $module"
+				if [ -n "${IHVHBASTUBS[indx]}" ]
+				then
+					case "${IHVHBASTUBS[indx]}"
+					in
+					*${module}*)
+						;;
+					*)
+						let cnt+=1
+						;;
+					esac
+				else
+					let cnt+=1
+				fi
+			else
+				NOT_LOADED_MODS="$NOT_LOADED_MODS $module"
+			fi
+			rm /etc/conf/mod.d/$module  # memfs work-around
+			>/etc/conf/mod.d/$module  # keep a dummy 
+		gauge_add
+		done
+		(( cnt == 0 )) && IHVHBAS[indx]=""
+		let indx+=1
+			
+	done
+
+
+ 	for module in ${IHVHBAMODS[0]}
+	do
+		# Skip it if we already tried this module
+		for lmod in $LOADED_MODS $NOT_LOADED_MODS
+		do
+			if [ $module = $lmod ] 
+			then
+				gauge_add
+				continue 2
+			fi
+		done
+
+		ffn="$DCU_TRYING $module                   "
+wgotoxy $main_dcu_window 1 4
+wprintf $main_dcu_window "%s $ffn"
+		modreg 6 $module
+		sh_modadmin -l $module >/dev/null 2>&1 || {
+			NOT_LOADED_MODS="$NOT_LOADED_MODS $module"
+			gauge_add
+			continue
+		}
+		LOADED_MODS="$LOADED_MODS $module"
+ffn2="$DCU_LOADED $LOADED_MODS             "
+wgotoxy $main_dcu_window 1 5
+wprintf $main_dcu_window "%s $ffn2"
+		gauge_add
+	done
+
+	#
+	# Done with the thermomitor
+	#
+	call sleep 2
+	wclose $PROGRESS
+	ffn="                              "
+wgotoxy $main_dcu_window 1 4
+	wprintf $main_dcu_window "%s $ffn"
+
+wclose $main_dcu_window
+	#
+	# Delete unused drivers??? Not in the man page...
+	#
+
+	msg
+        footer
+        display "$DCU_CLEANUP"
+        msg_window=$CURWIN
+	[ -n "$NOT_LOADED_MODS" ] && {
+		/sbin/dcu -D $NOT_LOADED_MODS >/dev/null 2>&1
+	}
+	wclose $msg_window
+
+	#
+	# Check the configuration
+	#
+	/sbin/dcu -C 2>/dev/null || dcu_c_error
+	
+	#
+	# This is why we loaded all those drivers: to create device nodes.
+	#
+	make_devs
+
+# I think this is where we want to mark the DCU as being done (JTB)
+ivar set dcu_already_run true
+}
+
+
+
+function DCU_choice
+{
+[ -n "$debug" ] && set -x
+	if [ -z "${DCU_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A DCU_OPT ${DCU_CHOOSE}
+		IFS="$OIFS"
+	fi
+	DCU=$DCU_OPT
+	CHOOSE_FOOTER="$DCU_FDFS_FOOTER"
+#choose -f -e -exit DCU_exit -help "helpwin dcu.select" -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$DCU" "${DCU_OPT[@]}"
+	open_radio
+	radio_wid=$RID
+	add_radio -entry "do_DCU=true" "$DCU_RUN_INTERACTIVE"
+	add_radio -entry "do_DCU=false" "$DCU_RUN_NONINTERACTIVE"
+	radio_runparms $radio_wid 2
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		-above 18 -below 1 -title "$DCU_CHOOSE"
+	choice_window=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	set_hotkey 10 "wclose $choice_window"
+	footer "$DCU_KEYS"
+	run_radio $radio_wid 1 2
+#input_handler
+}
+
+function DCU_exit
+{
+[ -n "$debug" ] && set -x
+	case $CHOICE in
+	${DCU_OPT[0]})
+		do_DCU=false
+		;;
+	${DCU_OPT[1]})
+		do_DCU=true
+		;;
+	esac
+}
+
+
+#
+#--------------------------------------------------------------------------
+#
+
+detectide () {
+ for module in ${IHVHBAMODS[$1]}
+ do
+        if [ $module = "ide" ]
+        then
+                IHVHBAMODS[0]="${IHVHBAMODS[0]} ide"
+        else
+                new_mod_list="$new_mod_list $module"
+        fi
+ done
+ IHVHBAMODS[$1]=$new_mod_list
+}
+
+
+function setup_globals
+{
+[ -n "$debug" ] && set -x
+	integer i n
+	n=`ivar get NUM_HBA`
+
+        export  DCUDIR=`ivar get DCUDIR` 
+
+
+# At this point, what we did in the past (I think) was to get a list
+# of all the "useful" (what does that mean?) modules that came from
+# the base media (boot floppy/floppies) and make that show up as
+# disk 0.  This had the advantage of ide being on the first disk,
+# therefore it got loaded last (disk 0, the boot floppy or floppies,
+# was a special case that was process last).  ide will no longer
+# be on the boot floppy, nor will anything else.  But we will (in
+# the dcu) take ide out of the list (or lists) it is in, and move
+# it to disk 0 anyway.		(JTB)
+
+	[ -z "$n" ] && n=0
+
+	i=0
+	while (( i <= n ))
+	do
+	 export	IHVHBAS[$i]=`ivar get IHVHBAS[$i]`
+         export IHVHBAMODS[$i]=`ivar get IHVHBAMODS[$i]`
+         export IHVHBAMEDIA[$i]=`ivar get IHVHBAMDEDIA[$i]`
+
+	 if [ $i -ne 0 ]		# Take 'ide' references out
+	 then				# of all real disks and put
+	 	detectide $i		# them in the pseudo-disk (0)
+	 fi
+
+		(( i += 1 ))
+	done
+
+# As nasty as this is, I'm going to leave it for now, because removing
+# it means I'd have to fix too many other things.		(JTB)
+      export IHVHBAS[$i]=END
+   ivar set  IHVHBAS[$i] "${IHVHBAS[$i]}"	
+
+   ivar set SILENT_INSTALL false
+   export SILENT_INSTALL=false
+}
+
+	
+function minimal_do_dcu
+{
+[ -n "$debug" ] && set -x
+	display "$DCU_RUN"
+	setup_globals	
+	save_ihv_info
+	footer
+	msg "$DCU_DRIVER_FOOTER"
+	/sbin/dcu -N -S 2>/dev/null
+	msg
+	load_ihv_info
+	wclose $CURWIN
+}
+
+
+function make_devs
+{
+[ -n "$debug" ] && set -x
+	typeset vals devs
+	typeset b_value b_base b_dir
+	integer i n
+
+	#
+	# Create device nodes!!! 
+	#
+	#devs=`/etc/scsi/bmkdev` || bmkdev_error
+
+	#
+	# Save the character device node list
+	#	
+       
+#	set -A CHAR_DISK_NODES -- $devs
+   
+        #/etc/scsi/bmkdev -S 2> /tmp/log/bmkdev
+        
+
+
+        set -A CHAR_DISK_NODES -- $(/etc/scsi/bmkdev)
+
+
+	#
+	# Create a parallel list of block device nodes
+	#
+	n=0
+	for b_value in ${CHAR_DISK_NODES[*]}
+	do
+		b_base=${b_value##*/}
+		b_dir=${b_value%/rdsk/${b_base}}
+		vals="$vals ${b_dir}/dsk/${b_base}"
+		(( n += 1 ))
+	done
+	set -A BLOCK_DISK_NODES $vals
+
+	#
+	# Save as ivar vars too
+	#
+	ivar set num_disk_nodes "$n"
+	i=0
+	while (( i < n ))
+	do
+		ivar set CHAR_DISK_NODES[$i] "${CHAR_DISK_NODES[$i]}"
+		ivar set BLOCK_DISK_NODES[$i] "${BLOCK_DISK_NODES[$i]}"
+		(( i += 1 ))
+	done
+}
+
+
+#
+# The dcu -C command failed
+#
+function dcu_c_error
+{
+[ -n "$debug" ] && set -x
+        display -w "$DCU_SYSCONFIG_ERROR" -bg $ERROR_BG -fg $ERROR_FG
+        footer "$DCU_PRESS_KEY"
+        input_handler
+        ii_exit DIE
+}
+
+#
+# The bmkdev command failed
+#
+function bmkdev_error
+{
+[ -n "$debug" ] && set -x
+        display -w "$DCU_DEV_NODE_ERROR" -bg $ERROR_BG -fg $ERROR_FG
+        footer "$DCU_PRESS_KEY"
+        input_handler
+        ii_exit DIE
+}
+
+
+#
+# We can't run the dcu more than once. And it's already been run.
+#
+function explain_already_done
+{
+[ -n "$debug" ] && set -x
+	display -w "$DCU_ALREADY_RUN"
+	msg ""
+	footer "$DCU_ALREADY_DONE_KEYS"
+	set_hotkey 9 "ii_exit PREV"
+	set_hotkey 10 "ii_exit NEXT"
+#	set_hotkey 9 "ii_exit $direction"
+#	set_hotkey 10 "ii_exit $direction"
+#	set_hotkey 1 "get_help"
+	input_handler
+#	ii_exit NEXT
+	ii_exit "$direction"
+}
+
+
+#
+#--------------------------------------------------------------------------
+#
+# Main
+#
+#   Ask them if they want to run it. If they say yes, run it interactivly. 
+# If they say no, run it non-interactivly.
+#
+#
+keys="$DCU_KEYS"
+# JTB addition
+# The ivar variable "dcu_already_run" keeps track of whether or not
+# gone all the way through the DCU at least once.  For now, anyway,
+# we're not allowing the user to go through more than once.
+
+if ivar check dcu_already_run
+then
+  explain_already_done
+fi
+
+setup_globals
+dcuprompt 1
+
+if [ -d /etc/conf/mod.d ]
+then
+	cd /etc/conf/mod.d
+	for i in *
+	do
+		[ -f $i ] && {
+			if [[ $LOADED_MODS != *" $i "* ]] && [ "$i" != "fd" ]
+			then
+				>$i
+			fi
+		}
+	done
+fi
+
+ii_exit NEXT
+

@@ -1,0 +1,194 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxdiskunsetup.sh	1.2 3/3/97 03:29:07 - cmd.vxvm:unixware/support/vxdiskunsetup.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxdiskunsetup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+set_OS_variables
+exec 3>&2
+
+# usage - print a short usage message
+usage() {
+	cat <<! >&2
+`egettxt "\
+Usage: vxdiskunsetup [-C] device ...
+
+For detailed help use: vxdiskunsetup -h
+" vxvmshm:534`
+!
+}
+
+# fullusage - print a verbose usage message
+fullusage() {
+	cat <<! >&2
+`egettxt "\
+vxdiskunsetup - remove a disk from use by the volume manager
+
+Usage: vxdiskunsetup [-C] device ...
+
+Options:
+    -C  Clear import locks
+" vxvmshm:647`
+!
+}
+
+# doit - execute a command, printing the command in verbose mode
+doit() {
+	[ "$verbose" ] && cat <<-% >&3
+			! $*
+			%
+	"$@"
+}
+
+# errmsg - print an error message
+errmsg() {
+	cat <<-! >&2
+	vxdiskunsetup: $*
+	!
+}
+
+xerrmsg() {
+	if [ "$1" = "-M" ]
+	then
+		_err_cat="$2"
+		_err_def="$3"
+		shift 3
+		_err_msg="`egettxt \"$_err_def\" \"$_err_cat\" \"$@\"`"
+	else
+		_err_msg="$*"
+	fi
+	errmsg "$_err_msg"
+}
+
+
+# argument processing
+
+
+clearlocks=
+
+while getopts :Cvh c
+do
+	case $c in
+	C)	clearlocks=y;;
+	v)	verbose=true; v_opt=-v;;
+	h)	fullusage; exit 1;;
+	?)	usage; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ $# -lt 1 ]
+then
+	usage
+	exit 1
+fi
+
+# Each device address must be in the form of a SCSI disk address.
+# The $VOL_FULL_SLICE suffix will be added to form the accessname, and 
+# the appropriate raw disk directory path name will be prefixed to define 
+# the path to access the disk raw device.
+
+for address in "$@"
+do
+	if vxcheckda -- "$address" > /dev/null 2> /dev/null
+	then
+		if not dogi_name_is_device $address
+		then
+			invalid_device=yes
+		else
+			invalid_device=no
+		fi
+	else
+			invalid_device=yes
+	fi
+
+	if [ "${invalid_device}" = "yes" ]
+	then
+		export address; xerrmsg -M vxvmshm:55 "\
+$address: Device address must be of the form cCbBtTdD where
+
+    C = host bus adapter controller number
+    B = bus id on the hba controller
+    T = target device controller number
+    D = logical unit (disk) number within target device controller"
+		exit 1
+	fi
+done
+
+# validate that none of the indicated devices are in use on this
+# system or has lock by this or another system.
+
+for address in "$@"
+do
+	vxdisk -s list $address | sed 's/$/ /' > $tmpfile1
+	if grep '^flags:.* imported ' < $tmpfile1 > /dev/null
+	then
+		xerrmsg -M vxvmshm:57 "$address: Disk device is in use"
+		quit 1
+	fi
+	if [ -z "$clearlocks" ] &&
+	   grep '^flags:.* shared ' < $tmpfile1 > /dev/null
+	then
+		xerrmsg -M vxvmshm:59 \
+		   "$address: Disk is tagged as imported to a shared disk group
+	use -C to force unsetup"
+		quit 2
+	fi
+	hostid="`awk < $tmpfile1 '\$1 == "hostid:" {print \$2;}'`"
+	if [ -z "$clearlocks" ] && [ -n "$hostid" ]
+	then
+		xerrmsg -M vxvmshm:58 \
+		   "$address: Disk is tagged as imported on host $hostid
+	use -C to force unsetup"
+		quit 2
+	fi
+done
+
+# remove the VxVM partitions and reonline the indicated devices
+
+dogi_device_rawpath $address rawpath
+eval "`vxparms`"
+for address in "$@"
+do
+	rmslice=
+	doit $PRTVTOC -f $tmpfile1 $rawpath ||
+		continue
+	exec 3<&0 < $tmpfile1
+	while read slice tag flags start size
+	do
+		if [ "X$tag" = "X$VOL_PRIV_SLICE_TAG" ] ||
+		   [ "X$tag" = "X$VOL_PUB_SLICE_TAG" ]
+		then
+			doit vxpartrm $rawpath $slice
+			rmslice=yes
+		fi
+	done
+	exec 0<&3 3<&-
+	[ -n "$rmslice" ] || {
+		a=$address egettxt \
+		  'vxdiskunsetup: NOTE: $a: Disk is not a volume manager disk' \
+			vxvmshm:648 >&2
+	}
+done
+vxdisk -a online
+
+quit 0

@@ -1,0 +1,82 @@
+#ident	"@(#)preinstall	16.1	98/03/03"
+#ident "$Header$"
+
+# exit on any unexplained errors
+set -e
+errflg=0
+
+# we need to move certain directories and their contents
+# to new locations, leaving behind a symbolic link (which
+# is accomplished in the package prototype file)
+while read newdir olddir
+do
+	# since this is a preinstall script, we have not yet made
+	# certain that the new directory exists; here we just make
+	# it and allow permissions to be set during package installation
+	[ ! -d $newdir ] &&
+		mkdir -p  $newdir
+
+	# check if the directory to be relocated is a symbolic link.
+	#
+	if [ ! -d $olddir  -o -h $olddir ]
+	then
+		# $olddir already represents a symbolic link
+		# or the directory in question does not exist
+		:
+	else
+		echo "relocating files from <$olddir> to <$newdir>" >&2
+		cd $olddir 
+		find . -print | cpio -pLdum $newdir 2>/dev/null
+		cd ..
+		rm -rf $olddir
+	fi
+	# we don't do any installf's in this loop since we are moving
+	# old stuff which is not neccessarily associated with this
+	# package -- note that the symbolic links will be created
+	# during normal file installation
+done <<!ENDOFLIST!
+	/etc/cron.d /usr/lib/cron
+	/usr/bin /bin
+	/usr/lib /lib
+	/usr/share/lib /usr/pub
+	/var/adm /usr/adm
+	/var/news /usr/news
+	/var/preserve /usr/preserve
+	/var/spool /usr/spool
+!ENDOFLIST!
+
+# remove files and directories without relocating their contents
+while read path
+do
+	if [ -d $path -o -f $path ]
+	then
+		echo "Removing <$path> and its contents" >&2
+		rm -rf $path
+	fi
+done <<!ENDOFLIST!
+	/etc/conf/mdevice.d/athd
+	/etc/conf/mdevice.d/dcd
+	/etc/conf/mdevice.d/mcesdi
+	/etc/conf/mdevice.d/mcst
+	/etc/conf/pack.d/athd
+	/etc/conf/pack.d/dcd
+	/etc/conf/pack.d/mcesdi
+	/etc/conf/pack.d/mcst
+	/etc/conf/sdevice.d/athd
+	/etc/conf/sdevice.d/dcd
+	/etc/conf/sdevice.d/mcesdi
+	/etc/conf/sdevice.d/mcst
+	/usr/include/sys/athd.h
+	/usr/include/sys/dcd.h
+	/usr/include/sys/mcesdi.h
+	/usr/include/sys/mcst.h
+	/usr/lib/terminfo
+	/usr/tmp
+!ENDOFLIST!
+
+# special getty stuff, temporarily  unset -e option
+set +e
+mv /etc/getty /usr/sbin/OLD.getty 2>/dev/null >/dev/null
+set -e
+
+exit $errflg

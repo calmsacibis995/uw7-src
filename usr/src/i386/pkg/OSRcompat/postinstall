@@ -1,0 +1,193 @@
+#! /bin/sh
+#ident	"@(#)OSRcompat:i386/pkg/OSRcompat/postinstall	1.1.1.2"
+
+#debug flag
+#DEBUG="echo would do:  "
+DEBUG=
+
+#USECUSTOM means to use a custom patch for installing libc.so.1
+#otherwise we just use the statically linked mv
+USECUSTOM=0
+# OpenServer 5.0.0 and 5.0.2 need to change libc
+
+xuname=`uname -X`
+overs=`expr "$xuname" : '.*Release = \(3\.2v5\.0\..\)'`
+if [ $overs != "3.2v5.0.4" ]
+# NOT comet
+then
+  LIBCV=`what /usr/lib/libc.so.1 | grep OpenServer`
+  if [ "$LIBCV" = "	SCO OpenServer 5.0.0/Unix 5.0.0Cl 95/04/23" -o \
+       "$LIBCV" = "	SCO OpenServer 5.0.2/Unix 5.0.2Dp 96/02/15" ]
+  then
+    LINE=`ls -l /usr/lib/libc.so.1 2>/dev/null`
+    LNAME=`expr "$LINE" : '.* -> \(.*\)'`
+    DNAME=`dirname $LNAME`
+    ${DEBUG} rm -f ${DNAME}/GEM.libc.so.1
+    ${DEBUG} cp /udk/.install/forOSR5.libc.so.1 ${DNAME}/GEM.libc.so.1
+    ${DEBUG} chmod 755 ${DNAME}/GEM.libc.so.1
+
+    if [ $USECUSTOM -eq 1 ]
+    then
+      # using custom patch
+      ${DEBUG} cp ${LNAME} ${DNAME}/OSR5.libc.so.1
+      ${DEBUG} rm -f ${DNAME}/GEM.libc.so.1
+      ${DEBUG} /etc/custom -A -z /udk/.install/custom -p SCO:BCMpatch
+      if [ $? -ne 0 ]
+      then
+        PATCHOK=0
+        echo "ERROR: custom patch installation failed."
+      else
+        PATCHOK=1
+      fi
+    else
+      # using static mv command
+      ${DEBUG} ln ${LNAME} ${DNAME}/OSR5.libc.so.1
+      ${DEBUG} /udk/.install/mv.static -f ${DNAME}/GEM.libc.so.1 ${LNAME}
+    fi
+
+    # check the functionality of libc
+    ls /tmp > /dev/null
+    if [ $? -ne 0 ]
+    then
+      echo "ERROR: replacement of libc not successful"
+      if [ $USECUSTOM -eq 1 -a $PATCHOK -eq 1 ]
+      then
+        echo "Attempting to remove custom patch."
+        ${DEBUG} /etc/custom -R -p SCO:Unix
+        ls /tmp > /dev/null
+        if [ $? -ne 0 ]
+        then
+          echo "Custom patch removal did not restore a functioning libc."
+          echo "Attempting to restore original libc."
+          ${DEBUG} /udk/.install/mv.static -f ${DNAME}/OSR5.libc.so.1 ${LNAME}
+          echo
+          echo "Original libc restored.  The UDK will not function."
+          echo
+	  exit 1
+        fi
+      else
+        echo "Attempting to restore original libc."
+        ${DEBUG} /udk/.install/mv.static -f ${DNAME}/OSR5.libc.so.1 ${LNAME}
+        echo
+        echo "Original libc restored.  The UDK will not function."
+        echo
+	exit 1
+      fi
+    fi
+  else
+    echo
+    echo "You do not have an original libc on your system."
+    echo "libc will not be replaced.  The udk will not install correctly."
+    echo
+    exit 1
+  fi
+fi
+
+#--------------------begin /udk/etc/netconfig setup------------------
+#
+#	add the appropriate entries to /udk/etc/netconfig
+#
+
+rm -f /tmp/netconfig
+
+# Add $1  $2          $3 $4   $5  $6       $7
+#     tcp tpi_cots_ord v inet tcp /dev/tcp /usr/lib/tcpip.so,/usr/lib/resolv.so
+# to $8 if not present in /udk/etc/netconfig
+#
+Add_netconfig()
+{
+	if grep "[ 	]$4[ 	][ 	]*$5[ 	][ 	]*$6[ 	]" /udk/etc/netconfig >/dev/null 2>&1
+	then
+		: Already there!
+	else
+		echo "$1	$2	$3	$4	$5	$6	$7" >> $8
+	fi
+}
+
+Add_netconfig tcp tpi_cots_ord v inet tcp /dev/tcp \
+		/udk/usr/lib/tcpip.so,/udk/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig udp tpi_clts v inet udp /dev/udp \
+		/udk/usr/lib/tcpip.so,/udk/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig icmp tpi_raw - inet icmp /dev/icmp \
+		/udk/usr/lib/tcpip.so,/udk/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig igmp tpi_raw - inet igmp /dev/igmp \
+		/udk/usr/lib/tcpip.so,/udk/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig rawip tpi_raw - inet - /dev/rawip \
+		/udk/usr/lib/tcpip.so,/udk/usr/lib/resolv.so /tmp/netconfig
+if [ -s /tmp/netconfig ]
+then
+	cat </tmp/netconfig >/udk/etc/netconfig
+fi
+
+rm -f /tmp/netconfig
+
+#--------------------end /udk/etc/netconfig setup------------------
+
+if [ -d /usr/tmp -a ! -d /var/tmp ]
+then
+	ln -s /usr/tmp /var/tmp
+fi
+
+if [ ! -d /usr/share ]
+then
+	mkdir /usr/share
+fi
+
+if [ ! -f /usr/share/lib ]
+then
+	ln -s /usr/lib /usr/share/lib
+fi
+
+if [ -d /udk/etc/inst -a ! -d /etc/inst ]
+then
+	ln -s /udk/etc/inst /etc/inst
+fi
+
+if [ -d /udk/usr/lib/locale -a ! -d /usr/lib/locale ]
+then
+	ln -s /udk/usr/lib/locale /usr/lib/locale
+fi
+
+if [ -d /udk/usr/X/lib/X11/locale -a ! -d /usr/X/lib/locale ]
+then
+	ln -s /udk/usr/X/lib/locale /usr/X/lib/locale
+fi
+
+if [ -d /udk/usr/X -a ! -d /usr/X11R6.1 ]
+then
+	ln -s /udk/usr/X /usr/X11R6.1
+fi
+
+if [ -d /udk/usr/lib/iconv -a ! -d /usr/lib/iconv ]
+then
+	ln -s /udk/usr/lib/iconv /usr/lib/iconv
+fi
+
+if [ ! -d /sbin ]
+then
+	mkdir /sbin
+fi
+
+if [ ! -f /sbin/sh ]
+then
+	ln -s /bin/sh /sbin/sh
+fi
+
+
+# install readable version of sh for use by debugger
+if [ ! -d /udk/usr/bin ]
+then
+    mkdir -p /udk/usr/bin
+fi
+line=`ls -l /bin/sh 2>/dev/null`
+lname=`expr "$line" : '.* -> \(.*\)'`
+if [ ! X$lname = "X" ]
+then
+    cp $lname /udk/usr/bin/sh
+    chmod 555 /udk/usr/bin/sh
+fi
+exit 0

@@ -1,0 +1,534 @@
+#!/sbin/sh
+#ident "@(#)partition	15.1	98/03/04"
+
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /globals.sh
+. /etc/inst/scripts/choose
+. /isl/ui_modules/disk.rc
+
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func {
+[ -n "$debug" ] && set -x
+
+	# call load_disk_info to check that all the correct
+	# info is available, and if not, load_disk_info will
+	# set the partition info to the default of entire disk
+	# for unix and then save the new info.
+	load_disk_info
+
+	# we need to go back if there is another disk
+	if (( NDISKS == 1 ))
+	then
+		ii_exit NEXT
+	else
+		ii_exit PREV
+	fi
+}
+
+. /isl/ui_modules/common.rc
+
+#-----------------------------------------------------------
+
+
+
+
+
+# JAY see next comment.
+function init_partitions
+{
+[ -n "$debug" ] && set -x
+	typeset _t
+
+	display "$DISK_EXPLAIN" -below 8
+	_t=$CURWIN
+	fd 1 18
+	input_handler
+	wclose $_t
+}
+# JAY In UW, this func was called by menus/nond_init.  Will we ever need it?
+function fix_partitions
+{
+[ -n "$debug" ] && set -x
+	typeset _t
+
+	[ "$DISK0_WAS_INSANE" = YES ] && return 0
+	display "${DISK_INFO[0]}" -below 4
+	_t=$CURWIN
+	PARTS_choice
+	input_handler
+	wclose $_t
+	if [ $do_PARTS = YES ]
+	then
+		init_partitions
+	else
+		one_unix_partition 0
+	fi
+	fsinit
+}
+
+function PARTS_choice
+{
+[ -n "$debug" ] && set -x
+	typeset PARTSOP
+	typeset OIFS="$IFS"
+	IFS="$nl"
+	set -A PARTS_OPTS ${DISK_CHOOSE}
+	IFS="$OIFS"
+	PARTSOP=$PARTS_OPTS
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	CHOOSE_TITLE="$PARTS_CHOOSE_TITLE"
+	choose -f -e -help "helpwin destpart" -exit PARTS_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$PARTSOP" "${PARTS_OPTS[@]}"
+}
+
+function PARTS_exit
+{
+[ -n "$debug" ] && set -x
+	case $CHOICE in
+	${PARTS_OPTS[0]})
+		do_PARTS=YES
+		;;
+	${PARTS_OPTS[1]})
+		do_PARTS=NO
+		;;
+	${PARTS_OPTS[2]})
+		halt
+		;;
+	esac
+}
+
+#-------------------------------------------------------
+
+function fdcheck
+{
+[ -n "$debug" ] && set -x
+	integer dsk=$WHICHDISK disk=dsk-1
+	if fdsize_chk $disk
+	then
+		if fdisk_chk $disk
+		then
+			if [ "${UNIX_PARTITION[$disk]}" = CHG ]
+			then
+				UNIX_PARTITION[$disk]=YES
+				# JAY
+				# FSFID is now set in slices, so will always be "",
+				# so fsinit will never be called (and should be removed)
+				# so the SL ifile vars should not be set by 'partition'
+				# so save_exit can be quickened up.
+				#[ -z "$FSFID" ] && fsinit
+			fi
+			return 0
+		else
+			return 1
+		fi
+	else
+		return 1
+	fi
+}
+
+function fd_recalc
+{
+[ -n "$debug" ] && set -x
+	integer i usedcyls=0
+	integer dsk=$WHICHDISK disk=dsk-1 cyl=0 x
+	integer retval=0
+
+	(( x=disk*4+$1 ))
+	(( partmb=DISK_SIZE[disk]*PARTPCT[x]/100 ))
+	if (( partmb > 32 )) && [ "${PARTTYPE[x]}" = "$PRE5DOS" ]
+	then
+		errmsg "$FD_ERR_PRE5DOSPCT"
+		retval=1
+	fi
+	[ "${PARTTYPE[x]}" = "$UNIX" -a "${PARTSTATUS[x]}" = "$Boot" ] &&
+		UNIX_PARTITION[$disk]=CHG
+
+	for i in 1 2 3 4
+	do
+		(( x=disk*4+i ))
+		if [ ! "${PARTTYPE[x]}" = "$unused" -a -n "${PARTLENGTH[x]}" ]
+		then
+			(( usedcyls+=PARTLENGTH[x] ))
+
+			(( PARTSTART[x]=cyl ))
+			(( PARTEND[x]=PARTSTART[x]+PARTLENGTH[x]-1 ))
+			(( cyl=PARTEND[x]+1 ))
+			(( PARTMB[x]=DISK_SIZE[disk]*PARTPCT[x]/100 ))
+			(( indent=FD_WIDTH[4]/2-${#PARTSTART[x]}/2 ))
+			integer fldstart=PARTFLD[x]+2
+			integer fldend=PARTFLD[x]+3
+			integer fldmb=PARTFLD[x]+6
+			fld_pchange $fdfid $fldstart ${PARTSTART[x]}
+			fld_pchange $fdfid $fldend   ${PARTEND[x]}
+			fld_pchange $fdfid $fldmb    ${PARTMB[x]}
+
+		fi
+	done
+	
+	fld_pchange ${FDFID[dsk]} ${USEDCYLINDERS[disk]} $usedcyls
+	return $retval
+}
+
+
+function update_geom_pct
+{
+[ -n "$debug" ] && set -x
+Update_geom_pct=$1
+	UPDATE_PCT=0
+
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+
+	integer dsk=$WHICHDISK disk=dsk-1 x=disk*4+$1
+	errmsg ""
+
+	case "${PARTPCT[x]}" in
+	[1-9]*([0-9]))
+		if (( PARTPCT[x] > 100 ))
+		then
+			errmsg "$FD_ERR_PCT"
+			return 1
+		fi
+		;;
+	*)
+		errmsg "$FD_ERR_PCT"
+		return 1
+	esac
+
+#	integer fldpct=PARTFLD[x]+4
+	integer fldlen=PARTFLD[x]+5
+	integer partlength
+	(( partlength=DISKCYLS[disk]*PARTPCT[x]/100 ))
+	(( DISKCYLS[disk]*PARTPCT[disk*4+$1]-(partlength*100) > 50 )) &&
+		(( partlength+=1 ))
+	fld_change "$fdfid" "$fldlen" "${partlength}"
+#	fld_change "$fdfid" "$fldpct" "${PARTPCT[disk*4+$1]}"
+	fd_recalc $1
+	return $?
+}
+
+function update_geom_cyl
+{
+[ -n "$debug" ] && set -x
+	integer dsk=$WHICHDISK disk=dsk-1
+Update_geom_cyl=$1
+disk=$disk
+((zzz=disk*4+$1))
+zzz=$zzz
+zzz=${PARTLENGTH[0]}
+zzz=${PARTLENGTH[1]}
+zzz=${PARTLENGTH[disk*4+$1]}
+#DISK_NUMCYL[0]="1170"
+#DISK_NUMCYL[1]="1170"
+zzz=${DISK_NUMCYL[disk]}
+zzz=${DISK_NUMCYL[0]}
+	
+	UPDATE_CYL=0
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+
+	case "${PARTLENGTH[disk*4+$1]}" in
+	[1-9]*([0-9]))
+		if (( PARTLENGTH[disk*4+$1] > DISK_NUMCYL[disk] ))
+		then
+			eval errmsg "$FD_ERR_LENGTH"
+			return 1
+		fi
+		;;
+	*)
+		eval errmsg "$FD_ERR_LENGTH"
+		return 1
+	esac
+	integer fldpct=PARTFLD[disk*4+$1]+4
+	integer fldlen=PARTFLD[disk*4+$1]+5
+	integer partpct 
+	if (( (partpct=PARTLENGTH[disk*4+$1]*100/DISKCYLS[disk]) == 0 ))
+	then
+		(( PARTLENGTH[disk*4+$1] > 0 )) && partpct=1
+	fi
+	fld_change "$fdfid" "$fldpct" "$partpct"
+#	fld_change "$fdfid" "$fldlen" "${PARTLENGTH[disk*4+$1]}"
+	fd_recalc $1
+	return $?
+}
+
+
+function choose_status
+{
+[ -n "$debug" ] && set -x
+	integer dsk=$WHICHDISK disk=dsk-1
+	choose "${PARTSTATUS[disk*4+$1]}" "$Boot" "$NonBoot"
+}
+
+function check_status
+{
+[ -n "$debug" ] && set -x
+	integer dsk=$WHICHDISK disk=dsk-1 i
+	integer fldstatus
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+	case "${PARTSTATUS[disk*4+$1]}"
+	in
+	"$NonBoot")
+		return 0
+		;;
+	"$Boot")
+		[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" ] && UNIX_PARTITION[$disk]=CHG
+		for i in 1 2 3 4
+		do
+			let "fldstatus=PARTFLD[disk*4+$i]+1"
+			[ "$i" != "$1" ] && fld_change "$fdfid" "$fldstatus" ""
+		done
+		return 0
+		;;
+	*)
+		errmsg "$FD_ERR_STATUS"
+		return 1
+		;;
+	esac
+}
+
+function choose_type
+{
+[ -n "$debug" ] && set -x
+	integer dsk=$WHICHDISK disk=dsk-1
+	CHOOSE_TITLE="$PART_CHOOSE"
+	CHOOSE_FOOTER="$FD_PART_CHOOSE_FOOTER"
+	if (( $1 == 1 ))
+	then
+		choose -f "${PARTTYPE[disk*4+$1]}" "${FDchoicesP1[@]}"
+	else
+		choose -f "${PARTTYPE[disk*4+$1]}" "${FDchoices[@]}"
+	fi
+}
+
+function check_type
+{
+[ -n "$debug" ] && set -x
+	errmsg ""
+	TYPE_CHANGED=0
+
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+
+	integer dsk=$WHICHDISK disk=dsk-1
+	integer status=PARTFLD[disk*4+$1]+1 
+	integer fldstart=PARTFLD[disk*4+$1]+2
+	integer fldend=PARTFLD[disk*4+$1]+3
+	integer fldpct=PARTFLD[disk*4+$1]+4
+	integer fldlen=PARTFLD[disk*4+$1]+5 
+	integer fldmb=PARTFLD[disk*4+$1]+6
+	typeset OIFS="$IFS" IFS="$nl"
+	if (( $1 == 1 ))
+	then
+		case "$nl${FDchoicesP1[@]}$nl" in
+		*"$nl${PARTTYPE[disk*4+$1]}$nl"*)
+			;;
+		*)
+			errmsg "$FD_ERR_TYPE"
+			return 1
+		esac
+	else
+		case "$nl${FDchoices[@]}$nl" in
+		*"$nl${PARTTYPE[disk*4+$1]}$nl"*)
+			;;
+		*)
+			errmsg "$FD_ERR_TYPE"
+			return 1
+		esac
+	fi
+	IFS="$OIFS"
+	if [ "${PARTTYPE[disk*4+$1]}" = "$unused" ]
+	then
+		fld_gray $fdfid $fldpct 1
+		fld_gray $fdfid $fldlen 1
+		fld_gray $fdfid $status 1
+		if [ -n "${PARTPCT[disk*4+$1]}" ]
+		then
+			PARTSTART[disk*4+$1]=""
+			PARTEND[disk*4+$1]=""
+			PARTMB[disk*4+$1]=""
+			fld_change $fdfid $status ""
+			fld_pchange $fdfid $fldstart ""
+			fld_pchange $fdfid $fldend ""
+			fld_change $fdfid $fldlen ""
+			fld_change $fdfid $fldpct 0
+			fld_pchange $fdfid $fldmb ""
+		fi
+	else
+		fld_gray $fdfid $fldpct 0
+		fld_gray $fdfid $fldlen 0
+		fld_gray $fdfid $status 0
+		if [ -z "${PARTPCT[disk*4+$1]}" ]
+		then
+			fld_pchange $fdfid $fldmb 0
+		fi
+	fi
+	fd_recalc $1
+	[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" -a "${PARTSTATUS[disk*4+$1]}" = "$Boot" ] &&
+		UNIX_PARTITION[$disk]=CHG
+	return 0
+}
+
+function fd
+{
+[ -n "$debug" ] && set -x
+	UPDATE_PCT=0
+	UPDATE_CYL=0
+	TYPE_CHANGED=0
+	WHICHDISK=$1
+	typeset -x WHICHDISK
+	integer dsk=$1 disk=dsk-1
+	integer i _a usedcyls
+	footer "$FD_FOOTER"
+	eval typeset title="\"\$FDISK_${dsk}_ENTRY \(${DISK_SIZE[disk]}MB\)\""
+	typeset CHOICE=
+	fdfid=${FDFID[dsk]}
+	_a=${2:-1}
+	if [ -z "$fdfid" ]
+	then
+		typeset gray=
+		open_form -exit fdcheck
+		let fdfid=$FID
+		let FDFID[dsk]=fdfid
+		setup_table -offset 1 -rows 4 -cols 8 -titles FD_TITLE -widths FD_WIDTH
+		for i in 1 2 3 4
+		do
+			next_field_prompt $i
+			let PARTFLD[disk*4+i]=$FIELDCNT
+zzdisk=$disk
+
+			next_field -help 'helpwin parttype partdisk' -entry "msgnoerr; TYPE_CHANGED=$i" -exit "check_type $i" -choice "choose_type $i" "PARTTYPE[$disk*4+$i]"
+
+zzzz=4
+			if [ "${PARTTYPE[disk*4+i]}" = "$unused" ]
+			then 
+				gray=-gray
+			else
+zzzz=${PARTLENGTH[disk*4+i]}
+				let "usedcyls+=PARTLENGTH[disk*4+i]"
+				gray=
+			fi
+			next_field $gray -help 'helpwin partstatus partdisk' -entry msgnoerr -exit "check_status $i" -choice "choose_status $i" "PARTSTATUS[$disk*4+$i]"
+			next_field_prompt -l "${PARTSTART[$disk*4+$i]}"
+			next_field_prompt -l "${PARTEND[$disk*4+$i]}"
+			next_field $gray -help 'helpwin partpercent partdisk' -entry "msgnoerr; UPDATE_PCT=$i" -exit "update_geom_pct  $i" "PARTPCT[$disk*4+$i]"
+			next_field $gray -help 'helpwin partcyl partdisk' -entry "msgnoerr; UPDATE_CYL=$i" -exit "update_geom_cyl  $i" "PARTLENGTH[$disk*4+$i]"
+			next_field_prompt -l "${PARTMB[disk*4+i]}"
+			next_row
+		done
+			next_row
+		i=14
+		add_field -p "$SAYCYLS" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=1+${#SAYCYLS}
+		add_field -p "${DISKCYLS[disk]}" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=3+${#DISKCYLS[disk]}
+		add_field -p "$SAYUSEDCYLS" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=1+${#SAYUSEDCYLS}
+		let USEDCYLINDERS[disk]=$FIELDCNT
+		add_field -p "$usedcyls" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let FDTABLE_WIDTH=TABLE_WIDTH
+	fi
+	place_window -left 0 -above $_a $FDTABLE_WIDTH+1 8 -current "disk=$disk; dsk=$dsk; fdfid=$fdfid" -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'footer "$PARTITION_FORM_FOOTER"'
+	typeset wid=$CURWIN
+	run_form $fdfid
+	set_hotkey 9 go_back
+	set_hotkey 1 get_help
+}
+
+#
+#----------------------------------------------------------------------
+#
+
+function check_exit_updates
+{
+[ -n "$debug" ] && set -x
+# Check if type of partition has been verified
+	if (( TYPE_CHANGED ))
+	then
+		TEMP_FLD_CHANGED = $FLD_CHANGED
+		FLD_CHANGED=1
+		check_type $TYPE_CHANGED
+		FLD_CHANGED=$TEMP_FLD_CHANGED
+# Check if Percentage has been updated
+	elif (( UPDATE_PCT ))
+	then
+		TEMP_FLD_CHANGED = $FLD_CHANGED
+		FLD_CHANGED=1
+		update_geom_pct	$UPDATE_PCT
+		FLD_CHANGED=$TEMP_FLD_CHANGED
+# Check if Cylinder count has been updated
+	elif (( UPDATE_CYL ))
+	then
+		TEMP_FLD_CHANGED = $FLD_CHANGED
+		FLD_CHANGED=1
+		update_geom_cyl $UPDATE_CYL
+		FLD_CHANGED=$TEMP_FLD_CHANGED
+	fi
+}
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	check_exit_updates
+	save_disk_info PREV
+}
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic partition
+	check_exit_updates
+	save_disk_info HELP
+}
+
+
+#
+# Main
+#
+#
+# Get the device nodes/files for the disks
+#
+load_disk_info
+
+
+#
+# Get the new sizes
+#
+
+######
+# Old code
+# fd 1
+# input_handler
+######
+
+integer i=1
+typeset -x i 
+disk_num=`ivar get disk_to_partition`
+fd $disk_num
+input_handler
+
+#
+# Save the data and exit
+#
+#check_exit_updates
+if (( NDISKS == 1 ))
+then
+	save_disk_info NEXT
+else
+	save_disk_info PREV
+fi

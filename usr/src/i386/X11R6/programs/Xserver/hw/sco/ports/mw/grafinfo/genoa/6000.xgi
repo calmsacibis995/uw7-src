@@ -1,0 +1,999 @@
+/*
+ *    @(#) 6000.xgi 12.1 95/05/09  
+ */
+/*
+ *	@(#) 6000.xgi 1.1 91/04/30 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1991-1992.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+/* *********************************************************************** *
+ * GENOA/6000.XGI - XEGIA(tm) File for Genoa 6000 series SuperVGA          *
+ *                                                                         *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                 Genoa.6000.VGA.640x480-16@60                            *
+ *                 Genoa.6000.VGA.640x480-16@70                            *
+ *                 Genoa.6000.SVGA.640x480-256@60                          *
+ *                 Genoa.6000.SVGA.640x480-256@70                          *
+ *                 Genoa.6000.VGA.800x600-16@60                            *
+ *                 Genoa.6000.VGA.800x600-16@70                            *
+ *                 Genoa.6000.SVGA.800x600-256@60                          *
+ *                 Genoa.6000.SVGA.800x600-256@70                          *
+ *                 Genoa.6000.SVGA.1024x768-16@60                          *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16@60 "640x480 16-color 60 HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;          /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                  /* misc out reg     */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82;
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEB;  r17 = 0x8E;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE4;  r22 = 0x08;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);  /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                    /* reset attr F/F */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x63);                  /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82;
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4f;  r10 = 0x0d;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);  /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01);
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+	 r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+	 r8  = 0xFF;  bout(9,0x3CE,0x3CF); /* graphics controller */
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16@70 "640x480 16-color 70 HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;          /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                  /* misc out reg     */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x60;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x83;
+         r4  = 0x53;  r5  = 0x9E;  r6  = 0x06;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xE5;  r17 = 0x8B;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE5;  r22 = 0x01;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);  /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C4,0x07); out(0x3C5,0x01); /* select external clock */
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                    /* reset attr F/F */
+         out(0x3C0,0);                     /* disable palette */
+
+         out(0x3C4,0x07); out(0x3C5,0x00); /* select internal clock */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x63);                  /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82;
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4f;  r10 = 0x0d;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);  /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01);
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+	 r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+	 r8  = 0xFF;  bout(9,0x3CE,0x3CF); /* graphics controller */
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  SVGA        "SVGA"
+   MODE   640x480-256@60 "640x480 256-color 60 HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "GENOA_128K";
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg     */
+         r0 = 3;  bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEB;  r17 = 0x8E;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE4;  r22 = 0x08;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;
+/* 64K   r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;  */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C4,0x08); out(0x3C5,0x20); /* enable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x24); /* enable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x08); /* enable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x02); /* enable quadword addressing */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         out(0x3C4,0x06); out(0x3C5,0x00); /* select segment #0 */
+         out(0x3C4,0x08); out(0x3C5,0x00); /* disable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x20); /* disable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x00); /* disable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x00); /* disable quadword addressing */
+
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  SVGA        "SVGA"
+   MODE   640x480-256@70 "640x480 256-color 70 HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "GENOA_128K";
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg     */
+         r0 = 3;  bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x60;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x83; /* crtc */
+         r4  = 0x53;  r5  = 0x9E;  r6  = 0x06;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xE5;  r17 = 0x8B;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE5;  r22 = 0x01;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;
+/* 64K   r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;  */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C4,0x07); out(0x3C5,0x01); /* select external clock */
+         out(0x3C4,0x08); out(0x3C5,0x20); /* enable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x24); /* enable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x08); /* enable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x02); /* enable quadword addressing */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         out(0x3C4,0x06); out(0x3C5,0x00); /* select segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0x00); /* select internal clock */
+         out(0x3C4,0x08); out(0x3C5,0x00); /* disable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x20); /* disable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x00); /* disable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x00); /* disable quadword addressing */
+
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA      "Genoa"
+ MODEL  6000       "SuperVGA 6000 Series"
+  CLASS  VGA        "VGA"
+   MODE   800x600-16@60 "800x600 16-color 60 HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;          /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                  /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x77;  r1  = 0x63;  r2  = 0x65;  r3  = 0x99;
+         r4  = 0x68;  r5  = 0x92;  r6  = 0x83;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x66;  r17 = 0x88;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x5B;  r22 = 0x7F;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00;  /* attr ctlr */
+	 r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C4,0x07); out(0x3C5,0x01); /* select external clock */
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         out(0x3C4,0x07); out(0x3C5,0x00); /* select internal clock */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                  /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect extended registers */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x02;
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0C;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x07;  r15 = 0x80;
+         r16 = 0x9C;  r17 = 0xAE;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08;  /* attr ctlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA      "Genoa"
+ MODEL  6000       "SuperVGA 6000 Series"
+  CLASS  VGA        "VGA"
+   MODE   800x600-16@70 "800x600 16-color 70 HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;          /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0xEF);                  /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x77;  r1  = 0x63;  r2  = 0x65;  r3  = 0x99;
+         r4  = 0x68;  r5  = 0x96;  r6  = 0x83;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x5E;  r17 = 0x81;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x5E;  r22 = 0x7E;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00;  /* attr ctlr */
+	 r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                  /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect extended registers */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x02;
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0C;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x07;  r15 = 0x80;
+         r16 = 0x9C;  r17 = 0xAE;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08;  /* attr ctlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  SVGA        "SVGA"
+   MODE   800x600-256@60 "800x600 256-color 60 HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "GENOA_128K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg     */
+         r0 = 3;  bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x77;  r1  = 0x63;  r2  = 0x65;  r3  = 0x99;
+         r4  = 0x68;  r5  = 0x92;  r6  = 0x83;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x66;  r17 = 0x88;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x5B;  r22 = 0x7F;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;
+/* 64K   r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;  */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C4,0x07); out(0x3C5,0x01); /* select external clock */
+         out(0x3C4,0x08); out(0x3C5,0x20); /* enable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x24); /* enable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x08); /* enable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x02); /* enable quadword addressing */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         out(0x3C4,0x06); out(0x3C5,0x00); /* select segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0x00); /* select internal clock */
+         out(0x3C4,0x08); out(0x3C5,0x00); /* disable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x20); /* disable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x00); /* disable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x00); /* disable quadword addressing */
+
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* ********************************************************************** */
+
+VENDOR GENOA       "Genoa"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  SVGA        "SVGA"
+   MODE   800x600-256@70 "800x600 256-color 70 HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "GENOA_128K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xEF);                 /* misc out reg     */
+         r0 = 3;  bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x77;  r1  = 0x63;  r2  = 0x65;  r3  = 0x99;
+         r4  = 0x68;  r5  = 0x96;  r6  = 0x83;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x5E;  r17 = 0x81;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x5E;  r22 = 0x7E;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;
+/* 64K   r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;  */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C4,0x08); out(0x3C5,0x20); /* enable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x24); /* enable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x08); /* enable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x02); /* enable quadword addressing */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         out(0x3C4,0x06); out(0x3C5,0x00); /* select segment #0 */
+         out(0x3C4,0x08); out(0x3C5,0x00); /* disable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x20); /* disable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x00); /* disable chain 8 */
+         out(0x3D4,0x2F); out(0x3D5,0x00); /* disable quadword addressing */
+
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* *********************************************************************** */
+
+VENDOR GENOA       "GENOA"
+ MODEL  6000        "SuperVGA 6000 Series"
+  CLASS  SVGA        "SVGA"
+   MODE   1024x768-16@60 "1024x768 16-color 60 HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;          /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         r0 = 1;  r1 = 5;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x2F);                  /* misc out reg */
+         out(0x3C4,0x09); out(0x3C5,0x20); /* ??? */
+         r0=3;  bout(1,0x3C4,0x3C5);       /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect crtc registers 0-7 */
+         r0  = 0x4D;  r1  = 0x3F;  r2  = 0x40;  r3  = 0x90;
+         r4  = 0x43;  r5  = 0x0E;  r6  = 0x35;  r7  = 0xFD;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x16;  r17 = 0x89;  r18 = 0xFF;  r19 = 0x20;
+         r20 = 0x00;  r21 = 0x04;  r22 = 0x1C;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x01;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00;  /* attr ctlr */
+	 r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C4,0x07); out(0x3C5,0x03); /* select external clock */
+         out(0x3C4,0x08); out(0x3C5,0x40); /* enable link 2 */
+         out(0x3C4,0x10); out(0x3C5,0x24); /* enable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x12); /* enable chain inc 4 */
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                    /* reset attr F/F  */
+         out(0x3C0,0);                     /* disable palette */
+
+         out(0x3C4,0x07); out(0x3C5,0x00); /* select internal clock */
+         out(0x3C4,0x08); out(0x3C5,0x00); /* disable chain 8 */
+         out(0x3C4,0x10); out(0x3C5,0x20); /* disable two banks mem access */
+         out(0x3CE,0x09); out(0x3CF,0x00); /* disable chain inc 4 */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;
+         bout(5,0x3C4,0x3C5);              /* reset, sequencer regs */
+
+         out(0x3C2,0x67);                  /* misc out reg */
+         out(0x3C4,0x09); out(0x3C5,0x00); /* ??? */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00); /* unprotect extended registers */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x02;
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0C;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x07;  r15 = 0x80;
+         r16 = 0x9C;  r17 = 0xAE;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);     /* crtc */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                    /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03;  /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08;  /* attr ctlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                  /* enable palette */
+         }
+
+/* End of File - GENOA/6000.XGI */

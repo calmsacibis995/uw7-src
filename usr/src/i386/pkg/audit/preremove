@@ -1,0 +1,96 @@
+#ident	"@(#)preremove	1.3"
+#ident "$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+	installf ${PKGINST} /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+FAILURE=2		# exit code if anything goes wrong
+CONFDIR=/etc/conf
+CONFBIN=/etc/conf/bin
+
+#The sdevice.d/audit file is removed anyways by 'idinstall -d'
+#
+#SDEVICE=/etc/conf/sdevice.d
+#
+#if [ -f $SDEVICE/audit ]
+#then
+#ed $SDEVICE/audit << ! 1>/dev/null 2>&1
+#s/^audit	./audit	N/
+#w
+#q
+#!
+#fi
+
+# The stubs.c, mdevice.d/audit and mtune.d/audit files are 
+# installed by pkg.base, so they should not be removed.
+# Save the files and after idinstall -d, put them back.
+# Change file attributes to be consistent with those when 
+# the files were first installed.
+
+${CONFBIN}/idcheck -p audit
+RES="$?"
+if [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+then
+	mkdir /tmp/audit$$ 2>/dev/null
+	cp ${CONFDIR}/pack.d/audit/stubs.c /tmp/audit$$/stubs.c 2>/dev/null
+	cp ${CONFDIR}/mdevice.d/audit /tmp/audit$$/audit.Md 2>/dev/null
+	cp ${CONFDIR}/mtune.d/audit /tmp/audit$$/audit.Mt 2>/dev/null
+
+	$CONFBIN/idinstall -P ${PKGINST} -d audit
+
+	mkdir ${CONFDIR}/pack.d/audit 2>/dev/null
+	mv /tmp/audit$$/audit.Md ${CONFDIR}/mdevice.d/audit 2>/dev/null
+	mv /tmp/audit$$/audit.Mt ${CONFDIR}/mtune.d/audit 2>/dev/null
+	mv /tmp/audit$$/stubs.c ${CONFDIR}/pack.d/audit/stubs.c 2>/dev/null
+	rmdir /tmp/audit$$ 2>/dev/null
+
+	while read path mode owner group
+	do
+		chmod $mode  $path 2>/dev/null
+		chgrp $group $path 2>/dev/null
+		chown $owner $path 2>/dev/null
+	done <<!ENDOFLIST!
+		${CONFDIR}/pack.d/audit		0755 root sys
+		${CONFDIR}/mdevice.d/audit	0644 root sys
+		${CONFDIR}/mtune.d/audit	0644 root sys
+		${CONFDIR}/pack.d/audit/stubs.c	0644 root sys
+!ENDOFLIST!
+fi
+
+$CONFBIN/idbuild
+
+if [ $? != 0 ]
+then
+    	pfmt -s halt -g ${PKGMSG}:2 "The attempt to rebuild the kernel has failed\n"
+	exit $FAILURE
+fi
+
+/usr/bin/rm -f /etc/security/ia/audit
+
+while read cmd role
+do
+	adminrole -r $cmd $role 2>/dev/null
+done <<!
+auditlog	AUD
+auditmap	AUD
+auditoff	AUD
+auditon		AUD
+auditrpt	AUD
+auditset	AUD
+cat		AUD
+find		AUD
+!
+
+exit 10			# indicates that the system should be rebooted
+

@@ -1,0 +1,123 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:23:03
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ *	 Copyright (C) The Santa Cruz Operation, 1991-1998.
+ * 
+ */
+
+#include <Server.tmpl>
+
+SRCS =  m64Bres.c     m64Data.c     m64Glyph.c    m64Mono.c     m64Stip.c \
+        m64Clip.c     m64FillSp.c   m64Image.c    m64RectOps.c  m64Win.c  \
+        m64Cmap.c     m64GC.c       m64Init.c     m64Screen.c \
+        m64Cursor.c   m64GlCache.c  m64Misc.c     m64Slab.c
+
+OBJS =  m64Bres.o     m64Data.o     m64Glyph.o    m64Mono.o     m64Stip.o \
+        m64Clip.o     m64FillSp.o   m64Image.o    m64RectOps.o  m64Win.o  \
+        m64Cmap.o     m64GC.o       m64Init.o     m64Screen.o  \
+        m64Cursor.o   m64GlCache.o  m64Misc.o     m64Slab.o
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines XDriverDefines -DVOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libm64.a
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget(m64,$(OBJS))
+SharedXDriverTarget(m64,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(m64,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(m64,libm64.a,m64Init.c)
+
+#else /* USLArchitecture */
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libm64.a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(m64,$(OBJS))
+ProfiledLibraryTarget(m64,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(m64,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(m64,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(m64,$(OBJS))
+LintLibraryTarget(m64,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(m64,libm64.a)
+
+#endif /* USLArchitecture */
+
+/**/#
+/**/#   You may want to change the target and destination directories
+/**/#	"./grafinfo/m64" and "m64" in the install rule below to the
+/**/#   manufacturer's name of your video adapter.  Then update the
+/**/#   VENDOR string in your m64.xgi file to match this directory
+/**/#	name.
+/**/#
+
+/**/#
+
+#define IHaveSubdirs
+
+SUBDIRS= grafinfo/ati
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+
+DependTargetSCP(m64Init.c)

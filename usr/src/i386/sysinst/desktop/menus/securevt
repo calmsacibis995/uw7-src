@@ -1,0 +1,35 @@
+#ident	"@(#)securevt	15.1"
+
+function serial_check
+{
+	if [ "$SNUM" = "$snum" ]
+	then
+		wclose $WCURRENT
+		sh_newvt 2
+		call ioctl 0 30213 1 #VT_ACTIVATE
+		return 0
+	fi
+	wclose $WCURRENT
+	display -w "$BADSERIAL" -bg $ERROR_BG -fg $ERROR_FG
+}
+	
+function securevt
+{
+	if [ ! -f /mnt/etc/.snum ]
+	then
+		sh_newvt 2
+		call ioctl 0 30213 1 #VT_ACTIVATE
+		return
+	fi
+
+	msg
+	SNUM=$(</mnt/etc/.snum)
+	place_window 2+${#SERIAL_PROMPT}+2+10+2 3 -current 'footer' -below 0 -fg $COMBO2_FG -bg $COMBO2_BG -title "$SERIAL_TITLE"
+	if [ -z "$SERIAL_FID" ]
+	then
+		open_form
+		SERIAL_FID=$FID
+		add_field -exit 'serial_check' -help 'helpwin serial' -ilen 10 -p "$SERIAL_PROMPT" -px 2 -py 2 -ix 2+${#SERIAL_PROMPT}+2 -iy 2 "snum"
+	fi
+	run_form $SERIAL_FID
+}

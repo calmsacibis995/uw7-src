@@ -1,0 +1,166 @@
+#ident	"@(#)postinstall	16.1	98/03/03"
+
+PKGMSG=${SETINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+trap "rm -f /tmp/*$$; exit" 0 2
+
+if [ -f /etc/rc2.d/S02POSTINST ]
+then
+	TDEV=/dev/console
+else
+	TDEV=/dev/tty
+fi
+
+rm -f /tmp/pkgfail
+#
+#  Postinstall script for set installation.  Reports, using
+#  the menu tool, on what packages installed correctly and
+#  what packages did not. 
+#
+
+#
+# Link the message file into the system message directory
+#
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+#
+#  Set up the menu and and upgrade directory to be locale specific
+#
+ROOTMENU=/etc/inst/locale/${LOCALE}/menus
+[ -d ${ROOTMENU} ] || mkdir -p ${ROOTMENU}
+
+UPGRADE_MSGS=${ROOTMENU}/upgrade
+[ -d ${UPGRADE_MSGS} ] || mkdir -p ${UPGRADE_MSGS}
+
+MENU_DIR=${ROOTMENU}/${SETINST}
+[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+
+UPGRADE_STORE=/etc/inst/save.user
+#
+# if set.9 is there, then the rest should also be there
+#
+if [ ! -f ${MENU_DIR}/set.9 ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${SETINST}/set.1 ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${SETINST}/set.* ${MENU_DIR}
+   else
+	cp ${REQDIR}/${SETINST}/set.* ${MENU_DIR}
+   fi
+fi
+
+cp ${MENU_DIR}/set.6 /tmp/set.6 > /dev/null 2>&1
+i=0 
+PKGS_PER_SCREEN=10
+>/tmp/catchit
+while read PKGABBR PKGNAME
+do
+	i=`expr $i + 1`
+	echo $i >/tmp/catchit
+	pkginfo -i ${PKGABBR} > /dev/null 2>&1
+	if [ $? = 0 ]
+	then
+		#
+		#  Successful install.  Tack on to .top of /tmp/set.6
+		#
+		#  Note that tabs must not be used in input to menu command.
+		pfmt -s nostd -g ${PKGMSG}:61 "        Succeeded       %s\n" "${PKGNAME}" >> /tmp/set.6 2>&1
+	else
+		#
+		#  Unsuccessful install.  Tack on to .top of /tmp/set.6
+		#  and touch pkgfail to let menu know that pkgs have failed.
+		#
+		> /tmp/pkgfail
+		#  Note that tabs must not be used in input to menu command.
+		pfmt -s nostd -g ${PKGMSG}:62 "        Failed          %s\n" "${PKGNAME}" >> /tmp/set.6 2>&1
+	fi
+	[ "$i" = "$PKGS_PER_SCREEN" ] && {
+	menu -f /tmp/set.6 -o /tmp/out < ${TDEV} > ${TDEV} 2>/dev/null
+	cp ${MENU_DIR}/set.6 /tmp/set.6 
+	i=0
+	echo $i >/tmp/catchit
+	}
+
+done < /tmp/name_final_y
+i=`cat /tmp/catchit 2>/dev/null`
+
+############### Begin UPGRADE/OVERLAY ############
+
+[ -f $UPGRADE_STORE/nomrg.list ] && {
+	# NOMRGLIST is the list of pkgs whose system files are not combined.
+	read NOMRGLIST <$UPGRADE_STORE/nomrg.list
+	rm -f $UPGRADE_STORE/nomrg.list
+
+	# NOMRGMSG is the name of the file containing the 'nomerge msg'
+	NOMRGMSG=$UPGRADE_MSGS/mergefiles.4
+
+	export NOMRGLIST NOMRGMSG
+}
+
+[ -f $UPGRADE_STORE/mrgfail.list ] && {
+	# MRGFAILLIST is the list of pkgs for which 'up_merge' failed
+	read MRGFAILLIST <$UPGRADE_STORE/mrgfail.list
+	rm -f $UPGRADE_STORE/mrgfail.list
+
+	#MRGFAILMSG is the name of the file containing 'up_merge failed' msg
+	MRGFAILMSG=$UPGRADE_MSGS/mergefiles.2
+
+	# MRGFAILFILES is the list of specific system files for various 
+	# pkgs for which  up_merge failed
+
+	MRGFAILFILES=$UPGRADE_STORE/mrgfail.files
+	export MRGFAILLIST MRGFAILMSG MRGFAILFILES
+}
+
+############### End UPGRADE/OVERLAY ############
+
+# If the menu is finished but not printed, print it.
+[ -f /tmp/pkgfail ] || [ "${NOMRGLIST}" -o "${MRGFAILLIST}" ] || {
+	if [ "$i" != 0 ]
+	then 
+		menu -f /tmp/set.6 -o /tmp/out < ${TDEV} >${TDEV} 2>/dev/null
+		rm -f $UPGRADE_STORE/mrgfail.files
+	fi
+	exit 0
+}
+
+SCR_LNGH=3
+if [ "$i" -ge "$SCR_LNGH" ] 
+then
+	# Menu too full for additional messages, print it now.
+	menu -f /tmp/set.6 -o /tmp/out < ${TDEV} >${TDEV} 2>/dev/null
+	cp ${MENU_DIR}/set.9 /tmp/menu.last.$$
+fi
+
+if [ "$i" != 0 -a "$i" -lt "$SCR_LNGH" ]
+then
+	# Menu has space for additional messages, append to it.
+	cp /tmp/set.6 /tmp/menu.last.$$
+fi
+
+if [ "$i" = 0 ]
+then
+	# Create new menu for messages.
+	cp ${MENU_DIR}/set.9 /tmp/menu.last.$$
+fi
+
+#
+#  Put the finishing touches on this menu and print it
+#
+[ -f /tmp/pkgfail ] && echo  >> /tmp/menu.last.$$
+[ -f /tmp/pkgfail ] && pfmt -s nostd -g ${PKGMSG}:3 "Details on any failures are detailed in electronic mail sent to the\nlogin ID \"root\"\n" >> /tmp/menu.last.$$ 2>&1
+[ "${NOMRGLIST}" -o "${MRGFAILLIST}" ] && echo " " >> /tmp/menu.last.$$
+[ "${NOMRGLIST}" -o "${MRGFAILLIST}" ] && pfmt -s nostd -g ${PKGMSG}:4 "Press the 'F1' key for information about your System Setup Files.\n" >> /tmp/menu.last.$$ 2>&1
+echo  >> /tmp/menu.last.$$
+
+menu -f /tmp/menu.last.$$ -o /tmp/out < ${TDEV} >${TDEV} 2>/dev/null
+
+rm -f $UPGRADE_STORE/mrgfail.files

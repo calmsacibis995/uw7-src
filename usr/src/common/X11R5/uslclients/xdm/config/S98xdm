@@ -1,0 +1,84 @@
+#!/bin/sh
+#ident	"@(#)xdm:config/S98xdm	1.17"
+
+eval `defadm locale LANG 2>/dev/null`
+export LANG
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/xdm {start|stop}"
+
+# Avoid spoofing init.d scripts that are run from children of xdm.  See
+# /etc/init.d/README.
+
+unset _AUTOBOOT _AUTOKILL _CURR_RL _CURR_NTIMES _PREV_RL _SHUTDOWN_S
+
+#Tag 0x00000f00
+#
+# Start X Display Manager
+#
+# $Revision$
+#
+XNETACCESS=on			#!@ Do not edit this line !@
+XWINHOME=/usr/X	export XWINHOME	#!@ (or your mount point) !@
+PATH=$PATH:$XWINHOME/bin export PATH	#!@ Do not edit this line !@
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$XWINHOME/lib export LD_LIBRARY_PATH	#!@ Do not edit this line !@
+CONSEM=no export CONSEM
+XGUI=MOTIF export XGUI
+
+XDM=/usr/X/bin/xdm
+eval `defadm keyboard 2> /dev/null`
+export XKEYBOARD NUMLOCK SHIFTDOWN
+eval `defadm Xim 2> /dev/null`
+export XNLSPATH
+if [ -z "$XMODIFIERS" ]
+then
+	unset XMODIFIERS
+else
+	export XMODIFIERS
+fi
+
+mldmode > /dev/null 2>&1	# shell built-in
+if [ "$?" = "0" ]
+then				# Enhanced Security running
+	exit 			# exit Enhanced Security does not support graphics
+				
+fi
+
+case "$1" in
+  'start')
+	if test -x $XDM; then
+			rm -rf /dev/X/[ANIs]* /dev/X/xdm-* 
+			# We sleep here for a maximum of
+			# 30 seconds to let X start up.
+			# Xsetup_0 will terminate this sleep
+			# when X is running.
+			echo $$ > /tmp/S69xdmpid 
+			$XDM
+			exec sleep 30
+	fi
+        ;;
+
+  'stop')
+	XDMpid=
+	XDMPIDFILE=/dev/X/xdm-pid
+	if [ -s $XDMPIDFILE ]
+	then
+		read XDMpid <$XDMPIDFILE
+		rm -f $XDMPIDFILE
+	fi
+	if [ "$XDMpid" != "" ]
+	then
+		exec kill -2 $XDMpid 2>/dev/null
+	else
+		set -- `/usr/bin/ps -e | /usr/bin/egrep "0:00[ 	][ 	]$XDM"`
+		[ $? -eq 0 ] && exec /usr/bin/kill -2 $1 2>/dev/null
+	fi
+        ;;
+
+  *)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+        ;;
+esac
+
+

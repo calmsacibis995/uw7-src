@@ -1,0 +1,176 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1990, 1991 AT&T and UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF AT&T
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/wcalc	1.5.1.1"
+
+#
+# Simple calculator, with memory, 4 basic functions, square, square root,
+# and reciprocals.
+#
+# Variables used in this script:
+#
+# DISP	The number currently displayed
+# MEMORY	The number currently in memory
+# OPERAND	The previous result pending for the current op
+# OPERATOR	The currently pending op, or "NONE"
+#
+
+update_display() {
+	typeset -R10 x
+
+	# Make sure display is a legal number
+	case "$DISP" in
+	"")		DISP=ERROR ;;
+	*[a-df-zA-Z]*)	DISP=ERROR ;;
+	*[0-9]*)	;;	# we're ok, do nothing
+	esac
+	x=$DISP
+	sv $DISPW string:"RESULT $x"
+}
+
+# Clear entry
+
+do_CE() {			# Clear Entry - clear the display only
+	DISP=0
+	HAVE_DECIMAL=FALSE
+	update_display
+}
+
+# Clear
+
+do_C() {			# Clear the display and pending operations
+	OPERATOR=""
+	OPERAND=0
+	do_CE
+}
+
+# perform an unary operation, like square, reciprocal or negation
+
+unary_op() {
+	DISP=`awk "END { print $* }" < /dev/null 2>&1`
+	NEEDCLEAR=TRUE
+	update_display
+}
+
+alias square='unary_op $DISP \* $DISP'
+alias root='unary_op sqrt\($DISP\)'
+alias recip='unary_op 1 / $DISP'
+alias negate='unary_op 0 - $DISP'
+
+# Add a digit to the display
+
+digit() {
+	if [ "$DISP" = "0" ]
+	then
+	     if [ "$1" = "0" ]
+	     then return
+	     fi
+	     DISP=""
+	fi
+	if [ "$NEEDCLEAR" = TRUE ]
+	then DISP=""
+	     NEEDCLEAR=FALSE
+	fi
+	# Only can display 9 characters on screen
+	# Note that ${#X} in ksh means "the length of $X"
+	if [ ${#DISP} -gt 9 ]
+	then return
+	fi
+	DISP="${DISP}$1"
+	update_display
+}
+
+op() {
+	# take care of any pending operation
+
+	if [ X"$OPERATOR" != "X" -a X"$OPERAND" != "X" ]
+	then calculate
+	fi
+	OPERATOR=$1
+	OPERAND=$DISP
+	DISP=""
+	HAVE_DECIMAL=FALSE
+}
+
+# Add a decimal point if we don't already have one
+
+decimal() {
+	if [ "$HAVE_DECIMAL" = TRUE ]
+	then return
+	fi
+	if [ ${#DISP} -gt 9 ]
+	then return
+	fi
+	DISP="${DISP}."
+	HAVE_DECIMAL=TRUE
+	update_display
+}
+
+# Go into exponent mode
+
+do_EE() {
+	DISP=${DISP}e
+	HAVE_DECIMAL=TRUE
+	update_display
+}
+
+# Memory opeations
+
+store() {
+	MEMORY=$DISP
+	NEEDCLEAR=TRUE
+}
+
+recall() {
+	DISP=$MEMORY
+	NEEDCLEAR=TRUE
+	update_display
+}
+
+memop() {
+	MEMORY=`awk "END { print $MEMORY $1 $DISP }" < /dev/null`
+	NEEDCLEAR=TRUE
+}
+
+calculate() {
+	if [ "$OPERATOR" = "" ]
+	then return
+	fi
+	DISP=`awk "END { print $OPERAND $OPERATOR $DISP }" < /dev/null 2>/dev/null`
+	OPERATOR=""
+	OPERAND=0
+	HAVE_DECIMAL=TRUE
+	NEEDCLEAR=TRUE
+	update_display
+}
+
+MEMORY=0
+DISP=0
+HAVE_DECIMAL=FALSE
+NEEDCLEAR=TRUE
+BUTTONTYPE=oblongButton
+
+oi TOPLEVEL calculator Calculator -openlook "$@"
+
+cmw F1 form form $TOPLEVEL
+cmw DISPW display staticText $F1
+cmw CA ca controlArea $F1 `under $DISPW 10` layoutType:fixedcols measure:4
+
+addbuttons $CA \
+	"X^2" 'square'	OFF "exit 0"	CE "do_CE" 	C "do_C" 	\
+	SQRT "root"	1/X "recip"	EE "do_EE"	+/- "negate"    \
+	STO  "store"	RCL "recall"	M+  "memop +"	M- "memop -"	\
+	9 "digit 9"	8 "digit 8" 	7 "digit 7" 	+ "op +"	\
+	6 "digit 6" 	5 "digit 5" 	4 "digit 4" 	- "op -"	\
+	3 "digit 3" 	2 "digit 2" 	1 "digit 1" 	x "op '*'"	\
+	= "calculate" 	0 "digit 0" 	. "decimal" 	/ "op /"
+
+rw $TOPLEVEL
+update_display
+ml

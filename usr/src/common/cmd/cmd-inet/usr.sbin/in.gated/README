@@ -1,0 +1,115 @@
+#ident	"@(#)README	1.4"
+
+GateD R3-5-7 public domain software is provided by Merit
+(previously provided via Cornell University).
+
+http://www.gated.merit.edu/
+ftp://ftp.gated.merit.edu/net-research/gated/gated-R3_5_7.tar.gz
+
+The Config file used to generate the GateD source is kept here for
+future reference.
+
+The VERSION file holds the version of GateD (currectly 3-5-7;
+GateD in OSR5 is R3_0_3, and R2_0 in UW 2.1.?)
+
+Modified code is marked with #define SCO_[GEMINI|OSR5|UW21]
+
+Modifications required to run on Gemini:
+
+CODE CARRIED FORWARD FROM OSR5 STREAMware GateD (R3_0_3)
+-----------------------------------------------
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_rtread_kinfo.c
+	-  read kernel routing table via ioctl RTSTR_GETROUTE
+	  (largely re-written not marked as SCO_GEMINI)
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt.c
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_rt_sock.c
+	- krt.c
+	  open /dev/route for kernel routing table modifications.
+	- krt_rt_sock.c
+	  use RTSTR_SEND to update the kernel routing table.
+
+(usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_ifread_ioctl.c)
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_ifread_kinfo.c
+	- krt_ifread_ioctl.c
+	  use another socket to read interface list, do not use
+	  task_get_socket() if TASKS_TEST is set, otherwise
+	  -C|-c command line options will fail.
+
+
+FIXES REQUIRED TO RUN ON Gemini / UW 2.1.?
+------------------------------------------
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/bgp_init.c
+	- gated only sets IP_TOS on the receiving connect() end.
+	  The kernel tcp_linput() will dropwithreset if tos is set
+	  but does not match the incoming packet.  Unfortunately,
+	  we cannot set TOS on sending end, as existing systems
+	  running gated will not set TOS, resulting in a dropwithreset...
+	  So, do not use socket option IP_TOS on UW systems.
+	  Note that ospf_init.c sets IP_TOS correctly in ospf_startup()
+
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/bgp_init.c
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/ospf_rxmon.c
+	- added bgp_do_connect() to establish a non-blocking connect(),
+	  The gated code assumed that a connection is established
+	  when a select() returns in task.c, causing bgp connections
+	  to fail.
+
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/task.c
+	- added use of send() for null address rather than using only
+	  sendto().  Gated assumed sendto() with null address is functionally
+	  equivalent to send(), this is not true in gemini.
+	  EGP connections fail without this fix.
+
+
+OTHER SOURCE MODIFICICATIONS
+----------------------------
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_symbols.c
+	- used to check ipforwarding and ipsendredirects
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/krt_lladdr_sunos4.c
+	- returns MAC address for /dev/net?
+	- requires _KMEMUSER definition
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/sigconv.awk
+	- changed "SIGMAX" to "MAXSIG"
+
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/rt_static.c
+	- v. minor bugfix (fixed in later rel)
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/ospf_monitor.c
+	- v. minor bugfix (fixed in later rel)
+
+usr/src/common/cmd/cmd-inet/usr.sbin/in.gated/rt_radix.c
+	- Fixed RT_SANITY code (although we do not set RT_SANITY in
+	  defines.h -- it is set in OSR5 gated).
+
+
+OTHER RELATED SOURCE FILES
+--------------------------
+usr/src/common/cmd/cmd-nm/usr.sbin/snmp/in.snmpd/snmpd.peers
+usr/src/common/cmd/cmd-inet/etc/services
+usr/src/common/cmd/cmd-inet/etc/protocols
+	- bgp and smux services required by gated
+	- ospf protocol required by gated
+
+
+
+MISC FIXES
+==========
+a) SCCS clashes use %""A rather than %A
+	bgp_sync.c policy.c rip.c
+b) casting (caddr_t)
+	*mib.c
+c) changed #ifdef SCO_GEMINI into (SCO_GEMINI, SCO_UW21, SCO_OSR5)
+	task.c krt.c krt_symbols.c
+	krt_rt_sock.c krt_rtread_kinfo.c
+	bgp_init.c ospf_rxmon.c snmp_isode.h
+d) replaced krt_ifread_ioctl.c and krt_lladdr_sunos4.c with
+   krt_ifread_kinfo.c which uses RTSTR_GETIFINFO to read the
+   interface list (SIOCGIFCONF failed to provide the last 2 bytes
+   of the MAC address).
+
+
+MERIT FIXES
+-----------
+1) RIP aging routes gated 3-5-7
+	Problem Report #134
+	File rip.c
+	Function rip_age()

@@ -1,0 +1,110 @@
+/**/#ident	"@(#)dtm:Imakefile	1.62.1.91"
+
+#if Release5
+#include <sv4Lib.tmpl>
+#endif
+#include <Motif.tmpl>
+#include <Motif.rules>
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)' 'CCOPTIONS=$(CCOPTIONS)'
+
+        SUBDIRS = olwsm wallpaper helpLinkErr
+           STAR = *
+   INSTDATFLAGS = -m 0666
+       DTLIBSRC = $(LIBSRC)/Dt
+          DTLIB = $(DTLIBSRC)/libDt.so
+       GIZMOSRC = $(LIBSRC)/MGizmo
+       GIZMOLIB = $(GIZMOSRC)/libMGizmo.so
+      DTILIBSRC = $(USLCLIENTSRC)/libMDtI
+         DTILIB = $(DTILIBSRC)/libMDtI.so
+    DTWIDLIBSRC = $(LIBSRC)/DtWidget
+      DTWIDLIB  = $(DTWIDLIBSRC)/libDtWidget.so
+
+         WSMLIB = olwsm/libolwsm.a
+
+          SRCS = \
+		 CListGizmo.c \
+		 d_cache.c \
+                 dflt_fc.c \
+		 dm_cbs.c \
+                 dm_util.c \
+                 dnd_util.c \
+                 drawlnicon.c \
+                 drawutil.c \
+                 dt_prop.c \
+                 dtinfo.c \
+                 dtm.c \
+                 dm_exit.c \
+                 dtmReqProc.c \
+                 error.c \
+                 f_cbs.c \
+                 f_create.c \
+                 f_del.c \
+                 f_dnd.c \
+                 f_layout.c \
+                 f_new.c \
+		 f_prop.c \
+                 f_sync.c \
+                 f_task.c \
+                 f_tree.c \
+                 f_update.c \
+                 f_view.c \
+                 fclassdb.c \
+/* MOTIF_FINDER                fn_devtab.c \ */
+		 fn_finder.c \
+		 fn_popen.c \
+		 hReqProc.c \
+		 h_app.c \
+		 h_cbs.c \
+		 h_desk.c \
+		 h_file.c \
+		 h_sect.c \
+		 h_util.c \
+		 h_win.c \
+		 hd_cbs.c \
+		 hd_util.c \
+                 icon_setup.c \
+                 init.c \
+                 is_cbs.c \
+                 is_util.c \
+                 readdb.c \
+                 session.c \
+		 wb.c \
+		 wbReqProc.c \
+		 wb_cbs.c \
+		 wb_prop.c \
+		 wb_util.c
+
+OBJS = $(SRCS:.c=.o) $(WSMLIB)
+
+       INCLUDES = -I./ -I$(LIBSRC) -I$(DTLIBSRC) -I$(DTILIBSRC) -I$(GIZMOSRC)
+LOCAL_LIBRARIES = $(DTLIB) $(DTILIB) $(DTWIDLIB)  $(GIZMOLIB) $(XMULIB) XmClientLibs
+        DEPLIBS = $(DTLIB) $(DTILIB) $(DTWIDLIB)  $(GIZMOLIB) $(DEPXMULIB) XmClientDepLibs
+  SYS_LIBRARIES = -lgen
+#if UslLocalityTuning
+      CCOPTIONS = $(FURCCOPTIONS)
+#endif
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+
+install:: all
+
+ComplexProgramTarget(dtm)
+
+#if UslLocalityTuning
+FurComplexProgramTarget(dtm)
+
+install:: dtm
+	$(INSTALL) -c $(INSTPGMFLAGS)  dtm.F $(BINDIR)
+	$(MV) $(BINDIR)/dtm $(BINDIR)/dtm.nf
+	$(MV) $(BINDIR)/dtm.F $(BINDIR)/dtm
+#endif
+
+InstallAppDefaults(DesktopMgr)
+InstallMultiple(.dtfclass .lastsession Help_Desk,$(DESKTOPDIR))
+	$(CHMOD) 777 $(DESTDIR)$(DESKTOPDIR)/Help_Desk
+InstallMultiple(.iconLibrary,$(USRLIBDIR)/pixmaps)
+InstallMultiple(classdb/$(STAR),$(USRLIBDIR)/classdb)
+InstallMsgCatalog(dtmgr)

@@ -1,0 +1,51 @@
+#!/sbin/sh
+#******************************************************************************
+# postinstall
+#------------------------------------------------------------------------------
+# Postinstall script for the SCO Audio Subsystem
+#------------------------------------------------------------------------------
+# @(#)postinstall	6.1	97/09/05
+# 
+# Copyright (C) The Santa Cruz Operation, 1996-1997.
+# This Module contains Proprietary Information of
+# The Santa Cruz Operation, and should be treated as Confidential.
+#------------------------------------------------------------------------------
+# Revision History:
+# 1997-Jan-15, shawnm, created
+#===============================================================================
+
+CLASSCONF=/sbin/classconf
+OSACONF=/sbin/osaconf
+AUCFGDIR=/usr/lib/audio/audioconfig
+IDINSTALL=/etc/conf/bin/idinstall
+IDBUILD=/etc/conf/bin/idbuild
+MODADMIN=/sbin/modadmin
+IDCONFUPDATE=/etc/conf/bin/idconfupdate
+
+mv ${AUCFGDIR}/audinfo/config.Z ${AUCFGDIR}/audinfo/config.dat
+
+# idinstall the PnP Driver
+echo "Installing ISA PnP driver"
+cd /usr/lib/pnp
+${IDINSTALL} -ak PnP
+${IDBUILD} -M PnP
+${MODADMIN} -l PnP
+
+# idinstall the oss Driver
+echo "Installing OSS driver"
+cd /usr/lib/audio/drivers
+${IDINSTALL} -ak oss
+# ${IDBUILD} -M oss
+
+# register the audiocard and audioconfig classes
+echo "Registering object classes with the scoadmin framework"
+${CLASSCONF} -A sco audiocard audioconfig.osa
+${CLASSCONF} -A sco audioconfig audioconfig.osa
+${OSACONF} -A sco audioconfig.osa LOOP_BACK sco_Tcl_osa ${AUCFGDIR}/audioconfig.osa
+echo "Done registering object classes with the scoadmin framework"
+
+# register objects with the scoadmin launchpad
+echo "Registering the SCOadmin Audio Config Manager object"
+/usr/bin/scoadmin -p Hardware -f -c ${AUCFGDIR}/audioconfig.obj
+echo "Done registering the SCOadmin Audio Config Manager object"
+

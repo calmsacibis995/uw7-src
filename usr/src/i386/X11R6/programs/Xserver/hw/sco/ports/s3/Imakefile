@@ -1,0 +1,170 @@
+/*
+ *
+ *	@(#)Imakefile	6.4	4/4/96	15:41:11
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1993-1996
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ *	The information in this file is provided for the exclusive use
+ *	of the licensees of SCO. Such users have the right to use, 
+ *	modify, and incorporate this code into other products for 
+ *	purposes authorized by the license agreement provided they include
+ *	this notice and the associated copyright notice with any such
+ *	product.
+ * 
+ * SCO Modification History
+ *
+ * S009, 16-Nov-94, hiramc
+ *	Remove SpecialFlagsObjectRule(s3cInit, -Olgitc -DUSE_INLINE_CODE)
+ *	for BL10 build
+ * S008, 30-Jun-93, staceyc
+ * 	build dynamic drivers correctly
+ * S007, 28-May-93, staceyc
+ * 	restore special compile rule for init for BL4
+ * S006, 27-May-93, staceyc
+ * 	fix install rule, comment out special compile rule for init code
+ * S005, 17-May-93, staceyc
+ * 	support for multiheaded S3 cards
+ * S004, 11-May-93, staceyc
+ * 	removed a bunch of assembler that was created essentially to
+ *	deal with the inability of the old cc compiler to inline I/O
+ *	instructions
+ * S003, 05-Apr-93, staceyc
+ * 	removed old unused file, cleaned up header
+ * S002, 28-Aug-92, hiramc@sco.com
+ *	After removing include cfb.h from s3cData.c and s3cGC.c
+ *	we don't need -DPSZ=8 here
+ * S001, 27-Aug-93, hiramc@sco.com
+ *	Remove all previous modification comments,
+ *	Add the fonts/include, and -DPSZ=8
+ */
+
+
+#include <Server.tmpl>
+
+SRCS =  s3cBres.c s3cCmap.c s3cData.c \
+	s3cGC.c s3cGlCache.c s3cGlyph.c s3cHWCurs.c s3cImage.c \
+	s3cInit.c s3cMisc.c s3cMono.c \
+	s3cRectOps.c s3cSWCurs.c s3cScreen.c s3cStip.c s3cWin.c \
+	s3cBlkIn.S s3cBlkOut.S s3cMulti.c
+
+OBJS =  s3cBres.o s3cCmap.o s3cData.o \
+	s3cGC.o s3cGlCache.o s3cGlyph.o s3cHWCurs.o s3cImage.o \
+	s3cInit.o s3cMisc.o s3cMono.o \
+	s3cRectOps.o s3cSWCurs.o s3cScreen.o s3cStip.o s3cWin.o \
+	s3cBlkIn.o s3cBlkOut.o s3cMulti.o
+
+STD_DEFINES = ServerDefines
+
+#ifndef S3C_MULTIHEAD
+#define S3C_MULTIHEAD 0
+#define S3CLIB s3c
+s3c= s3c
+#endif
+
+.SUFFIXES: .i .S
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+.S.s:
+	sed -e s/S3CNAME/S3CLIB/g < $*.S > $*.s
+
+DEFINES= -DS3C_MULTIHEAD_SUPPORT=S3C_MULTIHEAD -DS3CHEAD=S3CLIB \
+	-DS3C_SCREEN_NAME=\"S3CLIB\"
+
+   INCLUDES = -I. -I.. -I$(SERVERSRC)/include -I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+   GRAFDIR = $(USRLIBDIR)/grafinfo
+
+.c.o:
+	LibObjCompile(shared,-O -Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+NormalLibraryTarget($(S3CLIB),$(OBJS))
+
+all::	shared/s3cBlkIn.o	shared/s3cBlkOut.o
+
+SharedXDriverTarget($(S3CLIB),6.0,$(OBJS),shared,..)
+LintLibraryTarget($(S3CLIB),$(SRCS))
+
+#if S3C_MULTIHEAD == 1
+$(S3CLIB)Data.o: s3cData.o
+        cp s3cData.o $(S3CLIB)Data.o
+#endif
+
+s3cBlkIn.s: s3cBlkIn.S
+s3cBlkOut.s: s3cBlkOut.S
+
+shared/s3cBlkIn.o:	s3cBlkIn.s s3cBlkIn.o
+	(cd shared;$(LN) ../s3cBlkIn.o .)
+
+shared/s3cBlkOut.o:	s3cBlkOut.s s3cBlkOut.o
+	(cd shared;$(LN) ../s3cBlkOut.o .)
+
+clean::
+	rm -f s3cBlkIn.s s3cBlkOut.s
+
+DynamicObjectRule($(S3CLIB),lib$(S3CLIB).a)
+
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(s3cBres.c,LinkDirectory)
+LinkDepSourceFile(s3cCmap.c,LinkDirectory)
+LinkDepSourceFile(s3cData.c,LinkDirectory)
+LinkDepSourceFile(s3cGC.c,LinkDirectory)
+LinkDepSourceFile(s3cGlCache.c,LinkDirectory)
+LinkDepSourceFile(s3cGlyph.c,LinkDirectory)
+LinkDepSourceFile(s3cHWCurs.c,LinkDirectory)
+LinkDepSourceFile(s3cImage.c,LinkDirectory)
+LinkDepSourceFile(s3cInit.c,LinkDirectory)
+LinkDepSourceFile(s3cMisc.c,LinkDirectory)
+LinkDepSourceFile(s3cMono.c,LinkDirectory)
+LinkDepSourceFile(s3cRectOps.c,LinkDirectory)
+LinkDepSourceFile(s3cSWCurs.c,LinkDirectory)
+LinkDepSourceFile(s3cScreen.c,LinkDirectory)
+LinkDepSourceFile(s3cStip.c,LinkDirectory)
+LinkDepSourceFile(s3cWin.c,LinkDirectory)
+LinkDepSourceFile(s3cConsts.h,LinkDirectory)
+LinkDepSourceFile(s3cDefs.h,LinkDirectory)
+LinkDepSourceFile(s3cMacros.h,LinkDirectory)
+LinkDepSourceFile(s3cProcs.h,LinkDirectory)
+LinkDepSourceFile(s3cBlkIn.S,LinkDirectory)
+LinkDepSourceFile(s3cBlkOut.S,LinkDirectory)
+#endif
+
+NormalLintTarget($(SRCS))
+
+#ifndef LinkDirectory
+InstallGrafFile(grafinfo/diamond,stealth.xgi,diamond)
+InstallNamedNonExec(grafinfo/diamond/stealth.unq,stealth,$(USRLIBDIR)/vidconf/AOF/UNIQUE/diamond)
+InstallGrafFile(grafinfo/hp,ultravga.xgi,hp)
+InstallGrafFile(grafinfo/orchid,f12801x.xgi,orchid)
+InstallGrafFile(grafinfo/orchid,f12802x.xgi,orchid)
+InstallNamedNonExec(grafinfo/orchid/f1280.unq,f1280,$(USRLIBDIR)/vidconf/AOF/UNIQUE/orchid)
+InstallGrafFile(grafinfo/stb,windx10.xgi,stb)
+InstallGrafFile(grafinfo/stb,windx11.xgi,stb)
+InstallGrafFile(grafinfo/s3,86c911.xgi,s3)
+InstallGrafFile(grafinfo/unisys,mpi.xgi,unisys)
+InstallGrafFile(grafinfo/vdi,sprint.xgi,vdi)
+#endif
+
+includes::
+	LibMkdir(shared)
+
+DependTarget()
+
+InstallHDKMultiple(s3cConsts.h,$(HDKPORTSDIR)/s3)

@@ -1,0 +1,294 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.k-rm.sh	1.2 3/3/97 03:20:09 - cmd.vxvm:common/voladm/disk.k-rm.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.k-rm.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push RemoveForReplace
+voladm_help_push disk.rm.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:330 "Remove a disk for replacement"
+	ewritemsg -M vxvmshm:550 \
+"Use this menu operation to remove a physical disk from a disk
+  group, while retaining the disk name.  This changes the state
+  for the disk name to a \\\"removed\\\" disk.  If there are any
+  initialized disks that are not part of a disk group, you will be
+  given the option of using one of these disks as a replacement."
+
+	voladm_get_disk_dmname
+
+	vxckdiskrm -g "$dgname" "$dmname" > $tmpfile1 2> $tmpfile2
+	status=$?
+	if [ $status -eq 17 ]
+	then
+		export dmname; ewritemsg -M vxvmshm:177 "Disk $dmname is already removed for replacement."
+		voladm_yorn -M vxvmshm:356 \
+		"Select a different disk?" n && continue
+		break
+	elif [ $status -eq 18 ]
+	then
+		export dmname dgname; ewritemsg -M vxvmshm:171 \
+"Disk $dmname cannot be removed from disk group $dgname because
+  it is the last disk in the disk group, or because it contains
+  the last available copy of the disk group configuration."
+		voladm_yorn -M vxvmshm:356 \
+		"Select a different disk?" n && continue
+		break
+	elif [ $status -ne 0 ]
+	then
+		export tmpfile2; ewritemsg -M vxvmshm:512 "Unexpected error: `cat $tmpfile2`"
+		voladm_yorn -M vxvmshm:356 \
+			"Select a different disk?" n && continue
+		break
+	fi
+	badvols=
+	badopenvols=
+	vols=
+	exec 3<&0 < $tmpfile1
+	while read vname state open
+	do
+		if [ $state = okay ]
+		then
+			append_list vols "$vname"
+		else
+			if [ $open = open ]
+			then
+				append_list badopenvols "$vname"
+			else
+				append_list badvols "$vname"
+			fi
+		fi
+	done
+	exec 0<&3 3<&-
+
+	if [ ! -z "$vols" ]
+	then
+		export vols; ewritemsg -M vxvmshm:436 \
+"The following volumes will lose mirrors as a result of this
+  operation:
+
+  	$vols
+
+  No data on these volumes will be lost."
+	fi
+	if [ ! -z "$badvols" ]
+	then
+		export badvols; ewritemsg -M vxvmshm:435 \
+"The following volumes will be disabled as a result of this
+  operation:
+
+  	$badvols
+
+  These volumes will require restoration from backup."
+	fi
+	if [ ! -z "$badopenvols" ]
+	then
+		export badopenvols; ewritemsg -M vxvmshm:432 \
+"The following volumes are in use, and will be disabled as a result
+  of this operation:
+
+  	$badopenvols
+
+  Any applications using these volumes will fail future accesses.
+  These volumes will require restoration from backup."
+	fi
+
+	if [ ! -z "$badvols" ] || [ ! -z "$badopenvols" ]
+	then
+		voladm_yorn -M vxvmshm:125 "Are you sure you want do do this?" n
+		if  [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:356 \
+			"Select a different disk?" n && continue
+			break
+		fi
+	fi
+
+	vxprint -g $dgname -F '%dm_offset %len %name'\
+		-se sd_dm_name=\"$dmname\" > $tmpfile1
+	offs=0
+	len=0
+	priv_start=
+	priv_len=
+	exec 3<&0 < $tmpfile1
+	while read sd_offset sd_len sd_name
+	do
+		#
+		# Do not account for the len of priv sd 
+		#
+		if [ "$sd_name" = "$dmname"Priv ]
+		then
+			priv_start=$sd_offset
+			priv_len=$sd_len
+		elif [ "$sd_name" != "$dmname"Priv ] && [ "$priv_len" ] &&
+		     [ $sd_offset -gt $priv_start ]
+		then
+			offs=`expr $sd_offset - $priv_len`
+			len=$sd_len
+		else
+			offs=$sd_offset
+			len=$sd_len
+		fi
+	done
+	exec 0<&3 3<&-
+	minlen=`expr $offs + $len`
+
+	vxdevlist list > $tmpfile1
+	repldevlist=
+	exec 3<&0 < $tmpfile1
+	while read device disk group status invalid
+	do
+		[ X$disk = X- ] || continue
+		[ $status = online ] || continue
+		[ -z "$invalid" ] || continue
+
+		if vxcheckda $device > /dev/null 2> /dev/null
+		then
+			if dogi_name_is_device $device
+			then
+				dogi_name_daname $device daname
+			else
+				daname=$device
+			fi
+		else
+			daname=$device
+		fi
+		
+		vxdisk list "$daname" > $tmpfile2
+		groupline=`grep "^group:" $tmpfile2`
+		case $groupline in
+		*"name= id=") :;;
+		*)	continue;;
+		esac
+
+		dalenline=`grep "^public:" $tmpfile2`
+		dalenfield=`list_item 4 \$dalenline`
+		dalen=`expr $dalenfield : 'len=\(.*\)'`
+		[ $dalen -ge $minlen ] || continue
+
+		append_list repldevlist $device
+	done
+	exec 0<&3 3<&-
+	repldev=
+	if [ ! -z "$repldevlist" ]
+	then
+		export repldevlist dmname; ewritemsg -M vxvmshm:412 \
+"The following devices are available as replacements:
+
+  	$repldevlist
+
+  You can choose one of these disks now, to replace $dmname.
+  Select \\\"none\\\" if you do not wish to select a replacement disk."
+		while true
+		do
+			_riput=`egettxt "Choose a device, or select \\\\\"none\\\\\"" vxvmshm:139`
+			read_input "$_riput" "<device>,none" `first_item $repldevlist`
+			if [ "X$input" = Xnone ]
+			then
+				break
+			elif list_member "$input" $repldevlist
+			then
+				repldev=$input
+				if vxcheckda $repldev > /dev/null 2> /dev/null
+				then
+					if dogi_name_is_device $repldev
+					then
+						dogi_name_daname \
+						 $repldev repldaname
+					else
+						repldaname=$repldev
+					fi
+				else
+					repldaname=$repldev
+				fi
+				break
+			fi
+			export repldevlist; ewritemsg -M vxvmshm:302 \
+"Please choose a device from the following list:
+
+  	$repldevlist
+
+  Select \\\"none\\\" if you do not wish to select one."
+		done
+	fi
+
+	if [ -z "$repldev" ]
+	then
+		export dmname dgname; ewritemsg -M vxvmshm:448 \
+"The requested operation is to remove disk $dmname from disk group
+  $dgname.  The disk name will be kept, along with any volumes using
+  the disk, allowing replacement of the disk.
+
+  Select \\\"Replace a failed or removed disk\\\" from the main menu
+  when you wish to replace the disk."
+	else
+		export dmname dgname repldev; ewritemsg -M vxvmshm:345 \
+"Requested operation is to remove disk $dmname from group $dgname.
+  The removed disk will be replaced with disk device $repldev."
+	fi
+
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn -M vxvmshm:356 \
+		"Select a different disk?" n && continue
+		break
+	fi
+
+	doit vxdg -g "$dgname" -k rmdisk "$dmname" 2> $tmpfile1
+	if [ $? -ne 0 ]
+	then
+		export dmname tmpfile1; ewritemsg -M vxvmshm:325 \
+"Removal of disk $dmname failed.
+  `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:356 \
+		"Select a different disk?" n && continue
+		break
+	fi
+	export dmname; ewritemsg -M vxvmshm:323 "Removal of disk $dmname completed successfully."
+	if [ -z "$repldev" ]
+	then
+		voladm_yorn -M vxvmshm:332 "Remove another disk?" n && continue
+		break
+	fi
+	export dmname repldev; ewritemsg -M vxvmshm:315\
+	 "Proceeding to replace $dmname with device $repldev."
+
+	doit vxdg -g "$dgname" -k adddisk "$dmname=$repldaname" 2> $tmpfile1
+	if [ $? -eq 0 ]
+	then
+		[ "X$dgname" = Xrootdg ] && doit vxbootsetup $v_opt $dmname
+		doit vxrecover -sb -g $dgname $dmname
+		ewritemsg -M vxvmshm:197 "Disk replacement completed successfully."
+	else
+		export tmpfile1; ewritemsg -M vxvmshm:581 \
+"Warning: Device replacement failed.
+  `cat $tmpfile1`
+  Choose \\\"Replace a failed or removed disk\\\" from the main menu to
+  choose a different replacement disk device."
+	fi
+	voladm_yorn -M vxvmshm:332 "Remove another disk?" n || break
+done
+
+quit 0

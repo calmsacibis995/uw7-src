@@ -1,0 +1,68 @@
+#ident	"@(#):mkX	16.1	97/11/08"
+#ident	"$Header$"
+#
+#	Build Graphics Source (X)
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+# call is ./:mkX $ROOT $MACH $WORK $TOOLS $PFX
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Pfx=$5
+
+cd ${Root}/usr/src/${Work}/X11R5
+
+ROOT=${Root}
+MACH=${Mach}
+WORK=${Work}
+TOOLS=${Tools}
+PFX=${Pfx}
+export ROOT MACH WORK TOOLS PFX
+
+MFLAGS=-i
+export MFLAGS
+
+[ -d clients/uil ] || mkdir -p clients/uil
+
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} install
+
+
+echo "Building X11R5lib"
+
+cd ${Root}/usr/src/${Work}/X11R5lib
+
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} -f X11R5.mk install
+
+
+echo "Building graphical version of libserver.so"
+
+cd ${Root}/usr/src/${Work}/lib/libserver
+${Tools}/usr/ccs/bin/${Pfx}osenv ${Pfx}make -f libserver.mk install_gui
+
+
+echo "Rebuilding SetupApp to use X version of libserver.so"
+
+cd ${Root}/usr/src/${Work}/X11R5/nws/SetupApp
+	if [ -f SetupApp ]
+	then
+		rm -f SetupApp
+		${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make all install
+	fi
+
+if [ "${BUILDNWSETUP}" = scp ]
+then
+	cd ${Root}/usr/src/${Work}/X11R5/nws/NetWare_Setup/NWSetup
+	if [ -f Network_Mgmt ]
+	then
+		chmod 755 Network_Mgmt
+		mkdir -p ${Root}/${Mach}/usr/lib/setup/SetupTree/System/NetWare
+		cp Network_Mgmt ${Root}/${Mach}/usr/lib/setup/SetupTree/System/NetWare
+	fi
+fi
+
+echo "ENDED `basename $0` `date`"
+exit 0

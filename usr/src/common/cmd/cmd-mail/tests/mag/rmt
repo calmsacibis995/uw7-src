@@ -1,0 +1,130 @@
+#!/bin/sh
+#ident "@(#)rmt	11.2"
+#
+# Semi-Automated test suite for network parts of mailadmin.
+#
+# Attempts to achieve complete branch coverage
+# of the host.tcl file.
+# This script expects the test version (mailadmint) to be installed
+# in /etc/mail/admin/mailadmin.
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+
+		retry=y
+		while [ "$retry" = "y" ]
+		do
+			${name}$i
+			code=$?
+			if [ $code -ne 0 ]
+			then
+				echo "Failed: retry (y/n) [y]: \c"
+				retry=`line`
+			else
+				retry=n
+			fi
+		done
+		passfail $code
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	cp /etc/mail/sendmailcf.factory /etc/sendmail.cf
+	cp /etc/mail/mail.factory /etc/default/factory
+	rsh $host "cp /etc/mail/sendmailcf.factory /etc/sendmail.cf"
+	rsh $host "cp /etc/mail/mail.factory /etc/default/factory"
+	rsh $host "echo $localhost $owner > /home/$owner/.rhosts"
+	rsh $host "chown $owner /home/$owner/.rhosts"
+	rsh $host "chmod 600 /home/$owner/.rhosts"
+}
+
+sumfix() \
+{
+	file=$1
+	sed -e '/# checksum:/d' $file > /tmp/$$
+	sum=`sum -r /tmp/$$ | awk '{ print $ 1}'`
+	echo "# checksum:$sum" > $file
+	cat /tmp/$$ >> $file
+	rm -f /tmp/$$
+}
+
+rmt_test1() \
+{
+	cleanup
+	$pgm
+	return 0
+}
+
+rmt_test2() \
+{
+	cleanup
+	rsh $host "rm -f /home/$owner/.rhosts"
+	/bin/su $owner -c "$pgm"
+	return 0
+}
+
+rmt_test3() \
+{
+	cleanup
+	chmod 777 .
+	/bin/su bin -c "$pgm"
+	return 0
+}
+
+rmt_test4() \
+{
+	cleanup
+	/bin/su $owner -c "$pgm"
+	return 0
+}
+
+rmt_test5() \
+{
+	cleanup
+	/bin/su $owner -c "$pgm"
+	return 0
+}
+
+# main Main main()
+# the test wants to run as root
+
+TEST=""
+
+# our remote host we are testing against.
+host=unetsco.pdev.sco.com
+localhost=`uname hostname`
+# system owner user name (we su to it to test tfadmin).
+owner=kurth
+
+pgm=/etc/mail/admin/mailadmin
+
+ cleanup
+
+rmt="test1 test2 test3 test4 test5"
+
+#testlist rmt_ test4 test5
+#exit
+
+testlist rmt_ $rmt

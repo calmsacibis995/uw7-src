@@ -1,0 +1,482 @@
+#******************************************************************************
+#                                update
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)update	11.2	10/28/97	16:55:46
+#
+# Copyright (C) 1995-1996 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+# globals for this module
+set LINK 0
+
+#==========================================================================
+# Getyn --
+# 	Prompt for yes or no answer - returns non-zero for no.
+#
+# Parameters:
+#	mesgstr - message string to display in Question Box.
+# Returns: none
+#--------------------------------------------------------------------------
+proc Getyn {mesgstr okLabel okCallback cancelLabel cancelCallback} \
+{
+   global OK FAIL
+
+   set ynmesg [VtQuestionDialog [GetMainDialogID].ynmesg \
+	-message $mesgstr \
+	-ok -okLabel $okLabel -okCallback $okCallback \
+	-cancel -cancelLabel $cancelLabel -cancelCallback $cancelCallback \
+	-help]
+   VtShow $ynmesg
+   VtUnLock
+   MainLoop
+}
+
+
+#==========================================================================
+# SaveConfig --
+#       Walk through ttyList and write elements to grafdev.
+#       Walk through monList and write elements to grafmon.
+#
+#	grafdev and grafmon are truncated prior to storing 
+#	the configuration.  If no video adapters are configured,
+#	both files are truncated.
+#
+#       Question: 
+#	What if grafdev or grafmon can't be opened? What would happen?
+#
+# Parameters:
+#	textwn - name of text widget
+# Returns: none
+#--------------------------------------------------------------------------
+proc SaveConfig {{textwn {}}} \
+{
+   global ttyList monList
+   global errorCode errorInfo
+   global GRAFDEV GRAFMON
+   global AOFSIG SUM VESA_P VROM
+
+   set textstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_CONFIG_START]
+   if {[IsInteractive]} {
+	VtSetValues $textwn -value $textstr
+   } elseif {(![IsInteractive]) && (![GetOptions silent])} {
+	puts stdout $textstr
+   }
+
+   # update .sig - must keep file in sync for grafinit
+   set fh [open ${AOFSIG} w]
+
+   # take sum -r of vrom (video bios) - use first number of sum -r output
+   # if vrom fails, sum will be 00000, so default to that just in case.
+   set BIOSSUM "00000"
+   catch {set BIOSSUM [exec -- ${VROM} 2> /dev/null | ${SUM} -r]; eval $BIOSSUM}
+   set BIOSSUM [format %s [lindex [split $BIOSSUM " "] 0] ]
+   puts $fh [format "BIOS=%s" ${BIOSSUM}]
+
+   # save off memory size also
+   set MEMORY {0x80000}
+   catch {set VESA [exec -- ${VESA_P} -i -v 2> /dev/null]; eval $VESA}
+   puts $fh [format "MEMORY=%d" ${MEMORY}]
+   close $fh
+
+   set fh [open $GRAFDEV w]
+   #XXX - if you can't save changes "Unable to save changes" error message
+   # only get indexes of ttyList that are configured
+   foreach tty [lsort [GetTTYIndexes {}]] {
+      # save to grafdev file
+      set data {}
+      set i 0
+      set adapters [GetTTYHeadLen $tty]
+      while {$i != $adapters} {
+         set vendor [GetTTYVendor $tty $i]
+         set model [GetTTYModel $tty $i]
+         set class [GetTTYClass $tty $i]
+         set mode [GetTTYMode $tty $i]
+	 if {$i == 0} {
+            append data \
+		[format "%s:%s.%s.%s.%s" $tty $vendor $model $class $mode]
+	 } else {
+            append data [format ",%s.%s.%s.%s" $vendor $model $class $mode]
+	 }
+	 incr i
+      }
+      if {$data != {}} {
+         puts $fh $data
+      }
+   }
+   close $fh
+
+   set fh [open $GRAFMON w]
+   # now save to grafmon file
+   foreach vendormodel [lsort [GetMonIndexes]] {
+      set data {}
+      keylget monList($vendormodel) MONVENDOR monvendor
+      keylget monList($vendormodel) MONMODEL monmodel
+      puts $fh [format "%s:%s.%s" $vendormodel $monvendor $monmodel]
+   }
+   close $fh
+}
+
+
+#==========================================================================
+# UpdateMesg --
+#       Informs user that the system configuration has been updated
+#	and that the X server must be restarted.  Returns directly 
+#	to mainloop.
+#
+# Parameters:
+#	textwn - name of text widget
+# Returns: none
+#--------------------------------------------------------------------------
+proc UpdateMesg {textwn} \
+{
+   global OK FAIL LINK
+
+   set textstr {}
+
+   set textstr [VtGetValues $textwn -value]
+   append textstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_CONFIG]
+   VtSetValues $textwn -value $textstr
+   sleep 1
+
+   set mesgstr {}
+   if {[IsTTYEmpty]} {
+      set mesgstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_CONFIG_DISABLED]
+   } else {
+	if {$LINK == 0} {
+      	   set mesgstr  \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_CONFIG_ENABLED]
+	} else {
+      	   set mesgstr \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_CONFIG_ENABLED_LINK]
+	}
+   }
+
+   # get rid of the message dialog form
+   VtDestroyDialog [VxGetVar [GetMainDialogID] mesgfn]
+
+   # set shadow thickness to 0 for charm
+   set info [VtInformationDialog [GetMainDialogID].info \
+        -message $mesgstr \
+	-wmShadowThickness 0 \
+        -ok -okCallback "Exit $OK" \
+        -defaultButton OK \
+        -cancelButton OK]
+   VtShow $info
+   VtUnLock
+
+   MainLoop
+}
+
+
+#==========================================================================
+# IsNewUnix --
+#       Check to see if .new_unix file exists in ~/vidconf.
+#	Return true if the file exists, false otherwise
+#	For GEMINI - there is no linking necessary, always return 0
+#
+# Parameters: none
+# Returns:
+#	Returns 1 if the file exists, false otherwise.
+#--------------------------------------------------------------------------
+proc IsNewUnix {} \
+{
+   return 0
+}
+
+
+#==========================================================================
+# AskLinkCCB --
+#       xxx
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AskLinkCCB {cbs} \
+{
+   global OK FAIL 
+   global LINK_DIR LINK_CMD SHUTDOWN_CMD
+
+   # don't exit with FAIL - we warned 'em and they didn't want to relink
+   WarnMesg [GetMainDialogID] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_LINK_DELAY \
+		[list $LINK_DIR/$LINK_CMD $SHUTDOWN_CMD]] \
+	"Exit $OK"
+   # get rid of the message dialog form
+   VtDestroyDialog [VxGetVar [GetMainDialogID] mesgfn]
+   MainLoop
+}
+
+
+#==========================================================================
+# AskLinkOKCB --
+#       Okay to link a new kernel.
+#
+# Parameters:
+#	textwn - name of text widget
+# Returns: none
+#--------------------------------------------------------------------------
+proc AskLinkOKCB {textwn cbs} \
+{
+   global LINK
+
+   VtLock
+   set LINK 1
+   set textstr [VtGetValues $textwn -value]
+   append textstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_LINK_START]
+   VtSetValues $textwn -value $textstr
+   Klink $textwn
+}
+
+
+#==========================================================================
+# AskLink --
+#       Ask the user if she wants to relink a new kernel.
+#
+# Parameters: 
+#	textwn - name of text widget
+# Returns:
+#	OK if they said Yes, FAIL if they said no.
+#--------------------------------------------------------------------------
+proc AskLink {textwn} \
+{
+   Getyn \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_LINK] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_YES] \
+	"AskLinkOKCB $textwn" \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NO] \
+	AskLinkCCB
+   MainLoop
+}
+
+
+#==========================================================================
+# Klink --
+#       Relink new kernel.  If the relink fails, tell them and 
+#	then exit.
+#
+# Parameters:
+#	textwn - name of text widget
+# Returns: none
+#--------------------------------------------------------------------------
+proc Klink {textwn} \
+{
+   global OK FAIL
+   global LINK_DIR LINK_CMD LINK_WRAPPER
+
+   set cmd "$LINK_WRAPPER \"$LINK_DIR/$LINK_CMD\""
+   VtUnLock
+   set retstatus [RunCommand $cmd 1]
+   VtLock
+   # retstatus == {status} {mesg}
+   set status [lindex $retstatus 0]
+   set errstr [lindex $retstatus 1]
+   # XXX - suggest that they correct this problem
+   # and offer commands to relink the kernel by hand ...
+   if {$status != 0} {
+      FatalErrMesg \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UPDATE_LINK_FAILED] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UPDATESTR] \
+	$FAIL
+   } else {
+      UpdateMesg $textwn
+      # does not return
+   }
+}
+
+
+
+#==========================================================================
+# KernelRelink --
+#       Routines to see about relinking the kernel.
+#	For GEMINI there is no linking to do, do nothing
+#
+# Parameters:
+#	textwn - name of text widget
+# Returns: none
+#--------------------------------------------------------------------------
+proc KernelRelink {textwn} \
+{
+   global NEWUNIX
+
+   # remove .new_unix if it exists
+   system "rm -f $NEWUNIX"
+
+   MainLoop
+   # does not return
+}
+
+
+#==========================================================================
+# Update --
+#	Update the system configuration files:
+#		/usr/X11R6.1/lib/grafinfo/grafdev,
+#		/usr/X11R6.1/lib/grafinfo/grafmon,  
+#
+#	Relink a new kernel if necessary based on a new class.h file
+#	or '.new_unix' file (indicates an older adapter added a kernel driver).
+#
+#	On systems as of 3.2v5.1.0, vidparse is no longer run so a class.h
+#	is no longer created.
+#
+#	On systems prior to Release = 3.2v5.1.0:
+# 	$VIDPARSE will generate the file $TMP_FILE.  If $TMP_FILE 
+#	is different from the file $CLASS_DIR/class.h then replace 
+#	$CLASS_DIR/class.h with $TMP_FILE and rebuild the kernel. 
+#
+# 	The kernel should also be rebuilt if ~/vidconf/.new_unix
+# 	exists.  This file might be created by a script located in
+#	the directory ~/vidconf/script/*.  These scripts are usually 
+#	invoked via the VIDSCRIPT variable in the video adapter 
+#	grafinfo file.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc Update {} \
+{
+   VtLock
+   # attach a new dialog as the child of the main dialog
+   set mesgfn [VtFormDialog [GetMainDialogID].mesgfn \
+	-title [format "%s %s" \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE] \
+   		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MESSAGES_TITLE]] \
+	-wmShadowThickness 0 \
+	-errorCallback ErrorCB]
+   VxSetVar [GetMainDialogID] mesgfn $mesgfn
+
+   # hold message strings
+   set textwn [VtText $mesgfn.textwn \
+	-readOnly \
+	-leftSide FORM -rightSide FORM \
+	-bottomSide FORM -topSide FORM \
+	-columns 50 -rows 5]
+
+   # unmap main screen dialog, display the message dialog
+   VtHide [GetMainDialogID]
+   VtShowDialog $mesgfn
+
+   # save modifications to configuration files - will truncate if empty
+   SaveConfig $textwn
+   
+   # user had deleted the configuration - no need to go any further
+   if {[IsTTYEmpty]} {
+      # .new_unix file was detected - this means a vidconf/script 
+      # was run and kernel relink is needed.  Do this even though 
+      # grafdev is empty.
+      if {[IsNewUnix]} {
+	KernelRelink $textwn
+	# does not return
+      } else {
+         UpdateMesg $textwn
+         # does not return
+      }
+   }
+   if {([VidParse $textwn] != 0) || ([IsNewUnix])} {
+      KernelRelink $textwn
+      # does not return
+   } else {
+      UpdateMesg $textwn
+      # does not return
+   }
+   # 'Exit' done in Message dialog.
+}
+
+
+#==========================================================================
+# VidParse --
+#       Parse grafinfo files and determine if a relink is necessary.
+#
+#	Run vidparse on systems prior to 3.2v5.0.*.
+#
+#	No longer need to run vidparse on later systems (3.2v5.1.0) -
+#	XServer uses mmap() /dev/mem to gain memory access.  class.h and
+#	MAP_CLASS aren't used.
+#
+# Parameters:
+#	textwn (optional) - name of text widget
+# Returns:
+#	status of diff command 
+#--------------------------------------------------------------------------
+proc VidParse {{textwn {}}} \
+{
+   global VIDPARSE TMP_FILE CLASS_DIR CLASSFILE
+   global OK FAIL AWK
+
+   set status 1
+   set catcherr {}
+
+   # Run vidparse on 5.0.* systems only.
+   if {[system "uname -X | ${AWK} '/Release/ {print \$3}' \
+                         | grep 3.2v5.0.* > /dev/null 2>&1"] != 0} {
+      return $OK
+   }
+   # parse grafinfo files to generate new class.h
+   if {[IsInteractive]} {
+      set textstr [VtGetValues $textwn -value]
+      append textstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_PARSE]
+      VtSetValues $textwn -value $textstr
+   } else {
+      if {![GetOptions silent]} {
+         puts stdout [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE_PARSE]
+      }
+   }
+   catch {exec $VIDPARSE $TMP_FILE} catcherr
+   if {$catcherr != {}} {
+      FatalErrMesgScrolled \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UPDATE_PARSE_FAILED2] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UPDATE_PARSE_FAILED \
+		[list $VIDPARSE $catcherr]] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UPDATESTR] \
+	$FAIL
+   }
+
+   if { [file exists $CLASS_DIR/$CLASSFILE] } {
+      set status [system "diff $TMP_FILE $CLASS_DIR/$CLASSFILE > /dev/null"]
+   }
+
+   if {$status != 0} {
+      system "cp $TMP_FILE $CLASS_DIR/$CLASSFILE"
+      system "rm -f $TMP_FILE"
+   }
+   return $status
+}
+
+
+#==========================================================================
+# Vidsetup --
+#       NonInteractive command line version of vidconfGUI.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc Vidsetup {} \
+{
+   global videoListMap
+   global OK FAIL RELINK GRAFINFO DUMMYFILES
+
+   GetVerifyOptions
+   # clean up .sav files
+   foreach file $DUMMYFILES {
+	system "rm -f $GRAFINFO/${file}.xgi.sav"
+   }
+
+   InitLists
+   SaveConfig
+
+   if {![GetOptions novidparse]} {
+      if {[VidParse] != 0} {
+         Exit $RELINK
+      }
+   }
+   Exit $OK
+}
+

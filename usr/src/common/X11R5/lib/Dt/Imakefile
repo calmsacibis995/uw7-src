@@ -1,0 +1,115 @@
+/**/#ident	"@(#)Dt:Imakefile	1.40"
+
+#if Release5
+#define DoNormalLib	NormalLibDt
+#define DoSharedLib	SharedLibDt
+#define DoDebugLib	DebugLibDt
+#define DoProfileLib	ProfileLibDt
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+#endif
+
+
+       INCLUDES = -I$(LIBSRC) -I$(XOLLIBSRC)
+        LIBNAME = Dt
+            LIB = lib$(LIBNAME).so
+          SHLIB = Dt
+           SPEC = libDt
+   INSTALLFLAGS = -m 0644
+     SYS_LIBRARIES = -lgen
+
+HEADERS =\
+        Desktop.h \
+        DtDTMMsg.h \
+        DtHMMsg.h \
+        DtMsg.h \
+        DtWBMsg.h \
+        DtLock.h \
+        Property.h
+
+SRCS =\
+        cache.c \
+	dndutil.c \
+	dtutil.c \
+        plist.c \
+        reqmsg.c\
+        procmsg.c\
+        dtmReq.c \
+        helpReq.c \
+        wbReq.c \
+        msgutil.c \
+        DtLock.c \
+        init.c \
+	xpm.c
+
+OBJS = $(SRCS:.c=.o)
+
+SHAREDOBJS = $(OBJS)
+
+#if Release5
+
+#if DoNormalLib
+#undef ObjectCompile
+#define	ObjectCompile(options) $(RM) $@					@@\
+	$(CC) -c $(CFLAGS) options -DARCHIVE $*.c
+#endif
+
+LibraryObjectRule()
+
+#if DoSharedLib
+#if DoNormalLib
+SharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),shared,..)
+FurSharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),shared,..)
+#else
+SharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),.,.)
+FurSharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),.,.)
+#endif
+InstallSharedLibrary($(LIBNAME),$(SODTREV),$(USRLIBDIR))
+InstallFurLibrary($(LIBNAME),$(SODTREV),$(USRLIBDIR))
+#endif
+
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+#if DoProfileLib
+ProfiledLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME)_p,$(USRLIBDIR))
+#endif
+
+#else /* Release5 */
+
+#undef MixedLibraryObjectRule
+#define MixedLibraryObjectRule()					@@\
+.c.o:									@@\
+	@if [ -d shared ]; then \					@@\
+		echo \\t$(CC) -c -KPIC $(CFLAGS) $<; \			@@\
+		$(CC) -c -KPIC $(CFLAGS) $<; \ 				@@\
+ 		$(RM) shared/$*.o; \					@@\
+ 		echo \\t$(MV) $*.o shared; \				@@\
+ 		$(MV) $*.o shared; \					@@\
+ 	fi								@@\
+ 	$(CC) -c -DARCHIVE $(CFLAGS) $<
+
+all:: libDt.so libDt.a
+MixedLibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(SHAREDOBJS),,)
+ArchiveLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+#if NOTNEEDED
+#if !UTSXENV
+#if SystemV4
+install::
+	$(RM) -r $(ROOT)/$(MACH)/usr/include/Dt
+	$(LN)  $(INCROOT)/Dt $(ROOT)/$(MACH)/usr/include/Dt
+#endif  /* SVR4 */
+#endif
+#endif
+
+InstallMultiple($(HEADERS),$(INCROOT)/Dt)
+
+LintLibraryTarget(Dt,$(SRCS))
+
+DependTarget()

@@ -1,0 +1,295 @@
+#!/sbin/sh
+#ident "@(#)license	15.1	97/12/19"
+
+#
+# Modules only get one command line argument - the direction the sequencer
+# was going when it called us. If the last module to run exited "PREV", the
+# sequencer is backing up, and $1="PREV". In all other cases, $1="NEXT".
+# This is only important for the no-user-interaction case.
+#
+
+#-------------------------------------------------------
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	serial=`ivar get SerialID`
+	akey=`ivar get ActKey`
+	ldata=`ivar get LicenseData`
+
+	check_license_info
+
+	if [ $? -ne 0 ]
+	then
+		#
+		# Call ourselves again, interactively.
+		#
+		ivar set silent_license "false"
+		ivar set skip_license "false"
+		. /isl/ui_map
+		exec $module_path/$module $direction
+	fi
+}
+
+. /isl/ui_modules/common.rc	
+#--------------------------------------------------------
+if [ ! -x /sbin/licisl ]
+then
+	ii_exit DIE
+fi
+
+function noop
+{
+       beep
+}
+
+function check_license_info
+{
+[ -n "$debug" ] && set -x
+	
+	product_id=`/sbin/licisl -v "$serial" "$akey" "$ldata"`
+	retval=$?
+	set -- $product_id
+	product_id="$1"
+	if (( retval == 2 ))
+	then
+		display -w "$ERR_MSG" -fg $ERROR_FG -bg $ERROR_BG
+		footer "$ENTER_FOOTER"
+		return 1
+	elif (( retval == 3 ))
+	then
+		display -w "$ERR_NO_DATA" -fg $ERROR_FG -bg $ERROR_BG
+		footer "$ENTER_FOOTER"
+		return 1
+	fi
+	ivar set product_id ${product_id}
+}
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	ok_exit="$1"
+}
+
+function defer_license
+{
+[ -n "$debug" ] && set -x
+	wclose $license_wid
+
+	display "$DEFER_LICENSE" -above 2 -below 6
+        display_window=$CURWIN
+
+	width=${#DEFER_TITLE}
+	(( width += 2 ))
+	open_radio $width -bg $BLUE -fg $WHITE
+        radio_wid=$RID
+        add_radio -entry "set_choice true" "$DEFER"
+        add_radio -entry "set_choice false" "$DONT_DEFER"
+        radio_runparms $radio_wid 2
+
+        place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+                -above 6 -below 1 -title "$DEFER_TITLE"
+        radio_window=$CURWIN
+
+	run_radio $radio_wid 1 2
+        msg
+        footer "$DEFER_KEYS"
+
+        set_hotkey 1 noop
+        set_hotkey 9 noop
+        set_hotkey 10 noop
+
+        input_handler
+
+        wclose $display_window
+	wclose $radio_window
+	
+	[ "$ok_exit" = "true" ] && {
+		serial=
+		akey=
+		ldata=
+		ivar set product_id 131
+	}
+}
+
+
+function get_license
+{
+[ -n "$debug" ] && set -x
+	# assume they are going to enter a license and not defer
+	ok_exit=true
+
+	msg "$prompt"
+
+	max ${#sn} ${#ak} ${#ld}
+	(( ix=$?+4 ))
+	(( fwidth=$ix+2+20+2 ))
+	
+	open_form -exit check_license_info
+	license_form=$FID
+
+	add_field serial -p "$sn" -ilen 9 \
+		-px 2 -py 1 -ix $ix -iy 1 -exit check_serial
+	add_field akey -p "$ak" -ilen 8 \
+		-px 2 -py 3 -ix $ix -iy 3 -exit check_akey
+	add_field ldata -p "$ld" -ilen 80 -vlen 20\
+		-px 2 -py 5 -ix $ix -iy 5 -exit check_ldata
+	(( ld_fid=$FIELDCNT-1 ))
+#	[ -z "$ldata" ] && fld_gray $license_form $ld_fid 1
+	
+	place_window $fwidth 7 -title "$title" -fg $COMBO2_FG -bg $COMBO2_BG \
+			-current 'footer "$keys"'
+	license_wid=$CURWIN
+	run_form $license_form
+
+	set_hotkey 1 get_help
+	set_hotkey 2 noop
+	set_hotkey 8 defer_license
+	set_hotkey 9 go_back
+}
+
+
+#
+# Check the validity of $serial. Return 0 if it's ok, which will let
+# the user move on to the next field. If it's not ok, return 1. This
+# will make them stay there until they have entered a valid serial number.
+#
+function check_serial
+{
+[ -n "$debug" ] && set -x
+	len=${#serial}
+	if (( len != 9 ))
+	then
+		msg "$err1"
+		return 1
+	else
+		msg ""
+	fi
+	return 0
+}
+
+
+#
+# Check the validity of $akey. See above.
+#
+function check_akey
+{
+[ -n "$debug" ] && set -x
+	len=${#akey}
+	if (( len != 8 ))
+	then
+		msg "$err2"
+		return 1
+	else
+		msg ""
+	fi
+
+# Check if license data is needed
+#
+	/sbin/licisl -v "$serial" "$akey" > /dev/null 2>&1
+	retval=$?
+	if (( retval == 3 ))
+	then
+		gray=0
+	else
+		gray=1
+	fi
+	
+	if (( retval == 2 ))
+	then
+		beep
+		msg "$BAD_COMBO"
+	else
+		msg
+	fi
+
+	fld_gray $license_form $ld_fid $gray
+	fld_pchange $license_form $ld_fid "$ld"
+
+	return 0
+}
+
+function check_ldata
+{
+[ -n "$debug" ] && set -x
+	foo=$ldata
+	return 0
+}
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever they had entered (even if it's not valid)
+	# so when they come back, it will be the default text.
+	#
+	ivar set SerialID "$serial"
+	ivar set ActKey "$akey"
+	ivar set LicenseData "$ldata"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever they had entered (even if it's not valid)
+	# so when they come back, it will be the default text.
+	#
+	ivar set SerialID "$serial"
+	ivar set ActKey "$akey"
+	ivar set LicenseData "$ldata"
+	#
+	ivar set help_topic license
+	ii_exit HELP
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	if [ $ok_exit == true ]
+	then
+		#
+		# Save their choice
+		#
+		ivar set SerialID "$serial"
+		ivar set ActKey "$akey"
+		ivar set LicenseData "$ldata"
+		
+		#
+		# Done
+		#
+		ii_exit NEXT
+	fi
+}
+
+
+#
+# Main
+#
+
+
+#
+# Get the initial license data, if any.
+#
+serial=`ivar get SerialID`
+akey=`ivar get ActKey`
+ldata=`ivar get LicenseData`
+
+#
+# Let the user enter a license.
+#
+while [ 1 == 1 ]
+do
+	get_license
+	input_handler
+	go_next
+done
+

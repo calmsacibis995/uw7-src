@@ -1,0 +1,106 @@
+#ident	"@(#)ihvkit:pdi/dpt/README	1.7.3.1"
+
+This directory contains all of the files necessary to do a native build
+and installation of a driver for the DPT SCSI Host Adapter.  Observe the 
+following precautions before building and installing the driver:
+
+1) Read the commented section of hba.h and if necessary initialize sdi.h to 
+contain the correct definition of the variable PDI_VERSION:
+
+   The value of PDI_VERSION is:
+
+      1   SVR4.2/UnixWare 1.1 Driver
+      2   SVR4.2 DTMT (Maintainence Release) Driver
+      3   SVR4.2MP Driver
+      4   UnixWare 2.0 Driver
+      5   UnixWare 2.1 and later Driver
+
+   For example:
+
+      #define PDI_VERSION	4  for UNIXWARE 2.0 driver
+
+2) Read Notes 1,2 and 3 provided in this file.
+
+3) Save a copy of the old dpt.h (i.e., /usr/include/sys/dpt.h).
+
+4) Make sure that the hardware is configured for the various system parameter
+values: IRQ, I/O address, etc. as provided in dpt.cf/System.  Finally
+ensure that the System file (dpt.cf/System) has the the second field
+set to a Y instead of a N.  This is necessary to build and configure
+the driver into the kernel during a idbuild.
+
+5)  To get a complete top down compile, link and install of the driver execute
+make with the following options:
+
+	make -f dpt.mk clean install
+
+If you want the dpt driver package to be transfered to an HBA floppy along
+with a loadable image of the driver (for load on install), execute the
+makefile with the following option:
+
+	make -f dpt.mk hbafloppy
+
+Note:  Ensure that both the packaging tools and ksh are currently
+available on the system before trying to generate the HBA floppy.
+Also make sure you that you have a 3 1/2 inch diskette in your floppy
+drive before executing this command.
+
+The packaging tools are available as a part of the "usoftint" package
+and the ksh is available along with the "advanced commands" package.
+
+Verify the presence of the packaging tools by executing:
+
+	pkginfo -l usoftint
+
+Verify the presence of the advanced commands by executing:
+
+	pkginfo -l cmds
+
+NOTES
+
+2. The make will fail if the dpt controller on your machine controls the boot
+device.  Under such conditions, the dpt driver on your machine will be
+configured as a static driver.  In contrast, the dpt driver built by this
+sample source is a loadable driver.  To avoid complications, you
+should make the Driver.o (i.e., dpt.cf/Driver.o) and manually install the
+driver. Use the script:
+
+	# # As root...
+	# make -f dpt.mk headinstall dpt.cf/Driver.o
+	# cp dpt.cf/Space.c /etc/conf/pack.d/dpt/space.c
+	# cp dpt.cf/Driver.o /etc/conf/pack.d/dpt/Driver.o
+	# idbuild -B && init 6
+
+Note:  Do not configure your dpt driver as a loadable driver as long as the
+boot device is accessed through the controller.
+
+3. For a better understanding of the layout and use of the HBA floppies,
+refer to the READMEs located under:
+
+	/usr/src/hdk/sdi/hba/ihvhba.bldscript 
+
+The directory dpt.hbafloppy contains the following files:
+
+bldscript:  Used to package the driver and build an HBA floppy.
+
+dpt/copyright:  Copyright file for the driver package.
+
+dpt/pkginfo:  Information about the dpt driver package.
+	
+dpt/postinstall:  Postinstall script used during driver package installation.
+
+dpt/preremove:  Preremove script used during driver package removal.
+
+dpt/prototype:  Listing of all the components that make up the dpt driver
+		package.
+
+etc/HBAINST:  A script used during the second phase of the installation using
+	      the HBA floppy.
+
+The makefile option that creates the HBA floppy, copies the necessary driver
+component files Driver.o, dpt.h, dpt (loadable image), Space.c, System,
+Master, Drvmap, loadmods to the necessary sub-directories under
+dpt.hbafloppy/dpt/tmp/dpt.  In addition, it invokes the "bldscript" to format
+the floppy, make the file system, build the driver packages and eventually
+transfer the package to the media.
+

@@ -1,0 +1,94 @@
+#ident "@(#)imap.plan	11.1"
+
+IMAP Server Test Suite
+
+1. Introduction.
+
+The test suite for the rfc1730 compliant IMAP server is described
+in this document.  Each test case is described, and the test
+case numbers correspond to the test case numbers in the test suite code.
+
+2. Architecture.
+
+The test suite is a stand alone shell script.  It avoids looking at
+mailboxes and so is slightly self-referent in that it uses parts of
+IMAP to verify the other parts.
+
+The reasoning is that the underlying mailbox storage format is subject
+to change as it is hidden under the c-client library.  The c-client
+library has it's own tests for the message stores, so we do 
+not need to test at that level.
+
+This did have the effect of simplifying this test suite as all interaction
+is through the IMAP server which just reads and writes stdin and stdout.
+
+3. IMAP Test Cases.
+
+3.1 IMAP Manual Test Cases.
+
+o - Using the prefered IMAP client of the time (Netscape 4.0 as of this
+    writing), connect to the IMAP server over the network, login, and read
+    some mail.  Preferably try both UNIX and Windows based clients
+
+o - Fire up an IMAP client, open INBOX, send some message to yourself,
+    check for new mail, vfy that it comes in and that the new flag is set
+    on the new messages.
+
+o - Test that the IMAP server correctly identifies a multihome user
+    and gets to their mailbox, check the correct passwd is used as well.
+
+3.2 Automated Test Cases.
+
+The IMAP primitives are tested in the order they are listed in rfc1730.
+This is not an exhaustive test by any means, but every primitive and
+its basic functionality are tested.  The purpose here is less of an IMAP
+protocol test and more of an integration test between the IMAP server and
+our c-client modifications on the back end.
+
+Tests are in groups that must be executed contiguously as they depend on
+the state of previous tests within a group.  Groupnames are spelled out
+names and test cases within each group are digits.  The test script will
+continue with subsequent tests within a group even if a group member 
+fails, just be on the watch that one test case failure might cause
+subsequent tests within that group to fail.
+
+Setup - CREATE INBOX, APPEND INBOX twice (this is used later as a subroutine).
+Misc - vfy CAPABILITY, NOOP and LOGOUT.
+
+One1 - SELECT INBOX, FETCH all stuff, vfy OLD flags are not set, CLOSE.
+One2 - SELECT INBOX, FETCH all stuff, vfy OLD flags are set, CLOSE.
+
+Two1 - CREATE m directory, CREATE m/mbox2, LIST
+Two2 - COPY twice to m/mbox2
+Two3 - FETCH all stuff from m/mbox2, vfy same as INBOX.
+Two4 - PARTIAL get of each message.
+Two5 - RENAME m/mbox2 to m/mbox1, LIST
+Two6 - STORE deleted flag.
+Two7 - EXAMINE m/box1, vfy output.
+Two8 - LIST, DELETE m/mbox1, LIST, DELETE m, LIST
+
+Three1 - SELECT INBOX
+Three1 - CHECK
+Three1 - SEARCH on subject that should match message 1 only
+Three1 - FETCH FLAGS
+Three1 - STORE all flags on (except delete only first message)
+Three1 - FETCH FLAGS
+Three1 - EXPUNGE
+Three1 - UID FETCH on UID 2 should get message 1
+
+4. IMAP Functionality not tested.
+
+The following capabilities/primitives are not tested:
+
+  News capabilities in general.
+  SUBSCRIBE
+  UNSUBSCRIBE
+  LSUB
+  SUBSCRIBE MAILBOX
+  UNSUBSCRIBE MAILBOX
+  LOGIN is only tested in the manual test.
+  AUTHENTICATE
+
+5. Performance Test Cases.
+
+

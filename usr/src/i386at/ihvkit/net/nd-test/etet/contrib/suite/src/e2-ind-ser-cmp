@@ -1,0 +1,37 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api serial-1");
+	@output1=@output;
+	@journal1=@journal;
+	&run("-e contrib/api serial-2");
+
+#	process both output files to remove known differences
+	grep(s!results/.*/journal!results/0000e/journal!,@output1);
+	
+	grep(s!results/.*/journal!results/0000e/journal!,@output);
+
+	&verify(&compare_arrays(*output1,*output));
+}
+
+
+sub tp2 {
+	$tp=tp2;
+
+# 	process both journal files to remove known differences
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@journal1);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@journal1);
+
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@journal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@journal);
+	grep(s/serial-2/serial-1/g,@journal);
+
+	&verify(&compare_arrays(*journal1,*journal));
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

@@ -1,0 +1,554 @@
+#!/bin/sh
+#
+# test suite for IMAP 4 (rfc1730).
+# see test suite document for documentation (imap.plan).
+#
+
+# utility routines
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+# this takes advantage of the ms1 drivers behavior that allows delete of INBOX
+cleanup() \
+{
+	$IMAP << DONE1 2>&1 > /tmp/imap.out
+1 DELETE INBOX
+2 DELETE mbox1
+3 DELETE /tmp/m/mbox1
+4 DELETE /tmp/m/mbox2
+5 DELETE /tmp/m
+6 LOGOUT
+DONE1
+	#cat /tmp/imap.out
+	rm -f /tmp/imap.out /tmp/imap.out1
+}
+
+# create a basic mailbox in INBOX
+# messages must be followed by a blank line to terminate the command.
+# effectively the blank line is the CRLF at the end of the command.
+Setup() \
+{
+	$IMAP << DONE 2>&1 > /tmp/imap.out
+1 APPEND INBOX {71}
+Subject: test1
+From: tester
+To: tester
+
+This is test message one.
+
+2 APPEND INBOX {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+
+3 LOGOUT
+DONE
+	rm -f /tmp/imap.out
+	return 0
+}
+
+Misc1() \
+{
+	Setup
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	$IMAP << DONE1 2>&1 > /tmp/imap.out
+1 CAPABILITY
+2 NOOP
+3 logout
+DONE1
+	grep " CAPABILITY IMAP4 STATUS SCAN SORT AUTH-LOGIN" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	grep "1 OK CAPABILITY" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	grep "2 OK NOOP" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	grep "3 OK LOGOUT" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	rm -f /tmp/imap.out
+	passfail 0
+}
+
+One1() \
+{
+	cleanup
+	Setup
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	$IMAP << ONE1 2>&1 > /tmp/imap.out
+1 SELECT INBOX
+2 FETCH 1 (FLAGS RFC822.SIZE RFC822.PEEK)
+3 FETCH 2 (FLAGS RFC822.SIZE RFC822.PEEK)
+4 LOGOUT
+ONE1
+	grep "PREAUTH" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+cat << ONE1_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* OK [UNSEEN 1] 1 is first unseen
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+* 1 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+Subject: test1
+From: tester
+To: tester
+
+This is test message one.
+)
+2 OK FETCH completed
+* 2 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+)
+3 OK FETCH completed
+4 OK LOGOUT completed
+ONE1_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+One2() \
+{
+	$IMAP << ONE1 2>&1 > /tmp/imap.out
+1 SELECT INBOX
+2 FETCH 1 (FLAGS RFC822.SIZE RFC822)
+3 FETCH 2 (FLAGS RFC822.SIZE RFC822)
+4 LOGOUT
+ONE1
+	grep "PREAUTH" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+cat << ONE1_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* OK [UNSEEN 1] 1 is first unseen
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+* 1 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+Subject: test1
+From: tester
+To: tester
+
+This is test message one.
+ FLAGS (\Seen))
+2 OK FETCH completed
+* 2 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+ FLAGS (\Seen))
+3 OK FETCH completed
+4 OK LOGOUT completed
+ONE1_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+	cleanup
+}
+
+Two1() \
+{
+	cleanup
+	Setup
+	$IMAP << TWO1 > /tmp/imap.out
+1 CREATE /tmp/m/
+2 CREATE /tmp/m/mbox2
+3 LIST /tmp/m "*"
+4 LOGOUT
+TWO1
+	sed -e '/PREAUTH/d' -e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << TWO1_1 > /tmp/imap.out
+1 OK CREATE completed
+2 OK CREATE completed
+* LIST (\NoSelect) "/" /tmp/m
+* LIST (\NoInferiors) "/" /tmp/m/mbox2
+3 OK LIST completed
+4 OK LOGOUT completed
+TWO1_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two2() \
+{
+	$IMAP << TWO2 > /tmp/imap.out
+1 SELECT INBOX
+2 COPY 1 /tmp/m/mbox2
+3 COPY 2 /tmp/m/mbox2
+4 LOGOUT
+TWO2
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << TWO2_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* OK [UNSEEN 1] 1 is first unseen
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+2 OK COPY completed
+3 OK COPY completed
+4 OK LOGOUT completed
+TWO2_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two3() \
+{
+	$IMAP << TWO3 2>&1 > /tmp/imap.out
+1 SELECT /tmp/m/mbox2
+2 FETCH 1 (FLAGS RFC822.SIZE RFC822)
+3 FETCH 2 (FLAGS RFC822.SIZE RFC822)
+4 LOGOUT
+TWO3
+	grep "PREAUTH" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+cat << TWO3_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* OK [UNSEEN 1] 1 is first unseen
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+* 1 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+Subject: test1
+From: tester
+To: tester
+
+This is test message one.
+ FLAGS (\Seen))
+2 OK FETCH completed
+* 2 FETCH (FLAGS () RFC822.SIZE 71 RFC822 {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+ FLAGS (\Seen))
+3 OK FETCH completed
+4 OK LOGOUT completed
+TWO3_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two4() \
+{
+	$IMAP << TWO4 2>&1 > /tmp/imap.out
+1 SELECT /tmp/m/mbox2
+2 PARTIAL 1 RFC822 1 44
+3 PARTIAL 2 RFC822 1 44
+4 LOGOUT
+TWO4
+	grep "PREAUTH" /tmp/imap.out > /dev/null
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		cleanup
+		return
+	fi
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+cat << TWO4_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+* 1 FETCH (RFC822 {44}
+Subject: test1
+From: tester
+To: tester
+
+)
+2 OK PARTIAL completed
+* 2 FETCH (RFC822 {44}
+From: tester
+To: tester
+Subject: test2
+
+)
+3 OK PARTIAL completed
+4 OK LOGOUT completed
+TWO4_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two5() \
+{
+	sleep 2
+	$IMAP << TWO5 2>&1 > /tmp/imap.out
+1 RENAME /tmp/m/mbox2 /tmp/m/mbox1
+2 LIST /tmp/m *
+3 LOGOUT
+TWO5
+	sed -e '/PREAUTH/d' -e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << TWO5_1 > /tmp/imap.out
+1 OK RENAME completed
+* LIST (\NoSelect) "/" /tmp/m
+* LIST (\NoInferiors \UnMarked) "/" /tmp/m/mbox1
+2 OK LIST completed
+3 OK LOGOUT completed
+TWO5_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two6() \
+{
+	$IMAP << TWO6 2>&1 > /tmp/imap.out
+1 SELECT /tmp/m/mbox1
+2 STORE 2 +FLAGS (\Deleted)
+3 LOGOUT
+TWO6
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << TWO6_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+* 2 FETCH (FLAGS (\Seen \Deleted))
+2 OK STORE completed
+3 OK LOGOUT completed
+TWO6_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two7() \
+{
+	$IMAP << TWO7 2>&1 > /tmp/imap.out
+1 EXAMINE /tmp/m/mbox1
+2 FETCH 1 (FLAGS RFC822.SIZE RFC822)
+3 FETCH 2 (FLAGS RFC822.SIZE RFC822)
+4 LOGOUT
+TWO7
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+cat << TWO3_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS ()] Permanent flags
+* 0 RECENT
+1 OK [READ-ONLY] EXAMINE completed
+* 1 FETCH (FLAGS (\Seen) RFC822.SIZE 71 RFC822 {71}
+Subject: test1
+From: tester
+To: tester
+
+This is test message one.
+)
+2 OK FETCH completed
+* 2 FETCH (FLAGS (\Seen \Deleted) RFC822.SIZE 71 RFC822 {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+)
+3 OK FETCH completed
+4 OK LOGOUT completed
+TWO3_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+Two8() \
+{
+	$IMAP << TWO8 2>&1 > /tmp/imap.out
+0 List /tmp/m *
+1 DELETE /tmp/m/mbox1
+2 LIST /tmp/m *
+3 DELETE /tmp/m
+4 LIST /tmp/m *
+5 LOGOUT
+TWO8
+	sed -e '/PREAUTH/d' -e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << TWO8_1 > /tmp/imap.out
+* LIST (\NoSelect) "/" /tmp/m
+* LIST (\NoInferiors) "/" /tmp/m/mbox1
+0 OK LIST completed
+1 OK DELETE completed
+* LIST (\NoSelect) "/" /tmp/m
+2 OK LIST completed
+3 OK DELETE completed
+4 OK LIST completed
+5 OK LOGOUT completed
+TWO8_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+	cleanup
+}
+
+Three1() \
+{
+	cleanup
+	Setup
+	$IMAP << THREE1 > /tmp/imap.out
+1 SELECT INBOX
+2 CHECK
+3 SEARCH ALL SUBJECT "test1"
+4 FETCH 1 FLAGS
+5 STORE 1 +FLAGS (\Seen \Deleted \Draft \Answered \Flagged)
+6 FETCH 1 FLAGS
+7 EXPUNGE
+8 UID FETCH 2 RFC822.PEEK
+9 LOGOUT
+THREE1
+	sed -e '/PREAUTH/d' -e 's/\[UIDVALIDITY.*\]/[UIDVALIDITY 0]/' \
+		-e /BYE/d < /tmp/imap.out > /tmp/imap.out1
+	cat << THREE1_1 > /tmp/imap.out
+* 2 EXISTS
+* OK [UIDVALIDITY 0] UID validity status
+* FLAGS (\Answered \Flagged \Deleted \Draft \Seen)
+* OK [PERMANENTFLAGS (\Answered \Flagged \Deleted \Draft \Seen)] Permanent flags
+* OK [UNSEEN 1] 1 is first unseen
+* 0 RECENT
+1 OK [READ-WRITE] SELECT completed
+2 OK Check completed
+* SEARCH 1
+3 OK SEARCH completed
+* 1 FETCH (FLAGS ())
+4 OK FETCH completed
+* 1 FETCH (FLAGS (\Seen \Deleted \Flagged \Answered))
+5 OK STORE completed
+* 1 FETCH (FLAGS (\Seen \Deleted \Flagged \Answered))
+6 OK FETCH completed
+* 1 EXPUNGE
+* 1 EXISTS
+* 0 RECENT
+7 OK Expunged 1 messages
+* 1 FETCH (RFC822 {71}
+From: tester
+To: tester
+Subject: test2
+
+This is test message two.
+ UID 2)
+8 OK UID FETCH completed
+9 OK LOGOUT completed
+THREE1_1
+	diff /tmp/imap.out /tmp/imap.out1
+	passfail $?
+}
+
+# main Main main()
+# test wants to run as a normal user
+
+TEST=""
+IMAP=/etc/imapd
+ cleanup
+
+tests_misc="1"
+tests_one="1 2"
+tests_two="1 2 3 4 5 6 7 8"
+tests_three="1"
+
+#testlist One 1
+#exit 0
+
+testlist Misc $tests_misc
+testlist One $tests_one
+testlist Two $tests_two
+testlist Three $tests_three
+ cleanup

@@ -1,0 +1,116 @@
+#!/bin/sh
+#		@(#)GrafInfoHCH	11.1	11/21/97	15:44:56
+#
+#	/usr/lib/X11/testtools/GrafInfoHCH <filename(s)>
+#
+#	GrafInfoHCH - display modes and driver information from grafinfo files
+#	- in a format similar to the Hardware Compatibility Handbook
+#	- argument(s): - fully qualified grafinfo file names
+#	- e.g.: GrafInfoHCH /usr/lib/grafinfo/ibm/vga.xgi
+#
+#	- used by /usr/lib/X11/testtools/GrafInfoData
+#
+cat << _EOF_
+Format of listing:			`date`
+
+Card Vendor identification string	- grafinfo file name - XDriver names
+	 resolution    colors	 [additional mode comments] - [XDriver.o name]
+	    800x600	  256	 [from grafinfo file whenever present]
+	  1600x1280	  16m	 [usually scan rate in HZ]
+
+	colors: 32K == 15 bit color, 64K == 16 bits, 16M == 24 bits
+	
+___________________________________________________________________________
+_EOF_
+for Fname in $*
+do
+XDRIVERS=`grep XDRIVER $Fname | sed -e "s/.*\"\(.*\)\".*/\1/" | sort -u | xargs echo | sed -e "s/ /,/g"`
+sed -e "s/\"//g" $Fname | awk \
+'
+BEGIN {
+	vendor = 1
+	P0 = ""
+	P1 = ""
+	P2 = ""
+	P3 = ""
+	P4 = ""
+	M0 = ""
+	M1 = ""
+	M3 = ""
+	M4 = ""
+	XD = "'$XDRIVERS'"
+	FNAME = "'$Fname'"
+}
+{
+	if ( match ( $1, "VENDOR" ) ) {
+			if ( vendor == 1 ) {
+				printf "\n"
+				for ( i = 3; i <= NF; ++i ) printf "%s ", $i
+			}
+	}
+	if ( match ( $1, "MODEL" ) ) {
+			if ( vendor == 1 ) {
+				for ( i = 3; i <= NF; ++i ) printf "%s ", $i
+				vendor = 0
+				printf "\t| %s | %s\n", FNAME, XD
+			}
+	}
+#	if ( match ( $1, "CLASS" ) ) {
+#			printf "\n\t"
+#			if ( $3 != "" ) {
+#				for ( i = 3; i <= NF; ++i ) printf "%s ", $i
+#			}
+#	}
+	if ( (length($1) == 4) && match ( $1, "MODE" ) ) {
+				M = $2
+				split( M, Msplit, "-" )
+				M0 = Msplit[1]
+				M1 = Msplit[2]
+				M2 = Msplit[3]
+				M3 = Msplit[4]
+				M4 = ""
+				if ( match( Msplit[2], "\@" ) ) {
+					M4 = M3
+					M3 = M2
+					M2 = M1
+					M = Msplit[2]
+					split( M, Msplit, "\@" )
+					M1 = Msplit[1]
+					if( Msplit[2] )
+						M4 = M3
+						M3 = M2
+						M2 = Msplit[2]
+				}
+				if ( (P0 != M0) || (P1 != M1) ||
+					(P2 != M2) (P3 != M3) (P4 != M4) ) {
+					printf "\t%11s\t%5s", M0, M1
+					if ( M2 && (M2 != M0) )
+						printf "\t%5s ", M2
+					if ( M3 && (M3 != M0) )
+						printf "\t%5s ", M3
+					if ( M4 && (M4 != M0) )
+						printf "\t%5s ", M4
+					for ( i = 3; i <= NF; ++i ) {
+						if ( ($i != M0) &&
+						    ($i != M1) &&
+						    ($i != M2) &&
+						    (!match( $i, "color" )) &&
+						    (!match( $i, "Color" )) )
+							printf " %s", $i
+					}
+					printf " "
+					P0 = M0
+					P1 = M1
+					P3 = M3
+					P4 = M4
+				}
+	}
+	if ( match ( $1, "XDRIVER" ) ) {
+			printf " | %s\n", $3
+	}
+}
+END {
+	printf "\n"
+}
+'
+done

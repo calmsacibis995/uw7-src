@@ -1,0 +1,271 @@
+#!/usr/bin/ksh -
+# @(#)cmd.vxvm:unixware/support/vxsetup.sh	1.2 3/3/97 03:31:46 - cmd.vxvm:unixware/support/vxsetup.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxsetup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+exec 3>&1
+
+prog="${0##*/}"
+vold_opts=
+req=
+diag=
+i_flag=
+d_flag=
+k_flag=
+while getopts :x:R:D:sidk c; do
+	case $c in
+	x)	vold_opts="$vold_opts -x $OPTARG";;
+	R)	vold_opts="$vold_opts -R $OPTARG"; req="-R $OPTARG";;
+	D)	vold_opts="$vold_opts -D $OPTARG"; diag="-R $OPTARG";;
+	s)	vold_opts="$vold_opts -x stub";;
+	i)	i_flag=true;;
+	d)	d_flag=true;;
+	k)	k_flag=true;;
+	?)	cat <<! >&2
+`VOLD=$VOLD prog="$prog" egettxt "\
+Usage: $prog [-id] [[-x debug-opt] ... ] [disk ...]
+
+Options:
+  -x debug-opt	Pass this debug-option on to $VOLD.  Any number of -x
+		options can be specified.
+  -s		Start $VOLD in stub mode (don't talk to the kernel).
+  -i		Initialize disks, by default.
+  -d		Do not initialize disks, by default.
+  -k		Kill an existing $VOLD, unconditionally.
+" vxvmshm:521`
+!
+		exit 1
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+askyorn() {
+	if [ "$1" = "-M" ]
+	then
+		_ask_cat="$2"
+		_ask_def="$3"
+		_ask_yon="$4"
+		shift 4
+		_ask_msg="`egettxt \"$_ask_def\" \"$_ask_cat\" \"$@\"`"
+	else
+		_ask_msg="$1"
+		_ask_yon="$2"
+	fi
+	echo
+	while :; do
+#		read ans?"$1 (y/n)? [$2]"
+		read ans?"$_ask_msg (y/n)? [$_ask_yon]"
+		if [ -z "$ans" ]; then
+			ans=$2
+		fi
+		case $ans in
+		y*)	return 0;;
+		n*)	return 1;;
+		esac
+		egettxt "Please enter y or n." vxvmshm:308
+	done
+}
+
+quit() {
+	prog="$prog" egettxt \
+	"\nFatal errors prevent $prog from continuing.\nStop." vxvmshm:610
+	exit 1
+}
+
+doit() {
+	echo ! "$@" >&3
+	"$@" 3>&-
+}
+
+not() {
+	if "$@"; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+n=$(vxiod | sed 's/ .*//')
+if [ "X$n" = X0 ]
+then
+	doit vxiod set 2
+fi
+
+x=$(doit vxdctl $diag mode)
+if [ $? -ne 0 ]; then
+	VOLD=$VOLD egettxt \
+"vxdctl could not determine $VOLD's status.\nStart anyway." vxvmshm:644
+else
+	case $x in
+	"mode: enabled")
+	    if [ ! -z "$k_flag" ]
+	    then
+		VOLD=$VOLD egettxt "$VOLD appears to be running and enabled.  Kill:" vxvmshm:53
+	    elif not (export VOLD; askyorn -M vxvmshm:52 "$VOLD appears to be running and enabled.  Kill" n)
+	    then
+		egettxt "Stop." vxvmshm:370
+		exit 1
+	    fi
+	    echo
+	    doit vxdctl $diag stop || quit
+	    ;;
+
+	"mode: disabled" | "0:mode: booted")
+	    VOLD=$VOLD egettxt \
+		"$VOLD appears to be running in disabled mode.  Kill:" vxvmshm:54
+	    echo
+	    doit vxdctl $diag stop || quit
+	    ;;
+
+	"mode: not-running")
+	    :;;
+
+	*)  egettxt \
+	"vxdctl mode returned an unexpected status.\nStart anyway." vxvmshm:645
+	    ;;
+	esac
+fi
+
+if [ $# -eq 0 ]; then
+	cat << EOF
+`egettxt "\
+
+You must now enter a set of disks to include in the root disk group.
+Please specify disk names of the form c[0-2]t[0-7]d0s[1-e], which
+will reference disk controller 0 through 2, target ID 0 through 7,
+and disk slice 1 through 14 (hex e).  The first 256 blocks of each
+named disk partition device will be reserved for storing configuration
+copies and log copies.  The remaining space in each partition device
+will be available for allocating subdisks.
+
+As an alternative, you can name a device ending in $VOL_FULL_SLICE, 
+in which case
+a sliced disk type will be chosen, with a region for subdisk
+allocations stored on slice 13 of the disk, and with configuration
+and log copies stored on slice 14.  Be careful: do not choose $VOL_FULL_SLICE
+if
+the device has a large slice 14, or you will have to wait for the
+entire slice 14 to be zeroed, and you will also end up allocating
+very large configuration copies and log copies.
+
+NOTE: Enter a blank line to end the list of disks.
+
+" vxvmshm:625`
+
+EOF
+	egettxt "Enter disk device names for the root disk group:" vxvmshm:224
+	while :; do
+		read disks
+		if [ -z "$disks" ]
+		then
+			if [ $# -eq 0 ]
+			then
+				egettxt "You must enter at least one device name." \
+						vxvmshm:591
+				continue
+			fi
+			break
+		fi
+		set - "$@" $disks
+	done
+fi
+
+VOLD=$VOLD egettxt "\nInitialize $VOLD and the root disk group:\n" vxvmshm:614
+doit $VOLD -r reset -m disable $vold_opts || quit
+doit vxdctl $diag init || quit
+doit vxdg $diag init rootdg || quit
+autodisks=`vxdisk -q list | sed -n 's/^\(c.b.t.d.\).*/\1/p'`
+rm_danames=
+for disk in "$@"; do
+	scan_autodisks=$autodisks
+	autodisks=
+	for auto in $scan_autodisks; do
+		case $disk in
+		${auto}s[1-9a-f] | *=${auto}s[1-9a-f])
+		${auto}p[1-4] | *=${auto}p[1-4])
+			rm_danames="$rm_danames ${auto}$VOL_FULL_SLICE";;
+		*)	autodisks="$autodisks ${auto}";;
+		esac
+	done
+done
+if [ ! -z "$rm_danames" ]; then
+	doit vxdisk rm $rm_danames
+fi
+auto_danames=`vxdisk -q list | sed -n 's/^\([a-z0-9]*\).*/\1/p'`
+
+for disk in "$@"; do
+	case $disk in
+	*=*)	dmname=${disk%%=*}; daname=${disk#*=};;
+	*)	daname=$disk; dmname=$disk
+	esac
+
+	daname="$daname" dmname="$dmname" egettxt \
+	"\nAdd disk $daname to the root disk group as $dmname:" vxvmshm:608
+	isauto=
+	for auto in $auto_danames; do
+		if [ "X$daname" = "X$auto" ]; then
+			isauto=yes
+			break
+		fi
+	done
+	if [ ! "$isauto" ] && not doit vxdisk $diag define "$daname"
+	then
+		daname="$daname" egettxt "Addition of disk $daname failed." \
+				vxvmshm:115
+		continue
+	fi
+	if vxdisk $diag list "$daname" |
+	       not grep '^Defined regions:' > /dev/null ||
+	   [ ! -z "$i_flag" ] || {
+	      [ -z "$d_flag" ] &&
+	     export daname; askyorn -M vxvmshm:168 \
+			"Disk $daname is already initialized.  Reinitialize" y
+	   }
+	then
+		if not doit vxdisk -f $diag init "$daname"
+		then
+			daname="$daname" egettxt \
+				"Initialization of disk $daname failed." vxvmshm:248
+			continue
+		fi
+	fi
+	if doit vxdctl $diag add disk "$daname" &&
+	   doit vxdg $diag adddisk "$dmname=$daname"
+	then
+		daname="$daname" dmname="$dmname" egettxt \
+			"Addition of disk $daname as $dmname succeeded." vxvmshm:114
+	else
+		daname="$daname" dmname="$dmname" egettxt \
+			"Addition of disk $daname as $dmname failed." vxvmshm:113
+	fi
+done
+
+VOLD=$VOLD egettxt "\nFinalize $VOLD status:" vxvmshm:611
+if not doit vxdctl $diag stop ||
+   not doit $VOLD $vold_opts 2> /dev/sysmsg
+then
+	egettxt "\nTransaction enable failed.\nStop." vxvmshm:624
+	exit 1
+fi
+
+VOLD=$VOLD egettxt "\nInitialization of $VOLD and the root disk group was successful." vxvmshm:613
+exit 0

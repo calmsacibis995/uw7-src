@@ -1,0 +1,69 @@
+#ident	"@(#)debugger:tutorial.d/common/walk.c.doc	1.1"
+
+#include <dirent.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+static char	fullpath[PATH_MAX];
+
+/* read each diretory entry, printing file names and walking subtrees */
+static int
+walk(const char *path, DIR *dir)
+{
+	DIR		*subdir;
+	struct dirent	*entry;
+	char		*cptr;
+
+	(void) sprintf(fullpath, "%s/", path);
+	cptr = fullpath + strlen(fullpath);
+
+	while ((entry = readdir(dir)) != 0)
+	{
+		if (entry->d_name[0] == '.')
+			continue;
+
+		(void) strcpy(cptr, entry->d_name);
+		if ((subdir = opendir(fullpath)) != 0)
+		{
+			if (!walk(fullpath, subdir))
+				return 0;
+			(void) closedir(subdir);
+		}
+		else
+		{
+			(void) printf("%s \n", fullpath);
+			(void) fflush(stdout);
+		}
+	}
+	return 1;
+}
+
+main(int argc, char *argv[])
+{
+	DIR	*dir;
+	int	exit_code = 0;
+	int	i;
+
+	if (argc < 2)
+	{
+		(void) fprintf(stderr, "Usage: walk directory ...\n");
+		exit(1);
+	}
+
+	for (i = 1; i < argc; i++)
+	{
+		if ((dir = opendir(argv[i])) == 0)
+		{
+			(void) fprintf(stderr, "Cannot open %s\n", argv[i]);
+			exit(2);
+		}
+		exit_code |= walk(argv[i], dir) ? 0 : 1;
+		(void) closedir(dir);
+	}
+
+	exit(exit_code);
+	/*NOTREACHED*/
+}

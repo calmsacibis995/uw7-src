@@ -1,0 +1,876 @@
+#******************************************************************************
+#                               devices
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#) devices 12.1 95/05/09 
+#
+# Copyright (C) 1995 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+# globals for this module
+set multi_togflag 0
+
+#==========================================================================
+# FkeySave --
+#	Save off fkey selections.  Remove deleted fkeys.  Add new fkeys.
+#
+# Parameters:
+#	multiflag - 0 signifies not multiheaded, 1 signifies multiheaded
+#	ttyshead - list of tty/head combinations to configure
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySave {multiflag ttyshead} \
+{
+   # Issue: What if the current selection has some ttys configured
+   # for multiheaded and some that aren't and one of these is deleted.
+   # We need to know the difference between new ttyshead and the
+   # old so that when we update tmpttysList, we don't suddenly convert 
+   # them all to single or multiheaded on a deletion.
+   # Therefor we need to get the difference between the two lists.
+   # Cases:
+   # old ttyshead is empty and new ttys are selected
+   # - based on multiheaded flag make assignments to tmpttyList
+   # old ttyshead has an extra entry due to a deletion 
+   # - determine which one was deleted and remove it from tmpttyList
+   # - multiheaded flag wont matter if you use lreplace.
+   # old ttyshead has one less due to an addition
+   # - based on multiheaded flag make assignments to tmpttyList
+
+   #echo multiflag: $multiflag, ttyshead: $ttyshead
+   set tmpttyshead $ttyshead
+   set dellist {}
+   # find deleted ttys
+   # occurs when user deletes a tty in modify screen from current resolution
+   foreach entry [GetCurTTYSHEAD] {
+      if {$entry == {}} { break }
+      #echo tty/head pair: $entry
+      set index [lsearch -exact $tmpttyshead $entry]
+      if {$index == -1} {
+	 # no match, mark for deletion
+	 set tty [lindex $entry 0]
+	 set head [lindex $entry 1]
+	 set adapters [GetTMPElement $tty]
+	 set adapters [lreplace $adapters $head $head]
+	 SetTMPElement $tty $adapters
+         lappend dellist $entry
+      } else {
+	 # pull from tmpttyshead list
+	 set tmpttyshead [lreplace $tmpttyshead $index $index]
+      }
+   }
+
+   set tmpttyshead [GetCurTTYSHEAD]
+   set addlist {}
+   # find new ttys
+   foreach entry $ttyshead {
+      if {$entry == {}} { break }
+      #echo tty/head pair from ttyshead: $entry
+      set index [lsearch -exact $tmpttyshead $entry]
+      if {$index == -1} {
+	 # no match, mark for addition
+	 set tty [lindex $entry 0]
+	 set head [lindex $entry 1]
+
+         keylset tmpadapter VALID 1
+         keylset tmpadapter VENDOR [GetCurVendor]
+         keylset tmpadapter MODEL [GetCurModel]
+         keylset tmpadapter CLASS [GetCurClass]
+         keylset tmpadapter MODE [GetCurMode]
+	
+	 set adapters [GetTMPElement $tty]
+	 if {($multiflag == 0) || ($adapters == {})} {
+	    # multiflag false - blow away other entries
+	    # adapters empty - just assign new value
+	    # DO NOT use lappend which adds that adapter onto the end.
+	    set adapters [list $tmpadapter]
+	 } else {
+	    set hlen [llength $adapters]
+	    if {$hlen < [expr $head+1]} {
+	       # adding new entry to end of adapters
+	       lappend adapters $tmpadapter
+	    } else {
+	       set adapters [lreplace $adapters $head $head $tmpadapter]
+	       # XXX not implemented yet - ability to add a head to any position
+	    }
+	 } 
+	 SetTMPElement $tty $adapters
+         lappend addlist $entry
+      } else {
+	 # pull from tmpttyshead list
+	 set tmpttyshead [lreplace $tmpttyshead $index $index]
+      }
+   }
+   #echo addlist: $addlist, dellist: $dellist
+
+   # rebuild curList using updated tmpttyList entries.
+   # Modify->Fkey setup usually causes entries to be removed/added.
+   set columns 0
+   set curlist [BuildScreenList MODIFY_SCREEN columns]
+   #Display curList
+
+   set screentype [GetScreenType]
+   if {$screentype == "MODIFY_SCREEN"} {
+      set dlist [VxGetVar [GetMainDialogID] DLISTID]
+      # updating dlist which refers to the drawnList in MODIFY_SCREEN
+      ReDrawChainTree $dlist $curlist
+
+      # restipple and reselect list items
+      ModifyVideoList
+      return
+   } elseif {$screentype == "ADD_SCREEN"} {
+      CardOK
+   }
+}
+
+
+#==========================================================================
+# FkeySetup --
+#       Called by Add and Modify routines.  Provides function key setup.
+#
+# Parameters:
+#	dialog - Parent dialog to attach to. 
+#	cancelCB - additional cancel callback routines to call
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySetup {dialog cancelCB} \
+{
+   global multi_togflag
+
+   VtLock
+   set fkeyfn [VtFormDialog $dialog.fkeyfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_TITLE] \
+	-resizable 0 \
+        -ok -okCallback FkeySetupOKCB \
+        -cancel -cancelCallback FkeySetupCCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $fkeyfn -ok]
+
+   set vendor {}; set model {}; set class {}; set mode {}
+   set vendormodelPr {}; set classmodePr {}; set mondesc {}
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set class [GetCurClass]
+   set mode [GetCurMode]
+   set vendormodelPr \
+	"[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   set classmodePr \
+	[GetClassModePr $class $mode [GetResolutions $vendor $model]]
+   set mondesc [GetCurMonDescription]
+
+   set config [VtLabel $fkeyfn.config \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_CONFIG]]
+   set frame [VtFrame $fkeyfn.frame \
+	-shadowType ETCHED_OUT]
+   set slab [VtLabel $frame.slab \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_SETUP \
+		[list $vendormodelPr $mondesc $classmodePr]]]
+
+   set form [VtForm $fkeyfn.form \
+	-leftOffset 0]
+   set alab [VtLabel $form.alab \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_ACTION]]
+
+   set rbox [VtRadioBox $form.rbox \
+	-autoSelect on \
+	-callback RadioBoxCB]
+   set multi_togflag 0
+
+   set alltog [VtToggleButton $rbox.alltog \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_ALL] \
+	-userData "ALL" \
+	-value 1 \
+	-callback MoveToggleFocus]
+   set specifytog [VtToggleButton $rbox.specifytog \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_SPECIFY] \
+	-userData "SPECIFY" \
+	-callback MoveToggleFocus]
+   set multitog [VtToggleButton $rbox.multitog \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_MULTI] \
+   	-userData "MULTI" \
+	-callback MoveToggleFocus]
+   # stipple multiple monitor toggle when:
+   #    initial configuration is empty
+   #    user selects to Modify the currently configured card to another
+   #	user selects to Modify the current Monitor or Resolution 
+   if {[IsTMPEmpty] || \
+       (([GetTotalCards] <= 1) && ([GetScreenType] == "MODIFY_SCREEN"))} {
+	VtSetSensitive $multitog off
+   }
+
+   # FkeySpecify will need same callback as FkeySetup 
+   VxSetVar $fkeyfn cancelCB $cancelCB
+
+   # default to Use All
+   VxSetVar $fkeyfn TOGGLEVAL "ALL"
+   VtShow $fkeyfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# MoveToggleFocus --
+#	When <Enter> is selected call OK button callback.
+#	This should work fine since RadioBoxCB is called before the 
+#	MoveToggleFocusCB is called.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MoveToggleFocus {cbs} \
+{
+   if {[keylget cbs mode] == "done"} {
+      FkeySetupOKCB $cbs
+   }
+}
+
+
+#==========================================================================
+# FkeySetupCCB --
+#       When user selects cancel, this callback is called.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySetupCCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   if {[GetScreenType] == "ADD_SCREEN"} {
+   	# if ADD_SCREEN, warn before we do the cancel
+	# XXX - update code to fall back one step if cancel selected.
+   	set warn [VtWarningDialog $dialog.warn \
+        	-message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_CANCEL] \
+		-ok -okCallback "DoFkeySetupCCB $dialog" \
+		-cancel]
+   	VtShow $warn
+   	MainLoop
+   } else {
+	DoFkeySetupCCB $dialog
+   }
+}
+
+
+#==========================================================================
+# DoFkeySetupCCB --
+#       If Cancel selected in FkeySetup, this routine is eventually
+#	called.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc DoFkeySetupCCB {olddialog {cbs {}}} \
+{
+   set cancelCB  [VxGetVar $olddialog cancelCB]
+   VtDestroyDialog $olddialog
+   $cancelCB
+}
+
+
+#==========================================================================
+# FkeySetupCB --
+#       Wrapper to handle cbs and extract dialog.  Called by Add Screen,
+#	Modify Screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySetupCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   if {[GetScreenType] == "ADD_SCREEN"} {
+      # add screen has been destroyed, attach to main screen
+      set dialog [GetMainDialogID]
+   }
+   # call with null cancel callback
+   FkeySetup $dialog NoopFunc
+}
+
+
+#==========================================================================
+# FkeySetupOKCB --
+#       Called when ok button pressed in FkeySetup screen.
+#
+# Parameters: cbs
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySetupOKCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   set toggle [VxGetVar $dialog TOGGLEVAL]
+   set cancelCB [VxGetVar $dialog cancelCB]
+
+   case $toggle {
+	"ALL"
+	{
+	   # assign em all - not multiheaded
+	   set multiflag 0
+	   set ttyshead {}
+	   foreach tty [GetTTYIndexes all] {
+		lappend ttyshead [list $tty 0]
+	   }
+	   set cardlist [GetTMPCardList]
+	   #echo cardlist: $cardlist
+	   if {$cardlist != ""} {
+	      # warn which cards are going to be removed by assigning all ttys
+	      foreach card $cardlist {
+		  append cards [format "%s\n" $card]
+	      }
+   	      set info [VtInformationDialog $dialog.info \
+        	-message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_CARD_REMOVE \
+			[list $cards]] \
+              -ok -okCallback "AssignFkeysOKCB $dialog $multiflag {$ttyshead}" \
+		-cancel]
+   	      VtShow $info
+	   } else {
+   		VtDestroyDialog $dialog
+   		FkeySave $multiflag $ttyshead
+	   }
+	   return
+	}
+	"SPECIFY"
+	{
+           VtDestroyDialog $dialog
+	   FkeySpecify 0 $cancelCB
+	   return
+	}
+	"MULTI"
+	{
+           VtDestroyDialog $dialog
+	   FkeySpecify 1 $cancelCB
+	   return
+	}
+   }
+}
+
+#==========================================================================
+# RadioBoxCB --
+#       Called when a toggle button is selected.  Stores the 
+# 	toggle button userData into TOGGLEVAL in the dialog.
+#	Jump to OK in form when <Enter> is selected.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc RadioBoxCB {cbs} \
+{
+   global multi_togflag
+
+   VtLock
+   set dialog [keylget cbs dialog]
+   # selectedWidget is the toggle button
+   set widget [keylget cbs selectedWidget]
+
+   set toggleval [VtGetValues $widget -userData]
+   VxSetVar $dialog TOGGLEVAL $toggleval
+
+   # multi_togflag prevents CHARM from redisplaying this
+   # warning infinitely.  RadioBoxCB is called when this
+   # warning is removed causing another warning to appear.
+   if {($toggleval == "MULTI")} {
+      if {! $multi_togflag} {
+      	# lock this code - can hit okay before they see this warning
+      	MultiTogCB $dialog
+      	set multi_togflag 1
+      }
+   } else {
+      set multi_togflag 0
+   }
+   VtUnLock -once
+}
+
+
+#==========================================================================
+# MultiTogCB --
+#       Called when the multi-monitor toggle button is depressed.
+#	Kicks off a warning about using this feature.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MultiTogCB {dialog} {
+   #XXX - Term "Multi-monitor" - difference between having two 
+   # cards using two monitors using two servers and two cards 
+   # using two montiors and one server.  Multi-monitor could
+   # refer to both.
+   VtLock
+   set warn [VtWarningDialog $dialog.warn \
+      -message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_MULTITOG] \
+      -ok \
+      -help]
+   VtShow $warn
+   VtUnLock -once
+}
+
+
+#==========================================================================
+# FkeySpecify --
+#       Specify the function keys to assign to the selected 
+#	video adapter resolution.
+#
+# Parameters:
+#	multiflag - whether or not the card will be multi-headed.
+#	cancelCB - additional cancel callback routines to call
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySpecify {multiflag cancelCB} \
+{
+   global togArray ttyString
+
+   VtLock
+   set fkeyspecifyfn [VtFormDialog [GetMainDialogID].fkeyspecifyfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEYSPECIFY_TITLE] \
+	-resizable 0 \
+        -ok -okCallback FkeySpecifyOKCB \
+        -cancel -cancelCallback FkeySetupCCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $fkeyspecifyfn -ok]
+
+   set vendor {}; set model {}; set class {}; set mode {}
+   set vendormodelPr {}; set classmodePr {}; set mondesc {}
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set class [GetCurClass]
+   set mode [GetCurMode]
+
+   set vendormodelPr \
+	"[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   set classmodePr \
+	[GetClassModePr $class $mode [GetResolutions $vendor $model]]
+   set mondesc [GetCurMonDescription]
+
+   set config [VtLabel $fkeyspecifyfn.config \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEY_CONFIG]]
+
+   set frame [VtFrame $fkeyspecifyfn.frame \
+	-shadowType ETCHED_OUT]
+
+   if {$multiflag == 1} {
+	set multiselect \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEYSPECIFY_MULTI]
+   } else {
+	set multiselect \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEYSPECIFY_NOMULTI]
+   }
+   set slab [VtLabel $frame.slab \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEYSPECIFY_SETUP \
+		[list $vendormodelPr $mondesc $classmodePr $multiselect]]]
+
+   set form [VtForm $fkeyspecifyfn.form \
+	-leftOffset 0 \
+	-rightSide FORM]
+
+   set alab [VtLabel $form.alab \
+	-labelLeft \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_FKEYSPECIFY_ACTION]]
+
+   set togrc [VtRowColumn $form.togrc \
+	-horizontal \
+	-numColumns 4 \
+	-rightSide FORM]
+
+   set allbtn [VtPushButton $togrc.allbtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_FKEYSPECIFY_ALL] \
+	-callback StarAllCB \
+	-userData 1]
+
+   set clearbtn [VtPushButton $togrc.clearbtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_FKEYSPECIFY_CLEAR] \
+	-userData 0 \
+	-callback StarAllCB]
+
+   set cnt 0
+   set head 0
+   foreach tty [lsort [array names ttyString]] {
+      set togID [VtToggleButton $togrc.tog$cnt \
+        -label [GetTTYString $tty] \
+        -userData "$tty $head" \
+        -callback FkeyToggleCB]
+      set togArray($tty) $togID
+      incr cnt
+   }
+
+   # initialize value field for each toggle tty 
+   # we create that is already configured
+   foreach ttyshead [GetCurTTYSHEAD] {
+      if {$ttyshead == ""} {
+         break
+      }
+      set tty [lindex $ttyshead 0]
+      VtSetValues $togArray($tty) -value 1
+   }
+
+   VxSetVar $fkeyspecifyfn ALLTOG $allbtn
+   VxSetVar $fkeyspecifyfn CLEARTOG $clearbtn
+   VxSetVar $fkeyspecifyfn MULTIFLAG $multiflag
+   VxSetVar $fkeyspecifyfn VIEWONLY 0
+   VxSetVar $fkeyspecifyfn cancelCB $cancelCB
+
+   VtShow $fkeyspecifyfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# FkeySpecifyOKCB --
+#       Called when ok button pressed in FkeySpecify screen.
+#
+#	Save off the new tty settings and provide feedback if video adapters
+#	are being removed.
+#
+# 	To do this, walk through and compare what the user selected with 
+#	what is already configured.
+# 	- If they are causing the removal of a card from a tty - say so.
+# 	- If they are causing the removal of all ttys for the card, say so.
+# 	- If they are causing the removal of all several cards configured 
+#	  on a multiheaded tty, say so.
+#
+# 	These checks only need to be done if multiheaded was not selected
+#	because multiheaded doesn't cause the removal of cards -- it just 
+#	adds to the list of configured cards for ttys.
+#	
+#	The feedback can look something like this:
+# 	You are about to remove the following configuration:
+#
+# 	COMPAQ QVision 1280 (2 Mb) TVGA 1280x1024 256 color 60Hz
+#   	on F1 F2 F3 F4 F5 F6 ...
+#
+# 	COMPAQ QVision 1280 (2 Mb) TVGA 1024x768 256 color 60Hz
+#   	on F7 F8 F9 ...
+# 	...
+#	
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySpecifyOKCB {cbs} \
+{
+   global togArray
+   set dialog [keylget cbs dialog]
+   set multiflag [VxGetVar $dialog MULTIFLAG]
+
+   set ttyshead {}
+   set togcnt 0
+   set togtotal 0
+   foreach tty [array names togArray] {
+	incr togtotal
+	if {[VtGetValues $togArray($tty) -value] == 1} {
+	   incr togcnt
+	   set userdata [VtGetValues $togArray($tty) -userData]
+	   lappend ttyshead $userdata
+	}
+   }
+   #echo ttyshead: $ttyshead
+   if {$ttyshead == {}} {
+	WarnMesg $dialog \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEYSPECIFY_CONFIGURED]
+	MainLoop
+   } 
+   if {! $multiflag} {
+	# walk through all the ttys that were just configured and determine
+	# which previously configured ttys are having adapters/modes removed.
+	# give feedback of which adapters/modes are being removed
+	# XXX may need to add scrollbars to this list...
+	set removeList ""
+	set desc [GetCurDescription]
+	foreach entry $ttyshead {
+	   set tty [lindex $entry 0]
+	   set hlen [GetTMPHeadLen $tty]
+	   for {set icnt 0} {$icnt < $hlen} {incr icnt} {
+	      set tmpdesc [GetTMPDescription $tty $icnt]
+	      if {($tmpdesc != "") && ($desc != $tmpdesc)} {
+		#echo Didn't match $tty:\n  >>$desc<<\n  >>$tmpdesc<<\n
+		# search if tmpdesc already in removeList.
+		set MATCH 0
+		set len [llength $removeList]
+		for {set jcnt 0} {$jcnt < $len} {incr jcnt} {
+		   set elem [lindex $removeList $jcnt]
+		   if {$tmpdesc == [keylget elem DESCRIPTION]} {
+			# add new tty 
+			set MATCH 1
+			set ttys [keylget elem TTYS]
+			lappend ttys $tty
+			keylset elem TTYS $ttys
+			set removeList [lreplace $removeList $jcnt $jcnt $elem]
+			#echo removelist: $removeList
+			break
+		   }
+		}
+		if {$MATCH == 0} {
+		   # not found, create a new entry 
+		   set elem ""
+		   keylset elem DESCRIPTION $tmpdesc
+		   keylset elem TTYS $tty
+		   lappend removeList $elem
+	       }
+	    }
+	  }
+      }
+      #echo removeList: $removeList
+	if {$removeList != ""} {
+	   # removeList used to inform user which cards will be removed
+	   foreach elem $removeList {
+		append cards \
+		   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_CARD_REMOVE_DESCRIPTION \
+		   [list [keylget elem DESCRIPTION]]]
+	   	foreach tty [lsort [keylget elem TTYS]] {
+		   append cards [format " %s," [GetTTYString $tty]]
+	   	}
+		# pull off the last comma
+		set cards [string trimright $cards ","]
+
+	   }
+	   set info [VtInformationDialog $dialog.info \
+	   -message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_FKEY_CARD_FKEY_REMOVE \
+		[list $cards]] \
+	      -ok -okCallback "AssignFkeysOKCB $dialog $multiflag {$ttyshead}" \
+	      -cancel]
+           VtShow $info
+	   MainLoop
+	}
+   } 
+   # if multiflag OR no warning occurs - automatically assign new ttys
+   AssignFkeysOKCB $dialog $multiflag $ttyshead
+}
+
+
+#==========================================================================
+# FkeyToggleCB --
+#       Called when a fkey toggle button is pressed.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeyToggleCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   set widget [keylget cbs widget]
+   set fkey [lindex [VtGetValues $widget -userData] 0]
+   set multiflag [VxGetVar $dialog MULTIFLAG]
+
+   # selection made
+   if {[keylget cbs set] == 1} {
+      FkeySelect $dialog $multiflag $fkey
+   } 
+}
+
+
+#==========================================================================
+# FkeySelect --
+# 	Records the toggle selection made.
+#
+#	- if the tty is not yet configured in tmpttyList, automatically
+#	add the new video adapter to this tty.
+#	Assertion - there's one or more video adapters configured to tty.
+#	- if configuring for singleheaded
+#	  replace what is configured with new configuration
+#	- if configuring for multiheaded
+#	  - if the VENDOR/MODEL are the same ...
+#		if CLASS/MODE are also the same, card is already configured
+#		if CLASS or MODE are different then it is reasonable to 
+#		assume that the same physical card can't be run in two 
+#		modes at once.  I am guessing that if only this tool is 
+#		used to configure grafdev, there can only be one entry like 
+#		this - you don't need to check for more.  Replace this entry 
+#		with the new selection.
+#	
+#	    
+# Parameters:
+#	dialog - dialog name to attach warning to
+#	fkey - fkey (device) to check for
+#	multi - flag representing multiheaded (1) or not multiheaded (0)
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySelect {dialog multi fkey} \
+{
+   global togArray
+
+   VtLock
+   # no adapters are configured - add and return
+   if {[lsearch [GetTMPIndexes {}] $fkey] == -1} {
+	#echo "FkeySelect: $fkey not configured - adding at position 0."
+	VtSetValues $togArray($fkey) -userData "$fkey 0"
+	VtUnLock -once
+	return
+   }
+
+   # at least one adapter is configured
+   if {$multi == 0} {
+	# prepare to save new tty at hardcoded 0 in toggle
+	VtSetValues $togArray($fkey) -userData "$fkey 0"
+	VtUnLock -once
+	return
+   } else {
+	# multiheaded case 
+        # XXX Don't need all these returns spread around.
+	set MATCH 0
+
+        set curvendor [GetCurVendor]
+        set curmodel [GetCurModel]
+        set curclass [GetCurClass]
+        set curmode [GetCurMode]
+        set hlen [GetTMPHeadLen $fkey]
+        for {set cnt 0} {$cnt < $hlen} {incr cnt} {
+              if {([GetTMPVendor $fkey $cnt] == $curvendor) && \
+                  ([GetTMPModel $fkey $cnt] == $curmodel)} {
+                  if {([GetTMPClass $fkey $cnt] == $curclass) && \
+                     ([GetTMPMode $fkey $cnt]  == $curmode)} {
+			# adapter already configured at this fkey 
+			# update toggle so it stays there
+			#echo "FkeySelect: multi=$multi, $fkey@$cnt.VMCM same."
+	   	        VtSetValues $togArray($fkey) -userData "$fkey $cnt"
+			VtUnLock -once
+			return
+		  } else {
+                      # Case 1: VENDOR/MODEL/CLASS same, MODE different.
+                      # This case won't occur - its prevented higher up
+                      # Case 2: VENDOR/MODEL/MODE same, CLASS different.
+                      # This occurs and will be prevented. A different
+                      # CLASS field does not mean a secondary card of
+                      # same type.  (A different MODEL does.)  Replace
+		      # current card with this one.
+                      #echo "FkeySelect: multi=$multi, $fkey matched VM with:"
+                      #echo "\t[GetTMPDescription $fkey $cnt]"
+	   	      VtSetValues $togArray($fkey) -userData "$fkey $cnt"
+	   	      VtUnLock -once
+	   	      return
+		  }
+	       }
+	}
+	if {!$MATCH} {
+	   # this multiheaded card selection not configured - add to end
+	   #echo "FkeySelect: multi=$multi, $fkey no match - adding to $hlen."
+	   VtSetValues $togArray($fkey) -userData "$fkey $hlen"
+	   VtUnLock -once
+	   return
+	}
+   }
+}
+
+
+#==========================================================================
+# FkeyCardList --
+#       Returns a card list using tmpttyList at a particular index.
+#	This list does not include the curList card being configured.
+#
+# Parameters:
+#	fkey - index into tmpttyList
+# Returns:
+#	card - list of cards not including the current card
+#--------------------------------------------------------------------------
+proc FkeyCardList {fkey} \
+{
+   set cards ""
+   foreach card [GetTMPCardList $fkey] {
+	append cards [format "%s\n" $card]
+   }
+   return $cards
+}
+
+
+#==========================================================================
+# StarAllCB --
+#       Assign/Clear all function keys to the current selection.
+#	Handle multiheaded and not multiheaded cases.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc StarAllCB {cbs} \
+{
+   global togArray
+
+   set dialog [keylget cbs dialog]
+   set widget [keylget cbs widget]
+   set multi [VxGetVar $dialog MULTIFLAG]
+
+   # flag==1 Assign All, flag==0 Clear All
+   set flag [VtGetValues $widget -userData]
+
+   foreach fkey [lsort [array names togArray]] {
+      # change state of toggle to $flag value
+      VtSetValues $togArray($fkey) -value $flag
+
+      if {$flag == 0} {
+        # Clear All - do nothing - data won't be used, toggle is zero'd above
+      } else {
+	# Assign All - set toggles to correct value ... (flag=1)
+	
+	if {$multi == 0} {
+	    VtSetValues $togArray($fkey) -userData "$fkey 0"
+	} else {
+	   # multiheaded case 
+	   # Does not handle Matrox PG 
+	   # XXX - code similar to FkeySelect - simplify and merge them.
+	   set MATCH 0
+           set curvendor [GetCurVendor]
+           set curmodel [GetCurModel]
+           set curclass [GetCurClass]
+           set curmode [GetCurMode]
+           set hlen [GetTMPHeadLen $fkey]
+           for {set cnt 0} {$cnt < $hlen} {incr cnt} {
+              if {([GetTMPVendor $fkey $cnt] == $curvendor) && \
+                  ([GetTMPModel $fkey $cnt] == $curmodel)} {
+                  if {([GetTMPClass $fkey $cnt] == $curclass) && \
+                     ([GetTMPMode $fkey $cnt]  == $curmode)} {
+			# adapter already configured for this fkey - don't add
+			#echo "FkeySelect: multi=$multi, $fkey@$cnt.VMCM same."
+			continue
+		  } else {
+                      # Case 1: VENDOR/MODEL/CLASS same, MODE different.
+                      # This case won't occur - its prevented higher up
+                      # Case 2: VENDOR/MODEL/MODE same, CLASS different.
+                      # This occurs and will be prevented. A different
+                      # CLASS field does not mean a secondary card of
+                      # same type.  (A different MODEL does.)  Replace
+		      # current card with this one.
+                      #echo "FkeySelect: multi=$multi, $fkey matched VM with:"
+                      #echo "\t[GetTMPDescription $fkey $cnt]"
+		      # XXX won't complain in Matrox PG case for now
+	   	      VtSetValues $togArray($fkey) -userData "$fkey $cnt"
+	   	      continue
+		  }
+	       }
+	   }
+	   if {!$MATCH} {
+	      # multiheaded selection not configured - add to end
+	      #echo "FkeySelect: multi=$multi, $fkey no match -adding to $hlen."
+	      VtSetValues $togArray($fkey) -userData "$fkey $hlen"
+	      #continue
+	   }
+         }
+      }
+   }
+}
+
+
+#==========================================================================
+# AssignFkeysOKCB --
+#       Okay to assign the selected fkeys to another card.  
+#	Remove previous dialog and save the fkeys.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AssignFkeysOKCB {dialog multiflag ttyshead {cbs {}}} {
+   # blow away FkeySetup dialog
+   VtDestroyDialog $dialog
+   FkeySave $multiflag $ttyshead
+}
+

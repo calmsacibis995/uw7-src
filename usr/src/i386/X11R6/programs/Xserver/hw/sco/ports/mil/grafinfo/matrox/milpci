@@ -1,0 +1,44 @@
+:
+#
+#	@(#) milpci 11.1 97/10/22
+#
+
+set_trap()  {
+	trap 'echo "Interrupted! Giving up..."; cleanup 1' 1 2 3 15
+}
+
+unset_trap()  {
+	trap '' 1 2 3 15
+}
+ 
+cleanup() {
+	trap '' 1 2 3 15
+	exit $1
+}
+
+set_trap
+
+if [ -d /usr/X11R6.1 ]
+then
+        GRAF_DIR=/usr/X11R6.1/lib/grafinfo/
+        SCRIPTS_DIR=/usr/X11R6.1/lib/vidconf/scripts/
+else
+        GRAF_DIR=/usr/lib/grafinfo/
+        SCRIPTS_DIR=/usr/lib/vidconf/scripts/
+fi
+
+${SCRIPTS_DIR}pciinfo -q -d 0x519 -v 0x102B
+status="$?"
+if [ $status = "1" ]
+then
+	echo "Cannot find Matrox Millennium PCI in computer!"
+	cleanup 1
+fi
+base1=`${SCRIPTS_DIR}pciinfo -d 0x519 -v 0x102B -D 0x10`
+sedarg1="s/@MEM_BASE@/$base1/g"
+base2=`${SCRIPTS_DIR}pciinfo -d 0x519 -v 0x102B -W 0x16`
+sedarg2="s/@FBM_BASE@/$base2/g"
+sed -e $sedarg1 -e $sedarg2 < ${GRAF_DIR}matrox/milpci.tmpl \
+	> ${GRAF_DIR}matrox/milpci.xgi
+cleanup 0
+

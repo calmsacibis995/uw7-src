@@ -1,0 +1,358 @@
+/*
+ *	@(#) 86c801.xgi 11.1 97/10/22
+ *
+ * Copyright (C) 1993 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/*
+ * This is the generic grafinfo file for unsupported video cards that use the
+ * S3 86C801 graphics chip.
+ *
+ * The first mode in this file is annotated to hopefully offer some help
+ * if the mode fails to correctly initialize the card you are attempting
+ * to use.  The comments in this first mode generally also apply to all
+ * other modes in this file.
+ */
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 386/33NI (S3 86C801)"
+  CLASS  S3C ""
+   MODE   1024x768-256 "1024x768 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 1024;
+		PIXHEIGHT   = 768;
+		RGBBITS     = 6;
+
+		/*
+		 * If this entry initializes the card into graphics mode
+		 * but there is no visible cursor then it is likely that
+		 * the manufacturer of the video card has not enabled the
+		 * standard S3 hardware cursor.  In this case uncomment the
+		 * following line and a software cursor emulation will be
+		 * enabled.
+		 *
+		 * S3HWCURSOR = 0;
+		 */
+
+		/*
+		 * If this entry initializes the card but there are drawing
+		 * problems with either text, stipples, or tiles then it
+		 * is likely that BIOS for this card has an incorrectly
+		 * implemented VESA mode 6.  VESA mode 6 is used to query
+		 * the card to find areas of non-visible parts of video
+		 * card memory.  The following variable should be uncommented;
+		 * this tells the eox8 driver that there is a common error
+		 * in VESA mode 6 that should be avoided.
+		 *
+		 * VESABIOS6BUG = 1;
+		 */
+
+		/*
+		 * If setting VESABIOS6BUG does not resolve these drawing
+		 * problems then it is likely that this BIOS mode is either
+		 * completely broken or non-existant.  In this case you will
+		 * need to explicitly specify the whereabouts of off-screen
+		 * memory.  For this particular mode (1024x768-256), running
+		 * on a video card with 1Meg of memory, off-screen memory is
+		 * typically located at;
+		 *
+		 * OSX         = 0;
+		 * OSY         = 768;
+		 * OSWIDTH     = 1024;
+		 * OSHEIGHT    = 256;
+		 *
+		 * Uncomment the above 4 variable assignments if VESA mode
+		 * 6 is completely broken.
+		 */
+	}
+
+	PROCEDURE SetGraphics
+	{
+		/*
+		 * This is where the graphics mode is set.  The assignment
+		 * to r1 is the BIOS mode number, in this case 0x205 is
+		 * documented by S3 to set a video card using an 801/805/928
+		 * graphics chip to the mode 1024x768-256.
+		 *
+		 * Note that this generally does not mean that a specific
+		 * monitor has been selected.  Without using one of the
+		 * at least 3 documented and undocumented ways to specify
+		 * your monitor, the BIOS will set the mode for the default
+		 * monitor, which may not be the monitor you have.
+		 *
+		 * Three different ways to attempt to specify a monitor are;
+		 *
+		 * 1. Boot DOS and run the manufacturer supplied configuration
+		 *    program.  This program will typically set a monitor value
+		 *    in EPROM on the card, which will be read by the BIOS when
+		 *    the BIOS mode setting code is called.
+		 *
+		 * 2. Set register CR41 with a value that corresponds to your
+		 *    monitor.  This value will differ from one manufacturer
+		 *    to another, but trying values from 0-7 may be useful.
+		 *    CR41 is set the following way;
+		 *
+		 *	out(0x3d4, 0x38);
+		 *	out(0x3d5, 0x48);
+		 *	out(0x3d4, 0x39);
+		 *	out(0x3d5, 0xad);
+		 *
+		 *	out(0x3d4, 0x41);
+		 *	out(0x3d5, 0x00); <--- write value 0x00 in CR41
+		 *
+		 *    CR41 must be set before the int10() BIOS call is made.
+		 *
+		 * 3. Set register CR52 with a value that corresponds to your
+		 *    monitor.  This value will differ from one manufacturer
+		 *    to another, but trying values 0x00, 0x55, 0xAA, and
+		 *    0xFF may be useful.  CR52 is set the following way;
+		 *
+		 *	out(0x3d4, 0x38);
+		 *	out(0x3d5, 0x48);
+		 *	out(0x3d4, 0x39);
+		 *	out(0x3d5, 0xad);
+		 *
+		 *	out(0x3d4, 0x52);
+		 *	out(0x3d5, 0xAA); <--- write value 0xAA in CR52
+		 *
+		 *    CR52 must be set before the int10() BIOS call is made.
+		 */
+
+		r0 = 0x4F02;
+		r1 = 0x0205;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 486/33NI"
+  CLASS  S3C ""
+   MODE   800x600-64K "800x600 64K colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox16";
+		VISUAL      = "TrueColor";
+		DEPTH       = 16;
+		PIXWIDTH    = 800;
+		PIXHEIGHT   = 600;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x0214;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 486/33NI"
+  CLASS  S3C ""
+   MODE   800x600-256 "800x600 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 800;
+		PIXHEIGHT   = 600;
+		RGBBITS     = 6;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x0203;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 486/33NI"
+  CLASS  S3C ""
+   MODE   640x480-16M "640x480 16M colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox24";
+		VISUAL      = "TrueColor";
+		DEPTH       = 24;
+		PIXWIDTH    = 640;
+		PIXHEIGHT   = 480;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x0112; /* also try mode 0x220 if this fails */
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 486/33NI"
+  CLASS  S3C ""
+   MODE   640x480-64K "640x480 64K colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox16";
+		VISUAL      = "TrueColor";
+		DEPTH       = 16;
+		PIXWIDTH    = 640;
+		PIXHEIGHT   = 480;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x0111;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR HP "HP"
+ MODEL  86c801 "Vectra 486/33NI"
+  CLASS  S3C ""
+   MODE   640x480-256 "640x480 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 640;
+		PIXHEIGHT   = 480;
+		RGBBITS     = 6;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8101;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}

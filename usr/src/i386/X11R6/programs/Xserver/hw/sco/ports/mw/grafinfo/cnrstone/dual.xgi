@@ -1,0 +1,145 @@
+/*
+ *    @(#) dual.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* *********************************************************************** *
+ * CNRSTONE/DUAL.XGI - XEGIA(tm) GrafInfo File for Cornerstone             *
+ *                                                                         *
+ *           Copyright (c) 1990 Locus Computing Corporation                *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                    Cnrstone.Dual.HGA.1600x1280-2                        *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+VENDOR CNRSTONE   "Cornerstone"
+ MODEL  DUAL       "Dual Page"
+  CLASS  HGA        "HGA"
+   MODE   1600x1280-2 "1600x1280 Monochrome"
+
+      MEMORY (0xB0000,0x8000);
+      PORT   (0x3B0-0x3BF);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 0x86;
+         DEVTECH     = 02;	/* Mono and banked */
+         PIXBYTES    = 0x100;
+         PIXWIDTH    = 1600;
+         PIXHEIGHT   = 1280;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+	 MAPTYPE     = "Cornerstone";
+         }
+
+      PROCEDURE SetGraphics
+         {
+             in(r0,0x03b0);		/* Unlock everything */
+             in(r0,0x03b0);		/* (Enable Corner full mode */
+
+             in(r0,0x03b8);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             set(r3,r0);		/* Remember this value */
+             out(0x03b8,r0);		/* Screen now blank */
+
+             out(0x03b0,0x32);		/* CTL register */
+             in(r0,0x03b1);
+             or(r0,0x80);		/* Bit 7 is Corn hi-res */
+             and(r0,0xbf);		/* Corn hi-res video enable off */
+             out(0x03b1,r0);
+
+             in(r0,0x03bf);		/* Herc specific functions */
+             set(r4,r0);
+             or(r0,3);			/* 0 - graf mode; 1 - page 2 en */
+             out(0x03bf,r0);
+
+             set(r0,r3);		/* Do funny stuff to force init */
+             xor(r0,0x82);
+             out(0x03b8,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(0x03b8,r0);
+             wait(3450);
+
+             out(0x03bf,r4);		/* Restore this reg */
+
+             out(0x03b0,0x32);
+             in(r0,0x03b1);
+             or(r0,0x40);		/* Turn on Corn hi-res enable */
+             out(0x03b1,r0);
+         }
+
+
+      PROCEDURE SetText
+         {
+	     /*
+	      * Put the card back into Hercules text mode, otherwise,
+	      * the card can hang.
+	      */
+             out(0x3B8,0x22);           /* mode, disable */
+             out(0x3B8,0x28);           /* mode - enable page 0 */
+  
+             in(r0,0x03b8);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             out(0x03b8,r0);		/* Screen in now blank */
+
+             out(0x3b0,0x32);		/* Back to herc mode */
+             in(r0,0x3b1);
+             and(r0,0x3f);
+             out(0x3b1,r0);
+
+             out(0x3b0,0x21);		/* Turn off Corner full mode */
+             out(0x3b1,0);
+
+             in(r0,0x03bf);
+             set(r4,r0);		/* Remember this value */
+             or(r0,3);			/* Enable graphics and page 2 */
+             out(0x03bf,r0);
+
+             in(r0,0x3b8);		/* Do more funny things... */
+             xor(r0,0x82);
+             out(0x03b8,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(0x03b8,r0);
+             wait(3450);
+
+             out(0x03bf,r4);		/* Restore value */
+             wait(3450);
+
+             out(0x3b8,0x28);		/* Herc text mode */
+         }
+
+	PROCEDURE BlankScreen
+	{
+		out (0x3b0, 0x32);
+		in (r0, 0x3b1);
+		and (r0, 0xbf);		/* zero video enable bit */
+		out (0x3b0, 0x32);
+		out (0x3b1, r0);
+	}
+
+	PROCEDURE UnBlankScreen
+	{
+		out (0x3b0, 0x32);
+		in (r0, 0x3b1);
+		or (r0, 0x40);		/* set video enable bit */
+		out (0x3b0, 0x32);
+		out (0x3b1, r0);
+	}
+
+/* End of File - CNRSTONE/DUAL.XGI */

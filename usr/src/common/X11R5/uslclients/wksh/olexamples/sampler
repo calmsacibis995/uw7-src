@@ -1,0 +1,94 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/sampler	1.5.1.1"
+
+
+#
+# Sample program with one of each currently supported wksh widget
+#
+
+scrollCB() {
+	echo $SL_CURITEM
+}
+
+oi TOPLEVEL sampler sampler
+
+cmw CONTROL CONTROL controlArea $TOPLEVEL layoutType:fixedwidth measure:500 \
+	sameSize:none
+
+cmw AMB abbrevMenuButton abbrevMenuButton $CONTROL
+	addbuttons $AMB_MP \
+		abbrevMenuButton1 "echo abbrevMenuButton1" \
+		abbrevMenuButton2 "echo abbrevMenuButton2" \
+		abbrevMenuButton3 "echo abbrevMenuButton3"
+cmw BB	bulletinBoard  bulletinBoard $CONTROL borderWidth:2
+	cmw BB1 staticText staticText $BB string:"Bulletin Board Widget"
+cmw CAP caption caption $CONTROL
+	cmw CAP1 staticText staticText $CAP string:"Caption Child"
+cmw CB 	checkBox  checkBox $CONTROL
+cmw EXC	exclusives exclusives $CONTROL borderWidth:2
+	BUTTONTYPE=rectButton addbuttons $EXC \
+		exclusives1 "echo exclusives1" \
+		exclusives2 "echo exclusives2"
+cmw FOR	form form $CONTROL borderWidth:2
+	cmw FOR1 staticText staticText $FOR string:"Form" x:15 y:20
+cmw GA	gauge  gauge $CONTROL orientation:horizontal width:100
+cmw FP	footerPanel  footerPanel $CONTROL y:50
+	cmw FP1 staticText staticText $FP string:"Footer Panel Child #1"
+	cmw FP2 staticText staticText $FP string:"Footer Panel Child #2"
+cmw MB	menuButton  menuButton $CONTROL
+	addbuttons $MB_MP \
+		menubutton1 "echo menubutton1 ;gv $BB1 string:S; echo \$S" \
+		menubutton2 "echo menubutton2"
+cps MS  menuShell  menuShell $MB pushpin:out
+	addbuttons $MS_MP \
+		menuShell1 "echo menuShell1; XtPopdown $MS" \
+		menuShell2 "echo menuShell2; XtPopdown $MS"
+	addbuttons $MB_MP menuShell "XtPopup $MS GrabNone"
+cmw NE	nonexclusives  nonexclusives $CONTROL borderWidth:2
+	BUTTONTYPE=rectButton addbuttons $NE \
+		nonexclusives1 "echo nonexclusives1" \
+		nonexclusives2 "echo nonexclusives2"
+cmw NS	noticeShell  noticeShell $CONTROL
+cmw OB	oblongButton  oblongButton $CONTROL
+acb $OB select "echo oblongButton"
+cps PWS popupWindowShell popupWindowShell $CONTROL
+	cmw PWS1 staticText staticText $PWS string:"PopupWindowShell"
+	addbuttons $MB_MP popupWindowShell "XtPopup $PWS GrabNone"
+cmw RB	rectButton  rectButton $CONTROL
+cmw SB  scrollbar  scrollbar $CONTROL height:100
+cmw SW  scrolledWindow  scrolledWindow $CONTROL
+	cmw SW1 staticText staticText $SW \
+		string:"SCROLLED WINDOW OF /etc/group:
+
+		`cat /etc/group`"
+
+cmw SL	scrollingList  scrollingList $CONTROL
+acb $SL userMakeCurrent "scrollCB $SL"
+	sladd $SL scrollist1 scrollist2 scrollist3 scrollist4
+	cmw tmp ca controlArea $CONTROL layoutType:fixedcols
+	addbuttons $tmp \
+		add "sladd $SL blah" \
+		del "sldel $SL 1" \
+		view "slview $SL 3" \
+		edit "sledit $SL 3" \
+		insert "slinsert $SL 3" \
+		close "slclose $SL"
+
+cmw SLI SLI slider $CONTROL height:100
+	cmw SLITXT staticText staticText $CONTROL width:30 string:""
+	acb $SLI sliderMoved "gv $SLI sliderValue:v; sv $SLITXT string:\$v"
+cmw ST	ST  staticText $CONTROL string:"Static Text"
+cmw TE	TE  textEdit $CONTROL charsVisible:10 linesVisible:2 borderWidth:2 source:"Text Edit Widget"
+cmw TF	TF  textField $CONTROL string:"Text Field"
+
+rw $TOPLEVEL
+ml

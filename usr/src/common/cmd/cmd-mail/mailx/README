@@ -1,0 +1,153 @@
+@(#)README	11.1
+
+This is the mailx source from unixware 211 more or less unchanged.
+
+The libmail directory is added to include the parst of libmail
+that are not being carried forward that mailx uses.
+
+C-CLIENT port notes:
+There are several things that need ot be noted when trying to
+understand what was done to port mailx to use the c-client
+interface. First the rationale.
+
+Because Gemini is the first SCO UnixWare product engineered
+by SCO, the need to support mail folder formats from previous
+SCO platforms increases. MMDF dominates the pre-UnixWare SCO
+platform mail subsystems. The mail folder format is typically
+messages stored in flat files, each nestled in between special
+delimiter strings (4 ctrl-A's on a line by itself).
+
+The UW platform uses primarily a sendmail style mailfolder
+format, which delimits message by the mail message envelope
+line as the first line of the message. The envelope line is
+looks something like this:
+
+	From address date
+
+The "From " (read from space) must begin in the very first
+colomn of the line. To embed a mail message which includes
+the envelope in its body (or later in the header for that
+matter), the "From " must be "escaped" by inserting something
+before it on the same line (typically this something is the
+'>' character).
+
+For the Gemini project, several changes are being made to
+the mail subsystems, borrowing parts from each platform.
+We also need to continue to support the existing mailboxes
+created on previous platforms. Here is a quick summary of the
+changes we're making:
+
+	- mail subsystem will be sendmail, not MMDF
+	- configuration will be MMDF like, from the
+		GUI point of view, but will rely on
+		the sendmail configuration files to
+		deal with subsystem behavior.
+	- mailsur is gone.
+	- scomail is gone.
+	- metamail will be preserved.
+	- mailfolder formats will be configurable.
+	- MUA specific changes
+		- addition of new config/default files
+			+ /etc/default/mail
+			+ $HOME/.maildef
+		- old default files maintain.
+			+ /etc/mailx.rc (or wherever it is)
+			+ $HOME/.mailrc
+	- MTA specific changes
+		- message store being used
+		- support for these protocols:
+			+ POP & POP3
+			+ IMAP
+			+ SMTP
+			+ LDAP
+			+ other protocols for distributed config info
+
+mailx is the traditional commandline character based mail user
+agent (MUA). mailx is also a POSIX standard. To make mailx work
+in the Gemini environment, we had to decide just how much effort
+we needed to put into it to be useful. The minimal effort was to
+make it be able to 'grok' the MMDF file format.
+
+We considered more closely our overall messaging strategy and
+decided that making mailx be able to access all the new features
+of the messaging subsystem would not only give us the ability
+to read MMDF format mailfolders, but also give us the ability
+to take advantage of the message store.
+
+For these reasons, we have ported mailx to use the c-client
+interface provided by (someones name here). This interface
+allows us to create multiple message store access providers
+to the application. For the time being, these providers can
+handle imap, imap4, pop, pop3, and local file access (MMDF
+and sendmail file formats).
+
+Porting issues:
+
+mailx did some pretty file I/O intensive operations in loading
+and saving mailfolders. This was primarily due to the need to
+protect the mailfolder data as it was being loaded and saved
+during a mail session. Much of this work is no longer necessary,
+since this is now handled by the message store access providers.
+From the application point of view (mailx in this case), the
+message store access provider is a separate entity. In actuality,
+it depends on the message store itself. Network message stores
+are separate from the application, and are accessed through a
+protocol like POP or IMAP. Local mailfolder access is handled
+internally to the c-client by the scomsc message store provider.
+In either case, the message store provider handles all the
+I/O and locking that was previously the responsibility of the
+application.
+
+Because we aren't using temporary files to parse and manage
+the mailfolders any longer, the locking, data retrieval,
+and update routines had to be changed. Here are some specifics:
+
+	locking:
+		We no longer use the :saved and :readlock
+		directories as lock file directories.
+
+		We no longer use the POSIX libmail locking
+		routines directly from mailx.
+
+		We rely on the message store access provider
+		to do the appropriate access methodology.
+
+	file I/O:
+		We no longer use temporary file images when
+		processing a mailfolder. This means some of
+		the work mailx did to find where in a file
+		the actual message existed is no longer done
+		by mailx itself. Also, mailx used to have to
+		process the entire file before anything could
+		be presented to the user. Since the message
+		store does things differently, only those 
+		messages being displayed need to be loaded into
+		mailx internal structures. This resulted in
+		a performance gain in the startup time of mailx.
+
+	functionality:
+		We tried to change the functionality of mailx
+		as little as possible. It still supports the
+		options set through the .mailrc file, the
+		interactive command prompt, and the environment
+		variables.
+
+		Some command line options are no longer available.
+		These include the options that deal with netnews.
+		At this point, netnews support doen't seem to be
+		part of the POSIX spec, so the work needed to
+		port it to use the c-client interface was deemed
+		too much. We may revisit this. (See -T and -I)
+
+		Reading other users mailfolders is problematic.
+		With the new defalut file support, the desired
+		inbox is determined by c-client by EUID and what
+		is configured in the default files. This isn't
+		part of the c-client interface, so it's harder
+		for an app like mailx to figure out what the
+		name of the file to open is. We're working on
+		this, but for now it's not supported through 
+		the "-u user" command line option, or the
+		"folder %user" interactive command.
+
+

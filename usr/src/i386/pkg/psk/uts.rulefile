@@ -1,0 +1,148 @@
+#ident	"@(#)pkg.psk:psk/uts.rulefile	1.2.1.1"
+#ident	"$Header$"
+
+CPU = i386
+MACH = i386at
+
+# RELEASE and VERSION initialize strings in svc/name.c that (if non-empty)
+# override at run time the REL and VER values assigned in name.cf/Space.c
+RELEASE =
+VERSION =
+
+PFX =
+SGS =
+
+AR = $(PFX)ar
+AS = $(PFX)as
+CC = $(PFX)cc
+C++C = $(PFX)CC
+FUR = :
+LD = $(PFX)ld
+M4 = $(PFX)m4 -B16384
+MAKE = $(PFX)make
+MCS = $(PFX)mcs
+LEX = $(PFX)lex
+LINT = $(PFX)lint
+LORDER = $(PFX)lorder
+NM = $(PFX)nm
+SED = sed
+SIZE = $(PFX)size
+STRIP = $(PFX)strip
+TIC = tic
+TSORT = $(PFX)tsort
+YACC = $(PFX)yacc
+
+INS = install
+OWN = bin
+GRP = bin
+INCMODE = 644
+
+SHELL = /bin/sh
+AWK = /usr/bin/awk
+
+ARFLAGS =
+ASFLAGS =
+CFLAGS = -Xa -O -Kno_lu -W2,-_s -Kno_host -W2,-A -Ki486
+LDFLAGS = -s
+LFLAGS =
+LINTFLAGS = -Xa -k -n -s -Dlint
+YFLAGS =
+
+CCSTYPE = ELF
+
+HCC = cc
+HAR = ar
+HAS = as
+HLD = ld
+HNM = nm
+CP = cp
+RM = rm
+SH = sh
+
+ETC = $(ROOT)/$(MACH)/etc
+INC = $(ROOT)/$(MACH)/usr/include
+CONF = $(ROOT)/$(MACH)/etc/conf
+IDINSTALL = $(KTOOL)/$(PFX)idinstall
+
+# needed for the crash command (now built for each MP related build)
+USRLIB=$(ROOT)/$(MACH)/usr/lib
+USRSBIN=$(ROOT)/$(MACH)/usr/sbin
+SBIN=$(ROOT)/$(MACH)/sbin
+SYMLINK=:
+
+DEVDEF =
+DEVINC1 =
+DEVINC2 =
+DDEBUG = -DDEBUG -D_KMEM_STATS -D_KMEM_HIST -D_MEM_RESV_STATS -DDKTEST
+
+DMPSTATS = -D_MPSTATS
+
+SMAPFILES = smap smap-i386at
+GLOBALDEF = -D_KERNEL -D_KERNEL_HEADERS \
+		-D_LOCKTEST -DMERGE386 -DV86MODE -DEVGA -DIAPX386 \
+		$(DDEBUG) $(DMPSTATS) -DSTATIC=$(STATIC)
+GLOBALINC = -I$(KBASE)
+DEFLIST = \
+	$(GLOBALDEF) \
+	$(LOCALDEF) \
+	$(DEVDEF)
+INCLIST = \
+	$(DEVINC1) \
+	$(LOCALINC) \
+	$(GLOBALINC) \
+	$(DEVINC2)
+
+MAKEARGS = \
+	ROOT='$(ROOT)' \
+	INC='$(INC)' \
+	AR='$(AR)' \
+	AS='$(AS)' \
+	CC='$(CC)' \
+	FUR='$(FUR)' \
+	LD='$(LD)' \
+	M4='$(M4)' \
+	MAKE='$(MAKE)' \
+	MCS='$(MCS)' \
+	LEX='$(LEX)' \
+	LINT='$(LINT)' \
+	LORDER='$(LORDER)' \
+	NM='$(NM)' \
+	STRIP='$(STRIP)' \
+	SIZE='$(SIZE)' \
+	TSORT='$(TSORT)' \
+	YACC='$(YACC)' \
+	INS='$(INS)' \
+	OWN='$(OWN)' \
+	GRP='$(GRP)' \
+	INCMODE='$(INCMODE)' \
+	ARFLAGS='$(ARFLAGS)' \
+	ASFLAGS='$(ASFLAGS)' \
+	CFLAGS='$(CFLAGS)' \
+	LDFLAGS='$(LDFLAGS)' \
+	LFLAGS='$(LFLAGS)' \
+	LINTFLAGS='$(LINTFLAGS)' \
+	YFLAGS='$(YFLAGS)' \
+	CONF='$(CONF)' \
+	IDINSTALL='$(IDINSTALL)' \
+	DEVINC1='$(DEVINC1)' \
+	DEVINC2='$(DEVINC2)' \
+	DEVDEF='$(DEVDEF)' \
+	DDEBUG='$(DDEBUG)' \
+	DMPSTATS='$(DMPSTATS)' \
+	RELEASE='$(RELEASE)' \
+	VERSION='$(VERSION)' \
+	STATIC='$(STATIC)'
+
+.SUFFIXES: .ln
+
+.c.ln:
+	echo "\n$(DIR)/$*.c:" > $*.L
+	-$(LINT) $(LINTFLAGS) $(INCLIST) $(DEFLIST) \
+		-c -u $*.c >> $*.L
+
+.c.o:
+	$(CC) $(CFLAGS) $(INCLIST) $(DEFLIST) -c $<
+
+.s.o:
+	$(M4) -DKBASE=$(KBASE) $(DEFLIST) $< | \
+	$(AS) $(ASFLAGS) -o $@ -

@@ -1,0 +1,43 @@
+#ident	"@(#)mk:i386at/:mkmputs	1.1.1.14"
+#ident "$Header$"
+#
+#	Configure and make a Multi-Processor UNIX Operating System
+#
+trap "exit 1" 1 2 3 15
+
+echo "START `basename $0` `date`"
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+ROOT=${Root}
+TOOLS=${Tools}
+MACH=${Mach}
+export MACH ROOT TOOLS
+
+XENV=${Tools}/usr/ccs/bin/${Cpu}osenv
+export XENV
+
+PFX=${Cpu}
+export PFX
+
+echo "Building MP Kernel"
+
+cd ${Root}/usr/src/${Work}/mp/uts
+
+${XENV} ${Root}/usr/src/${Work}/makemputs -f unix.mk headinstall
+DUALBUILD=1
+export DUALBUILD
+${XENV} ${Root}/usr/src/${Work}/makemputs -P -f unix.mk install
+
+
+# Now build the MP versions of the crash & memsize binaries
+
+echo "Building crash cmd"
+
+cd ${Root}/usr/src/${Work}/mp/cmd/crash
+
+${XENV} ${Root}/usr/src/${Work}/makemputs -f crash.mk install
+echo "ENDED `basename $0` `date`"

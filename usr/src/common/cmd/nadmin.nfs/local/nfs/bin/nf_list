@@ -1,0 +1,23 @@
+#!/usr/bin/sh
+#ident	"@(#)nf_list	1.2"
+#ident  "$Header$"
+$TFADMIN /usr/sbin/share -F nfs | /usr/bin/tr -s '\011' '\040' | /usr/bin/sed "s/^-[ 	]//g"  > /var/tmp/s_list$$
+
+
+/usr/bin/nl /etc/dfs/fstypes | /usr/bin/grep '1	nfs' >/dev/null
+if [ $? -eq 0 ]
+then
+	/usr/bin/sed -e "s/^#.*//g" -e "/^$/d" /etc/dfs/dfstab | /usr/bin/grep -v "[ 	]*-F[ 	]*" >/var/tmp/auto_$$
+fi
+
+/usr/bin/sed "s/^#.*//g" /etc/dfs/dfstab | /usr/bin/tr -s '\011' '\040' | /usr/bin/grep "\-F nfs" >>/var/tmp/auto_$$
+
+/usr/bin/nawk '{  for ( i = NF; i > 0; --i) printf "%s ", $i
+		 if ( i = 1) printf "\n" }' </var/tmp/auto_$$ >> /var/tmp/s_list$$
+
+echo "{" > /var/tmp/s_list
+/usr/bin/cut -d" " -f1 /var/tmp/s_list$$ | 
+		 /usr/bin/tr -s '\040' '\012' | /usr/bin/sort -u >> /var/tmp/s_list
+echo "}" >> /var/tmp/s_list
+/usr/bin/rm /var/tmp/auto_$$ /var/tmp/s_list$$
+

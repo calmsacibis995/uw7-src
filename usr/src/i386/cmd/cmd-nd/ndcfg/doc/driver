@@ -1,0 +1,809 @@
+                      Device Driver Considerations
+
+                         Document Version: 9.1
+
+Contents:
+
+XXX. xxx_verify routine considerations
+XXX. Dynamically Loadable Module considerations
+XXX. Multithreaded driver considerations
+XXX. Internationalization/localization
+XXX. Downloading code to your board:  the firmware.o file
+XXX. Packaging your driver for submitting to SCO.
+XXX. Driver versioning
+XXX. Makefile guidelines
+XXX. Autoconfiguration: talking to the resmgr.
+XXX. Node file convention
+XXX. Drvmap file convention
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. xxx_verify routine considerations
+
+NOTE:  DDI8 uses a xxx_config(CFG_VERIFY) routine, so this section will
+need to be updated with this information.  
+
+All ISA drivers must have a xxx_verify routine which is used to
+both search for ISA boards, verify that the current settings are
+correct, and optionally write to NVRAM.  PCI, EISA, and MCA drivers
+are not required to have a xxx_verify routine as parameter information can
+in most cases be accurately determined without probing the I/O address space.
+A verify routine allows the driver to confirm that the card is present 
+and usable with the given key values from the Configuration database.  
+ISA cards must have a xxx_verify routine so that the user can confirm 
+the Configuration database matches the hardware.
+
+Drivers should check all resmgr settings to ensure they are correct
+using the I/O address provided.  However, some parameters (IRQ, DMA,
+memory address, etc.) may not be readable from the hardware to know
+if the supplied Configuration database information is correct.
+Note that IOADDR is the only parameter written to the resmgr; it
+is your responsibility to ensure that the hardware is found at this
+address.
+
+Your xxx_verify routine returns 0 for success and ENODEV to indicate
+that the hardware isn't present at this I/O address.
+
+If all parameters can be read from the hardware and are correct w.r.t,
+the configuration database, your xxx_verify routine should return 0.
+
+The xxx_verify routine is documented in chapter 3, "Autoconfiguration", in 
+the Device Driver Programming Guide.
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Dynamically Loadable Module considerations
+
+All drivers must be marked with the 'L' flag in Master to indicate that
+they can be loaded and used immediately.  ISA drivers with a xxx_verify 
+routine must be dynamically loadable so that their xxx_verify routines 
+can be used.   Your driver should use the necessary MOD_WRAPPER to
+indicate that it is a DLM.
+
+Your driver open routine should associate the minor number with
+the instance number for smart-bus (PCI/EISA/MCA) cards.  If the
+board is removed from the system then cm_getnbrds will correctly
+decrement but stacks will still try and open /dev/mdi/cardname which
+has the correct minor number.  If you directly use the minor number
+and compare it with the results from cm_getnbrd then that will
+incorrectly cause the open to fail.  In addition, if stacks
+still effectively refer to /dev/mdi/cardname but the driver
+directly uses minor number then you can cause ARP problems as you
+send frames out the wrong interface!   
+
+OPEN ISSUE:  we will need a routine to read the DDI8 .INSTNUM
+             parameter from the resmgr to do instance association.
+
+Your unload routine must clear out all asynchronous callbacks.
+That is, you need to be sure you
+- cm_intr_detach any interrupts,
+- untimeout any timeouts,
+- unbufcall any bufcalls,
+- etc.
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Multithreaded driver considerations
+
+Gemini supports a model where MP-aware and non-MP aware drivers can exist
+in the link kit as separate Driver.o files.  The searching order by the
+idmkunix program is
+
+1) Driver_<type>.o
+2) Driver.o
+
+Where <type> is the contents of the /etc/conf/cf.d/type (the contents are
+determined by the presence or absense of a "-DUNIPROC" line in
+/etc/conf/cf.d/deflist).  The contents of the "type" file is
+either "atup" or "mp".  See idtype(1M).
+
+Idinstall(1M) also supports this notion, copying in any file that starts
+with "Driver" and ending in ".o".  From the idinstall man page:
+
+            When the Driver.o component is installed, idinstall(1M) looks
+            for any filename that matches the pattern Driver*.o and
+            installs each file.  This allows the DSP to install multiple
+            driver binaries that can be dynamically selected by
+            idtype(1M).
+
+In practice there are three possible .o files for the driver:
+
+Driver.o
+Driver_mp.o
+Driver_atup.o
+
+Driver.o is the normal driver code.  It will be linked/used with both UNI
+and MP kernels.  It may or may not be MP-safe, depending on its
+xxxdevflag(see devflag(D1)) variable.
+
+NOTE:  DDI8 drivers will not have an explicit xxxdevflag(D1) but its
+       functionality is replaced by members of the new drvinfo_t structure
+       passed to drv_attach.  A new driver type is also defined as
+       Driver_numa.o See the DDI8 section for more information.
+
+To multithread your driver:
+1) OR in D_MP into your xxxdevflag.  This tells the kernel that your
+   code can be run on any CPU engine.  If you don't do this then
+   your driver is defined to be single threaded and will be completely
+   bound to a single processor (identified in Master(4) -- the default
+   is 0).  It doesn't do anything with or for the locking primitives.
+2) use locks macros defined in <sys/ksync.h>
+3) Ensure you protect critical data structures from simultaneous access by
+   base and interrupt contexts, from simultaneous access by multiple base
+   contexts, and also ensure sanity across both voluntary
+   (sleep(D3, SV_WAIT(D3)) and involuntary preemptions.
+
+Now there are two choices:
+a) compile your driver twice: once with -U_LOCKTEST -DUNIPROC (this will
+   become your Driver_atup.o), the second time with -U_LOCKTEST -UUNIPROC
+   (this will become your Driver_mp.o)
+   The advantage of this is that many of the lock stub macros
+   will expand to nothing for your Driver_atup.o.  This makes your UNI
+   processor code faster than a single MP Driver.o because in that case
+   the MP Driver.o would unnecessarily be calling routines that would
+   be no-ops for UNI processor machines or calling an extra function
+   before the spl operation is called.  When the driver is natively
+   compiled UNIprocessor the call is immediately made to splX.
+
+b) compile your MP driver as a single Driver.o which is MP-safe.
+   This only impacts the case where the Driver is run on a UNI processor
+   machine and means that a few additional clocks will be spent
+   calling an assembler routine in usr/src/i386/uts/util/rwlocks.s
+   rwlocks.s is assembled twice: once with -DUNIPROC, once with -UUNIPROC
+   resulting in separate /etc/conf/pack.d/util/Driver_{atup,mp}.o
+   files.  These few clocks would be eliminated if the driver were
+   recompiled with -UUNIPROC.  No adverse impact is seen on MP
+   systems.  Note that a MP driver cannot be compiled with
+   DEBUG or SPINDEBUG and run on a UNI processor machine as
+   the routines called by LOCK_OWNED and RW_OWNED do not exist
+   in /etc/conf/pack.d/util/Driver_atup.o
+
+Because of the overhead involved Gemini will only support B) above:
+a single Driver.o file.  This makes netconfig/niccfg and the IHV
+diskette much easier to handle than option a) above.
+
+Multithreaded drivers must specify the D_MP flag (see devflag(D1)) and
+also use ddi interface versions ending in "mp"(such as 7mp).
+See DDI8 notes above.
+The STREAMS subsystem assumes that modules and drivers that do not
+set D_MP do not know about qprocson(D3) and the subsystem will call
+qprocson on behalf of the module or driver.
+
+This procedure is described in detail in the following chapters in the
+"Device Driver Programming" book:
+
+   Chapter 6: Hardware-Driver Synchronization
+   Chapter 7: Multithreading Drivers
+
+**************************************************************************
+XXX. Internationalization/localization
+
+This section is intended to describe Driver i18n/l10n issues and is not
+for user level programs(that's discussed in the general html file
+elsewhere).  This localized help file is known as msg.o.
+msg.o files have traditionally been used for ODI drivers to display error
+messages.  However, the framework can be used for general driver
+informational or error messages used by cmn_err or at printcfg/xxinit time
+Think of it as a message catalog for drivers.
+
+OPEN ISSUE:  Need to define a process to take a standard message catalog
+             and run it through mkcatdefs or gencat(1) to turn it into
+             a msg.o file for a driver to use.  See exstr(1) - neat
+             tool.  Would need to create back-end MDI library support
+             routines that driver can call.
+
+msg.o - driver error messages, only in default install/remove case,
+no argument for this file file format described by C program below.
+traditionally ODI specific.  Could be localized as appropriate.
+will not be installed into link kit if idinstall run with any arguments
+to handle other DSP files.
+
+file name hard coded to /etc/conf/pack.d/<drivername>/msg.o
+See usr/src/i386at/uts/io/odi/lsl/lslxmorg.c for the code using firmware.o
+and msg.o; also msm/msmfile.c for the vnode operation code calling
+lookupname(3K)  Sample code for reading msg.o enclosed below:
+NOTE that there is no specific message defined for any given index into
+the msg.o file.  I.e. you can define your own.
+When I write program to create these add some magic number information
+in header before offset 110 which is where index information starts.:
+- offset 0: 4 byte magic number like COFF
+- offset 4: 4 byte time/date stamp like COFF
+- offset 8: 4 byte checksum of everything AFTER checksum field
+- offset 12-16: MDI version number applicable - for kernel routines.
+- offset 16-X: file name where it came from
+Note this would only be for new MDI drivers; existing ODI drivers would
+still require and call MSM/LSL routines and drivers.
+---cut paste glue---
+#include <sys/types.h>
+#include <sys/fcntl.h>
+#include <sys/stat.h>
+
+char file[]="/tmp/msg.o";
+
+main()
+{
+int fd,i,amount;
+struct stat sb;
+char buf[4096];
+ulong_t count, *p;
+
+stat(file,&sb);
+if ((fd=open(file,O_RDONLY)) == -1) {
+   perror("open");
+        exit(1);
+}
+amount=read(fd,buf,sizeof(buf));
+printf("read %d bytes\n",amount);
+
+count=*(ulong_t *)(buf + 110); /* MSM_MESSAGE_COUNT_OFFSET */
+printf("count is %d\n",count);
+
+p=(ulong_t *)&buf[118]; /* MSM_MESSAGE_POINTER_OFFSET */
+
+for (i=0; i < count; i++) {
+   ulong_t offset;
+   offset=*(p+i);
+   if (offset > sb.st_size) continue;   /* invalid offset */
+   offset+=118;   /* MSM_MESSAGE_POINTER_OFFSET */
+   /* all strings are null terminated */
+   printf("index=%d:offset %d=\"%s\"\n",i,offset,&buf[offset]);
+}
+}
+
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. Downloading code to your board:  the firmware.o file
+
+NOTE:  If you do not use firmware.o then your download code scripts
+must run before /etc/rc2.d/S15nd.
+
+OPEN ISSUE:  need to adapt and rename existing ODI routines which open
+firmware.o and return it to caller and generalize this to a MDI library
+support routine.  Will need to doc routine names and APIs.
+
+( insert code fragment here when completed )
+
+firmware.o not touched if idinstall run with other DSP file arguments
+unless run with -O argument.  traditionally ODI specific.
+
+no specific format for the contents of this file.
+
+See usr/src/i386at/uts/io/odi/lsl/lslxmorg.c for the code using firmware.o;
+also msm/msmfile.c for the vnode operation code calling lookupname(3K)
+
+file name hard coded to /etc/conf/pack.d/<drivername>/firmware.o
+
+You cannot (currently) have multiple firmware.o files.  This will
+change.
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. Packaging your driver for submitting to SCO.
+
+Your driver source handoff must adhere to certain guidelines
+
+For the Gemini NIC driver named "netdrvr1", SCO expects the following 
+as part of a handoff:
+
+./netdrvr1    <-  this is a directory
+./netdrvr1/file1.c  \
+./netdrvr1/file2.c   - Your source files, named whatever you want.
+./netdrvr1/file3.c  /
+./netdrvr1/netdrvr1.mk   <- the makefile, puts Driver.o into netdrvr1.cf
+                            See the "Makefile guidelines" section for more info
+./netdrvr1/netdrvr1.cf   <- this is a directory
+./netdrvr1/netdrvr1.cf/Driver.o    (mandatory)
+./netdrvr1/netdrvr1.cf/Master      (mandatory)
+./netdrvr1/netdrvr1.cf/System      (mandatory)
+./netdrvr1/netdrvr1.cf/Drvmap      (mandatory)
+./netdrvr1/netdrvr1.cf/Node        (mandatory)
+./netdrvr1/netdrvr1.cf/netdrvr1-bus1.bcfg (mandatory: 1 for each bus supported)
+./netdrvr1/netdrvr1.cf/netdrvr1-bus2.bcfg (mandatory: 1 for each bus supported)
+./netdrvr1/netdrvr1.cf/netdrvr1-bus3.bcfg (mandatory: 1 for each bus supported)
+                       (you can have as many bcfg files as is necessary)
+./netdrvr1/netdrvr1.cf/Space.c     (optional)
+./netdrvr1/netdrvr1.cf/firmware.o  (optional)
+./netdrvr1/netdrvr1.cf/msg.o       (optional)
+./netdrvr1/netdrvr1.cf/netdrvr1.html  (mandatory) <-- your single HTML doc file.
+
+OPEN ISSUE:  we currently expect an HTML dir hierarchy.  Must decide this.
+
+If you have multiple drivers to hand off to SCO, use the above template for
+your "netdrvr2", "netdrvr3", etc.
+
+The following files are mandatory
+---------------------------------
+Driver.o       - The driver.  Driver_atup.o and Driver_mp.o not accepted.
+                 See "Multithreaded Driver Considerations" section
+                 for reasons why.
+Drvmap         - per Drvmap(4).  New MDI drivers must
+                  - have 'Y' in autoconfiguration field
+                  - have verify routine for configuring ISA boards.
+                    EISA/MCA/PCI boards do not need a verify routine.
+                    If this is an ISA
+                    board then use 'Y' in verify field.  Having a 'V'
+                    means that the DCU will always silently call your
+                    xxx_verify routine when starting when it finds your
+                    boardid is recognized.  The intent is that your
+                    verify routine will immediately have sufficient
+                    information to determine if the hw is set up correct
+                    or not.  If your verify fails then the DCU will
+                    silently skip this card and it will not be presented
+                    to the user later on for the user to try other options.
+
+                    By having a 'Y' this allows the user to press F4=Verify
+                    repeatedly to determine if the HW is at the specified
+                    address.  If you had a 'V' the user would never get this
+                    far.
+
+OPEN ISSUE:  dcu will be modified to prevent modifying NIC information. remove
+             above when completed.
+
+                    Leave the bcfg pathname field blank.  Example:
+
+                 #ident  "@(#)Drvmap     2.1"
+                 #ident  "$Header$"
+                 foo|Y|N|Network Interface Cards|
+                 |EISA||Zoom Zoom driver 959|
+                 |EISA|UNB0048|Unisys 596 EISA Card|
+                 |EISA|COG9004|Cogent EM932 EISA Card|
+                 See the "DCU Considerations" section for more on this field.
+
+Master         - per Master(4).  Must have 'L' Loadable module flag. 
+                 Must only have 1 driver line.
+Node           - per Node(4).   MDI drivers live in /dev/mdi and start with
+                 minor 0.  They are not cloning drivers.
+System         - per System(4).  Must not contain '$static'.
+                 Must only have 1 driver line.
+netdrvr1.html  - your single HTML doc file.  Described elsewhere.
+
+You must have one bcfg file for each BUS= type supported by the driver.  We'll
+assume that our driver will transparently work for 4 bus types.  The name isn't
+important as long as it ends in .bcfg; idinstall will copy them all to
+/etc/conf/bcfg.d.
+
+Pnetdrvr.bcfg  - bcfg file for PCI
+Enetdrvr.bcfg  - bcfg file for EISA
+Inetdrvr.bcfg  - bcfg file for ISA
+Mnetdrvr.bcfg  - bcfg file for MCA
+Cnetdrvr.bcfg  - bcfg file for PCCARD 
+
+If you aren't going to distribute your driver on an IHV DOS diskette then
+you can use longer names.  Suggested names are
+
+netdrvr-pci.bcfg     - PCI
+netdrvr-eisa.bcfg    - EISA
+netdrvr-isa.bcfg     - ISA
+netdrvr-mca.bcfg     - MCA
+netdrvr-pccard.bcfg  - PCCARD
+
+Remember that each bcfg file can support multiple topologies.  That is,
+while BUS= in your bcfg file is single valued, TOPOLOGY= can be multi valued.
+
+The following files are optional
+--------------------------------
+$LOCALE/msg.o      - msg files for driver for a specific locale
+                     Contains localised copies of message files.
+
+firmware.o     - no man page.  for downloading firmware code
+Autotune       - per AutoTune(4).  Useful for preallocation of buffers
+                 (see esballoc(D3)) based on increased memory usage
+                 Drivers should not use esballoc because the stacks can
+                 (and will) legimately hold on to the buffer for a long time,
+                 causing buffer starvation in your MDI driver.
+Mtune          - per Mtune(4).  Used by ODI drivers
+netdrvr1.mod   - NetInstall DLM.  generated by kernel build and only used
+                 by NetInstall process.  Not used by netcfg/ndcfg.
+                 Should be part of your IHV formatted diskette.
+netdrvr1.C     - NetInstall 'C' locale file
+Rc             - per Rc(4) HW specific startup script goes into
+                 /etc/conf/rc.d
+                 see also PRE_SCRIPT and POST_SCRIPT
+                 could perform download code functionality here.
+                 You'll need a PRE_SCRIPT or POST_SCRIPT to copy any
+                 other files into the appropriate place for the rc script
+                 to use.
+Sd             - per Sd(4) HW specific function goes into /etc/conf/sd.d
+                 see also PRE_SCRIPT and POST_SCRIPT
+Space.c        - per Space.c(4).  Not necessary for new MDI drivers:
+                 XXX_CNTLS not defined for autoconfig drivers; use cm_*
+                 XXX_UNITS not defined for autoconfig drivers; use cm_*
+                 XXX_attach_info not defined for autoconfig drivers.
+                 the following defines no longer exist for all minor
+                 devices and driver types(all are preceded by the driver
+                 prefix and '_'):
+                 CHAN, TYPE, VECT, SIOA, EIOA, SCMA, ECMA, IPL, intrinfo
+                 use cm_* routines to obtain these values instead.
+                 use cm_* for DMACHAN, SLOT, MEMSIZE, MEMADDRESS
+                 use cm_* for xmit/recv buffer sizes
+                 multicasting information now dynamic -- use CUSTOM[x]
+                 STREAMS module_info/qinit/streamtab structures should not
+                 be defined in a space.c anymore; the min/max packet size
+                 (mi_minpsz/mi_maxpsz) should be a CUSTOM[x] variable or
+                 declared as a variable in a space.c file.
+                 Remember that CUSTOM[x]= and IDTUNE_ARRAY[x]=
+                 information is saved in the resmgr and not in Space.c
+                 or in space.h!
+
+The following files should not be necessary for a NIC DSP package
+-----------------------------------------------------------------
+Init            - per Init(4)
+Modstub.o       - not documented.  used when performing a normal
+                  idbuild to build a new kernel but skipped over
+                  when building a DLM with idbuild -M.  In other
+                  words, Modstub.o should contain symbols that are
+                  necessary for a statically linked version of the
+                  driver but not necessary for the driver as a DLM.
+                  Since all NIC drivers must be able to exist as a DLM
+                  for NetISL and dynamic stack assembly purposes,
+                  all drivers must not require this file.
+                  Also, all Modstub.o files are written in assembler
+                  and preprocessed with m4 before being assembled into
+                  Modstub.o, and that process is also undocumented.
+                  See usr/src/i386/uts/util/mod/stub.m4
+Sassign         - per Sassign(4)
+Ftab            - per Ftab(4).  For statically linked drivers only
+Stubs.c         - per Stubs.c(4)
+Dtune           - per Dtune(4).  GUI only.
+space.h         - not permitted
+Space.h         - not permitted
+*.h             - not permitted
+
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Driver versioning
+
+netcfg prints the release of the driver when showing card choices to
+the user.  This allows the user to easily determine the release of the
+actual Driver.o that they will be using when adding a new network card.
+This version number is treated as an ASCII string and stored within the 
+Driver.o in one of two places.  A driver version string is optional 
+for driver writers.
+
+To add this support to your driver, do the following:
+
+If you are handing the source to your driver to SCO, add the following
+line to your code:
+
+/* ndcfg/netcfg version info */
+static char _ndversion[]="1.2ABC";
+
+If the driver is stored in SCCS, a good example is to use something like:
+
+static char _ndversion[]="%I%";
+
+If you choose to define symbol "_ndversion" in your driver, it
+must have the following attributes or your driver will be rejected:
+
+- symbol "_ndversion" must be defined
+- must be static (not global)
+- must be a variable (not a function)
+
+If you are handing a binary Driver.o to SCO, perform the following
+steps:
+1) /usr/lib/netcfg/ndcfg -q -v
+2) at the "ndcfg>" prompt, type "stamp /my/path/name/Driver.o 1.2ABC"
+   (obviously replace 1.2ABC with your desired version number)
+3) at the "ndcfg>" prompt, type "getstamp /my/path/name/Driver.o" to confirm
+   that it was stamped.
+4) at the "ndcfg>" prompt, "type "quit"
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Makefile guidelines
+
+Here is the makefile for the wdn driver.  It is named wdn.mk
+
+The UTSRULES file that is included by the makefile is included below.
+
+---cut paste glue---
+#ident "@(#)wdn.mk	6.1"
+#ident "$Header$"
+#
+#	Copyright (C) The Santa Cruz Operation, 1993-1996
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+
+include $(UTSRULES)
+
+MAKEFILE = wdn.mk
+KBASE = ../../../..
+# DEBUG = -DDEBUG
+LOCALDEF = -DSCO -UM_XENIX -DUNIXWARE -D_KERNEL $(DEBUG)
+OBJ = wd.o
+IDLIB = lib/board_id.o
+LOBJS = wd.L lib/board_id.L
+DRV = wdn.cf/Driver.o
+
+.c.L:
+	$(LINT) $(LINTFLAGS) $(DEFLIST) $(INCLIST) $< >$@
+
+all: $(DRV)
+
+$(DRV): $(OBJ) $(IDLIB)
+	$(LD) -r -o $@ $(OBJ) $(IDLIB)
+
+$(IDLIB):
+	(cd lib; $(MAKE) -f lib.mk $(MAKEARGS))
+
+install: all
+	(cd wdn.cf; $(IDINSTALL) -R$(CONF) -M wdn)
+
+lintit:	$(LOBJS)
+
+clean: 
+	rm -f $(OBJ) $(LOBJS) tags
+	(cd lib; $(MAKE) -f lib.mk $@ $(MAKEARGS))
+
+clobber: clean
+	rm -f $(DRV)
+	(cd lib; $(MAKE) -f lib.mk $@ $(MAKEARGS))
+	(cd wdn.cf; $(IDINSTALL) -R$(CONF) -d -e wdn)
+---cut paste glue---
+
+
+Here is the UTSRULES file
+
+
+#ident	"@(#)kern-i386at:uts.rulefile	1.72.2.3"
+#ident	"$Header$"
+
+CPU = i386
+MACH = i386at
+
+# RELEASE and VERSION initialize strings in svc/name.c that (if non-empty)
+# override at run time the REL and VER values assigned in name.cf/Space.c
+RELEASE =
+VERSION =
+
+PFX = $(CPU)
+SGS =
+
+AR = $(PFX)ar
+AS = $(PFX)as
+CC = $(PFX)cc
+C++C = $(PFX)CC
+FUR = :
+LD = $(PFX)ld
+M4 = $(PFX)m4 -B16384
+MAKE = $(PFX)make
+MCS = $(PFX)mcs
+LEX = $(PFX)lex
+LINT = $(PFX)lint
+LORDER = $(PFX)lorder
+NM = $(PFX)nm
+SED = sed
+SIZE = $(PFX)size
+STRIP = $(PFX)strip
+TIC = tic
+TSORT = $(PFX)tsort
+YACC = $(PFX)yacc
+
+INS = install
+OWN = bin
+GRP = bin
+INCMODE = 644
+
+SHELL = /bin/sh
+AWK = /usr/bin/awk
+
+ARFLAGS =
+ASFLAGS =
+CFLAGS = -Xa -O -Kno_lu -W2,-_s -Kno_host -W2,-A -Ki486
+LDFLAGS = -s
+LFLAGS =
+LINTFLAGS = -Xa -k -n -s -Dlint
+YFLAGS =
+
+CCSTYPE = ELF
+
+HCC = cc
+HAR = ar
+HAS = as
+HLD = ld
+HNM = nm
+CP = cp
+RM = rm
+SH = sh
+
+ETC = $(ROOT)/$(MACH)/etc
+INC = $(ROOT)/$(MACH)/usr/include
+CONF = $(ROOT)/$(MACH)/etc/conf
+IDINSTALL = $(KTOOL)/$(PFX)idinstall
+
+# needed for the crash command (now built for each MP related build)
+USRLIB=$(ROOT)/$(MACH)/usr/lib
+USRSBIN=$(ROOT)/$(MACH)/usr/sbin
+SBIN=$(ROOT)/$(MACH)/sbin
+SYMLINK=:
+
+DEVDEF =
+DEVINC1 =
+DEVINC2 =
+DDEBUG = -DDEBUG -D_KMEM_STATS -D_KMEM_HIST -D_MEM_RESV_STATS -DDKTEST
+
+DMPSTATS = -D_MPSTATS
+
+SMAPFILES = smap smap-i386at
+GLOBALDEF = -D_KERNEL -D_KERNEL_HEADERS \
+		-D_LOCKTEST -DMERGE386 -DV86MODE -DEVGA -DIAPX386 \
+		$(DDEBUG) $(DMPSTATS) -DSTATIC=$(STATIC)
+GLOBALINC = -I$(KBASE)
+DEFLIST = \
+	$(GLOBALDEF) \
+	$(LOCALDEF) \
+	$(DEVDEF)
+INCLIST = \
+	$(DEVINC1) \
+	$(LOCALINC) \
+	$(GLOBALINC) \
+	$(DEVINC2)
+
+MAKEARGS = \
+	ROOT='$(ROOT)' \
+	INC='$(INC)' \
+	AR='$(AR)' \
+	AS='$(AS)' \
+	CC='$(CC)' \
+	FUR='$(FUR)' \
+	LD='$(LD)' \
+	M4='$(M4)' \
+	MAKE='$(MAKE)' \
+	MCS='$(MCS)' \
+	LEX='$(LEX)' \
+	LINT='$(LINT)' \
+	LORDER='$(LORDER)' \
+	NM='$(NM)' \
+	STRIP='$(STRIP)' \
+	SIZE='$(SIZE)' \
+	TSORT='$(TSORT)' \
+	YACC='$(YACC)' \
+	INS='$(INS)' \
+	OWN='$(OWN)' \
+	GRP='$(GRP)' \
+	INCMODE='$(INCMODE)' \
+	ARFLAGS='$(ARFLAGS)' \
+	ASFLAGS='$(ASFLAGS)' \
+	CFLAGS='$(CFLAGS)' \
+	LDFLAGS='$(LDFLAGS)' \
+	LFLAGS='$(LFLAGS)' \
+	LINTFLAGS='$(LINTFLAGS)' \
+	YFLAGS='$(YFLAGS)' \
+	CONF='$(CONF)' \
+	IDINSTALL='$(IDINSTALL)' \
+	DEVINC1='$(DEVINC1)' \
+	DEVINC2='$(DEVINC2)' \
+	DEVDEF='$(DEVDEF)' \
+	DDEBUG='$(DDEBUG)' \
+	DMPSTATS='$(DMPSTATS)' \
+	RELEASE='$(RELEASE)' \
+	VERSION='$(VERSION)' \
+	STATIC='$(STATIC)'
+
+.SUFFIXES: .ln
+
+.c.ln:
+	echo "\n$(DIR)/$*.c:" > $*.L
+	-$(LINT) $(LINTFLAGS) $(INCLIST) $(DEFLIST) \
+		-c -u $*.c >> $*.L
+
+.c.o:
+	$(CC) $(CFLAGS) $(INCLIST) $(DEFLIST) -c $<
+
+.s.o:
+	$(M4) -DKBASE=$(KBASE) $(DEFLIST) $< | \
+	$(AS) $(ASFLAGS) -o $@ -
+
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Autoconfiguration: talking to the resmgr.
+
+The autoconfiguration subsystem is discussed in the Device Driver
+Programmer's Guide and Reference.
+
+When retrieving CUSTOM information from your driver, remember that
+
+- the parameter might not be present.  If it isn't, call cmn_err(CE_NOTE
+  and display the default setting that the driver will use.  Unlike
+  UnixWare 2.1, CUSTOM parameters are set for Network Installation.
+  If the bcfg file indicates the card is ISA, the user will be 
+  prompted to enter applicable ISA card information from the bcfg 
+  file prior to beginning the network installation.
+
+- any CUSTOM parameters retrieved from the resmgr must be interpreted as
+  as an ASCII string.  That is, if the CUSTOM entry in your bcfg file 
+  starts like:
+        CUSTOM_NUM=1
+
+        CUSTOM[1]='
+        CABLE_TYPE
+        1 0 0
+        AUI BNC TP
+        Cable Type
+        ...
+        ...
+
+  Then your driver("foo") init routine will look something like:
+
+   char cable_str[64];
+   struct cm_args cm_args;
+   unsigned int foo_nunit;
+
+   foo_nunit = cm_getnbrd("foo");
+   if (foo_nunit == 0) {
+      cmn_err(CE_WARN, "fooinit: can't find foo in resmgr");
+      return(ENODEV);
+   }
+
+   for (i = 0; i < foo_nunit; i++) {
+      cm_args.cm_key = cm_getbrdkey("foo", i);
+      cm_args.cm_n = 0;
+      cm_args.cm_param = "CABLE_TYPE";
+      cm_args.cm_val = cable_str;
+      cm_args.cm_vallen = sizeof(cable_str);
+      if (ret = cm_getval(&cm_args)) {
+         if (ret != ENOENT)
+            cmn_err(CE_CONT, "fooinit: cm_getval(CABLE_TYPE) failed\n");
+         continue;
+      } else {
+         switch(cable_str[0]) {
+            case '0':
+               foodev[i].xcvr = 0;
+               break;
+            case '1':
+               foodev[i].xcvr = 1;
+               break;
+            default:
+               cmn_err (CE_CONT,
+                  "fooinit: board %d has unknown CABLE_TYPE %s in resmgr\n",
+                  i, cable_str);
+               continue;
+         }
+      }
+      ...retrieve other parameters...
+   }
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Node file convention
+
+Here is a sample Node file for the driver "foo".  You should supply
+the appropriate number of entries, up to the number of boards supported
+by the MAX_BD parameter in your .bcfg file.  In this example,
+
+MAX_BD would be set to 4 in the .bcfg file.
+
+foo     mdi/foo0        c:0     0       root    root    600
+foo     mdi/foo1        c:0     1       root    root    600
+foo     mdi/foo2        c:0     2       root    root    600
+foo     mdi/foo3        c:0     3       root    root    600
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Drvmap file convention
+
+All drivers should supply a Drvmap file for all bus types.
+netcfg will not actually print the specific string associated with
+the board id in the Drvmap file.  Instead, netcfg prints the text
+associated with the NAME parameter in your .bcfg file.  This means
+that you must enter the board ids twice.  Once for the Drvmap file
+and a second time for the BOARD_IDS parameter in the .bcfg file.
+
+Example wdn Drvmap file:
+
+wdn|Y|Y|Network Interface Cards|SMC/WD 80x3 Family
+|MCA|0x6FC0|WD8003E/A or WD8003ET/A
+|MCA|0x6FC1|WD8003ST/A or WD8003SH/A
+|MCA|0x6FC2|WD8003W/A
+|MCA|0x61C8|SMC8013EP/A
+|MCA|0x61C9|SMC8013WP/A
+|MCA|0xEFE5|IBM Ethernet Adapter/A
+|MCA|0xEFD4|IBM PS/2 Adapter/A for Ethernet TP
+|MCA|0xEFD5|IBM PS/2 Adapter/A for Ethernet
+|ISA||SMC/WD 8003/8013 ISA
+
+*******************************************************************************
+*********************************THE END***************************************
+*******************************************************************************

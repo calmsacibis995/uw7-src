@@ -1,0 +1,35 @@
+#ident	"@(#)mk:i386at/:mkminiuts	1.1"
+#ident "$Header$"
+#
+#	Configure and make a mini kernel for boot floppy
+#
+trap "exit 1" 1 2 3 15
+
+echo "START `basename $0` `date`"
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+ROOT=${Root}
+TOOLS=${Tools}
+MACH=${Mach}
+export MACH ROOT TOOLS
+
+XENV=${Tools}/usr/ccs/bin/${Cpu}osenv
+export XENV
+
+echo "Building MINI Kernel"
+
+cd ${Root}/usr/src/${Work}/mini/uts
+
+${XENV} ${Root}/usr/src/${Work}/makeminiuts -f unix.mk headinstall
+
+${XENV} ${Root}/usr/src/${Work}/makeminiuts -P -f unix.mk install
+
+echo "ENDED `basename $0` `date`"
+
+
+
+

@@ -1,0 +1,88 @@
+#!/usr/bin/wksh -openlook
+
+set -A C red yellow orange green plum
+
+random() {	# $1=low $2=high
+	typeset high="$1" low="$2"
+
+	echo "$((RANDOM*(high-low)/32768 + low))"
+}
+
+InitExplosion() {
+	integer i=0
+
+	gv $1 height:H width:W
+	let XSCALE=10000/W
+	let YSCALE=10000/H
+
+	XDraw -fillrect -fg black $STUB 0 0 $W $H
+	XFlush
+
+	NUMPIECES=`random 10 20`
+
+	while (( i < NUMPIECES ))
+	do
+		X[$i]=5000
+		Y[$i]=4000
+		XVEL[$i]=`random -1000 1000`
+		YVEL[$i]=`random -1000 1000`
+		c=`random 0 $((${#C[@]}-1))`
+		COL[$i]="${C[$c]}"
+		i=i+1
+	done
+
+	MODE=text
+	WKX=0
+	SHX=10000
+}
+
+Explode() { # $1=parent
+	integer i=0 x y out=0
+
+	if [ "$MODE" = text ]
+	then
+		XDraw -string -fg black -fn lucidasans-italic-24 $1 $((WKX/XSCALE)) $((4000/YSCALE)) "WK"
+		XDraw -string -fg black -fn lucidasans-italic-24 $1 $((SHX/XSCALE)) $((4000/YSCALE)) "SH"
+		let WKX=WKX+40
+		let SHX=SHX-40
+		if (( WKX > SHX ))
+		then 
+			MODE=explode
+		else
+			XDraw -string -fg white -fn lucidasans-italic-24 $1 $((WKX/XSCALE)) $((4000/YSCALE)) "WK"
+			XDraw -string -fg white -fn lucidasans-italic-24 $1 $((SHX/XSCALE)) $((4000/YSCALE)) "SH"
+		fi
+		XFlush
+		ato $TOPLEVEL 10 "Explode $1"
+		return
+	fi
+
+	while (( i < NUMPIECES )) 
+	do
+		XDraw -fillrect -fg black $1 $((X[$i]/XSCALE)) $((Y[$i]/YSCALE)) 6 6
+		let X[$i]=X[$i]+XVEL[$i]
+		let Y[$i]=Y[$i]+YVEL[$i]
+		let YVEL[$i]=YVEL[$i]+50
+		let x=X[$i]/XSCALE
+		let y=Y[$i]/YSCALE
+		XDraw -fillrect -fg "${COL[$i]}" $1 $x $y 6 6
+		if (( x > W || x < 0 || y > H ))
+		then out=out+1
+		fi
+		i=i+1
+	done
+	#XFlush
+	if (( out == NUMPIECES ))
+	then InitExplosion $1
+	fi
+	ato $TOPLEVEL 1 "Explode $1"
+}
+
+oi TOPLEVEL explode Explode "$@"
+cmw STUB stub stub $TOPLEVEL width:200 height:200
+
+sv $STUB userData:"InitExplosion $STUB"
+rw $TOPLEVEL
+InitExplosion $STUB
+Explode $STUB
+ml

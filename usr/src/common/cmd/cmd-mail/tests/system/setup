@@ -1,0 +1,122 @@
+#!/bin/sh
+#
+# script to setup the environment for the load test.
+
+# we create a zillion test users
+# we configure the alias files via the alias editor.
+# also check that the multihome channel is enabled.
+# rebuild domains file (multihome channel table file).
+# and add our users to the multihome user list.
+#
+#
+
+setupuser() \
+{
+	username=$USERPREFIX$1
+	userid=`expr $USERBASE + $1`
+	./pty << DONE > /tmp/out$$
+send: adduser $username "$username account" $userid /home/$username No
+recv: New password:
+send: $username
+recv: new password:
+send: $username
+recv: #
+DONE
+	if [ $? -ne 0 ]
+	then
+		echo adduser failed:
+		cat /tmp/out$$
+		exit 1
+	fi
+	rm -f /tmp/out$$
+}
+
+dousers() \
+{
+	user=0
+	while [ $user -lt $USERCOUNT ]
+	do
+		echo do $USERPREFIX$user
+		setupuser $user
+		user=`expr $user + 1`
+	done
+}
+
+doaliases() \
+{
+	echo Creating aliases
+
+	aliascount=`expr $USERCOUNT / $ALIASIZE`
+
+	vpath=/var/internet/ip/$VIRTUALIP/mail
+	mkdir -p $vpath
+
+	alias=0
+	while [ $alias -lt $aliascount ]
+	do
+		echo do $ALIASPREFIX$alias
+		member=0
+		members=""
+		while [ $member -lt $ALIASIZE ]
+		do
+			id=`expr $alias \* $ALIASIZE`
+			id=`expr $member + $id`
+			if [ "$members" = "" ]
+			then
+				members=$USERPREFIX$id
+			else
+				members=$members,$USERPREFIX$id
+			fi
+			member=`expr $member + 1`
+		done
+
+		echo $ALIASPREFIX$alias:$members
+
+		# make regular alias
+		aliascontents=$ALIASPREFIX$alias:$members
+		/etc/mail/admin/aliases -f /etc/mail/aliases -a $aliascontents
+
+		# make virtual pass through alias
+		aliascontents=${ALIASPREFIX}P$alias:$ALIASPREFIX$alias@$MASTER
+		/etc/mail/admin/aliases -f $vpath/mail.aliases -a $aliascontents
+
+		# make virtual fan out alias
+		aliascontents=${ALIASPREFIX}F$alias:$members
+		/etc/mail/admin/aliases -f $vpath/mail.aliases -a $aliascontents
+
+		alias=`expr $alias + 1`
+	done
+}
+
+dorest() \
+{
+	# rebuild domains file
+	/etc/mail/admin/multihome domain
+	# add virtual users to virtusers.
+	user=0
+	while [ $user -lt $USERCOUNT ]
+	do
+		echo do virtual $USERPREFIX$user
+		username=$USERPREFIX$user
+		/etc/mail/admin/multihome add $username $username $VIRTUAL
+		user=`expr $user + 1`
+	done
+}
+
+main() \
+{
+	# check if multihome channel is enabled.
+	/etc/mail/admin/mailadmin list channels | grep multihome > /dev/null
+	if [ $? -ne 0 ]
+	then
+		echo Multihome channel is not enabled.
+		exit 1
+	fi
+
+	dousers
+	doaliases
+	dorest
+}
+
+. ./load.cfg
+main

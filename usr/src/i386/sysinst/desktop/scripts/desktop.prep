@@ -1,0 +1,392 @@
+#!/bin/sh
+#ident	"@(#)desktop.prep	15.1"
+#
+# desktop.prep - the driver script for the upgrade/overlay process at
+#	pre-install time from the boot floppy.
+#
+# Note that this script shall only be executed once, no checking is
+#	done because of the performance concerns from code review!
+#
+# This script can recognize two environment variables -
+#	DtDebug - for debugging messages, valid values are
+#		  none/all/err/hdr/err-hdr, the default is `none'
+#	DtTopDir- for testing purposes, DtUpgradeTest will be set
+#		  to `yes' when this is defined, otherwise DtUpgradeTest
+#		  will be set to `no'.
+#
+# To run this script, the following commands shall exist on the given system!
+#	/usr/bin/basename
+#	/usr/bin/chgrp
+#	/usr/bin/chmod
+#	/usr/bin/chown
+#	/usr/bin/cp
+#	/usr/bin/cpio
+#	/usr/bin/cut
+#	/usr/bin/find
+#	/usr/bin/grep
+#	/usr/bin/mkdir
+#	/usr/bin/printf
+#	/usr/bin/rm
+#	/usr/bin/sed
+#
+
+# Declare global definitions here
+#
+	# Say none/all/err/hdr/err-hdr for debugging messages
+if [ "$DtDebug" = "" ]
+then
+	DtDebug="err-hdr"  # may want to change it to `none' for final product
+fi
+
+
+#
+if [ "$DtTopDir" = "" ]	# Get this from environment for testing purpose!!
+then
+	DtTopDir=/usr
+	DtUpgradeTest="no"
+else
+	DtUpgradeTest="yes"
+fi
+#
+XDir=$DtTopDir/X
+#
+DtAdmDir=$XDir/adm
+DtThisVersion=$VERSION
+DtSaveName=".SAV"
+#
+ThisIdFile=".UpgradeVer$DtThisVersion"
+
+
+if [ "$DtUpgradeTest" = "no" ]			# this is for real...
+then
+	DtUpgradeLog=$DtAdmDir/UpgradeLog$DtThisVersion
+	DtShowLogInConsole="yes"
+else
+	DtUpgradeLog=/dev/null			# update this for testing
+	DtShowLogInConsole="yes"		# update this for testing
+fi
+#
+DtClassdbDir=$XDir/lib/classdb
+DtDesktopDir=$XDir/desktop
+DtLocaleDir=$XDir/lib/locale
+DtAppDefsDir=$XDir/lib/app-defaults
+DtUsersDir=$XDir/desktop/LoginMgr/Users
+#
+DtSavedMap=$DtAdmDir/dtsaved_map.dat		# for dtupgrade_post.sh
+#
+DtSaveDir=$XDir/$DtSaveName			# default, see MakeThisDir()
+
+#
+# Determine version of desktop package that we are upgrading:
+#
+#	PRIOR_VERSION		Unix Release
+#	1			1.1 or 1.1.4
+#	2.01			2.01
+#
+# RELEASE and VERSION are defined in the environment
+# VERSION is the OS version being installed (uname -v after install)
+# RELEASE is the OS release being installed (uname -r after install)
+#
+ReleaseToTag()
+{
+	if [ $1 -eq "1" ]
+	then 
+		echo 1000
+	else
+		/usr/bin/printf "%-4s\n" `echo $1 | /usr/bin/sed 's/\.//g'` | /usr/bin/sed 's/ /0/g'
+ 	fi	
+}
+PKGINFO=/var/sadm/pkg/desktop/pkginfo
+PRIOR_VERSION=`/usr/bin/grep "^VERSION=" ${PKGINFO} 2>> /dev/null | /usr/bin/cut -d= -f2`
+PRIOR_VERSION=`ReleaseToTag $PRIOR_VERSION`
+
+
+# Include function definitions here -
+#
+#	EchoThis -
+#	MakeThisDir -
+#	SaveThisFile -
+#	RemoveThisDir
+#	RemoveThisFile
+#
+
+# EchoThis - echo the given line based on $DtDebug.
+#
+# This function takes 1 argument and 1 optional argument,
+#	<this_line>
+#	[flag]
+#
+EchoThis()
+{
+	case $DtDebug in
+		all)
+			;;
+		err)
+			if [ "$2" != "ERR" ]
+			then
+				return;
+			fi;;
+		hdr)
+			if [ "$2" != "HDR" ]
+			then
+				return;
+			fi;;
+		err-hdr)
+			if [ "$#" != 2 ]
+			then
+				return;
+			fi;;
+		*) # included `none'
+			return;;
+	esac
+
+		# If I'm here, then I have to do something...
+	echo "$1" >> $DtUpgradeLog
+
+	if [ "$DtShowLogInConsole" = "yes" ]
+	then
+		echo "$1"
+	fi
+}
+
+# MakeThisDir - create a directory with the given name, permission, owner etc.
+#
+# This function takes 5 arguments,
+#	<this_dir>   - the directory name
+#	<this_perm>  - file permission
+#	<this_owner> - file ownership
+#	<this_group> - group id
+#	<this_op>    - operation type
+#
+MakeThisDir()
+{
+	this_dir=$1
+
+	if [ -d $this_dir ]
+	then
+		EchoThis "MakeThisDir: $1 exists, use $$ as suffix" HDR
+
+		this_dir=$this_dir.$$
+		case $5 in
+			Classdb)
+				DtClassdbSaveDir=$this_dir;
+				break;;
+			Locale)
+				DtLocaleSaveDir=$this_dir;
+				break;;
+			SaveDir)
+				DtSaveDir=$this_dir;
+				break;;
+			AppDefs)
+				DtAppDefsSaveDir=$this_dir;
+				break;;
+			PrintMgr)
+				DtPrintMgrSaveDir=$this_dir;
+				break;;
+			*)
+				EchoThis "MakeThisDir: unknown key, $5" ERR;
+				break;;
+		esac
+	fi
+
+	/usr/bin/mkdir -p -m $2	$this_dir
+	/usr/bin/chown    $3	$this_dir
+	/usr/bin/chgrp    $4	$this_dir
+}
+
+# RemoveThisDir - remove a given directory
+#
+# This function takes 1 argument 
+#	<dir_name> - the directory
+RemoveThisDir()
+{
+	EchoThis "RemoveThisDir: $1" HDR
+
+	if [ ! -d $1 ]
+	then
+		EchoThis "RemoveThisDir: $1 doesn't exist" ERR
+		return
+	fi
+
+	/usr/bin/rm -rf $1	2> /dev/null
+}
+
+# RemoveThisFile - remove a given file
+#
+# This function takes 1 argument 
+#	<dir_name> - the directory
+RemoveThisFile()
+{
+	EchoThis "RemoveThisFile: $1" HDR
+
+	if [ ! -f $1 ]
+	then
+		EchoThis "RemoveThisFile: $1 doesn't exist" ERR
+		return
+	fi
+
+	/usr/bin/rm -f $1	2> /dev/null
+}
+
+
+# SaveThisFile - make a copy of a given file with optional prefix in
+#		a given directory. if the file name exists, then it
+#		will append with `pid' at end.
+#
+# This function takes 2 arguments and 1 optional argument,
+#	<src_file> - a file that wants a duplicate
+#	<dst_dir>  - the directory contains the duplicate
+#	[prefix]   - the prefix
+#
+SaveThisFile()
+{
+	if [ ! -f $1 -o ! -d $2 ]
+	then
+		EchoThis "SaveThisFile: $1/$2 doesn't exist" ERR
+		return
+	fi
+
+	base_file=`/usr/bin/basename $1`
+
+	if [ ! -f $2/$3$base_file ]
+	then
+		dst_file=$2/$3$base_file
+	else
+		dst_file=$2/$3$base_file.$$
+	fi
+
+	/usr/bin/cp    $1  $dst_file
+	/usr/bin/chmod u+w $dst_file
+
+	if [ "$3" != "" ]
+	then
+		echo "$1 $dst_file" >> $DtSavedMap
+	fi
+}
+
+#
+ThisScript=`/usr/bin/basename $0`
+EchoThis "Start $ThisScript, date=`date`" HDR
+
+if [ ! -d $XDir ]	# shouldn't happen but...
+then
+	echo "$ThisScript - $XDir doesn't exist"
+	exit 1
+fi
+
+# remove old upgrade map and init new one
+RemoveThisFile $DtSavedMap
+> $DtSavedMap
+
+if [ $? -ne 0 ]
+then
+	echo "$ThisScript - can't create $DtSavedMap"
+	exit 1
+fi
+
+#
+# remove .SAV directory from last upgrade 
+#
+# special case: remove .SAV2.0 dir from UnixWare2.01
+#
+RemoveThisDir $XDir/.SAV2.0
+RemoveThisDir $DtSaveDir
+MakeThisDir $DtSaveDir 0777 bin bin "SaveDir"
+echo "PRIOR_VERSION=$PRIOR_VERSION" > $DtSaveDir/.release
+
+
+# Define the following because $DtSaveDir can be re-defined by MakeThisDir().
+#
+DtClassdbSaveDir=$DtSaveDir/classdb		# default, see MakeThisDir()
+DtLocaleSaveDir=$DtSaveDir/locale		# default, see MakeThisDir()
+DtAppDefsSaveDir=$DtSaveDir/app-defaults	# default, see MakeThisDir()
+DtUsersSaveDir=$DtSaveDir/Users			# default, see MakeThisDir()
+DtPrintMgrSaveDir=$DtSaveDir/PrintMgr		# default, see MakeThisDir()
+
+#
+# For 1.1, 1.1.4, remove all obsolete files (and files replaced in UW2.01)
+# These files must be removed *before* the install, so they cannot be
+# in dtold_files.dat.
+#
+if [ $PRIOR_VERSION = "1000" ]
+then
+	# Assume all files exists in system, no error checking is done!!!!
+	EchoThis "  remove obsolete files" HDR
+	TheseFiles="$XDir/bin/Install_Server $XDir/bin/NetWare_Setup \
+	$DtDesktopDir/Preferences/Color $DtDesktopDir/Preferences/ScreenLock "
+	/usr/bin/rm -f $TheseFiles
+fi
+
+#  
+# Save graphics system files for later merging by dtupgrade_post.sh.
+# Always save two copies, one is for processing (with prefix), the other
+# one is for the backup (without prefix).
+#
+# Assume all files are in $XDir
+#
+EchoThis "  save Help_Desk PrivTable Modems Xservers" HDR
+SvDesktopFiles="desktop/Help_Desk desktop/LoginMgr/PrivTable \
+desktop/DialupMgr/Modems lib/xdm/Xservers defaults/Xwinconfig"
+for file in $SvDesktopFiles
+do
+	SaveThisFile $XDir/$file $DtSaveDir "$DtSaveName."
+	SaveThisFile $XDir/$file $DtSaveDir
+done
+
+#
+#	Save files under /usr/X/desktop/PrintMgr
+#
+EchoThis "  save PrintMgr files" HDR
+SvPrintMgrFiles="desktop/PrintMgr/Printers desktop/PrintMgr/Types \
+desktop/PrintMgr/Filters/dpost  desktop/PrintMgr/Filters/postprint \
+desktop/PrintMgr/Filters/wrap"
+MakeThisDir $DtPrintMgrSaveDir 0777 bin bin "PrintMgr"
+for file in $SvPrintMgrFiles
+do
+	SaveThisFile $XDir/$file $DtPrintMgrSaveDir
+	SaveThisFile $XDir/$file $DtPrintMgrSaveDir  "$DtSaveName."
+done
+
+
+# Save DtClassdbDir to DtClassdbSaveDir,
+#      DtLocaleDir/*/classdb and DtLocaleDir/*/app-defaults to DtLocaleSaveDir,
+#      DtAppDefsDir to DtAppDefsSaveDir.
+#
+EchoThis "  save $DtClassdbDir" HDR
+MakeThisDir $DtClassdbSaveDir 0777 bin bin "Classdb"
+echo "$DtClassdbDir $DtClassdbSaveDir" >> $DtSavedMap
+(cd $DtClassdbDir; /usr/bin/find . -print |
+	/usr/bin/cpio -pd $DtClassdbSaveDir) 2> /dev/null
+
+	# Only looking for REAL directory(ies) under $DtLocaleDir!!!
+EchoThis "  save $DtLocaleDir/*/[classdb|app-defaults]" HDR
+MakeThisDir $DtLocaleSaveDir 0777 bin bin "Locale"
+echo "$DtLocaleDir $DtLocaleSaveDir" >> $DtSavedMap
+CdbDirs=`cd $DtLocaleDir; /usr/bin/find . -name "classdb" -type d -print`
+RscDirs=`cd $DtLocaleDir; /usr/bin/find . -name "app-defaults" -type d -print`
+(cd $DtLocaleDir; /usr/bin/find $CdbDirs $RscDirs -print |
+	/usr/bin/cpio -pd $DtLocaleSaveDir) 2>/dev/null
+
+EchoThis "  save $DtAppDefsDir" HDR
+MakeThisDir $DtAppDefsSaveDir 0777 bin bin "AppDefs"
+echo "$DtAppDefsDir $DtAppDefsSaveDir" >> $DtSavedMap
+(cd $DtAppDefsDir; /usr/bin/find . -print |
+	/usr/bin/cpio -pd $DtAppDefsSaveDir) 2>/dev/null
+
+# Don't save it to $DtSavedMap!
+#
+EchoThis "  save $DtUsersDir" HDR
+MakeThisDir $DtUsersSaveDir 0777 bin bin "Users"
+(cd $DtUsersDir; /usr/bin/find . -print |
+	/usr/bin/cpio -pd $DtUsersSaveDir) 2>/dev/null
+
+# Mark "cold" stage is done!
+#
+echo "$DtSaveDir" > $XDir/$ThisIdFile
+/usr/bin/chmod 666  $XDir/$ThisIdFile
+/usr/bin/chown bin  $XDir/$ThisIdFile
+/usr/bin/chgrp bin  $XDir/$ThisIdFile
+
+EchoThis "End $ThisScript, date=`date`" HDR
+
+exit 0

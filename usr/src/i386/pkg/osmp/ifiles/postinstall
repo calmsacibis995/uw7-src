@@ -1,0 +1,197 @@
+#ident	"@(#)pkg.osmp:ifiles/postinstall	1.29.1.7"
+
+#exec 2>/tmp/osmp.post.err
+#set -x
+
+# assume that we've not configured a PSM or requested an
+# add-on PSM floppy install unless explicitly directed
+# by the user interview
+
+PSMFLOP=FALSE
+CONFIGURED_SOMETHING=FALSE
+
+# for initial system (boot floppy) install, the osmp
+# request script didn't create /tmp/psmindex.  Create it
+# via looking for a PSMINDEX define in /isl/ifile
+
+[ -f /etc/inst/scripts/postreboot.sh ] && {
+	grep PSMINDEX /isl/ifile > /tmp/psmindex
+}
+
+# the file /tmp/psmindex contains to convert info in the file into
+# a value for the variable "DIR"
+
+[ -f /tmp/psmindex ] && {
+	. /tmp/psmindex
+	case ${PSMINDEX} in
+		0) DIR=""
+		   OTHERS="compaq mps cbus"
+		   ;;
+		1) DIR=compaq
+		   OTHERS="mps cbus"
+		   ;;
+		2) DIR=mps
+		   OTHERS="compaq cbus"
+		   ;;
+#		3) DIR=abon
+#		   OTHERS="mps compaq cbus"
+#		   ;;
+#		3) DIR=""
+#		   OTHERS="compaq mps cbus"
+#		   PSMFLOP=TRUE
+#		   ;;
+		3) DIR=cbus
+		   OTHERS="compaq mps"
+		   ;;
+		4) DIR=cbus
+		   OTHERS="compaq mps"
+		   ;;
+		5) DIR=cbus
+		   OTHERS="compaq mps"
+		   ;;
+		6) DIR=""
+		   OTHERS="compaq mps cbus"
+		   PSMFLOP=TRUE
+	esac
+}
+
+
+# The following commented code block represents how support for Tricord,
+# Corollary, Olivetti, Acer and AST Manhattan SMP systems were
+# supported in UW2.1.  Left in case we add any of them back in for
+# Gemini later.
+
+#[ -f /tmp/psmindex ] && {
+#	. /tmp/psmindex
+#	case ${PSMINDEX} in
+#		0) DIR=""
+#		   OTHERS="compaq mps tricord cbus ast olivetti acer"
+#		   ;;
+#		1) DIR=compaq
+#		   OTHERS="mps tricord cbus ast olivetti acer"
+#		   ;;
+#		2) DIR=mps
+#		   OTHERS="compaq tricord cbus ast olivetti acer"
+#		   ;;
+#		3) DIR=tricord
+#		   OTHERS="compaq mps cbus ast olivetti acer"
+#		   ;;
+#		4) DIR=cbus
+#		   OTHERS="compaq mps tricord ast olivetti acer"
+#		   ;;
+#		5) DIR=cbus
+#		   OTHERS="compaq mps tricord ast olivetti acer"
+#		   ;;
+#		6) DIR=cbus
+#		   OTHERS="compaq mps tricord ast olivetti acer"
+#		   ;;
+#		7) DIR=ast
+#		   OTHERS="compaq mps tricord cbus olivetti acer"
+#		   ;;
+#		8) DIR=olivetti
+#		   OTHERS="compaq mps tricord cbus ast acer"
+#		   ;;
+#		9) DIR=acer
+#		   OTHERS="compaq mps tricord cbus ast olivetti"
+#		   ;;
+#		10) DIR=""
+#		   OTHERS="compaq mps tricord cbus ast olivetti acer"
+#		   PSMFLOP=TRUE
+#	esac
+#}
+
+
+FAILURE=1
+TMP=/tmp/osmp.err
+rm -f ${TMP}
+
+do_install() {
+	MOD=$1
+	cd /tmp/${MOD}
+	/etc/conf/bin/idinstall -k -P osmp -a ${MOD} 2>> ${TMP} ||
+	/etc/conf/bin/idinstall -k -P osmp -u ${MOD} 2>> ${TMP} || {
+	pfmt -s nostd -g ${PKGMSG}:2 "The installation of the %s package cannot be completed\nbecause of an error in the driver installation.\nThe file %s contains the errors.\n" ${NAME} ${TMP}
+	exit ${FAILURE}
+	}
+	
+	CONFIGURED_SOMETHING=TRUE
+}
+
+#Install modules, but get list of files to removef before
+#doing the idinstall since it deletes the files
+
+if [ -n "$DIR" ] 
+then
+	for i in ${DIR} ${OTHERS}
+	do
+	  VOLATILES=`echo /tmp/$i /tmp/${i}/*`
+	  removef osmp ${VOLATILES} >/dev/null 1>/dev/null 2>&1
+	done
+	do_install $DIR
+else
+	for i in ${OTHERS}
+	do
+	  VOLATILES=`echo /tmp/$i /tmp/${i}/*`
+	  removef osmp ${VOLATILES} >/dev/null 1>/dev/null 2>&1
+	done
+fi
+
+#
+# Cleanup
+#
+
+cd /
+rm -rf ${VOLATILES} 1>/dev/null 2>&1
+
+removef -f osmp >/dev/null
+installf -f osmp >/dev/null
+
+if [ "${CONFIGURED_SOMETHING}" = "TRUE" ]
+then
+	# always call idtype to set /etc/conf/cf.d/type if a PSM
+	# was configured
+	/etc/conf/bin/idtype mp 1>/dev/null 2>/dev/null
+
+	# if /etc/inst/scripts/postreboot.sh doesn't exist, means 
+	# this is a non-boot flop installation of the package,
+	# so a kernel build is in order. Exit 10 so
+	# the need to reboot is flagged
+
+#	[ ! -f /etc/inst/scripts/postreboot.sh ] && {
+#		/etc/conf/bin/idbuild 2>${TMP}
+#		[ "$?" != 0 ] && exit ${FAILURE}
+#		/etc/conf/bin/idbuild 2>${TMP}
+#		[ "$?" != 0 ] && exit ${FAILURE}
+#		
+#	}
+	/etc/conf/bin/idbuild 2>${TMP}
+	[ "$?" != 0 ] && exit ${FAILURE}
+fi
+
+/usr/bin/ed /etc/conf/cf.d/deflist > /dev/null 2>&1 << EOT
+s/-DUNIPROC/-UUNIPROC/g
+w
+q
+EOT
+
+# OSMP package leaves osmp.post.sh in /tmp for ISL.
+# Check for PSMFLOP=FALSE and remove osmp.post.sh
+# since there is no need for ISL to run the script.
+# osmp.post.sh will prompt for insertion of the PSM floppy.
+
+if [ "${PSMFLOP}" != "TRUE" ]
+then
+	rm -f /tmp/osmp.post.sh 1>/dev/null 2>&1
+fi
+
+# 
+# configure the processor manager GUI
+#
+GUI=psrsetup
+ADMINLIB=/usr/lib/scoadmin/$GUI
+/usr/bin/scoadmin -v -p Hardware -f -c $ADMINLIB/"$GUI".obj
+/sbin/osaconf -a sco "$GUI"Osa LOOP_BACK sco_Tcl_osa $ADMINLIB/"$GUI"Osa
+/sbin/classconf -a sco "$GUI" "$GUI"Osa
+
+
+exit 10 # notify that idbuild is necessary!

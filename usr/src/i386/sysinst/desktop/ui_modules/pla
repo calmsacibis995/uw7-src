@@ -1,0 +1,183 @@
+#!/sbin/sh
+#ident "@(#)pla	15.1	97/12/19"
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	accept_pla=`ivar get accept_pla`
+	[ -z "$accept_pla" ] && ivar set accept_pla true
+
+        # common.rc will call ii_exit for us
+}
+
+. /isl/ui_modules/common.rc
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+        # Save whatever option is currently selected
+        # so when they come back, it will be the default selection.
+        #
+        ivar set accept_pla "$accept_pla"
+
+        ivar set help_topic pla
+        ii_exit HELP
+}
+
+
+function noop
+{
+	:
+}
+
+
+function demand_accept
+{
+[ -n "$debug" ] && set -x
+	#
+	# Tell them to accept the PLA to continue
+	#
+
+	wclose $display_window
+	wclose $radio_window
+
+	display -w "$PLA_MANDATORY" -bg $ERROR_BG -fg $ERROR_FG
+	display_window=$CURWIN
+	set_hotkey 1 noop
+	set_hotkey 9 noop
+	set_hotkey 10 noop
+	footer "$ACCEPT_KEYS"
+	msg 
+	input_handler
+	wclose $display_window
+}
+
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	if [ "$1" = display ]
+        then
+		display_lic=true
+	else
+		display_lic=false
+        	accept_pla="$1"
+	fi
+}
+
+
+function get_pla
+{
+[ -n "$debug" ] && set -x
+	display "$PLA" -above 2 -below 6 
+	display_window=$CURWIN
+
+	open_radio -bg $BLUE -fg $WHITE
+	radio_wid=$RID
+	add_radio -entry "set_choice true" "$ACCEPT"
+	add_radio -entry "set_choice false" "$DONT_ACCEPT"
+	add_radio -entry "set_choice display" "$DISPLAY_LICENSES"
+	radio_runparms $radio_wid 3
+
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		-above 6 -below 0 -title "$ACCEPT_TITLE"	
+	radio_window=$CURWIN
+
+	if $accept_pla
+        then
+                current=0
+        else
+                current=1
+        fi
+	run_radio $radio_wid $current 3
+	msg
+	footer "$PLA_KEYS"
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	set_hotkey 10 go_next
+	input_handler
+	wclose $display_window
+	wclose $radio_window
+}
+
+
+#
+# The user hit F9, so tell the sequencer to go back.
+#
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+        # Save whatever option is currently selected
+        # so when they come back, it will be the default selection.
+        #
+        ivar set accept_pla "$accept_pla"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+#
+# The user hit F10, but is not allowd to go on yet. Give them an error
+# message, and stay here.
+#
+function go_nowhere
+{
+[ -n "$debug" ] && set -x
+	msg "$PLA_MANDATORY"
+	beep
+}
+
+
+#
+# The user hit F10, check its ok to continue
+#
+function go_next
+{
+[ -n "$debug" ] && set -x
+	if [ "$display_lic" = true ]
+	then
+		get_help
+	else
+		if [ "$accept_pla" = false ]
+        	then
+			demand_accept
+		else
+        		ivar set accept_pla "$accept_pla"
+			ii_exit NEXT
+		fi
+	fi
+}
+
+
+#-----------------------------------------------------------
+#
+# Main
+#
+#
+#
+# Get the initial choice (if any).
+#
+accept_pla=`ivar get accept_pla`
+[ -z "$accept_pla" ] && accept_pla=true
+
+#
+# Let the user choose one
+#
+while [ 1 == 1 ]
+do
+	get_pla
+	input_handler
+	go_next
+done
+
+#
+# Done. Shouldn't get here, but just in case...
+#
+ii_exit DIE
+

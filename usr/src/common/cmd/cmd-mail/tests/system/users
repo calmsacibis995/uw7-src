@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# this script start up the mailread programs on the slave.
+# it expects to be started in the slave directory.
+#
+
+. ./load.cfg
+
+# start mailreader programs
+count=0
+MR=$SLAVEDIR/mailread
+while [ $count -lt $USERCOUNT ]
+do
+	username=$USERPREFIX$count
+	if [ $count -lt $POPSTART ]
+	then
+		true
+
+	elif [ $count -lt $IMAPSTART ]
+	then
+		$MR -pop \
+			-interval $READPOLL \
+			-random -count $MSGS_TOTAL \
+			$DELETE $PROTOCOL \
+			$username@$MASTER $username \
+			> /tmp/$username &
+	else
+		$MR -imap -imapconnect \
+			$IMAPCONNECT -interval $READPOLL \
+			-random -count $MSGS_TOTAL \
+			$DELETE $PROTOCOL \
+			$username@$MASTER $username \
+			> /tmp/$username &
+	fi
+	count=`expr $count + 1`
+done
+
+# maybe should add a timeout?  The wait hangs if any messages get lost.
+wait

@@ -1,0 +1,115 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:06:48
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1996-1998.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+#include <Server.tmpl>
+
+#ifndef GD5436LIB
+#define GD5436LIB gd5436_8bpp
+gd5436_8bpp= gd5436_8bpp
+GD5436_PIXEL_SIZE= 8
+#endif
+
+.SUFFIXES: .i
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+SRCS = gd5436Cmap.c gd5436Cursor.c gd5436Data.c gd5436GC.c \
+    gd5436Image.c gd5436Init.c gd5436Screen.c gd5436Win.c \
+    gd5436Blit.c gd5436Glyph.c gd5436Font.c gd5436Tile.c \
+    gd5436Stip.c gd5436Bres.c
+
+OBJS =	gd5436Cmap.o gd5436Cursor.o gd5436Data.o gd5436GC.o \
+    gd5436Image.o gd5436Init.o gd5436Screen.o gd5436Win.o \
+    gd5436Blit.o gd5436Glyph.o gd5436Font.o gd5436Tile.o \
+    gd5436Stip.o gd5436Bres.o
+
+DDXLIBS = lib$(GD5436LIB).a
+GRAFDIR = $(USRLIBDIR)/grafinfo
+DEFINES = -DGD5436HEAD=$(GD5436LIB) -DGD5436_BITS_PER_PIXEL=$(GD5436_PIXEL_SIZE)  -DGD5436_STRING=\"$(GD5436LIB)\" $(EXTRA_DEFINES)
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o:
+	LibObjCompile(shared,-O -Kpic)
+	NormalLibObjCompile(-O)
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget($(GD5436LIB),$(OBJS))
+SharedXDriverTarget($(GD5436LIB),6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget($(GD5436LIB),$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP($(GD5436LIB),$(DDXLIBS),gd5436Init.c)
+
+$(GD5436LIB)Data.o: gd5436Data.o
+        cp gd5436Data.o $(GD5436LIB)Data.o
+        (cd shared; cp gd5436Data.o $(GD5436LIB)Data.o)
+
+#else
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+NormalLibraryObjectRule()
+
+NormalLibraryTarget($(GD5436LIB),$(OBJS))
+LintLibraryTarget($(GD5436LIB),$(SRCS))
+
+$(GD5436LIB)Data.o: gd5436Data.o
+        cp gd5436Data.o $(GD5436LIB)Data.o
+
+DynamicObjectRule($(GD5436LIB),$(DDXLIBS))
+
+#endif
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(gd5436Cmap.c,LinkDirectory)
+LinkDepSourceFile(gd5436Cursor.c,LinkDirectory)
+LinkDepSourceFile(gd5436Data.c,LinkDirectory)
+LinkDepSourceFile(gd5436GC.c,LinkDirectory)
+LinkDepSourceFile(gd5436Image.c,LinkDirectory)
+LinkDepSourceFile(gd5436Init.c,LinkDirectory)
+LinkDepSourceFile(gd5436Screen.c,LinkDirectory)
+LinkDepSourceFile(gd5436Win.c,LinkDirectory)
+LinkDepSourceFile(gd5436Defs.h,LinkDirectory)
+LinkDepSourceFile(gd5436Procs.h,LinkDirectory)
+LinkDepSourceFile(gd5436Macros.h,LinkDirectory)
+LinkDepSourceFile(gd5436Consts.h,LinkDirectory)
+LinkDepSourceFile(gd5436Blit.c,LinkDirectory)
+LinkDepSourceFile(gd5436Glyph.c,LinkDirectory)
+LinkDepSourceFile(gd5436Font.c,LinkDirectory)
+LinkDepSourceFile(gd5436Tile.c,LinkDirectory)
+LinkDepSourceFile(gd5436Stip.c,LinkDirectory)
+LinkDepSourceFile(gd5436Bres.c,LinkDirectory)
+#endif
+
+DependTargetSCP(gd5436Init.c)

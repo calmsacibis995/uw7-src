@@ -1,0 +1,63 @@
+
+                           XFree86-DGA Extension
+
+The XFree86-DGA extension is an X server extension for allowing client
+programs direct access to the video frame buffer.
+
+This is a brief description of the programming interface for the
+XFree86-DGA extension.  This describes version 0.0, which is a beta
+version.  The interface may change in future versions.  The functions
+described here are found in the library libXExExt.a, and any client which
+uses an Imakefile will be linked against this library.
+
+Prototypes for these functions can be found in <X11/extensions/xf86dga.h>
+
+  XF86DGAQueryVersion(Display *display, int *majorVersion, int *minorVersion)
+
+     query the XFree86-DGA version
+
+
+  XF86DGAQueryExtension(Display *display, int *eventBase, int *errorBase)
+
+     returns the eventBase and errorBase for the XFree86-DGA extension
+
+
+  XF86DGAGetVideo(Display *display, int screen, char **addr, int *width,
+                  int *bankSize, int *memSize);
+
+     returns a pointer to the start of the video framebuffer (*addr),
+     the line width (*width), memory bank size (*bankSize) and total
+     memory size (*memSize).  Mapping the video framebuffer is a
+     privileged operation on most OSs (usually mmap of /dev/mem),
+     so a program using this must usually be setuid (or perhaps setgid)
+     at least up until the point the function is called.
+
+
+  XF86DGADirectVideo(Display *display, int screen, int flags)
+
+     enables/disables Direct Video mode.  When Direct Video mode is
+     enabled, the X server gives up control of the framebuffer to the
+     client.  When flags is zero, Direct Video mode is disabled.  flags
+     may be a bit-wise combination of the following:
+
+       XF86DGADirectGraphics          enable Direct Video mode
+       XF86DGADirectMouse             enable reporting of pointer movement
+                                      as relative motion
+       XF86DGADirectKeyb              enable direct reporting of keyboard
+                                      events
+
+
+  XF86DGASetVidPage(Display *display, int screen, int page)
+
+     Set the framebuffer page.  This is only required for hardware which
+     has a banked memory layout (ie, bankSize < memSize).
+
+
+  XF86DGASetViewPort(Display *display, int screen, int x, int y)
+
+     Set the coordinates of the upper-left corner of the view port to (x,y).
+
+
+
+
+$XFree86: xc/programs/Xserver/hw/xfree86/doc/README.DGA,v 3.0 1995/12/26 11:43:03 dawes Exp $

@@ -1,0 +1,40 @@
+#ident	"@(#)lp	1.3"
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/lp {start|stop}"
+
+case $1 in
+'start')
+	if [ -z "$_PREV_RL" ]
+	then
+		set `LC_ALL=C who -r`
+		_PREV_RL=$9
+	fi
+	if [ "$_PREV_RL" = "2" -o "$_PREV_RL" = "3" ]
+	then
+		exit
+	fi
+	exec /usr/lib/lpsched
+	;;
+'stop')
+	exec /usr/lib/lpshut
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	exit 1
+	;;
+esac

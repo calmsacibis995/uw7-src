@@ -1,0 +1,59 @@
+#ident	"@(#)libatm:Imakefile	1.6"
+
+#ifndef AdobeSharedLibraryObjTarget
+#define AdobeSharedLibraryObjTarget(libname,objs1,objs2)            @@\
+AllTarget(Concat(lib,libname.so))                                       @@\
+                                                                        @@\
+Concat(lib,libname.so):  objs1 objs2 					@@\
+        $(RM) $@                                                       @@\
+        ($(CC) $(YFLAGS) -G objs1 objs2 -o $@ -h $@ $(SHLIBFLAGS))           @@\
+                                                                        @@\
+clean::                                                                 @@\
+        $(RM) Concat(lib,libname.so)
+
+#endif
+
+#define IHaveSubdirs
+#define	PassCDebugFlags
+
+SUBDIRS = config
+
+MakeSubdirs($(SUBDIRS))
+
+OBJS = atm/?*.o oematm/?*.o 
+
+SOBJS1 = atm/buffmana.o \
+	atm/buildglu.o \
+	atm/cacheimpl.o \
+	atm/doublink.o \
+	atm/encodings.o \
+	atm/fixed386.o \
+	atm/fsatmbitmap.o \
+	atm/fsatmfont.o \
+	atm/fsatmimpl.o \
+	atm/fsatmprop.o \
+	atm/parseglu.o 
+
+
+SOBJS2 = oematm/charmap.o \
+	oematm/chartype.o \
+	oematm/cscan.o \
+	oematm/fix64.o \
+	oematm/fixed.o \
+	oematm/flatten.o \
+	oematm/flex.o \
+	oematm/atmqred.o \
+	oematm/fontbuil.o \
+	oematm/fxmtxinv.o \
+	oematm/glbclr.o \
+	oematm/matrix.o \
+	oematm/parse.o \
+	oematm/sqrt.o \
+	oematm/strtofix.o
+
+AdobeSharedLibraryObjTarget(atm,$(SOBJS1),$(SOBJS2))
+InstallSharedLibrary1(libatm.so,$(USRLIBDIR))
+NormalLibraryObjectRule()
+NormalLibraryTarget(atm,$(OBJS))
+DependTarget()
+clean::

@@ -1,0 +1,130 @@
+#!/bin/sh
+#
+# /* @(#)src/vxva_setup	1.18 1/20/96 04:31:48 -  */
+#ident	"@(#)cmd.vxva:vxvm-va/src/vxva_setup	1.1"
+#
+# Copyright(C)1994 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 4800 GREAT AMERICA PARKWAY, SANTA CLARA, CA 95054
+
+HOME_DIR=$HOME/va_demo
+VMROOT=$HOME_DIR
+RRR=$VMROOT/etc/vx/vold_request
+DDD=$VMROOT/etc/vx/vold_diag
+DEV=$VMROOT/dev/dsk
+STDERR=$HOME_DIR/setup.msg
+#STDERR=`tty`
+PATH=/sbin:/usr/sbin:$PATH
+
+
+if [ ! -d $HOME_DIR ]
+then mkdir $HOME_DIR
+fi
+
+if [ ! -d $HOME/va_views ]
+then mkdir $HOME/va_views
+fi
+
+echo $0 " for `logname` at `/bin/date`" >> $STDERR
+
+if test -x /sbin/vxconfigd
+then 
+	#
+	# Test for the process running and pointing to the same pipe before
+	# attempting to stop it -- this avoids hanging.
+	#
+	configd_ps=`ps -eaf | grep vxconfigd | grep =$HOME_DIR`
+	if [ "$configd_ps" ]
+	then
+		vxdctl -R $DDD stop 2>>$STDERR
+	fi
+#    	echo "Install dummy disks for VxVa demo mode ..."
+else 
+	echo "VERITAS Volume Manager is not installed.  The Volume Manager"
+	echo "is needed for operation of VxVA.  Please install it before"
+	echo " using VxVA."
+	exit 0
+fi
+
+
+if [ ! -d $HOME_DIR/views ]
+then 
+	mkdir $HOME_DIR/views
+fi
+
+rm -rf $HOME_DIR/etc
+
+if [ $? -ne 0 ]
+then 
+	echo $0 "abort: Fail to remove $HOME_DIR/etc"
+	echo "Make sure you have the permission to remove it"
+	exit 0
+fi
+
+mkdir $HOME_DIR/etc
+mkdir $HOME_DIR/etc/vx
+mkdir $HOME_DIR/etc/vx/tempdb
+
+rm -rf $HOME_DIR/dev
+if [ $? -ne 0 ]
+then 
+	echo "vxva_setup abort: Failed to remove $HOME_DIR/dev"
+	echo "Make sure you have the permission to remove it"
+	exit 0
+fi
+
+mkdir $HOME_DIR/dev
+mkdir $HOME_DIR/dev/dsk
+ln -s $VMROOT/dev/dsk $VMROOT/dev/rdsk
+
+DEV0=c0b0t0d0s1
+DEV1=c0b0t1d0s1
+DEV2=c0b0t2d0s1
+DEV3=c0b0t3d0s1
+DEV4=c0b0t4d0s1
+DEV5=c0b0t5d0s1
+DEV6=c0b0t6d0s1
+DEV7=c0b0t7d0s1
+
+#create device entries
+/bin/touch $DEV/$DEV0 $DEV/$DEV1 $DEV/$DEV2 $DEV/$DEV3 \
+$DEV/$DEV4 $DEV/$DEV5 $DEV/$DEV6 $DEV/$DEV7
+chmod 0777 $DEV/*
+
+/sbin/vxconfigd -R $RRR -D $DDD -xstub \
+-xboot=$VMROOT/etc/vx/volboot -xdevprefix=$VMROOT 2>>$STDERR
+vxdctl -R $DDD init 2>>$STDERR
+vxdg -R $DDD init rootdg 2>>$STDERR
+
+# echo "Initialize dummy disks ...\c"
+vxdisk -R $DDD -f init $DEV0 len=1024000
+vxdisk -R $DDD -f init $DEV1 len=1024000
+vxdisk -R $DDD -f init $DEV2 len=1024000
+vxdisk -R $DDD -f init $DEV3 len=1024000
+vxdisk -R $DDD -f init $DEV4 len=1024000
+vxdisk -R $DDD -f init $DEV5 len=1024000
+vxdisk -R $DDD -f init $DEV6 len=1024000
+
+# echo "\nInitialize volboot for VxVa demo mode ...\c"
+vxdg -R $DDD adddisk disk01=$DEV0
+vxdg -R $DDD adddisk disk02=$DEV1
+vxdg -R $DDD adddisk disk03=$DEV2
+vxdctl -R $DDD add disk $DEV0
+vxdctl -R $DDD stop
+chmod 0777 $VMROOT/etc/vx/*
+exit 0

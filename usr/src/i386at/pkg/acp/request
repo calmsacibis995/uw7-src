@@ -1,0 +1,195 @@
+#ident	"@(#)pkg.acp:request	1.18.1.10"
+#ident	"$Header$"
+
+#	request script for acp package installation
+
+trap 'exit 3' 15
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+OUTPUT=$1
+>$OUTPUT
+# Since the new mtune.d/ptm is not installed yet, we get the number
+# of default pseudo-ttys from the pkginfo file. The default
+# we use depends on how many users are licensed.
+NUM_USERS=`keyadm -g USERS|cut -f1`
+if [ "$NUM_USERS" = "2" ]
+then
+	DFLT_SCO=$DFLT_SCO_PE
+else
+	DFLT_SCO=$DFLT_SCO_AS
+fi
+NSCO=$DFLT_SCO
+
+############# Begin  UPGRADE AND OVERLAY #######################
+
+UPINSTALL=/etc/conf.sav
+SCRIPTS=/usr/sbin/pkginst
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=${UPGRADE_STORE}/${PKGINST}.env
+
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && {
+	set -x
+	goany
+}
+
+
+export PKGINSTALL_TYPE INSTALL_MODE
+
+#  set INSTALL_MODE to CUSTOM, if not set
+
+[ "$INSTALL_MODE" ] || INSTALL_MODE=CUSTOM
+
+AUTOMERGE=NULL
+PKGINSTALL_TYPE=NEWINSTALL
+
+# Call chkpkgrel to determine installation type. As a side-effect,
+# it creates $UPGFILE.
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	6)	PKGINSTALL_TYPE=UPGRADE2	;;
+	*)	;;
+esac
+
+# Determine the number of SCO pseudo-ttys to configure for an OVERLAY
+# or UPGRADE. 
+
+[ "$PKGINSTALL_TYPE" = NEWINSTALL ] || {
+
+	AUTOMERGE=Yes
+
+	[ "$PKGINSTALL_TYPE" = OVERLAY -o "$PKGINSTALL_TYPE" = UPGRADE2 ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+		# (We checked for boot-floppy installation just in case
+		# at some future time the request script is called from
+		# the boot-floppy. The extra cost is small.)
+			PTM=$UPINSTALL
+			NSCO=`cut -f2 $PTM/node.d/pts|grep ttyp|wc -l`
+			[ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+		else
+		# We are installing using pkgadd on a running system.
+		# NOTE: If nsu is overlayed first, then there is no way to
+		# determine the number of SCO pty's previously setup. This
+		# is because nsu will install a new mtune and reinitialize
+		# the number of SCO pty's to the default in mtune. The fix
+		# for this has to be in nsu. It must determine both the 
+		# number of regular and SCO ptys previously setup. 
+			PTM=/etc/conf
+			if [ -f $PTM/mtune.d/ptm ]
+			then
+                                line=`/etc/conf/bin/idtune -g NUMSCOPT`
+                                set - $line
+                                NSCO=$1
+                                [ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+			else
+			# This is the odd case when we cannot find the old values.
+			# Use the defaults.
+                                continue
+			fi
+		fi
+	}
+	[ "$PKGINSTALL_TYPE" = UPGRADE ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+		# (We checked for boot-floppy installation just in case
+		# at some future time the request script is called from
+		# the boot-floppy. The extra cost is small.)
+                        PTM=$UPINSTALL
+		else
+                    	PTM=/etc/conf
+		fi
+
+		# We are upgrading from a pre-UnixWare 2.0 release that used
+		# different drivers for SCO and regular ptys. The sdevice.d/mpt
+		# file will have only the number of SCO ptys.
+                if [ -f $PTM/sdevice.d/mpt ]
+		then
+                        grep "^mpt	" $PTM/sdevice.d/mpt >/tmp/mpt.$$ 2>/dev/null
+   			OFS=$IFS
+                        IFS="	"	#tab
+			read Dev Conf LAST_SCO x4 </tmp/mpt.$$
+			[ "$Conf" = N ] && LAST_SCO=$DFLT_SCO
+			IFS=$OFS
+			rm -f /tmp/mpt.$$
+
+			[ "$LAST_SCO" -gt "$DFLT_SCO" ] && NSCO=$LAST_SCO
+			[ "$NSCO" -gt "$MAX_SCO_PTS" ] && NSCO=$MAX_SCO_PTS
+		else
+		# This is the odd case when we cannot find the old values.
+		# Use the defaults.
+                                continue
+		fi
+	}
+}
+
+echo "AUTOMERGE=$AUTOMERGE" >>$OUTPUT || exit 1
+echo "PKGINSTALL_TYPE=$PKGINSTALL_TYPE" >>$OUTPUT || exit 1
+echo "INSTALL_MODE=$INSTALL_MODE" >>$OUTPUT || exit 1
+
+############# End  UPGRADE AND OVERLAY #######################
+
+
+#
+#  Put menu files in correct location
+#
+DIR=/etc/inst/locale/${LOCALE}/menus/acp
+
+[ -d ${DIR} ] || mkdir -p ${DIR}
+if [ ! -f ${DIR}/menu.acp ]
+then
+	if [ -f "${REQDIR}/inst/locale/${LOCALE}/acp/menu.acp" ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/acp/menu.acp ${DIR}
+	else
+		cp ${REQDIR}/acp/menu* ${DIR}
+	fi
+fi
+
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+# If this is a boot-floppy installation, do not show menu.
+if [ ! -f /etc/inst/scripts/postreboot.sh ]
+then
+	# Make NSCO available to menu command.
+	export NSCO
+	menu_colors regular
+	> /tmp/out
+	menu -f ${DIR}/menu.acp -o /tmp/out 2> /dev/null
+	. /tmp/out
+fi
+
+# Now a kludge. Since the boot-floppy does not run the request
+# script but does make an $UPGFILE, we need another flag to tell
+# preinstall that this request script was run. This flag is 
+# $NSCO in $UPGFILE. We have to empty $UPGFILE first since 
+# chkpkgrel puts in $PKGVERSION which gives an error when file
+# is dotted in by preinstall.
+echo "NSCO=$NSCO" >$UPGFILE
+
+exit 0
+

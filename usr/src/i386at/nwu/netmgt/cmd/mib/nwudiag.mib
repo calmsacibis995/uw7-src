@@ -1,0 +1,278 @@
+--
+-- Source file:   nwudiag.mib
+--
+-- Description:   NetWare for Unix Diagnostic Management Information Base
+--
+-- Author:   Rick Bell
+--
+-- Date Created:  January 25, 1993
+--
+-- Copyright 1991, 1992 Unpublished Work of Novell, Inc.
+-- All Rights Reserved.
+--
+-- This work is an unpublished work and contains confidential,
+-- proprietary and trade secret information of Novell, Inc. Access
+-- to this work is restricted to (I) Novell employees who have a
+-- need to know to perform tasks within the scope of their
+-- assignments and (II) entities other than Novell who have
+-- entered into appropriate agreements.
+--
+-- No part of this work may be used, practiced, performed,
+-- copied, distributed, revised, modified, translated, abridged,
+-- condensed, expanded, collected, compiled, linked, recast,
+-- transformed or adapted without the prior written consent
+-- of Novell.  Any use or exploitation of this work without
+-- authorization could subject the perpetrator to criminal and
+-- civil liability.
+--
+
+NWUDIAG DEFINITIONS ::= BEGIN
+
+IMPORTS
+	enterprises, Counter, Gauge
+             FROM RFC1155-SMI
+        OBJECT-TYPE
+             FROM RFC1212
+        DisplayString
+             FROM RFC1213-MIB
+    	nwu
+             FROM Network-Management-MIB;
+
+nwuDiag            OBJECT IDENTIFIER ::= { nwu 1 }
+
+-- Diagnostics Groups
+
+nwuDiagSystem  OBJECT IDENTIFIER ::= {nwuDiag 1}
+nwuDiagCircuit OBJECT IDENTIFIER ::= {nwuDiag 2}
+
+-- System Group
+--   This group contains global information about each instance of
+--   Diagnostic running on one system.
+
+-- Diagnostic System Table
+--   This table contains an entry for each instance of Diagnostic
+--   running on the system.
+
+nwuDiagSysTable         OBJECT-TYPE
+                        SYNTAX    SEQUENCE OF NWUDiagSysEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "The Diagnostic system table."
+                        ::= {nwuDiagSystem 1}
+
+nwuDiagSysEntry         OBJECT-TYPE
+                        SYNTAX    NWUDiagSysEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "Each entry corresponds to one instance of 
+                                  Diagnostic running on the system."
+                        INDEX     {nwuDiagSysInstance}
+                        ::= {nwuDiagSysTable 1}
+
+NWUDiagSysEntry ::= SEQUENCE {
+                             nwuDiagSysInstance
+                                  INTEGER,
+                             nwuDiagSysState
+                                  INTEGER,
+                             nwuDiagSysMajorVer
+                                  INTEGER,
+                             nwuDiagSysMinorVer
+                                  INTEGER,
+                             nwuDiagSysUpTime
+                                  INTEGER
+                             }
+                           
+nwuDiagSysInstance      OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "The unique identifier of the instance of 
+                                  Diagnostic to which this row corresponds. This 
+                                  value links the instance of Diagnostic to an 
+                                  instance of IPX running on the system  
+                                  (i.e. the value of nwuDiagSysInstance 
+                                  should be the same as a value of ipxSysInstance)."
+                        ::= {nwuDiagSysEntry 1}
+
+nwuDiagSysState         OBJECT-TYPE
+                        SYNTAX    INTEGER   {
+                                            off(1),
+                                            on(2)
+                                            }
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Indicates the operational state of this 
+                                  instance of Diagnostic."
+                        ::= {nwuDiagSysEntry 2}
+
+nwuDiagSysMajorVer      OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "This is the Major Version Number for Diagnostic 
+                                  Services."
+                        ::= { nwuDiagSysEntry 3 }
+
+nwuDiagSysMinorVer      OBJECT-TYPE
+                        SYNTAX  INTEGER
+                        ACCESS  read-only
+                        STATUS  mandatory
+                        DESCRIPTION
+                             "This is the Minor Version Number for
+                             Diagnostic Services."
+                        ::= { nwuDiagSysEntry 4 }
+
+nwuDiagSysUpTime       OBJECT-TYPE
+                        SYNTAX  INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the uptime of the Diagnostic Services."
+                        ::= { nwuDiagSysEntry 5 }
+
+-- Circuit Group
+--   This group contains Diagnostic management information for each
+--   circuit known to this system.
+
+-- Diagnostic Circuit Table
+--  The Diagnostic Circuit table contains an entry for the Diagnostic 
+--  information for each circuit known to the system.
+
+nwuDiagCircTable        OBJECT-TYPE
+                        SYNTAX    SEQUENCE OF NWUDiagCircEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The Diagnostic Circuit table."
+                        ::= {nwuDiagCircuit 1}
+
+nwuDiagCircEntry        OBJECT-TYPE
+                        SYNTAX    NWUDiagCircEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "Each entry corresponds to one circuit known to 
+                                  the system."
+                        INDEX     {
+                                  nwuDiagCircSysInstance,
+                                  nwuDiagCircIndex
+                                  }
+                        ::= {nwuDiagCircTable 1}
+
+NWUDiagCircEntry   ::= SEQUENCE   {
+                                  nwuDiagCircSysInstance
+                                       INTEGER,
+                                  nwuDiagCircIndex
+                                       INTEGER,
+                                  nwuDiagCircState
+                                       INTEGER,
+                                  nwuDiagCircIPXSPXReqs
+                                       Counter,
+                                  nwuDiagCircLanDvrReqs
+                                       Counter,
+                                  nwuDiagCircFileSrvReqs
+                                       Counter,
+                                  nwuDiagCircUnknownReqs
+                                       Counter,
+                                  nwuDiagCircSPXDiagSocket
+                                       INTEGER,
+                                  nwuDiagCircTimeOfLastReq
+                                       INTEGER
+                                  }
+
+nwuDiagCircSysInstance     OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The unique identifier of the instance of 
+                                  Diagnostic and IPX (via ipxSysInstance) to which 
+                                  this entry corresponds. This value may be written 
+                                  only when creating a new entry in the table."
+                        ::= {nwuDiagCircEntry 1}
+
+nwuDiagCircIndex        OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The identifier of this circuit, unique within 
+                                  the instance of Diagnostic. This value 
+                                  corresponds to the circuit identifier found in 
+                                  ipxCircIndex. This value may be written only when 
+                                  creating a new entry in the table."
+                        ::= {nwuDiagCircEntry 2}
+
+nwuDiagCircState        OBJECT-TYPE
+                        SYNTAX    INTEGER   {
+                                            off(1),
+                                            on(2),
+                                            auto(3)
+                                            }
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "Indicates whether Diagnostic information 
+                                  may be sent/received over this circuit."
+                        DEFVAL    { auto }
+                        ::= {nwuDiagCircEntry 3}
+
+nwuDiagCircIPXSPXReqs   OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the IPX/SPX requests for Diagnostic 
+                                  Services."
+                        ::= {nwuDiagCircEntry 4}
+
+nwuDiagCircLanDvrReqs   OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the LAN Drivers requests for 
+                                  Diagnostic Services."
+                        ::= {nwuDiagCircEntry 5}
+
+nwuDiagCircFileSrvReqs  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the File Server requests for 
+                                  Diagnostic Services."
+                        ::= {nwuDiagCircEntry 6}
+
+nwuDiagCircUnknownReqs  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-write
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the unknown requests for Diagnostic 
+                                  Services."
+                        ::= {nwuDiagCircEntry 7}
+
+nwuDiagCircSPXDiagSocket OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the SPX diagnostic socket for 
+                                  Diagnostic Services."
+                        ::= {nwuDiagCircEntry 8}
+
+nwuDiagCircTimeOfLastReq OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the time of the last request for 
+                                  Diagnostic Services."
+                        ::= {nwuDiagCircEntry 9}
+END

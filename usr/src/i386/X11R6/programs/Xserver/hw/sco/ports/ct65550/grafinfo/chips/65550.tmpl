@@ -1,0 +1,628 @@
+/*
+ *	@(#)65550.tmpl	11.2	10/28/97	16:28:22
+ * @(#) 65550.tmpl 60.1 96/12/23 
+ *
+ * Copyright (C) The Santa Cruz Operation, 1991-1997.
+ * The Santa Cruz Operation, and should be treated as Confidential.
+ * This Module contains Proprietary Information of
+ * The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ */
+
+/* ************************************************************************* *
+ * Chips/65550.xgi - GrafInfo File for Chips and Technologies 65550          *
+ *                                                                           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                           *
+ *                    CHIPS.65550.SVGA.1024x768-64K                          *
+ *                    CHIPS.65550.SVGA.1024x768-256-LCD                      *
+ *                    CHIPS.65550.SVGA.1024x768-256-CRT                      *
+ *                    CHIPS.65550.CT65550.800x600-64K                        *
+ *                    CHIPS.65550.CT65550.800x600-256-LCD                    *
+ *                    CHIPS.65550.CT65550.800x600-256-CRT                    *
+ *                    CHIPS.65550.VGA.800x600-16-LCD                         *
+ *                    CHIPS.65550.VGA.800x600-16-CRT                         *
+ *                    CHIPS.65550.CT65550.640x480-64K                        *
+ *                    CHIPS.65550.CT65550.640x480-256-LCD                    *
+ *                    CHIPS.65550.CT65550.640x480-256-CRT                    *
+ *                    CHIPS.65550.CT65550.640x480-256-LCD+CRT                *
+ *                    CHIPS.65550.VGA.640x480-16-LCD                         *
+ *                    CHIPS.65550.VGA.640x480-16-CRT                         *
+ *                    CHIPS.65550.VGA.640x480-16-LCD+CRT                     *
+ *                                                                           *
+ * ************************************************************************* */
+
+/*
+ * NOTE - this file assumes that the display mode is initially simultaneous.
+ */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   1024x768-64K "1024x768 64K-color"
+
+    MEMORY(@MEM_BASE@0000,0x800000);	/*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_16";
+	VISUAL      = "TrueColor";
+	DEPTH       = 16;
+	PIXWIDTH    = 1024;
+	PIXHEIGHT   = 768;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x0045;
+	int10(r0, 1);		/* 1024x768-64K-I (VESA mode 0x0117) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   1024x768-256-LCD "1024x768 256-color LCD"
+
+    MEMORY(@MEM_BASE@0000,0x800000);	/*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 1024;
+	PIXHEIGHT   = 768;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0101;
+	int10(r0, 2);			/* switch to flat-panel */
+
+	r0 = 0x0034;
+	int10(r0, 1);
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   1024x768-256-CRT "1024x768 256-color CRT"
+
+    MEMORY(@MEM_BASE@0000,0x800000);	/*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 1024;
+	PIXHEIGHT   = 768;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+
+	r0 = 0x0034;
+	int10(r0, 1);
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   800x600-64K "800x600 64K colors 56Hz"
+
+    MEMORY(@MEM_BASE@0000,0x800000);        /*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_16";
+	VISUAL      = "TrueColor";
+	DEPTH       = 16;
+	PIXWIDTH    = 800;
+	PIXHEIGHT   = 600;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x0043;
+	int10(r0, 1);		/* 800x600-64K (VESA mode 0x0114) */
+
+	r0 = 0x5f05;
+	r1 = 0x0443;
+	int10(r0, 2);		/* set 60Hz refresh for mode 41h */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);		/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   800x600-256-LCD "800x600 256-color LCD"
+
+    MEMORY(@MEM_BASE@0000,0x800000);	/*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 800;
+	PIXHEIGHT   = 600;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0101;
+	int10(r0, 2);			/* switch to flat-panel */
+	r0 = 0x0032;
+	int10(r0, 1);			/* 800x600-64K (VESA mode 0x0103) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   800x600-256-CRT "800x600 256-color CRT"
+
+    MEMORY(@MEM_BASE@0000,0x800000);	/*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 800;
+	PIXHEIGHT   = 600;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+	r0 = 0x0032;
+	int10(r0, 1);			/* 800x600-64K (VESA mode 0x0103) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550      "65550/65554"
+  CLASS  VGA         "VGA"
+   MODE   800x600-16-LCD "800x600 16-color LCD"
+
+    MEMORY(0xA0000,0x10000);
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "mw";
+	VISUAL      = "PseudoColor";
+	DEPTH       = 4;
+	DEVTYPE     = 1;
+	DEVTECH     = 0x0D;
+	PIXWIDTH    = 800;
+	PIXHEIGHT   = 600;
+	PIXBYTES    = 100;
+	PIXBITS     = 1;
+	PIXPLANES   = 4;
+	MAPTYPE     = "EGA";
+	VBIOSOPTS	= 0x08;		/* load all rom code	*/
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0101;
+	int10(r0, 2);			/* switch to flat-panel */
+	r0 = 0x006A;
+	int10(r0, 1);			/* video mode 6Ah */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	r0 = 0x5F51;  r1 = 0x0102;
+	int10(r0, 2);			/* switch to simultaneous */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550      "65550/65554"
+  CLASS  VGA         "VGA"
+   MODE   800x600-16-CRT "800x600 16-color CRT"
+
+    MEMORY(0xA0000,0x10000);
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "mw";
+	VISUAL      = "PseudoColor";
+	DEPTH       = 4;
+	DEVTYPE     = 1;
+	DEVTECH     = 0x0D;
+	PIXWIDTH    = 800;
+	PIXHEIGHT   = 600;
+	PIXBYTES    = 100;
+	PIXBITS     = 1;
+	PIXPLANES   = 4;
+	MAPTYPE     = "EGA";
+	VBIOSOPTS	= 0x08;		/* load all rom code	*/
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+	r0 = 0x006A;
+	int10(r0, 1);			/* video mode 6Ah */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	r0 = 0x5F51;  r1 = 0x0102;
+	int10(r0, 2);			/* switch to simultaneous */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   640x480-64K "640x480 64K colors 60Hz"
+
+    MEMORY(@MEM_BASE@0000,0x800000);        /*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+    	XDRIVER     = "ct65550_16";
+    	VISUAL      = "TrueColor";
+    	DEPTH       = 16;
+    	PIXWIDTH    = 640;
+    	PIXHEIGHT   = 480;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+    
+    PROCEDURE  SetGraphics
+	{
+    	r0 = 0x0041;
+    	int10(r0, 1);		/* 640x480-64K (VESA mode 0x0111) */
+    
+    	r0 = 0x5f05;
+    	r1 = 0x0441;
+    	int10(r0, 2);		/* set 60Hz refresh for mode 41h */
+	}
+    
+    PROCEDURE SetText
+	{
+    	r0 = 0x0003;
+    	int10(r0, 1);		/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   640x480-256-LCD "640x480 256-color LCD"
+
+    MEMORY(@MEM_BASE@0000,0x800000);        /*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0101;
+	int10(r0, 2);			/* switch to flat-panel */
+	r0 = 0x0030;
+	int10(r0, 1);		/* 640x480-256 (VESA mode 0x0101) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);		/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   640x480-256-CRT "640x480 256-color CRT"
+
+    MEMORY(@MEM_BASE@0000,0x800000);        /*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+	r0 = 0x0030;
+	int10(r0, 1);		/* 640x480-256 (VESA mode 0x0101) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);		/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550       "65550/65554"
+  CLASS  CT65550     "6555X"
+   MODE   640x480-256-LCD+CRT "640x480 256-color LCD and CRT"
+
+    MEMORY(@MEM_BASE@0000,0x800000);        /*  Base Address, Length        */
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "ct65550_8";
+	VISUAL      = "TrueColor";
+	DEPTH       = 8;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+	r0 = 0x0030;
+	int10(r0, 1);		/* 640x480-256 (VESA mode 0x0101) */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);		/* video mode 03h */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550      "65550/65554"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16-LCD "640x480 16-color LCD"
+
+    MEMORY(0xA0000,0x10000);
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "mw";
+	VISUAL      = "PseudoColor";
+	DEPTH       = 4;
+	DEVTYPE     = 1;
+	DEVTECH     = 0x0D;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	PIXBYTES    = 80;
+	PIXBITS     = 1;
+	PIXPLANES   = 4;
+	MAPTYPE     = "EGA";
+	VBIOSOPTS	= 0x08;		/* load all rom code	*/
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0101;
+	int10(r0, 2);			/* switch to flat-panel */
+	r0 = 0x0012;
+	int10(r0, 1);			/* video mode 12h */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	r0 = 0x5F51;  r1 = 0x0102;
+	int10(r0, 2);			/* switch to simultaneous */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550      "65550/65554"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16-CRT "640x480 16-color CRT"
+
+    MEMORY(0xA0000,0x10000);
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "mw";
+	VISUAL      = "PseudoColor";
+	DEPTH       = 4;
+	DEVTYPE     = 1;
+	DEVTECH     = 0x0D;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	PIXBYTES    = 80;
+	PIXBITS     = 1;
+	PIXPLANES   = 4;
+	MAPTYPE     = "EGA";
+	VBIOSOPTS	= 0x08;		/* load all rom code	*/
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x5F51;  r1 = 0x0100;
+	int10(r0, 2);			/* switch to crt */
+	r0 = 0x0012;
+	int10(r0, 1);			/* video mode 12h */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	r0 = 0x5F51;  r1 = 0x0102;
+	int10(r0, 2);			/* switch to simultaneous */
+	}
+
+
+/* ************************************************************************* */
+
+
+VENDOR CHIPS       "Chips"
+ MODEL  65550      "65550/65554"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16-LCD+CRT "640x480 16-color LCD and CRT"
+
+    MEMORY(0xA0000,0x10000);
+    PORT(VGA,0x40:4);
+
+    DATA
+	{
+	XDRIVER     = "mw";
+	VISUAL      = "PseudoColor";
+	DEPTH       = 4;
+	DEVTYPE     = 1;
+	DEVTECH     = 0x0D;
+	PIXWIDTH    = 640;
+	PIXHEIGHT   = 480;
+	PIXBYTES    = 80;
+	PIXBITS     = 1;
+	PIXPLANES   = 4;
+	MAPTYPE     = "EGA";
+	VBIOSOPTS	= 0x08;		/* load all rom code	*/
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/65550pci";
+	}
+
+    PROCEDURE  SetGraphics
+	{
+	r0 = 0x0012;
+	int10(r0, 1);			/* video mode 12h */
+	}
+
+    PROCEDURE SetText
+	{
+	r0 = 0x0003;
+	int10(r0, 1);			/* video mode 03h */
+	}
+
+
+/* End of File - Chips/65550.XGI */

@@ -1,0 +1,61 @@
+#ident	"@(#)pkg.kdb:request	1.9"
+#ident	"$Header$"
+
+trap 'exit 3' 15
+
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+#
+# Prompt script to determine whether user wants kdb security mode or not
+# and whether the modules should be loadable or static.
+#
+MENU_DIR=/etc/inst/locale/${LOCALE}/menus/${PKG}
+[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+
+MENU="menu.kdb"
+
+if [ ! -f ${MENU_DIR}/${MENU} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKG}/${MENU} ]
+   then
+        cp ${REQDIR}/inst/locale/${LOCALE}/${PKG}/${MENU} ${MENU_DIR}
+   else
+        cp ${REQDIR}/${PKG}/${MENU} ${MENU_DIR}
+   fi
+fi
+
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+menu -f ${MENU_DIR}/${MENU} -o /tmp/out 2> /dev/null
+. /tmp/out
+
+if [ "$SECURITY" = "YES" ]
+then
+	KDBSECURITY=1
+else
+	KDBSECURITY=0
+fi
+
+if [ "$DEMAND" = "DEMAND" ]
+then
+	KDBLOADABLE=LOADABLE
+else
+	KDBLOADABLE=STATIC
+fi
+
+echo "KDBSECURITY=$KDBSECURITY" >> $1
+echo "KDBLOADABLE=$KDBLOADABLE" >> $1
+exit 0

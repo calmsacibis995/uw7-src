@@ -1,0 +1,358 @@
+ 
+
+
+/* Copyright 1991, 1992 Unpublished Work of Novell, Inc.
+** All Rights Reserved.
+**
+** This work is an unpublished work and contains confidential,
+** proprietary and trade secret information of Novell, Inc. Access
+** to this work is restricted to (I) Novell employees who have a
+** need to know to perform tasks within the scope of their
+** assignments and (II) entities other than Novell who have
+** entered into appropriate agreements.
+**
+** No part of this work may be used, practiced, performed,
+** copied, distributed, revised, modified, translated, abridged,
+** condensed, expanded, collected, compiled, linked, recast,
+** transformed or adapted without the prior written consent
+** of Novell.  Any use or exploitation of this work without
+** authorization could subject the perpetrator to criminal and
+** civil liability.
+**
+*/
+
+
+
+#if !defined(__pservermsgtable_h__)
+#define __pservermsgtable_h__
+
+/*  DEVELOPERS:  Do NOT add messages or constants to this file */
+/*  */
+/*  You must go to file "nls/English/pserver/pservmsg.m4" and make additions there. */
+/*   */
+#define MSG_PSERVER_REV_SET 1
+#define MSG_PSERV_REV 1 
+/* Do NOT touch the following REV string. (MUST match nwumsgs.msg)*/
+#define	MSG_PSERV_REV_STR "@@(#)$Id$" 
+/*  */
+/*  NetWare printing (pserver)  */
+/*  */
+#define MSG_PRINT_SET 2
+
+
+#define PSERVER_LONG_NAME 1
+#define PSERVER_SHORT_NAME 2
+#define PSERVER_LINE_PREFIX 3
+#define PSERVER_VERSION 4
+
+#define FILE_SERVER_NAME_PROMPT 10
+#define PRINT_SERVER_NAME_PROMPT 11
+#define PASSWORD_PROMPT 12
+#define PSERVER_USAGE 13
+#define PSERVER_PROGRAM_TITLE 14
+#define PSERVER_PROGRAM_COPYRIGHT 15
+#define PSERVER_LOG_MESSAGE 16
+
+/*  */
+/*  Server Status Messages */
+/*  */
+#define STATUS_RUNNING 20
+#define STATUS_GOING_DOWN 21
+#define STATUS_DOWN 22
+#define STATUS_INITIALIZING 23
+#define PRINT_SERVER_IS_DOWN 24
+#define PRINT_SERVER_IS_UP 25
+#define PRINT_SERVER_ALREADY_RUNNING 26
+#define PRINT_SERVER_SEMAPHORE_FAILED 27
+#define PRINT_SERVER_CANT_OPEN_CONSOLE 28
+#define PRINT_SERVER_CANT_MAKE_DIR 30
+#define PRINT_SERVER_CANT_INIT_REQUESTER 31
+#define PRINT_SERVER_CANT_BUILD_CONFIG 32
+#define PRINT_SERVER_GET_NAMES 33
+
+/*  */
+/*  Printer Status Messages (To console) */
+/*  */
+#define PCMSG_WAITING_FOR_JOB 40
+#define PCMSG_BUFFERING_BANNER 41
+#define PCMSG_WAITING_FOR_FORM 42
+#define PCMSG_BUFFERING_JOB 43
+#define PCMSG_WAITING_TILL_DONE 44
+#define PCMSG_STOPPED 45
+#define PCMSG_PAUSED 46
+#define PCMSG_SIDEBAND 47
+#define PCMSG_READY_TO_GO_DOWN 48
+#define PCMSG_NOT_CONNECTED 49
+#define PCMSG_CONNECTING 50
+#define PCMSG_DISCONNECTED 51
+#define PCMSG_PRIVATE 52
+#define PCMSG_ABORT 54
+
+/*  */
+/*  Text used in banners  */
+/*  */
+#define BANNER_USER_NAME 60
+#define BANNER_QUEUE 61
+#define BANNER_SERVER 62
+#define BANNER_DIRECTORY 63
+#define BANNER_DESCRIPTION 64
+#define BANNER_FILE_NAME 65
+#define BANNER_UNKNOWN_CLIENT 66
+#define BANNER_JOB_NUMBER 67
+#define BANNER_TIME_AND_DATE 68
+
+/*  */
+/*  Pstatus Messages  (for pconsole) (Max length is 79 chars) */
+/*  */
+#define PSMSG_WAITING_FOR_JOB 70
+#define PSMSG_WAITING_FOR_FORM 71
+#define PSMSG_PRINTING_JOB 72
+#define PSMSG_PAUSED 73
+#define PSMSG_STOPPED 74
+#define PSMSG_MARK_EJECT 75
+#define PSMSG_GOING_DOWN 76
+#define PSMSG_NOT_CONNECTED 77
+#define PSMSG_CONNECTING 78
+#define PSMSG_PRIVATE 79
+#define PSMSG_IDLE 80
+#define PSMSG_HEAD_MOVING 81
+#define PSMSG_OFFLINE 82
+#define PSMSG_PAPER_OUT 83
+#define PSMSG_PAPER_JAM 84
+#define PSMSG_COVER_OPEN 85
+#define PSMSG_FAULT 86
+
+/*  */
+/*  General Errors (no \n on lines) */
+/*  */
+#define PSEM_OUT_OF_MEMORY 100
+#define PSEM_CANT_INIT_KERNEL 101
+#define PSEM_SERVER_NAME_IN_USE 102
+#define PSEM_CANT_OPEN_CLIENT_SOCKET 103
+#define PSEM_CANT_CREATE_DOWN_MONITOR 104
+#define PSEM_BAD_PROCESS 105
+#define PSEM_STACK_OVERFLOW 106
+#define PSEM_CANT_GET_OBJECT_ID 107
+#define PSEM_TOO_MANY_FILE_SERVERS 108
+#define PSEM_UNKNOWN_FILE_SERVER 109
+#define PSEM_BINDERY_LOCKED 110
+#define PSEM_SERVER_MAXED_OUT 111
+#define PSEM_NO_RESPONSE 112
+#define PSEM_CANT_ATTACH 113
+#define PSEM_NO_ACCOUNT_BALANCE 114
+#define PSEM_NO_CREDIT_LEFT 115
+#define PSEM_INTRUDER_DETECTION_LOCK 116
+#define PSEM_TOO_MANY_CONNECTIONS 117
+#define PSEM_ACCOUNT_DISABLED 118
+#define PSEM_UNAUTHORIZED_TIME 119
+#define PSEM_UNAUTHORIZED_STATION 120
+#define PSEM_NO_MORE_GRACE 121
+#define PSEM_LOGIN_DISABLED 122
+#define PSEM_ILLEGAL_ACCT_NAME 123
+#define PSEM_PASSWORD_HAS_EXPIRED 124
+#define PSEM_ACCESS_DENIED 125
+#define PSEM_CANT_LOGIN 126
+#define PSEM_ALREADY_ATTACHED 127
+#define PSEM_NO_MEMORY_FOR_BUFFER 128
+#define PSEM_NO_MEMORY_FOR_PRINTER 129
+#define PSEM_CANT_READ_CONFIG_FILE 130
+#define PSEM_UNKNOWN_PRINTER_TYPE 131
+#define PSEM_CANT_CREATE_PRINTER_PROCESS 132
+#define PSEM_CANT_INSTALL_REMOTES 133
+#define PSEM_NO_REMOTE_SOCKET 134
+#define PSEM_NO_MEMORY_FOR_REMOTE_COMM 135
+#define PSEM_NO_SUCH_QUEUE 136
+#define PSEM_QUEUE_ALREADY_IN_LIST 137
+#define PSEM_QUEUE_HALTED 138
+#define PSEM_NOT_AUTHORIZED_FOR_QUEUE 139
+#define PSEM_TOO_MANY_QUEUE_SERVERS 140
+#define PSEM_UNABLE_TO_ADD_QUEUE 141
+#define PSEM_NO_MEMORY_TO_ADD_QUEUE 142
+#define PSEM_NOTIFY_ALREADY_IN_LIST 143
+#define PSEM_NO_MEMORY_TO_ADD_NOTIFY 144
+#define PSEM_CANT_INIT_NOTIFY 145
+#define PSEM_ERROR_WRITING_TO_LOG 146
+#define PSEM_DS_LOGIN_ERR 147
+#define PSEM_DS_NO_HOST_SERVER 148
+#define PSEM_ADD_QUEUE_ERROR 149
+#define PSEM_AUDIT_FILE_ERROR 150
+#define PSEM_UNABLE_TO_GET_DS_CONTEXT 151
+#define PSEM_DUPLICATE_PNUM 152
+#define PSEM_ADD_NOTIFY_ERROR 153
+#define PSEM_NO_MEMORY_FOR_NEW_PRINTER 154
+#define PSEM_INVALID_PRINTER_CONFIG_INFO 155
+#define PSEM_DS_PRINTER_CONFIG_ERROR 156
+#define PSEM_UNABLE_TO_INIT_UNICODE 157
+#define PSEM_CANT_ADVERTISE_SERVER 158
+#define PSEM_CLIENT_LISTEN_FAIL 159
+#define PSEM_REMCOMM_LISTEN_FAIL 160
+#define PSEM_LOCAL_NOT_SUPPORTED 161
+#define PSEM_POLL_ERR 162
+#define PSEM_EOF_ERR 163
+#define PSEM_NWUM_FILE_ERR 164
+#define PSEM_POSTSCRIPT_FLUSHING 165
+#define PSEM_POSTSCRIPT_ERROR 166
+#define PSEM_JOB_ERROR 167
+#define PSEM_PRINTER_HARDWARE_ERROR 168
+#define PSEM_BAD_OBJECT_NAME 169
+#define PSEM_INVALID_PNUM 170
+#define PSEM_CANT_LOGIN_TO_HOST_SERV 171
+#define PSEM_CANT_ACCESS_AUDIT_LOG 172
+#define PSEM_UNABLE_TO_GET_PRINTER_LIST 173
+#define PSEM_CREATING_APPLE_ENTITY 174
+#define PSEM_LOOKING_UP_ENTITY 175
+#define PSEM_PAP_OPEN 176
+#define PSEM_APPLE_CONNECT 177
+#define PSEM_CONNECT_ERROR 178
+#define PSEM_ATPAPGET 179
+#define PSEM_DISCONNECT_ERROR 180
+#define PSEM_PAP_CLOSE 181
+#define PSEM_NWPRINT_USER 182
+#define PSEM_RUN_WITH_PRIV 183
+#define PSEM_NO_LP_QUEUES 184
+#define PSEM_BAD_DEST 185
+#define PSEM_BAD_PATH 186
+#define PSEM_BAD_OPEN 187
+#define PSEM_BAD_CFG_ENTRY 188
+#define PSEM_BAD_PCF_LINE_SH 189
+#define PSEM_BAD_PCF_LINE_PT 190
+
+/*  */
+/*  General status messages  */
+/*  */
+#define PSSTAT_DAEMON_STARTED 250
+#define PSSTAT_AUDITING_DISABLED 251
+#define PSSTAT_AUDITING_ENABLED 252
+#define PSSTAT_CHECK_UNIX_PTR 253
+#define PSSTAT_CHECK_APPLE_PTR 254
+#define PSSTAT_PROCESS_JOB 255
+
+/*  */
+/*  Notify Message used in notify.c  */
+/*  */
+#define PSNOTE_PRINTED_ON 300
+#define PSNOTE_OFFLINE 301
+#define PSNOTE_PAPER_OUT 302
+#define PSNOTE_DISCONNECT 303
+#define PSNOTE_NEEDS_FORM 304
+
+/*  */
+/*  Object types for notfylst.c */
+/*  */
+#define W_JOB_OWNER 310
+#define W_USER 311
+#define W_GROUP 312
+#define W_UNKNOWN_TYPE 313
+#define W_JOB_NOT_SERVICED 314
+
+/*  */
+/*  Signal messages  */
+/*  */
+#define INTERRUPT_MESSAGE 320
+#define TERMINATE_MESSAGE 321
+#define QUIT_MESSAGE 322
+#define ABORT_MESSAGE 323
+#define IGNORED_SIGNAL 324
+#define SIGHUP_MESSAGE 325
+#define SIGINT_MESSAGE 326
+#define SIGQUIT_MESSAGE 327
+#define SIGILL_MESSAGE 328
+#define SIGTRAP_MESSAGE 329
+#define SIGABRT_MESSAGE 330
+#define SIGEMT_MESSAGE 331
+#define SIGFPE_MESSAGE 332
+#define SIGKILL_MESSAGE 333
+#define SIGBUS_MESSAGE 334
+#define SIGSEGV_MESSAGE 335
+#define SIGSYS_MESSAGE 336
+#define SIGPIPE_MESSAGE 337
+#define SIGALRM_MESSAGE 338
+#define SIGTERM_MESSAGE 339
+#define SIGURG_MESSAGE 340
+#define SIGSTOP_MESSAGE 341
+#define SIGTSTP_MESSAGE 342
+#define SIGCONT_MESSAGE 343
+#define SIGCHLD_MESSAGE 344
+#define SIGCLD_MESSAGE 345
+#define SIGTTIN_MESSAGE 346
+#define SIGTTOU_MESSAGE 347
+#define SIGPOLL_MESSAGE 348
+#define SIGXCPU_MESSAGE 349
+#define SIGXFSZ_MESSAGE 350
+#define SIGVTALRM_MESSAGE 351
+#define SIGPROF_MESSAGE 352
+#define SIGWINCH_MESSAGE 353
+#define SIGLOST_MESSAGE 354
+#define SIGUSR1_MESSAGE 355
+#define SIGUSR2_MESSAGE 356
+#define UNKNOWN_SIGNAL 357
+/*  */
+/* For stopprint.c */
+/*  */
+#define PSTOP_FILE_OPEN_ERR 380
+#define PSTOP_FILE_READ_ERR 381
+#define PSTOP_KILL_ERR 382
+#define PSTOP_ABORT 383
+#define PSTOP_NWPRINT_USER 384
+#define PSTOP_RUN_WITH_PRIV 385
+
+
+/*  Log file entry */
+#define LOG_FILE_ENTRY 400
+
+/*  */
+/* PSERVER Helps and Parameter Descriptions */
+/*  */
+#define MSG_PSERVER_DH_SET 3
+/*  */
+/* Description Messages */
+/*  */
+#define NWCM_PN_PSERVER_NAME 1
+#define NWCM_PN_PSERVER_PREFERRED_SERVER 2
+#define NWCM_PN_PSERVER_NAME_CONTEXT 3
+#define NWCM_PN_PSERVER_DIRECTORY 4
+#define NWCM_PN_PSERVER_PASSWORD_FILE 5
+#define NWCM_PN_PSERVER_LOG_DIRECTORY 6
+#define NWCM_PN_PSERVER_NWUM_FILE 7
+#define NWCM_PN_PSERVER_PREFERRED_TREE 8
+#define NWCM_PN_PSERVER_CONSOLE_VERBOSITY 9
+#define NWCM_PN_PSERVER_LOG_VERBOSITY 10
+
+#define NWCM_PN_ATPS_LOG_DIRECTORY 30
+#define NWCM_PN_ATPS_DIRECTORY 31
+#define NWCM_PN_ATPS_PREFERRED_SERVER 32
+
+/*  */
+/* Help Messages */
+/*  */
+#define NWCM_PH_PSERVER_NAME 41
+#define NWCM_PH_PSERVER_PREFERRED_SERVER 42
+#define NWCM_PH_PSERVER_NAME_CONTEXT 43
+#define NWCM_PH_PSERVER_DIRECTORY 44
+#define NWCM_PH_PSERVER_PASSWORD_FILE 45
+#define NWCM_PH_PSERVER_LOG_DIRECTORY 46
+#define NWCM_PH_PSERVER_NWUM_FILE 47
+#define NWCM_PH_PSERVER_PREFERRED_TREE 48
+#define NWCM_PH_PSERVER_CONSOLE_VERBOSITY 49
+#define NWCM_PH_PSERVER_LOG_VERBOSITY 50
+
+
+/*  */
+/* Help Messages */
+/*  */
+#define NWCM_PH_ATPS_LOG_DIRECTORY 71
+#define NWCM_PH_ATPS_DIRECTORY 72
+#define NWCM_PH_ATPS_PREFERRED_SERVER 73
+
+
+#define NWCM_PH_PSERV_INVALID_OBJECT_NAME 100
+#define NWCM_PH_PSERV_SERVER_NAME_LEN 101
+#define NWCM_PH_PSERV_SERVER_INVALID_CHAR 102
+
+
+
+
+
+
+#endif /* for __pservermsgtable_h__ */
+/* ************************* end of file ********************* */

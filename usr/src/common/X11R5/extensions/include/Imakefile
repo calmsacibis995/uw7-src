@@ -1,0 +1,36 @@
+/**/#ident	"@(#)r5extensions:include/Imakefile	1.6"
+
+
+XCOMM $XConsortium: Imakefile,v 1.24.1.1 92/09/09 15:25:53 rws Exp $
+#if BuildPexClients || BuildPexExt
+    PEXDIRS = PEX
+#else
+    PEXDIRS = /*nothing*/
+#endif
+#if BuildXTrapClients || BuildXTrapExt
+    XTRAPDIRS = xtrap
+#else
+    XTRAPDIRS = /*nothing*/
+#endif
+#if BuildPexClients || BuildPexExt || BuildXTrapExt || BuildXTrapLib
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+      SUBDIRS = $(PEXDIRS) $(XTRAPDIRS)
+#endif
+
+
+HEADERS = Xext.h multibuf.h shape.h XShm.h MITMisc.h XI.h XInput.h XIproto.h \
+	XTest.h xtestext1.h xyzext.h xidle.h
+INSTALLFLAGS = $(INSTINCFLAGS)
+
+all::
+
+BuildIncludes($(HEADERS),extensions,..)
+InstallMultiple($(HEADERS),$(INCDIR)/extensions)
+
+depend::
+
+#ifdef IHaveSubdirs
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+#endif

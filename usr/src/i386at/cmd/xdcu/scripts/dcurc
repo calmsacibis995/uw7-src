@@ -1,0 +1,1604 @@
+#ident	"@(#)dcu:scripts/dcurc	1.62.5.2"
+
+#
+# NOTE: if you want a blank line in a embedded string a string use
+# ${IM_A_BLANK_LINE_DONT_TOUCH}
+#
+
+function RMopen
+{
+# RMopen(flags)
+# Call its C function equivalent from libresmgr
+# to open /dev/resmgr according to flags.
+# Calling/Exit State: see RMopen(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	typeset rmfd rtnd
+	
+	call RMopen $1
+	rtnd=$_RETD
+	call RMgetfd
+	rmfd=$_RETD
+	case $rmfd
+	in
+	$FD3)
+		FD3=5
+		;;
+	$FD4)
+		FD4=5
+		;;
+	esac
+	return $rtnd
+}
+		
+function RMclose
+{
+# RMclose()
+# Call its C function equivalent from libresmgr
+# to close /dev/resmgr.
+# Calling/Exit State: see RMclose(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	call RMclose
+	return $_RETD
+}
+		
+function RMdelkey
+{
+# RMdelkey(rm_key)
+# Call its C function equivalent from libresmgr
+# to delete designated resmgr key.
+# Calling/Exit State: Ignored. SHOULD be checking! see RMdelkey(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	call RMdelkey $1
+}
+
+function RMnewkey
+{
+# RMnewkey()
+# Call its C function equivalent from libresmgr
+# to generate a key for a new in-core resmgr database entry.
+# Calling/Exit State: see RMnewkey(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	integer retrnd
+	cdecl intp rmkp=0
+	ccall RMnewkey rmkp
+	if (( retrnd=$_RETD ))
+	then
+		retrnd=0
+	else
+		cprint -v retrnd rmkp
+	fi
+	ccall RMend_trans rmkp
+	return $retrnd
+}
+
+function RMnextkey
+{
+# RMnextkey(current_key)
+# Call its C function equivalent from libresmgr
+# to get the next key; current key value 0 returns the first key.
+# Calling/Exit State: next key value.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	integer retrnd
+	cdecl intp rmkp=$1
+	ccall RMbegin_trans $1 100
+	ccall RMnextkey rmkp
+	let retrnd=$_RETD
+	ccall RMend_trans $1
+	if (( $retrnd ))
+	then
+		retrnd=0
+	else
+		cprint -v retrnd rmkp
+	fi
+	return $retrnd
+}
+
+function RMgetvals
+{
+# RMgetvals(key, parm_list, inst)
+# Call its C function equivalent from libresmgr
+# to read inst instance of parm_list values from in-core resmgr database.
+# Calling/Exit State: returns the number of parameters read, 0
+# indicates failure
+# otherwise, returns parm_out_array[n] where n equals number of input parms.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	integer retrnd  n m
+	typeset valp
+	set -A RMINPARMS $2
+	integer nparms=${#RMINPARMS[*]}
+
+	cdecl string_t plistp="!$2!"
+	let n=nparms*20
+	call malloc $n
+	valp=$_RETX
+
+	ccall RMbegin_trans $1 100
+	ccall RMgetvals $1 plistp $3 $valp $n
+	ccall RMend_trans $1
+	if (( retrnd=$_RETD ))
+	then
+		call free $valp
+		return 0
+	else
+		set -A RMOUTVALS x $(call altprintf '%s ' $valp)
+		m=1
+		n=0
+		while (( n <= nparms ))
+		do
+			case "${RMINPARMS[n]}"
+			in
+			IRQ)
+				eval RM${RMINPARMS[n]}=\""${RMOUTVALS[m]}"\"
+				[ "${RMOUTVALS[m]}" = 9 ] && {
+				eval RM${RMINPARMS[n]}=2
+				}
+				let m+=1
+				;;
+			IOADDR)
+				RMPORTSTART="${RMOUTVALS[m]}"
+				RMPORTEND="${RMOUTVALS[m+1]}"
+				let m+=2
+				;;
+			MEMADDR)
+				eval RMADDRSTART="${RMOUTVALS[m]}"
+				eval RMADDREND="${RMOUTVALS[m+1]}"
+				let m+=2
+				;;
+			BRDBUSTYPE)
+				case "${RMOUTVALS[m]}"
+				in
+				$unktype|$dash)
+					eval RM${RMINPARMS[n]}=\""$unknown"\"
+					;;
+				$isatype)
+					eval RM${RMINPARMS[n]}=\""$isa"\"
+					;;
+				$eisatype)
+					eval RM${RMINPARMS[n]}=\""$eisa"\"
+					;;
+				$mcatype)
+					eval RM${RMINPARMS[n]}=\""$mca"\"
+					;;
+				$systype)
+					eval RM${RMINPARMS[n]}=\""$sys"\"
+					;;
+				$pnptype)
+					eval RM${RMINPARMS[n]}=\""$pnp"\"
+					;;
+				$pcitype)
+					eval RM${RMINPARMS[n]}=\""$pci"\"
+					;;
+				$pcmciatype)
+					eval RM${RMINPARMS[n]}=\""$pcmcia"\"
+					;;
+				$i2otype)
+					eval RM${RMINPARMS[n]}=\""$i2o"\"
+					;;
+				*)
+					eval RM${RMINPARMS[n]}=\""$unknown"\"
+					;;
+				esac
+				let m+=1
+				;;
+			*)
+				eval RM${RMINPARMS[n]%%,*}=\""${RMOUTVALS[m]}"\"
+				let m+=1
+				;;
+			esac
+			let n+=1
+		done
+		call free $valp
+		return $nparms
+	fi
+		
+}
+
+function RMputvals
+{
+# RMputvals(key, parm_list, value_list)
+# Call its C function equivalent from libresmgr
+# to add parameter and value pairs supplied to resmgr entry for specified key.
+# Calling/Exit State: see RMputvals(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	integer m n
+	set -A RMINPARMS $2
+	set -A RMINVALS - $3
+	integer nparms=${#RMINPARMS[*]}
+
+	m=0
+	n=0
+	while (( n < nparms ))
+	do
+		case "${RMINPARMS[n]}"
+		in
+		IRQ)
+			[ "${RMINVALS[m]}" = 2 ] && RMINVALS[m]=9
+			let m+=1
+			;;
+		IOADDR|MEMADDR)
+			let m+=2
+			;;
+		BRDBUSTYPE)
+			case "${RMINVALS[m]}"
+			in
+			$isa)
+				RMINVALS[m]=$isatype
+				;;
+			$eisa)
+				RMINVALS[m]=$eisatype
+				;;
+			$mca)
+				RMINVALS[m]=$mcatype
+				;;
+			$sys)
+				RMINVALS[m]=$systype
+				;;
+			$pnp)
+				RMINVALS[m]=$pnptype
+				;;
+			$pci)
+				RMINVALS[m]=$pcitype
+				;;
+			$pcmcia)
+				RMINVALS[m]=$pcmciatype
+				;;
+			$i2o)
+				RMINVALS[m]=$i2otype
+				;;
+			*)
+				RMINVALS[m]=$unktype
+				;;
+			esac
+			let m+=1
+			;;
+		*)
+			let m+=1
+			;;
+		esac
+		let n+=1
+	done
+
+	cdecl string_t plistp="!${RMINPARMS[*]}!"
+	cdecl string_t vlistp="!${RMINVALS[*]}!"
+	cdecl ulong key=$1
+
+	ccall RMbegin_trans $1 200
+	ccall RMputvals key plistp vlistp
+	ccall RMend_trans $1
+	return $_RETD
+}
+
+function RMdelvals
+{
+# RMdelvals(key, param_list)
+# Call its C function equivalent from libresmgr
+# to delete all instances of parameters listed in param_list.
+# Calling/Exit State: see RMdelvals(3).
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	cdecl string_t plistp="!$2!"
+
+	ccall RMbegin_trans $1 200
+	ccall RMdelvals $1 plistp
+	ccall RMend_trans $1
+	return $_RETD
+}
+
+function verify
+{
+# verify(bd_array_index, module)
+# Called to invoke driver verify routine.
+# Calling/Exit State: 0 for success and driver's verify return code for failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+struct modadm.ver name:'char [16]' typedata:int
+call modadm 1 2 "@modadm.ver:{ !${MODNAME[$2]}!, ${BDKEY[$1]} }" || call altperror 'modadm failed'
+return $_RETD
+}
+
+function verifym
+{
+#verifym (bd_array_index, modname)
+#invokes the modname's verify routine
+# Calling/Exit State: 0 is success, verify's return code for failure
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+struct modadm.ver name:'char [16]' typedata:int
+call modadm 1 2 "@modadm.ver:{ !$2!, ${BDKEY[$1]} }"
+return $_RETD
+}
+function RMadd
+{
+# RMadd(bd_array_index)
+# Called to update a resmgr database key by writing or deleting
+# the key based upon the BDCNFG variable.
+# Calling/Exit State: 0 is success, 1 is failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+[ ${DCUMODE} = DCUSCREENS ] && footer "$BDUPDATE_FOOTER"
+#update RM database
+integer err=0
+if [ "${BDTYPE[$1]}" = $none ]
+then
+	return 0
+fi
+if [ "${BDTYPE[$1]}" = $unused ]
+then
+	return 0
+fi
+if (( ${BDCHGS[$1]} ))
+then
+	if [ "${BDCNFG[$1]}" = "$N" ]
+	then
+		RMdelkey ${BDKEY[$1]}
+		err=$?
+		continue
+	else
+		wrtRM_key $1
+		err=$?
+	fi
+fi
+if (( err ))
+then
+	msgnoerr "$BAD_UPDATE"
+	return 1
+else
+	return 0
+fi
+}
+
+function RMapply_choice
+{
+# RMapply_choice()
+# Called by the conflict detection routines when
+# Apply Changes & Exit DCU was selected and a conflict is detected.
+# Its purpose is to allow the user the ability to resolve or ignore
+# the conflict being displayed.
+# Calling/Exit State:
+# 0 indicates Enter the DCU to resolve conflicts,
+# 1 indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+        typeset applychoice
+
+        if [ -z "${APPLY_OPT}" ]
+        then
+                typeset OIFS="$IFS"
+                IFS="$nl"
+                set -A APPLY_OPT ${CHOOSE_APPLY_CONF}
+                IFS="$OIFS"
+        fi
+        applychoice=$APPLY_OPT
+	CHOOSE_TITLE="$CHOICES"
+	CHOOSE_FOOTER="$DCU_CHOOSE_FOOTER"
+        choose -f -e -exit apply_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$applychoice" "${APPLY_OPT[@]}"
+}
+
+function apply_exit
+{
+# apply_exit()
+# Called after the Choice has been made when "Apply Changes & Exit DCU"
+# was selected and a conflict was displayed.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+        case $CHOICE in
+        ${APPLY_OPT[0]})
+                APPLY_CONF=1
+                ;;
+        ${APPLY_OPT[1]})
+                APPLY_CONF=0
+                ;;
+        esac
+}
+
+function RMirqconf
+{
+# RMirqconf(bd_array_index1, bd_index2)
+# Called to check for IRQ conflicts
+# during entry into the dcu, or
+# before Applying Changes & Exiting.
+# It sets the DCU_EXIT_CODE variable to 3.
+# Calling/Exit State:
+# During DCU entry the return code is ignored,
+# 0 during DCU exit indicates Enter the DCU to resolve conflicts,
+# 1 during DCU exit indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer _t
+
+if [ ! "${BDIRQ[$2]}" = "${BDIRQ[$1]}" ] \
+|| [ -z "${BDNAME[$1]}" ] \
+|| [ -z "${BDNAME[$2]}" ] \
+|| [ "${BDCNFG[$1]}" = "$N" ] \
+|| [ "${BDCNFG[$2]}" = "$N" ] \
+|| [ "${BDIRQ[$1]}" = "$dash" ] \
+|| [ "${BDIRQ[$2]}" = "$dash" ] \
+|| [ "${BDITYPE[$1]}" = "0" ] \
+|| [ "${BDITYPE[$2]}" = "0" ] \
+|| [ "${BDNAME[$1]}" = "$dash" ] \
+|| [ "${BDNAME[$2]}" = "$dash" ] \
+|| [ "${BDNAME[$1]}" = "$unused" ] \
+|| [ "${BDNAME[$2]}" = "$unused" ] \
+|| [ "${BDNAME[$1]}" = "$unknown" ] \
+|| [ "${BDNAME[$2]}" = "$unknown" ] 
+then
+	return 0
+fi
+
+if [ "${BDITYPE[$2]}" = 1 ] || [ "${BDITYPE[$1]}" = 1 ] 
+then
+	IRQ_display_error $1 $2 "$IRQNOSHARE"
+	return $?
+fi
+
+if [ "${BDITYPE[$2]}" = 2 ] && [ "${BDITYPE[$1]}" = 2 ] \
+&& [ ! "${BDMODNAME[$2]}" = "${BDMODNAME[$1]}" ]
+then
+	IRQ_display_error $1 $2 "$IRQSELFSHARE"
+	return $?
+fi
+
+if [ "${BDITYPE[$2]}" = 3 ] && [ "${BDITYPE[$1]}" = 4 ]
+then
+	IRQ_display_error $1 $2 "$IRQNOSHARE"
+	return $?
+fi
+
+if [ "${BDITYPE[$2]}" = 4 ] && [ "${BDITYPE[$1]}" = 3 ]
+then
+	IRQ_display_error $1 $2 "$IRQNOSHARE"
+	return $?
+fi
+
+return 0
+}
+
+function IRQ_display_error
+{
+# IRQ_display_error(bd_array_index1, bd_array_index2, MESSAGE)
+# Common routine called to display an IRQ conflict message
+# when detected upon entry or exit of the DCU.
+# It sets the DCU_EXIT_CODE variable to 3.
+# Calling/Exit State:
+# During DCU entry the return code is ignored,
+# 0 during DCU exit indicates Enter the DCU to resolve conflicts,
+# 1 during DCU exit indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardipl=${BDIPL[$1]}, $boarditype=${BDITYPE[$1]}, $boardirq=${BDIRQ[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$3
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$boardname=${BDNAME[$2]}, $boardipl=${BDIPL[$2]}, $boarditype=${BDITYPE[$2]}, $boardirq=${BDIRQ[$2]}."
+
+DCU_EXIT_CODE=3
+
+if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+then
+	display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+	_t=$CURWIN
+	RMapply_choice
+	input_handler
+	wclose $_t
+	return $APPLY_CONF
+fi
+
+if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+then
+	pr_dcu_conf
+	display -w "$MESSAGE" -bg $RED -fg $WHITE
+	footer $GENERIC_CONTINUE_FOOTER
+	call proc_loop
+fi
+}
+
+function RMioaddrconf
+{
+# RMioaddrconf(bd_array_index1, bd_array_index2)
+# Called to check for IOADDR conflicts
+# during entry into the dcu, or
+# before Applying Changes & Exiting.
+# It sets the DCU_EXIT_CODE variable to 3.
+# Calling/Exit State:
+# During DCU entry the return code is ignored,
+# 0 during DCU exit indicates Enter the DCU to resolve conflicts,
+# 1 during DCU exit indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset MESSAGE
+
+if [ "${BDNAME[$1]}" = "$dash" ] \
+|| [ "${BDNAME[$2]}" = "$dash" ] \
+|| [ -z "${BDNAME[$1]}" ] \
+|| [ -z "${BDNAME[$2]}" ] \
+|| [ "${BDCNFG[$1]}" = "$N" ] \
+|| [ "${BDCNFG[$2]}" = "$N" ] \
+|| [ "${BDNAME[$1]}" = "$unused" ] \
+|| [ "${BDNAME[$2]}" = "$unused" ] \
+|| [ "${BDNAME[$1]}" = "$unknown" ] \
+|| [ "${BDNAME[$2]}" = "$unknown" ] 
+then
+	return 0
+fi
+
+if [ "${BDPORTSTART[$1]}" = "$dash" ] \
+&& [ "${BDPORTEND[$1]}" = "$dash" ] 
+then
+	return 0
+fi
+
+if [ "${BDPORTSTART[$1]}" = "0" ] \
+&& [ "${BDPORTEND[$1]}" = "0" ]
+then
+	return 0
+fi
+
+if [ -z "${BDPORTSTART[$1]}" ]  \
+&& [ -z "${BDPORTEND[$1]}" ] 
+then
+	return 0
+fi
+
+if [   "${BDPORTSTART[$1]}" = "$dash" ] \
+&& [ ! "${BDPORTEND[$1]}" = "$dash" ] 
+then
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardios=${BDPORTSTART[$1]}, $boardioe=${BDPORTEND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$IOSREQ"
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+	
+if [ ! "${BDPORTSTART[$1]}" = "$dash" ] \
+&& [   "${BDPORTEND[$1]}" = "$dash" ]
+then
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardios=${BDPORTSTART[$1]}, $boardioe=${BDPORTEND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$IOEREQ" 
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+	
+if [ "${BDPORTSTART[$2]}" = "$dash" ] \
+&& [ "${BDPORTEND[$2]}" = "$dash" ] 
+then
+	return 0
+fi
+
+if [ -z "${BDPORTSTART[$2]}" ] \
+&& [ -z "${BDPORTEND[$2]}" ] 
+then
+	return 0
+fi
+
+typeset x ports porte ios ioe
+x=${BDPORTEND[$1]}
+typeset -i16 porte=16#$x
+
+x=${BDPORTSTART[$2]}
+typeset -i16 ios=16#$x
+x=${BDPORTEND[$2]}
+typeset -i16 ioe=16#$x
+
+x=${BDPORTSTART[$1]}
+typeset -i16 ports=16#$x
+if [ porte -lt ports ]
+then
+	if [ "$1" = "$RMIOCHKD" ]
+	then
+		return 0
+	else
+		RMIOCHKD="$1"
+	fi
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardios=${BDPORTSTART[$1]}, $boardioe=${BDPORTEND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$BD_BAD_PORTE"
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+
+if [ "${BDPORTSTART[$2]}" = "0" ] \
+|| [ "${BDPORTEND[$2]}" = "0" ]
+then
+	return 0
+fi
+
+if [ porte -ge ios -a ports -le ioe ]
+then
+	typeset allow1 allow2
+	allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$1]} O
+	allow1=$?
+	allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$2]} O
+	allow2=$?
+	if (( allow1 && allow2 ))
+	then
+		return 0
+	fi
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardios=${BDPORTSTART[$1]}, $boardioe=${BDPORTEND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$IOCONF
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$boardname=${BDNAME[$2]}, $boardios=${BDPORTSTART[$2]}, $boardioe=${BDPORTEND[$2]}."
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+return 0
+}
+
+function RMmemaddrconf
+{
+# RMmemaddrconf(bd_array_index1, bd_array_index2)
+# Called to check for MEMADDR conflicts
+# during entry into the dcu, or
+# before Applying Changes & Exiting.
+# It sets the DCU_EXIT_CODE variable to 3.
+# Calling/Exit State:
+# During DCU entry the return code is ignored,
+# 0 during DCU exit indicates Enter the DCU to resolve conflicts,
+# 1 during DCU exit indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset MESSAGE
+
+if [ "${BDNAME[$1]}" = "$dash" ] \
+|| [ "${BDNAME[$2]}" = "$dash" ] \
+|| [ -z "${BDNAME[$1]}" ] \
+|| [ -z "${BDNAME[$2]}" ] \
+|| [ "${BDCNFG[$1]}" = "$N" ] \
+|| [ "${BDCNFG[$2]}" = "$N" ] \
+|| [ "${BDNAME[$1]}" = "$unused" ] \
+|| [ "${BDNAME[$2]}" = "$unused" ] \
+|| [ "${BDNAME[$1]}" = "$unknown" ] \
+|| [ "${BDNAME[$2]}" = "$unknown" ] 
+then
+	return 0
+fi
+
+if [ "${BDADDRSTART[$1]}" = "$dash" ] \
+&& [ "${BDADDREND[$1]}" = "$dash" ]
+then
+	return 0
+fi
+
+if [ "${BDADDRSTART[$1]}" = "0" ] \
+&& [ "${BDADDREND[$1]}" = "0" ]
+then
+	return 0
+fi
+
+if [ -z "${BDADDRSTART[$1]}" ] \
+&& [ -z "${BDADDRTEND[$1]}" ] 
+then
+	return 0
+fi
+
+typeset allow1 allow2
+allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$1]} M
+allow1=$?
+allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$2]} M
+allow2=$?
+if (( allow1 && allow2 ))
+then
+	return 0
+fi
+
+if [ "${BDADDRSTART[$1]}" = "$dash" ] \
+&& [ ! "${BDADDREND[$1]}" = "$dash" ] 
+then
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardmems=${BDADDRSTART[$1]}, $boardmeme=${BDADDREND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$MEMSREQ"
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+	
+if [ ! "${BDADDRSTART[$1]}" = "$dash" ]\
+&& [ "${BDADDREND[$1]}" = "$dash" ]
+then
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardmems=${BDADDRSTART[$1]}, $boardmeme=${BDADDREND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$MEMEREQ"
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+	
+if [ "${BDADDRSTART[$2]}" = "$dash" ]\
+&& [ "${BDADDREND[$2]}" = "$dash" ] 
+then
+	return 0
+fi
+
+if [ -z "${BDADDRSTART[$2]}" ] \
+&& [ -z "${BDADDREND[$2]}" ] 
+then
+	return 0
+fi
+
+typeset x addrs addre mems meme
+x=${BDADDREND[$1]}
+typeset -i16 addre=16#$x
+
+x=${BDADDRSTART[$2]}
+typeset -i16 mems=16#$x
+x=${BDADDREND[$2]}
+typeset -i16 meme=16#$x
+
+x=${BDADDRSTART[$1]}
+typeset -i16 addrs=16#$x
+if [ addre -lt addrs ]
+then
+	if [ "$1" = "$RMMEMCHKD" ]
+	then
+		return 0
+	else
+		RMMEMCHKD="$1"
+	fi
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardmems=${BDADDRSTART[$1]}, $boardmeme=${BDADDREND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$BD_BAD_MEME"
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+
+if [ "${BDADDRSTART[$2]}" = "0" ] \
+|| [ "${BDADDREND[$2]}" = "0" ]
+then
+	return 0
+fi
+if [ addre -ge mems -a  addrs -le meme ]
+then
+	MESSAGE="ERROR:
+$boardname=${BDNAME[$1]}, $boardmems=${BDADDRSTART[$1]}, $boardmeme=${BDADDREND[$1]}.
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$MEMCONF
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$boardname=${BDNAME[$2]}, $boardmems=${BDADDRSTART[$2]}, $boardmeme=${BDADDREND[$2]}."
+
+	DCU_EXIT_CODE=3
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+	then
+		display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMapply_choice
+		input_handler
+		wclose $_t
+		return $APPLY_CONF
+	fi
+
+	if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+	then
+		pr_dcu_conf
+		display -w "$MESSAGE" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+return 0
+}
+
+function RMdmaconf
+{
+# RMdmaconf(bd_array_index1, bd_array_index2)
+# Called to check for DMA conflicts
+# during entry into the dcu, or
+# before Applying Changes & Exiting.
+# It sets the DCU_EXIT_CODE variable to 3.
+# Calling/Exit State:
+# During DCU entry the return code is ignored,
+# 0 during DCU exit indicates Enter the DCU to resolve conflicts,
+# 1 during DCU exit indicates Ignore conflicts and Apply Changes.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer _t
+typeset MESSAGE
+
+if [ ! "${BDDMA[$2]}" = "${BDDMA[$1]}" ] \
+|| [ -z "${BDNAME[$1]}" ] \
+|| [ -z "${BDNAME[$2]}" ] \
+|| [ "${BDCNFG[$1]}" = "$N" ] \
+|| [ "${BDCNFG[$2]}" = "$N" ] \
+|| [ "${BDDMA[$1]}" = "$dash" ] \
+|| [ "${BDDMA[$2]}" = "$dash" ] \
+|| [ "${BDDMA[$1]}" = "-1" ] \
+|| [ "${BDDMA[$2]}" = "-1" ] \
+|| [ "${BDNAME[$1]}" = "$dash" ] \
+|| [ "${BDNAME[$2]}" = "$dash" ] \
+|| [ "${BDNAME[$1]}" = "$unused" ] \
+|| [ "${BDNAME[$2]}" = "$unused" ] \
+|| [ "${BDNAME[$1]}" = "$unknown" ] \
+|| [ "${BDNAME[$2]}" = "$unknown" ] 
+then
+	return 0
+fi
+
+typeset allow1 allow2
+allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$1]} D
+allow1=$?
+allow_conflict ${ROOT}/etc/conf/mdevice.d/${BDMODNAME[$2]} D
+allow2=$?
+if (( allow1 && allow2 ))
+then
+	return 0
+fi
+
+MESSAGE="ERROR: 
+$DMACONF
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$boardname=${BDNAME[$1]}, $boarddma=${BDDMA[$1]},
+${IM_A_BLANK_LINE_DONT_TOUCH}
+$boardname=${BDNAME[$2]}, $boarddma=${BDDMA[$2]}."
+
+DCU_EXIT_CODE=3
+
+if [ "$DCU_CONF_TYPE" = "$DCU_EXIT" ]
+then
+	display "$MESSAGE" -above 0 -bg $RED -fg $WHITE
+	_t=$CURWIN
+	RMapply_choice
+	input_handler
+	wclose $_t
+	return $APPLY_CONF
+fi
+
+if [ "$DCU_CONF_TYPE" = "$DCU_ENTRY" ]
+then
+	pr_dcu_conf
+	display -w "$MESSAGE" -bg $RED -fg $WHITE
+	footer $GENERIC_CONTINUE_FOOTER
+	call proc_loop
+fi
+return 0
+}
+
+
+function RMentryconf
+{
+# RMentryconf()
+# Called upon entry into the dcu
+# in order to perform conflict detection
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer i=1 brd
+DCU_CONF_TYPE="$DCU_ENTRY"
+while (( $i < $LASTBOARD ))
+do
+	if [ ${DCUMODE} = DCUSCREENS ]
+	then
+		footer $DCUGENERIC_WAIT_FOOTER
+	fi
+	brd=i+1
+	while (( $brd <= $LASTBOARD ))
+	do
+		if [ "${BDINTERPSM[i]}" != "Y" ] \
+		|| [ "${BDINTERPSM[brd]}" != "Y" ]
+		then
+			RMirqconf $i $brd
+			if [ ${DCUMODE} = DCUSCREENS ]
+			then
+				footer $DCUGENERIC_WAIT_FOOTER
+			fi
+	
+			RMioaddrconf $i $brd
+			if [ ${DCUMODE} = DCUSCREENS ]
+			then
+				footer $DCUGENERIC_WAIT_FOOTER
+			fi
+	
+			RMmemaddrconf $i $brd
+			if [ ${DCUMODE} = DCUSCREENS ]
+			then
+				footer $DCUGENERIC_WAIT_FOOTER
+			fi
+
+			RMdmaconf $i $brd
+			if [ ${DCUMODE} = DCUSCREENS ]
+			then
+				footer $DCUGENERIC_WAIT_FOOTER
+			fi
+		fi
+
+		let brd+=1
+	done
+	let i+=1
+done
+}
+
+function addloadmods
+{
+# addloadmods(mod)
+# mod = module name
+# Array of mods that need to be built with "idbuild -M"
+# mod can only be in the array once.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	integer i=0
+	mod=$1
+
+	while (( i < ${#LOADMODS[@]} ))
+	do
+		[ "$mod" = "${LOADMODS[$i]}" ] && return
+		let i+=1
+	done
+
+	LOADMODS[$i]=$mod
+}
+
+function RMupdate
+{
+# RMupdate()
+# Called to update the resmgr database when "Apply Changes & Exit DCU"
+# is selected.
+# It performs the following actions:
+#       - Conflict checking with EXIT flag set,
+#       - if UNIX_INSTALL, then update and add appropriate resmgr entries,
+#       - Delete any deconfigured entries,
+#       - Write any modified entries, clearing default entry type flag,
+#       - If !UNIX_INSTALL and DRVAUTOCONFIG=N, display DCUrebuild message,
+#       - Write any Board Specific Parameter changes,
+#       - Close resmgr database,
+#       - Set flag to indicate that idconfupdate should be run.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+if [ ${DCUMODE} = DCUSCREENS ]
+then
+	DCU_EXIT_CODE=0
+	footer "" 
+	msgnoerr
+	DCU_CONF_TYPE="$DCU_EXIT"
+	integer i=1 brd
+	while (( $i <= $LASTBOARD ))
+	do
+		if [ "${BDCNFG[i]}" != "$Y" ] || [ -z "${BDCHGS[i]}" ]
+		then
+			let i+=1
+			continue;
+		fi
+		let brd=1
+		while (( $brd <= $LASTBOARD ))
+		do
+			if [ "${BDCNFG[brd]}" != "$Y" ] \
+			|| [ "${BDKEY[i]}" = "${BDKEY[brd]}" ]
+			then
+				let brd+=1
+				continue
+			fi
+			if [ "${BDINTERPSM[i]}" = "Y" ] && [ "${BDINTERPSM[brd]}" = "Y" ]
+			then
+				let brd+=1
+				continue
+			fi
+			RMirqconf $i $brd
+			if [ "$?" = "1" ]
+			then
+				dcumain
+				return 0
+			fi
+			RMioaddrconf $i $brd
+			if [ "$?" = "1" ]
+			then
+				dcumain
+				return 0
+			fi
+			RMmemaddrconf $i $brd
+			if [ "$?" = "1" ]
+			then
+				dcumain
+				return 0
+			fi
+			RMdmaconf $i $brd
+			if [ "$?" = "1" ]
+			then
+				dcumain
+				return 0
+			fi
+			let brd+=1
+		done
+		let i+=1
+	done
+fi
+	
+if [ "$UNIX_INSTALL" = Y ]
+then
+	IHVupdate
+	IHVaddresmgr
+fi
+
+#update resmgr database
+if [ ${DCUMODE} = DCUSCREENS ]
+then
+	footer "" 
+	msgnoerr
+fi
+
+integer err=0
+integer idboot=0
+integer rebuild=0
+integer drv
+
+i=0
+while (( i+=1 ))
+do
+	if [ "${BDTYPE[$i]}" = $none ]
+	then
+		break
+	fi
+	if [ "${BDTYPE[$i]}" = $unused ]
+	then
+		continue
+	fi
+	if (( ${BDCHGS[$i]} ))
+	then
+		if [ "${BDCNFG[$i]}" = "$N" ]
+		then
+			RMdelkey ${BDKEY[$i]}
+			err=$?
+		else
+			BDENTRYTYPE[$i]=""
+			wrtRM_key $i
+			err=$?
+			if (( !err )) && [ "$UNIX_INSTALL" = "N" ]
+			then
+				lookupdrv $i
+				if (( drv=$? ))
+				then
+					if [ "${DRVAUTOCONFIG[$drv]}" = "N" ] && (( !rebuild ))
+					then
+						rebuild=1
+						display -w "$DCUrebuild" -bg $BLUE -fg $WHITE
+						footer $GENERIC_CONTINUE_FOOTER
+						call proc_loop
+					else
+						if [ "${DRVSTATIC[$drv]}" != "Y" ] && \
+							[ ! -f ${ROOT}/etc/conf/mod.d/${BDMODNAME[$i]} ] 
+						then
+							addloadmods ${BDMODNAME[$i]}
+
+							if (( !idboot )) && (( !rebuild ))
+							then
+								idboot=1
+								display -w "$DCUidboot" -bg $BLUE -fg $WHITE
+								footer $GENERIC_CONTINUE_FOOTER
+								call proc_loop
+							fi
+						fi
+					fi
+				fi
+			fi
+		fi
+	fi
+	# Write out any board specific parameters
+	if (( !err ))
+	then
+		if [ -n "${BDHASBSP[$i]}" ]
+		then
+			wrtBSP_key $i
+			err=$?
+		fi
+	fi
+done
+if (( err ))
+then
+	[ "$DCUSILENT" = N ] && msgnoerr "$BAD_UPDATE"
+	return 1
+else
+	RMclose
+	RSMGR_UPDATE=Y
+	[ -n "$1" ] && wclose $1
+	return 0
+fi
+}
+
+function IHVupdate
+{
+# IHVupdate()
+# During the Installation process,
+# the DCU can update the IHVHBAMODS[] array according to its list
+# of chosen HBAs.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset _m mod i
+integer n=0 inst
+
+load_ihv_info
+(( ${#IHVHBAS[*]} )) || return
+while [ "${IHVHBAS[n]}" != END ]
+do
+	_m=""
+	for mod in ${IHVHBAMODS[n]}
+	do
+		for i in $ALLDRIVERS
+		do
+			if [ "$mod" = "${MODNAME[i]}" ]
+			then
+				eval mn=\$"${MODNAME[i]}"
+				[ -n "$mn" ] && _m="$_m $mod"
+				break
+			fi
+		done
+	done
+	IHVHBAMODS[n]="$_m"
+	let n+=1
+done
+save_ihv_info
+}
+
+function IHVnotPCU
+{
+# IHVnotPCU(MODNAME)
+# Check drvmap file for ISA or NULL bustype
+# in order to determine whether to create a default entry.
+# Calling/Exit State: 0 does create a default entry,
+# 1 does not create a default entry.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset drvname autoconfig verify category brand
+typeset throaway bustype bdid bdname bcfgfile
+typeset ifs="$IFS"
+
+if [ ! -f ${ROOT}/etc/conf/drvmap.d/$1 ]
+then
+	return 0
+fi
+IFS="$PIPE"
+while read drvname autoconfig verify category brand
+do
+	if [ "$drvname" != "$1" ]
+	then
+		continue
+	fi
+	while read throaway bustype bdid bdname bcfgfile
+	do
+		if [ "$bustype" = "$isa" ] \
+		|| [ "$bustype" = "" ]
+		then
+			IFS="$ifs"
+			return 0
+		fi
+	done
+done <${ROOT}/etc/conf/drvmap.d/$1
+IFS="$ifs"
+return 1
+}
+function chkdrvmap
+{
+# chkdrvmap
+# check drvmap file for 'V' flag
+# Calling/Exit state: returns 0 on success, -1 on failure. $1 is 
+# the modname file
+typeset drvname autoconfig verify category brand
+typeset throaway bustype bdid bdname bcfgfile
+typeset ifs="$IFS"
+
+if [ ! -f ${ROOT}/etc/conf/drvmap.d/$1 ]
+then
+	return -1
+fi
+
+IFS="$PIPE"
+while read drvname autoconfig verify category brand
+do
+	if [ "$drvname" != "$1" ]
+	then
+		continue
+	fi
+	if [ "$verify" = "V" ]
+	then
+		IFS="$ifs"
+		return 0
+	else
+		break
+	fi
+done< ${ROOT}/etc/conf/drvmap.d/$1
+IFS="$ifs"
+return -1
+}
+function IHVbd
+{
+# IHVbd(MODNAME)
+# Create a new key and board entry for designated module
+# based upon the contents of its sdevice.d file.
+# Calling/Exit State: returns number of boards for which a resmgr entry
+#	is actually added for
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset drvname isc unit ipl itype irq ports porte mems meme dma cpu
+integer x i nbrds v
+
+if [ ! -f ${ROOT}/etc/conf/sdevice.d/$1 ]
+then
+	return 0
+fi
+nbrds=0
+while read drvname isc unit ipl itype irq ports porte mems meme dma cpu
+do
+	if [ ! "$drvname" = "$1" ]
+	then
+		continue
+	fi
+	v=0
+	chkdrvmap "$1"
+	if [ $? -ne 0 ]
+	then
+		v=1
+	fi
+	if [ "${isc}" = Y ]; then
+		popfree
+		i=$?
+		RMnewkey
+		BDKEY[$i]=$?
+		BDMODNAME[$i]="$dash"
+		BDNAME[$i]="$1"
+		let x\|=$ADD_DEL_CHG
+		BDCHGS[$i]=$x
+		BDTYPE[$i]=$changed
+		BDCNFG[$i]="$Y"
+		BDIPL[$i]="$ipl"
+		BDITYPE[$i]="$itype"
+		BDIRQ[$i]="$irq"
+		BDPORTSTART[$i]="$ports"
+		BDPORTEND[$i]="$porte"
+		BDADDRSTART[$i]="$mems"
+		BDADDREND[$i]="$meme"
+		BDDMA[$i]="$dma"
+		BDCPU[$i]="$cpu"
+		BDENTRYTYPE[$i]=1
+	fi
+	RMadd "$i"
+	if [ $v -eq 0 ] #have V in drvmap file
+	then
+		verifym $i $1
+		if [ $? -ne 0 ]; then #ENODEV
+			cdecl intp sv_errno='&Xk_errno'
+			cprint -v sv_errno sv_errno
+			if [ "$sv_errno" -eq 19 ]; then #ENODEV
+				BDCNFG[$i]="$N"
+				continue #RMupdate will delete key
+			fi
+		fi
+	fi
+	RMdelkey "${BDKEY[$i]}"
+	RMnewkey
+	BDKEY[$i]=$?
+	BDMODNAME[$i]=$1
+	let nbrds+=1
+done <${ROOT}/etc/conf/sdevice.d/$1
+
+return $nbrds
+}
+
+function IHVaddresmgr
+{
+# IHVaddresmgr()
+# Read the IHVHBAS and IHVHBAMODS arrays that are shared between
+# the Installation Process and the DCU.
+# If the entry is not a PCU only type driver, then invoke
+# IHVbd to create a board entry within the DCU.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset mod _m
+integer n=0 i
+
+load_ihv_info
+(( ${#IHVHBAS[*]} )) || return
+while [ "${IHVHBAS[n]}" != END ]
+do
+	_m=""
+	for mod in ${IHVHBAMODS[n]}
+	do
+		i=1
+		while [ "${BDTYPE[i]}" != $none  ]
+		do
+ 			if [ "${BDTYPE[i]}" != $unused ]
+			then
+				[ "${BDMODNAME[i]}" = "$mod" ] && break
+			fi
+			let i+=1
+		done
+		if [ "${BDTYPE[i]}" = "$none" ]
+		then
+			IHVnotPCU $mod
+			if [ "$?" = "0" ]
+			then
+				IHVbd $mod
+				[ "$?" = "0" ] && continue
+			fi
+		fi
+
+		_m="$_m $mod"
+	done
+	IHVHBAMODS[n]="$_m"
+	let n+=1
+done
+save_ihv_info
+}
+
+function IHVdelete
+{
+# IHVdelete(MODNAMES)
+# Delete all entries for the corresponding list of MODNAMES.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset mod
+integer i
+
+for mod in $*
+do
+	i=1
+	while [ "${BDTYPE[i]}" != $none  ]
+	do
+		if [ "${BDTYPE[i]}" != $unused ]
+		then
+			[ "${BDMODNAME[i]}" = "$mod" ] && RMdelkey ${BDKEY[i]}
+		fi
+		let i+=1
+	done
+done
+
+}
+
+function pr_dcu_conf
+{
+# pr_dcu_conf()
+# Called to display a message before the conflict message is displayed
+# and system rebooted.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+if [ "$DCUCONFLICT" = Y ]
+then
+	if [ "$DCU_HALT" = N ]
+	then
+		DCU_HALT="Y"
+		display -w "$DCUconflict" -bg $RED -fg $WHITE
+		footer $GENERIC_CONTINUE_FOOTER
+		call proc_loop
+	fi
+fi
+}

@@ -1,0 +1,47 @@
+.ident	"@(#)proto:locale/C/menus/help/media.tape	1.5.1.1"
+.related kbhelp genhelp
+.title Ayuda: Seleccionar método de instalación
+ACERCA DE ESTA OPCIÓN
+El menú Seleccionar método de instalación pedirá el tipo de medio
+desde el que se va a realizar la instalación. Se puede instalar
+desde algún medio (CD-ROM o cinta de cartucho) o realizar una
+instalación a través de la red (sobre una red TCP/IP o IPX/SPX).
+
+¿QUE OCURRE SI EL TIPO DE MEDIO DEL QUE DISPONE NO ESTA EN LA LISTA?
+Si el tipo de medio del que dispone (CD-ROM o cinta de cartucho) no
+está en la lista, esto se deberá a que UnixWare no detectó la unidad
+de CD-ROM o de cinta de cartucho. Si la unidad de CD-ROM o de cinta
+de cartucho están instaladas, configuradas y (si es aplicable) usted
+ha encendido el interruptor de corriente, entonces deberá:
+        1.  Reiniciar la instalación.
+        2.  Cuando el sistema se lo pida, teclee la DCU y configure el
+            controlador de dispositivo correspondiente a la unidad de
+            CD-ROM o de cinta de cartucho.
+.page
+¿QUE OCURRE SI EL TIPO DE MEDIO DEL QUE DISPONE NO ESTA EN LA LISTA?
+    Si la unidad de CD-ROM o de cinta de cartucho no están instaladas
+    correctamente, o (si es aplicable) no ha encendido el interruptor
+    de alimentación eléctrica, entonces deberá:
+         1.  Cancelar la instalación.
+         2.  Comprobar que el hardware está correctamente instalado
+             (véase la documentación del hardware para obtener
+             información detallada al respecto), y, si es aplicable,
+             que ha encendido el interruptor de alimentación eléctrica.
+         3.  Vuelva a instalar UnixWare.
+
+QUE SE NECESITA PARA INSTALAR DESDE CINTAS
+Se muestra esta opción de menú porque el software de instalación
+detectó que el sistema tiene una unidad de cartucho de cinta.
+Puede seleccionarla si la versión de UnixWare se suministra en
+cartucho de cinta.
+                                   (CONTINUADO)
+.page
+SELECCION DEL METODO DE INSTALACION
+Haga lo siguiente para seleccionar el método de instalación:
+     1.  Use las teclas de flecha arriba/abajo para desplazarse
+         hasta el campo deseado.
+     2.  Pulse <Intro> para seleccionar el tipo de instalación.
+
+SALIDA DE AYUDA
+Pulse <Esc> para volver al menú Definir tipo de instalación.
+Pulse <F1> para obtener más ayuda.

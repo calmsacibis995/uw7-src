@@ -1,0 +1,168 @@
+#!/usr/bin/sh
+#ident	"@(#)uupick	1.2"
+#ident "$Header$"
+
+export IFS PATH
+IFS=" 	
+"
+PATH="/usr/bin"
+
+# sys: system; user: login name;  cdir: current directory;
+# tdir: temporary directory; pu: PUBDIR/receive/user;
+cdir=`pwd`
+dir=""
+abs=""
+sys=""
+var=""
+varto=""
+varfrom=""
+label="UX:uupick"
+cat="uxbnu"
+sigmsg="received signal %s\\n"
+trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<1>'; exit 29" 1
+trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<2>'; exit 29" 2
+trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<3>'; exit 29" 3
+trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<13>'; exit 29" 13
+trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<15>'; exit 29" 15
+# get options
+if test $# -gt 2
+then pfmt -l $label -s action -g ${cat}:11 "Usage: uupick [-s sysname]\n" ; exit 36
+fi
+while test $# -ge 1
+do
+    case $1 in
+	-s*)	if [ $# -eq 1 ]
+		then
+			sys=`expr $1 : '-s\(.*\)'`
+		else
+			sys=$2
+			shift
+		fi
+		if [ -z "$sys" ]
+		then
+			pfmt -l $label -s action -g ${cat}:11 "Usage: uupick [-s sysname]\n" ; exit 36
+		fi
+		;;
+	*)	pfmt -l $label -s action -g ${cat}:11 "Usage: uupick [-s sysname]\n" ; exit 36
+		;;
+    esac
+    shift
+done
+user=`LC_MESSAGES=C id | sed -n "/^uid=[0-9]*(\([^)]*\)).*/s//\1/p"`
+
+if test -z "$user"
+then pfmt -l $label -s error -g ${cat}:12 "User id required!\n" ; exit 23
+fi
+
+pu=/var/spool/uucppublic/receive/$user
+if test -d $pu -a -s $pu
+then
+    for i in `/usr/bin/ls $pu`
+    do
+	if test $sys
+	then
+	    if test $sys != $i;  then continue;  fi
+	fi
+	if test -d $pu/$i -a -s $pu/$i
+	then
+	    cd $pu/$i
+	    for j in `/usr/bin/ls -a`
+	    do
+		if test $j = "." -o $j = ".."; then continue; fi
+		printf "`gettxt ${cat}:19 \"from system %s : \"`" $i
+		if test -d $j
+		then
+			printf "`gettxt ${cat}:13 \"directory %s \"`" $j
+		else
+			printf "`gettxt ${cat}:14 \"file %s \"`" $j
+		fi
+		while true
+		do
+		    echo '? \c'
+		    if read cmd dir
+		    then
+			trap ": ;;" 1
+			case $cmd in
+			d)
+			    rm -fr $j ; break ;;
+			"")
+			    break ;;
+# options m, a:
+#	If dir path begins with a slash, use full path for destination;
+#	otherwise, use path relative to current dir;
+#	default destination is current dir
+#
+#	As files are transferred, put their names in /tmp/$$uupick.
+#	Only remove those named files from...receive/..dir if diff
+#	verifies transfer took place. then find & remove directories
+#	(separate find is necessary because cpio -v doesn't print dir names)
+			a|m)
+			    eval dir="$dir"
+			    if test $dir
+			    then abs=`expr "$dir" : '/.*'`
+				if test $abs != 0
+				then tdir=$dir
+				else tdir=$cdir/$dir
+				fi
+			    else
+				tdir=$cdir
+			    fi
+			    if [ ! -d $tdir -o ! -w $tdir ]; then
+				pfmt -l $label -s warning -g ${cat}:15 "directory %s does not exist or is not writable\n" $tdir
+				continue
+			    fi
+			    if [ "$cmd" = "a" ]
+			    then
+				find . -depth -print | \
+				grep -v '^\.$' >/tmp/$$uupick
+				level=2
+			    else
+				find $j -depth -print >/tmp/$$uupick
+				level=1
+			    fi
+			    cpio -pdmu $tdir </tmp/$$uupick 
+			    for k in `cat /tmp/$$uupick`
+			    do
+				varto="$tdir/$k"
+				varfrom="$pu/$i/$k"
+				if test -f $varfrom; then
+				    diff $varfrom $varto >/dev/null
+				    if [ "$?" = "0" ]; then
+					rm -f $varfrom
+				    else
+					pfmt -l $label -s warning -g ${cat}:16 "file %s not removed\n" $varform
+				    fi
+				else
+				    rmdir $varfrom 2>/dev/null
+				fi
+			    done
+			    rm -f /tmp/$$uupick
+			    break $level;; 
+			p)
+			    if test -d $j
+			    then find $j -print
+			    elif test -s $j 
+				then cat $j
+			    fi;;
+			q)
+			    break 3;;
+			!*)
+			    ex=`expr "$cmd $dir" : '!\(.*\)'`
+			    tdir=`pwd`
+			    cd $cdir
+			    sh -c "$ex"
+			    cd $tdir
+			    echo '!';;
+			*)
+			    gettxt ${cat}:17 "Usage: [d][m dir][a dir][p][q]"
+			    gettxt ${cat}:18 "[cntl-d][!cmd][*][new-line]\n";;
+			esac
+			trap "pfmt -l $label -s error -g ${cat}:26 \"$sigmsg\" '<1>'; exit 29" 1
+		    else
+			break 3
+		    fi
+		done
+	    done
+	fi
+    done
+fi

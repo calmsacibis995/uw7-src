@@ -1,0 +1,156 @@
+#ident	"@(#)dtadmin:userad/scripts/dtdeluser	1.27"
+#copyright	"%c%"
+
+Prefix=UX:`/usr/bin/basename $0`
+
+XDIR=${XWINHOME:-/usr/X}
+
+. $XDIR/adm/dtuser.msgs
+
+DESK=$XDIR/desktop
+Toolbox=.	# where to install toolboxes; relative to $LOGINDIR
+DotWastebasket=.wastebasket
+Node=.node
+
+if [ -f $XDIR/adm/pre_deluser ]
+then
+	. $XDIR/adm/pre_deluser
+fi
+
+if [ $# -eq 0 ]
+then	USER=$LOGNAME
+else	USER=$1
+fi
+
+VALIDATE=0
+NISUSER=0
+# First check if user is a NIS user.
+PLUSPASS=`/usr/bin/grep "^+$USER:" /etc/passwd 2>/dev/null`
+if [ "$?" = 0 ]
+then
+NISUSER=1
+NISPASS=`/usr/bin/ypmatch $USER passwd 2>/dev/null`
+      if [ "$?" != 0 ]
+      then
+      MSG=`$GETTXT $TXT_NoNisInfo`
+      printf "\n\t$MSG\n" >& 2
+      exit 1
+      fi
+PASS=`echo $NISPASS | /usr/bin/cut -d: -f1,4,6 2>/dev/null`
+else
+PASS=`/usr/bin/grep "^$USER:" /etc/passwd | /usr/bin/cut -d: -f1,4,6 2>/dev/null`
+fi
+for ENTRY in $PASS
+do
+	FIRST=`echo $ENTRY | /usr/bin/cut -d: -f1`
+       # Strip "+" from NIS entries
+        TEST=`echo $FIRST | /usr/bin/sed -e "s/^+//"`
+	if [ "$USER" = "$TEST" ]
+	then
+		VALIDATE=1
+		GROUP=`echo $ENTRY | cut -d: -f2`
+		LOGINDIR=`echo $ENTRY | cut -d: -f3`
+		break
+        fi
+done
+
+if [ "$NISUSER" = "1" ]
+then
+   LOCALHOME=`echo $PLUSPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+   if [ -n "$LOCALHOME" ]
+   then
+   LOGINDIR=$LOCALHOME
+   fi
+fi
+
+if [ "$VALIDATE" = "0" ]
+then
+        MSG=`$GETTXT $TXT_BadLoginId`
+        printf "\n\t$MSG\n" $Prefix >& 2
+	exit 1
+fi
+if [ "$LOGINDIR" = "" ]
+then
+        MSG=`$GETTXT $TXT_MissingHome`
+        printf "\n\t$MSG\n" $Prefix $USER >& 2
+	exit 2
+fi
+if [ ! -r $LOGINDIR -o ! -w $LOGINDIR -o ! -x $LOGINDIR ]
+then
+        MSG=`$GETTXT $TXT_AccessHome`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 3
+fi
+
+
+$XDIR/adm/olremuser $USER 2>/dev/null
+cd $LOGINDIR
+[ -f .dtfclass ] && /usr/bin/mv .dtfclass .dtfclass-old
+/sbin/rm -f  .lastsession .dtprops 
+/sbin/rm -rf .dthelp
+
+cd $LOGINDIR/$Toolbox
+/usr/bin/rmdir /var/spool/uucppublic/receive/$USER 2>/dev/null
+/usr/bin/rmdir $DotWastebasket 2>/dev/null
+/sbin/rm -rf .dtinfo
+
+if [ -f $DESK/LoginMgr/DayOne/$USER ]
+then
+        read LOCALE < $DESK/LoginMgr/DayOne/$USER > /dev/null
+fi
+
+if [ -z "$LOCALE" ]
+then
+        LNG=`/usr/bin/defadm locale LANG 2>/dev/null`
+        if [ "$?" != 0 ]
+        then LANG=C
+        else eval $LNG
+        fi
+        LOCALE=$LANG
+fi
+
+cd $LOGINDIR/$Toolbox
+   while read Dir File Index
+   do
+       LFile=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:$Index "$File"`
+       if [ "$File" = "Mailbox" ]
+       then
+         /usr/bin/mv $LOGINDIR/$Dir/$LFile $LOGINDIR/$Dir/$LFile~ 2>/dev/null
+       else
+         /sbin/rm -rf $LOGINDIR/$Dir/$LFile 2>/dev/null
+       fi
+   done < $XDIR/adm/day1delmap
+
+/sbin/rm -rf $LOGINDIR/$Node 2>/dev/null
+/sbin/rm -rf $LOGINDIR/netware 2>/dev/null
+
+SaveIFS=$IFS
+IFS="
+"
+[ -f $DESK/LoginMgr/Users/$USER ] && {
+for PERM in `cat $DESK/LoginMgr/Users/$USER`
+do
+	if [ "$PERM" = "owner" ]
+	then
+		$XDIR/adm/make-owner - $USER 2>/dev/null
+	else
+		PRIVLINE=`/usr/bin/grep "$PERM" $DESK/LoginMgr/PrivTable 2>/dev/null | /usr/bin/cut -f2 -d"	"`
+		IFS=","
+		for ENTRY in $PRIVLINE
+		do
+			COMMAND=`echo $ENTRY | /usr/bin/cut -f1 -d":"`
+			/usr/bin/adminuser -r $COMMAND $USER 2>/dev/null
+		done
+	fi
+done
+}
+IFS="$SaveIFS"
+/usr/bin/rm -f $DESK/LoginMgr/Users/$USER
+/usr/bin/rmdir $DESK/LoginMgr/Users 2>/dev/null
+
+if [ -f $XDIR/adm/post_deluser ]
+then
+	. $XDIR/adm/post_deluser
+else
+	exit 0
+fi

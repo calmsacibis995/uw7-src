@@ -1,0 +1,685 @@
+/*
+ *    @(#) tvgatgui.xgi 1.4 94/2/01  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+/* *****************************************************************************
+ * TRIDENT/TVGATGUI.XGI - XEGIA(tm) GrafInfo File for Trident TVGA/TGUI
+ *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ *
+ *  TRIDENT.TVGATGUI.VGA.640x480-16 VGA 640x480 16-color
+ *  TRIDENT.TVGATGUI.SVGA.640x480-256 Super VGA 640x480 256-color
+ *  TRIDENT.TVGATGUI.VGA.800x600-16@56 VGA 800x600 16-color 56HZ
+ *  TRIDENT.TVGATGUI.VGA.800x600-16@72 VGA 800x600 16-color 72HZ
+ *  TRIDENT.TVGATGUI.SVGA.800x600-256@56 Super VGA 800x600 256-color 56HZ
+ *  TRIDENT.TVGATGUI.SVGA.800x600-256@72 Super VGA 800x600 256-color 72HZ
+ *  TRIDENT.TVGATGUI.VGA.800x600-2 VGA 800x600 2-color
+ *  TRIDENT.TVGATGUI.SVGA.1024x768-2 VGA 1024x768 2-color
+ *  TRIDENT.TVGATGUI.SVGA.1024x768-16@I Super VGA 1024x768 16-color Interlaced
+ *  TRIDENT.TVGATGUI.SVGA.1024x768-16@N Super VGA 1024x768 16-color
+ *  TRIDENT.TVGATGUI.SVGA.1024x768-256@I Super VGA 1024x768 256-color Interlaced
+ *  TRIDENT.TVGATGUI.SVGA.1024x768-256@N Super VGA 1024x768 256-color
+ *
+ * ****************************************************************************/
+
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+ CLASS  VGA        "VGA"
+   MODE   640x480-16 "640x480 16-color"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         r0 = 0x0012;
+	 int10(r0,1);
+
+         }
+
+      PROCEDURE SetText
+         {
+         r0 = 0x0003;
+	 int10(r0,1);
+
+          }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT     "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA        "SVGA"
+   MODE   640x480-256 "640x480 256-color"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TRIDENT8900C64K";  /* 2 64k adress window */
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x00); 	/* set group 0 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+ 	  r0=0x005d;
+	  int10(r0,1);
+	  out(0x3ce,0x0f); out(0x3cf,1);
+         }
+
+      PROCEDURE SetText
+         {
+          r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  VGA        "VGA"
+   MODE   800x600-16@56 "800x600 16-color 56HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x00); 	/* set group 0 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+	  r0= 0x005b;
+	  int10(r0,1);
+
+         }
+
+      PROCEDURE SetText
+         {
+     	  r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  VGA        "VGA"
+   MODE   800x600-16@72 "800x600 16-color 72HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x40); 	/* set group 4 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+	  r0= 0x005b;
+	  int10(r0,1);
+
+         }
+
+      PROCEDURE SetText
+         {
+     	  r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   800x600-256@56 "800x600 256-color 56HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TRIDENT8900C64K";  /* 2 64k adress window */
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  and(r63, 0xfb);			/* clear MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x20); 	/* set group 2 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+	  r0 = 0x005e;
+	  int10(r0,1);
+	  out(0x3ce,0x0f); out(0x3cf,1);
+  
+ 	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+      }
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+    	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   800x600-256@72 "800x600 256-color 72HZ"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             		/* multi-bit, flat */
+         MAPTYPE     = "TRIDENT8900C64K";  	/* 2 64k adress window */
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+     PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x40); 	/* set group 4 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+	  r0 = 0x005e;
+	  int10(r0,1);
+	  out(0x3ce,0x0f); out(0x3cf,1);
+  
+      }
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+    	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  VGA         "VGA"
+   MODE   800x600-2   "800x600 2-color"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 01;
+         DEVTECH     = 0;            /* 0 == mono, flat, linear */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+         }
+
+     PROCEDURE SetGraphics
+         {
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x00); 	/* set group 0 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+	 r0 = 0x005b;
+	 int10(r0,1);
+  
+  
+	/* set color 0 to black (0,0,0) */
+	out(0x3C8,0x00); out(0x3C9,0x00); out(0x3C9,0x00); out(0x3C9,0x00);
+	/* set color 15 to white (3F,3F,3F) */
+	out(0x3C8,0x0F); out(0x3C9,0x3F); out(0x3C9,0x3F); out(0x3C9,0x3F);
+     	}
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+    	  int10(r0,1);
+         }
+
+  
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA         "SVGA"
+   MODE   1024x768-2   "1024x768 2-color"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 01;
+         DEVTECH     = 0;            /* 0 == mono, flat, linear */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x40); 	/* set group 4 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+          r0=0x005f;
+	  int10(r0,1);
+
+	  out(0x3ce,0x06); out(0x3cf,0x01);
+
+	  /* set color 0 to black (0,0,0) */
+	  out(0x3C8,0x00); out(0x3C9,0x00); out(0x3C9,0x00); out(0x3C9,0x00);
+	  /* set color 15 to white (3F,3F,3F) */
+	  out(0x3C8,0x0F); out(0x3C9,0x3F); out(0x3C9,0x3F); out(0x3C9,0x3F);
+        }
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   1024x768-16@I "1024x768 16-color Interlaced"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;                /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  and(r63, 0xfb);			
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x20); 	/* set group 2 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+          r0=0x005f;
+	  int10(r0,1);
+
+	  out(0x3ce,0x06); out(0x3cf,0x01);
+
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+         }
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   1024x768-16@N "1024x768 16-color"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;                /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x40); 	/* set group 4 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+          r0=0x005f;
+	  int10(r0,1);
+
+	  out(0x3ce,0x06); out(0x3cf,0x01);
+         }
+
+      PROCEDURE SetText
+         {
+    	  r0=0x0003;
+	  int10(r0,1);
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   1024x768-256@I "1024x768 256-color Interlaced (1M DRAM Req.)"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TRIDENT8900C64K";  /* 2 64k adress window */
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  and(r63, 0xfb);			/* clear MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x20); 	/* set group 2 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+   	  r0 = 0x0062;
+	  int10(r0,1);
+	  out(0x3ce,0x0f); out(0x3cf,1);
+
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+         }
+
+
+      PROCEDURE SetText
+         {
+     	   r0=0x0003;
+	   int10(r0,1);
+         }
+
+/* ********************************************************************* */
+
+VENDOR TRIDENT    "Trident"
+ MODEL  TVGATGUI  "TVGA/TGUI"
+  CLASS  SVGA       "SVGA"
+   MODE   1024x768-256@N "1024x768 256-color (1M DRAM Required)"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TRIDENT8900C64K";  /* 2 64k adress window */
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+	  out(0x3c4,0x0b); in(r63, 0x3c5);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  or(r63, 0x80);			/* unprotect	*/
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+	  out(0x3c4,0x0f); in(r63, 0x3c5);
+	  or(r63, 0x04);			/* set MD2	*/
+	  out(0x3c4,0x0f); out(0x3c5, r63);
+	  out(0x3c4,0x0e); in(r63, 0x3c5);
+	  and(r63, 0x7f);			/* set protect bit */
+	  out(0x3c4,0x0e); out(0x3c5, r63);
+
+	  out(0x3d4,0x1f); in(r63, 0x3d5);
+	  and(r63,0x0f); or(r63, 0x40); 	/* set group 4 */
+	  out(0x3d4,0x1f); out(0x3d5, r63);
+
+   	  r0 = 0x0062;
+	  int10(r0,1);
+	  out(0x3ce,0x0f); out(0x3cf,1);
+
+         }
+
+
+      PROCEDURE SetText
+         {
+     	   r0=0x0003;
+	   int10(r0,1);
+         }
+
+/* End of File - TRIDENT/TVGATGUI.XGI */

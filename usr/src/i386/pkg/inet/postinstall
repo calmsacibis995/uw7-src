@@ -1,0 +1,1243 @@
+#remaining task: one driver fails, or idinstall missing, pkgrm inet
+#ident        "@(#)postinstall	1.28"
+#ident	"$Header$"
+
+#	
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#	
+
+if [ "$RANDOM" = "$RANDOM" ]
+then
+    exec /usr/bin/xksh $0
+fi
+
+#
+# save any errors to a file..if sent to the screen it will
+# garble the winxksh screens..
+#
+InetLog=/var/adm/log/inet.install.$$.err
+mkdir -p $InetLog 2>/dev/null && rmdir $InetLog
+exec 2>>$InetLog
+PS4='[$LINENO]+ '
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x && : `date` && set >&2
+
+#
+# This is used in tests to see if we must not disturb stdout/stderr
+#
+#if [ "${SILENT_INSTALL}" = "true" -o "${HOW_INSTALL}" = ON_BFLOP ]
+#then	Screen_writable=false
+#else	Screen_writable=true
+#fi
+
+cleanup_exit() {
+        # $1 is the exit code
+        # clean up any tmp files created by upnover tools and then exit.
+
+        [ "$PKGINST" ] || PKGINST=inet
+
+        [ "$UPDEBUG" = YES ] && goany "cleanup_exit $1 $PKGINST"
+        $SCRIPTS/up_cleanup "$PKGINST"
+        exit    $1
+}
+
+#
+# set up tcp listener related files, requires /etc/inet/hosts
+# to have out IP address.
+#
+Listener_Setup () {
+#
+# listener set up and its uucp access points is now done by a 
+# new script: listen.setup. 
+#
+/etc/inet/listen.setup noinstallf >> /var/sadm/install/logs/${PKGINST}.log 2>&1
+
+#
+# change the address of any remaining tcp services to 0's 
+# the seventh field of the /etc/saf/tcp/_pmtab file, if not empty, 
+# should be "\x========000000000000000000000000" 
+# where the "========" means same as before and change the rest to
+# 24 zeros (0).
+#
+/usr/bin/awk ' { FS = ":"
+	OFS = ":"
+	if ( $7 != "" ) if ( length($7) == 34 ) if ( match($7, "000000000000000000000000") == 0 )
+	{
+	$7 = sprintf ("%s000000000000000000000000", substr($7,1,10))
+	} 
+	printf ("%s\n", $0) 
+      } ' /etc/saf/tcp/_pmtab >/tmp/tcp_pmtab_hold
+cat /tmp/tcp_pmtab_hold >/etc/saf/tcp/_pmtab
+rm -f /tmp/tcp_pmtab_hold
+}
+
+#
+# open the please wait window if the screen is writable
+#
+#Open_Please_Wait () {
+#
+#---this long if only runs if we can write to the screen---
+#
+#if $Screen_writable
+#then
+#---------------------begin winxksh functions---------------------------
+#
+#
+# Pull in local winxksh functions (needed for clearing the screen)
+#
+#
+#
+# Set Necessary variables and structures
+#
+#STTYS=0
+#STTYA=0
+#STTYX=0
+#struct termios_data c_iflag:short c_oflag:short c_cflag:short c_lflag:short c_line:char c_cc:'char [19]'
+#struct termiosx_data x_hflag:short x_cflag:short x_rflag:'short [5]' x_sflag:short
+#
+#
+# mysetcolor - this script will reset the color of the screen back to
+# 		what it should be after running winxksh
+#
+#function mysetcolor
+#{
+#	if [ $1 = "-n" ]
+#	then
+#		cdecl string_t fmt1='!\\\033[=%d%s!'
+#		cdecl string_t cmd_ch1='!F!'
+#		cdecl string_t cmd_ch2='!G!'
+#
+#		ccall altprintf "@string_t:"!\\\033[0m!""
+#		ccall ioctl 0 24832 0
+#		ccall altprintf "@string_t:"!\\\033[=0E!""
+#		ccall altprintf fmt1 7 cmd_ch1
+#		ccall altprintf fmt1 0 cmd_ch2
+#		ccall altprintf "@string_t:"!\\\033[0m!""
+#		ccall altprintf "@string_t:"!\\\033[J!""
+#	fi
+#}
+#
+#
+# myclear - winxksh equivalent of "tput clear"
+#
+#function myclear
+#{
+#	ccall altprintf "@string_t:"!\\\033[2J\\\033[H!""
+#}
+#
+#
+# mygetstty - get the current stty settings to use to reset the screen at end
+#
+#function mygetstty
+#{
+#	cdecl termios_data cbs={}
+#	cdecl termios_data cba={}
+#	cdecl termiosx_data cbx={}
+#
+#	ccall ioctl 0 21517 cbs
+#	retd=$_RETD
+#	cprint -v STTYS cbs
+#	ccall ioctl 0 21505 cba
+#	retd=$_RETD
+#	cprint -v STTYA cba
+#	ccall ioctl 0 22529 cbx
+#	retd=$_RETD
+#	cprint -v STTYX cbx
+#}
+#
+#
+# mysetstty - reset the screen (uses variables from mygetstty function)
+#
+#function mysetstty
+#{
+#	cdecl termios_data cbs="$STTYS"
+#	cdecl termios_data cba="$STTYA"
+#	cdecl termiosx_data cbx="$STTYX"
+#	ccall ioctl 0 21518 cbs
+#	retd=$_RETD
+#	ccall ioctl 0 21506 cba
+#	retd=$_RETD
+#	ccall ioctl 0 22530 cbx
+#	retd=$_RETD
+#}
+#
+#
+# myrestore - mysetstty, endwin, mysetcolor, myclear
+#
+#function myrestore
+#{
+#	mysetstty
+#	call endwin
+#	mysetcolor -n
+#	myclear
+#}
+#
+#
+#---------------------end winxksh functions---------------------------
+#
+#---------------------begin, please wait screen------------------
+#
+# save the stty settings and setup the screen
+#
+#mygetstty
+#
+#
+# Pull in global winxksh functions (taken from dcu scripts)
+#
+#. /etc/dcu.d/scripts/winrc
+#
+#if [[ -r /etc/dcu.d/locale/${LOCALE}/txtstrings ]]
+#then
+#	. /etc/dcu.d/locale/${LOCALE}/txtstrings
+#else
+#	. /etc/dcu.d/locale/C/txtstrings
+#fi
+#
+#. /etc/dcu.d/scripts/scr_init
+#
+#MSG1=`pfmt -s nostd -g ${PKGMSG}:107 "\n Setting up TCP/IP (%s) related files, please wait. \n \n" ${PKGINST:-inet} 2>&1`
+#display "${MSG1}"
+#WAIT=`gettxt inet.pkg:124 "Please Wait.\n"`
+#footer "$WAIT"
+#DISP_WID=$CURWIN
+#input_handler
+#
+#---------------------end, please wait screen------------------
+#
+#fi
+#---close if for $Screen_writable---
+#}
+#
+#
+# close the please wait window if the screen is writable
+#
+#Close_Please_Wait () {
+#	if $Screen_writable
+#	then
+#		wclose ${DISP_WID}
+#	fi
+#}
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+# If HOW_INSTALL = POSTREBOOT, then we've already installed
+# the files and run 97% of this postinstall script.
+# Now we run the 3% needing bootp and the address, and manipulate
+# files based on it.
+#
+# This is done even in a Silent Install since /etc/inet/menu
+# knows to check for it.
+
+if [ "${HOW_INSTALL}" = "POSTREBOOT" -a -x /usr/sbin/netcfg ]
+then
+	#
+	#	execute netcfg to modify/obtain information.
+	#
+	(
+		#
+		# Get the NICS parameters from the ifile.
+		#
+		if [ -f /isl/ifile ]
+		then
+			. /isl/ifile
+		fi
+
+		if [ "$NICS_DRIVER_NAME" -a "$NICS_TYPE" ]
+		then
+			if [ "$NICS_TYPE" = "MDI" ]
+			then
+				#
+				# During the installation we will
+				# only ever configure one interface.
+				# In the MDI case NIC devices are
+				# of the form netX. So it is safe
+				# to assume that here we will be
+				# adding net0.
+				#
+				netcfg -a tcp#net0
+			elif [ "$NICS_TYPE" = "ODI" -o "$NICS_TYPE" = "DLPI" ]
+			then
+				#
+				# ODI/DLPI drivers have the form:
+				# NIC_X, e.g. TCM59X_0.
+				#
+				netcfg -a tcp#${NICS_DRIVER_NAME}_0
+			fi
+		else
+			#
+			# Looks like the network configuration was deferred.
+			# Save aside /etc/resolv.conf if it exists and add
+			# uname -n as an alias to localhost in /etc/inet/hosts.
+			#
+			if [ -f /etc/resolv.conf ]
+			then
+				mv /etc/resolv.conf /etc/inet/resolv.save
+			fi
+
+			if [ -f /etc/inet/hosts ]
+			then
+				ed -s /etc/inet/hosts <<-EOF > /dev/null 2>&1
+					/^127/s/localhost/localhost	$NODE/
+					.
+					w
+					q
+					EOF
+			fi
+		fi
+
+		Listener_Setup
+	)
+	exit 0
+fi
+
+REMF_FILES=/tmp/removef.files
+rm -f $REMF_FILES
+ls /tmp/inet/* >$REMF_FILES
+echo '/tmp/inet
+/tmp' >>$REMF_FILES
+
+#
+# Initialize FAILURE to 1 (fatal error)
+#
+FAILURE=1
+
+#
+# Install INET drivers
+#
+CONF=/etc/conf
+TMP=/var/adm/log/inet.idinstall.err
+
+cd /tmp/inet
+
+#########################################
+## Make sure ID/TP tools are available ##
+#########################################
+if [ -x ${CONF}/bin/idbuild -a -x ${CONF}/bin/idinstall ]
+then
+	:
+else
+	exit $FAILURE
+fi
+
+
+SDEV=/etc/conf/sdevice.d
+for DRV in arp icmp igmp incf inet ip ipip llcloop rip route slip tcp udp
+do
+
+	mv ${DRV}_atup.o Driver_atup.o
+	mv ${DRV}_mp.o Driver_mp.o
+
+	grep -v "^[\*#]ident" ${DRV}.Master > Master
+	rm -rf ${DRV}.Master
+	
+	if [ -f ${DRV}.Space ]
+	then
+		mv ${DRV}.Space Space.c
+	fi
+
+	if [ -f ${DRV}.Mtune ]
+	then
+		mv ${DRV}.Mtune Mtune
+	fi
+
+	if [ -f ${DRV}.Dtune ]
+	then
+		mv ${DRV}.Dtune Dtune
+	fi
+
+	if [ -f ${DRV}.Stubs ]
+	then
+		mv ${DRV}.Stubs Stubs.c
+	fi
+
+	if [ -f ${DRV}.Node ]
+	then
+		grep -v "^[\*#]ident" ${DRV}.Node > Node
+		rm -rf ${DRV}.Node
+	fi
+
+	grep -v "^[\*#]ident" ${DRV}.System |
+		sed 's/	N	/	Y	/'  > ./System
+	rm -f ${DRV}.System
+
+	#if any of the core files are missing, go on to next one
+	[ ! -s System -o ! -s Master ] && continue;
+	[ ! -s Driver_atup.o -a ! -s Driver_mp.o -a ! -s Driver.o ] && continue;
+
+	${CONF}/bin/idinstall -P ${PKGINST} -a ${DRV} 2>> $TMP
+	if [ $? != 0 ]
+	then
+		${CONF}/bin/idinstall -P ${PKGINST} -u ${DRV} 2>> $TMP
+		if [ $? != 0 ]
+		then
+			for rem_drv in ${DRV_GOOD}
+			do
+				${CONF}/bin/idinstall -P ${PKGINST} -d ${rem_drv} 2>> $TMP
+			done
+			exit ${FAILURE}
+		fi
+	fi	
+	ID_MODS="${ID_MODS} -M ${DRV}"
+	DRV_GOOD="${DRV_GOOD} ${DRV}"
+done
+
+# #
+# # XXX dme - currently not done.  should we move forward the 2.0/2.1
+# #	tunables into /etc/default/inet ?
+# #
+# #START-TUNABLES-START-TUNABLES-START-TUNABLES-START-TUNABLES-START-TUNABLES
+# #
+# # This is the begining of the uw1.1 tunables convertion to uw2.0
+# # only do this if we are doing an upgrade("${PKGINSTALL_TYPE}" = "UPGRADE")
+# # and the Automerge was selected("$AUTOMERGE" = "Yes").
+# #
+# IP_FORWARD=NO export IP_FORWARD
+# [ "${PKGINSTALL_TYPE}" = "UPGRADE" ] && [ "$AUTOMERGE" = "Yes" ] && {
+# #
+# # Convert uw1.1 "tunables" to uw2.0 tunables.
+# # Run during postinstall after all the modules have been idinstall'd
+# # but before the modules have been "idbuild -M"'d.
+# #
+# # The uw1.1 "tunables" that will be brought forward to uw2.0 are:
+# #
+# # uw2.0 name		uw1.1 name			uw1.1 location
+# # ---------------------------------------------------------------------------
+# # ARPHASHBCKTCNT	ARPTAB_BSIZ			pack.d/arp/space.c
+# # ARPHASHBCKTSIZE	ARPTAB_NB			pack.d/arp/space.c
+# # IP_UNITS		IPCNT				pack.d/ip/space.c
+# # IPFORWARDING		IPFORWARDING			pack.d/ip/space.c
+# # IPSENDREDIRECTS	IPSENDREDIRECTS			pack.d/ip/space.c
+# # RT_UNITS		IPPROVCNT			pack.d/ip/space.c
+# # INTTL			ip_ttl				pack.d/ip/space.c
+# # ICMPMASKREQ		ICMP_ANSWERMASK			pack.d/ip/space.c
+# # RTSUBNETSARELOCAL	subnetsarelocal			pack.d/ip/space.c
+# # TCPWINDOW		TCPWINDOW			pack.d/tcp/space.c
+# # TCPTTL		tcp_ttl				pack.d/tcp/space.c
+# # TCP_UNITS		TCP_UNITS			sdevice.d/tcp
+# # UDPTTL		udp_ttl				pack.d/udp/space.c
+# # UDPCKSUM		udpcksum			pack.d/udp/space.c
+# # UDP_UNITS		UDP_UNITS			sdevice.d/udp
+# # 
+# # TCPROUNDMSS		tcp_round_mss			pack.d/tcp/space.c
+# # tcp_round_mss wasn't going to be a tunable (TCPROUNDMSS), but I have had
+# # second thoughts, as I believe this is a "tunable" that administrators may
+# # have changed.  Therefore it should become a tunable and be brought forward.
+# #
+# # To be safer, since administrators might have taken the precedent set by
+# # TCPWINDOW and set values using arithmetic expressions, we will check each
+# # value using the ksh "$(( var ))" expression to convert an expression to
+# # a number.  This "exits" non zero if there was a conversion problem.
+# #
+# # IPFORWARDING and IPSENDREDIRECTS are completely processed in
+# # postinstall now that idinstall is done during ON_BOOTFLOP.
+# # To assist /etc/inet/menu, if they are set, the environment variable
+# # IP_FORWARD will be set to "YES" so the inet.menu will know what to do.
+# #
+
+# OCONF=/etc/inst/save.user/etc/conf
+# O_PK=${OCONF}/pack.d
+# O_SY=${OCONF}/sdevice.d
+
+# NCONF=/etc/conf
+# N_PK=${NCONF}/pack.d
+# N_SY=${NCONF}/sdevice.d
+
+# #
+# # $1 - variable to check and convert
+# # is there an easier way to do this?
+# #
+# check_val () {
+# 	VAL=`(
+# 		TMP2=$(($1))
+# 		RET=$?
+# 		echo ${TMP2}
+# 		exit $RET
+# 	) 2>/dev/null`
+# }
+# #
+# # $1..$n - filename to collect "$defines" from
+# # output each in the form <name>=<value>
+# #
+# do_defines() {
+# 	grep -h "#define" $* | sed -e 's/#define[ 	][ 	]*//'\
+# 		-e 's/[ 	][ 	]*/=/' -e 's/[ 	/].*//'
+# }
+# #
+# # $1..$n - filename to collect variable declarations (ints) from
+# # output each in the form <name>=<value>
+# #
+# do_ints() {
+# 	grep -h "int" $* | sed -e 's/int[ 	][ 	]*//'\
+# 		-e 's/[ 	][ 	]*=[ 	][ 	]*/=/'\
+# 		-e 's/;.*$//'
+# }
+# #
+# # $1 - UW2.0 file name
+# # $2 - module name to search for (will be anchored to beginning of the line)
+# # $3 - original field value
+# # $4 - new field value
+# #
+# modify_file() {
+# 	MF=$1
+# 	NAME=$2
+# 	OVAL=$3
+# 	NVAL=$4
+#   if [ `echo $NVAL | awk '{printf NF}'` -ne 0 ]
+#   then
+# 	ed ${MF} >/dev/null 2>&1 <<-!
+# 		/^${NAME}
+# 		s/${OVAL}/${NVAL}/
+# 		w
+# 		q
+# 	!
+#   fi
+
+# }
+
+# #main
+# cat >/tmp/HOLD_defines.list <<!
+# ^ARPTAB_BSIZ
+# ^ARPTAB_NB
+# ^IPCNT
+# ^IPPROVCNT
+# ^IPFORWARDING
+# ^IPSENDREDIRECTS
+# ^ICMP_ANSWERMASK
+# ^TCPWINDOW
+# ^NO_DLPI_SERVICE_PROVIDERS
+# !
+
+# cat >/tmp/HOLD_ints.list <<!
+# ip_ttl
+# subnetsarelocal
+# tcp_ttl
+# udp_ttl
+# udpcksum
+# !
+
+# do_defines ${O_PK}/arp/space.c ${O_PK}/ip/space.c\
+# 	${O_PK}/tcp/space.c >/tmp/HOLD_tmpfile
+# #
+# # the file /tmp/HOLD_defines.list contains the list of #defines we care about
+# #
+# cat /tmp/HOLD_tmpfile | egrep -hf /tmp/HOLD_defines.list >/tmp/HOLD_uw1.1_defines
+
+# do_ints ${O_PK}/ip/space.c ${O_PK}/tcp/space.c ${O_PK}/udp/space.c\
+# 	>/tmp/HOLD_tmpfile
+# #
+# # the file /tmp/HOLD_ints.list contains the list of integers we care about
+# #
+# cat /tmp/HOLD_tmpfile | egrep -hf /tmp/HOLD_ints.list >/tmp/HOLD_uw1.1_ints
+
+# rm /tmp/HOLD_tmpfile
+
+# #
+# # get the system's current systems file units field for UDP
+# #
+# UDP_UNITS=`grep "^udp" ${O_SY}/udp | sed 's/[ 	][ 	]*/:/g' | cut -d: -f3`
+# #
+# # get the system's current systems file units field for TCP
+# #
+# TCP_UNITS=`grep "^tcp" ${O_SY}/tcp | sed 's/[ 	][ 	]*/:/g' | cut -d: -f3`
+# #
+# # import the shell variables for the #defines and integers
+# #
+# . /tmp/HOLD_uw1.1_defines
+# . /tmp/HOLD_uw1.1_ints
+
+# #
+# # Modify tunables
+# #
+
+# check_val "${ARPTAB_BSIZ}"
+# if [ $? -eq 0 -a "${VAL}" -ge 1 -a "${VAL}" -lt 19 ]
+# then
+# 	/etc/conf/bin/idtune -c ARPHASHBCKTCNT ${VAL}
+# fi
+
+# check_val "${ARPTAB_NB}"
+# if [ $? -eq 0 -a "${VAL}" -ge 1 -a "${VAL}" -lt 9 ]
+# then
+# 	/etc/conf/bin/idtune -c ARPHASHBCKTSIZE ${VAL}
+# fi
+	
+# # in UW1.1, ip_ttl was 255 by default, in UW2.0, INTTL is 64 by default
+# if [ "${ip_ttl}" != MAXTTL ]
+# then
+# 	check_val "${ip_ttl}"
+# 	if [ $? -eq 0 -a "${VAL}" -gt 0 -a "${VAL}" -lt 255 ]
+# 	then
+# 		/etc/conf/bin/idtune -c INTTL ${VAL}
+# 	fi
+# fi
+
+# #
+# # set the IP_FORWARD variable to "YES" if != 0
+# #
+# check_val "${IPFORWARDING}"
+# if [ $? -eq 0 -a "${VAL}" -ne 0 ]
+# then
+# 	IP_FORWARD="YES"
+# 	/etc/conf/bin/idtune -c IPFORWARDING 1
+# fi
+
+# #
+# # set the IP_FORWARD variable to "YES" if != 0
+# #
+# check_val "${IPSENDREDIRECTS}"
+# if [ $? -eq 0 -a "${VAL}" -ne 0 ]
+# then
+# 	IP_FORWARD="YES"
+# 	/etc/conf/bin/idtune -c IPSENDREDIRECTS 1
+# fi
+
+# check_val "${ICMP_ANSWERMASK}"
+# if [ $? -eq 0 ]
+# then
+# 	VAL=$(( ${ICMP_ANSWERMASK} ))
+# 	if [ "${VAL}" -ne 0 ]
+# 	then
+# 		/etc/conf/bin/idtune -c ICMPMASKREQ 1
+# 	fi
+# fi
+
+# check_val "${subnetsarelocal}"
+# if [ $? -eq 0 -a "${VAL}" -eq 0 ]
+# then
+# 	/etc/conf/bin/idtune -c RTSUBNETSARELOCAL 0
+# fi
+
+# check_val "${TCPWINDOW}"
+# if [ $? -eq 0 -a "${VAL}" -ne 4096 ]
+# then
+# 	/etc/conf/bin/idtune -c TCPWINDOW ${VAL}
+# fi
+
+# #
+# #  (TCP_TTL (the UW1.1 default) == 60) != 64 (the UW2.0 default)
+# #
+# if [ "${tcp_ttl}" != TCP_TTL ]
+# then
+# 	check_val "${tcp_ttl}"
+# 	if [ $? -eq 0 -a "${VAL}" -ne 60 -a "${VAL}" -gt 0 -a "${VAL}" -lt 255 ]
+# 	then
+# 		/etc/conf/bin/idtune -c TCPTTL ${VAL}
+# 	fi
+# fi
+
+# if [ "${udp_ttl}" != UDP_TTL ]
+# then
+# 	check_val "${udp_ttl}"
+# 	if [ $? -eq 0 -a "${VAL}" -ne 30 -a "${VAL}" -gt 0 -a "${VAL}" -lt 255 ]
+# 	then
+# 		/etc/conf/bin/idtune -c UDPTTL ${VAL}
+# 	fi
+# fi
+
+# check_val "${udpcksum}"
+# if [ $? -eq 0 -a "${VAL}" -eq 1 ]
+# then
+# 	/etc/conf/bin/idtune -c UDPCKSUM 1
+# fi
+
+# #
+# # Modify system files
+# #
+
+# if [ "${TCP_UNITS}" -ne 512 ]
+# then
+# 	modify_file ${N_SY}/tcp tcp 512 ${TCP_UNITS}
+# fi
+
+# #
+# #  UW1.1 default UDP_UNITS == 256, UW2.0 default UDP_UNITS == 512
+# #
+# if [ "${UDP_UNITS}" -ne 256 ]
+# then
+# 	modify_file ${N_SY}/udp udp 512 ${UDP_UNITS}
+# fi
+# #
+# # UW1.1 default IPCNT == 8, UW2.0 default IP_UNITS == 16
+# #
+# check_val "${IPCNT}"
+# if [ $? -eq 0 -a "${VAL}" -ne 8 ]
+# then
+# 	modify_file ${N_SY}/ip ip 16 ${VAL}
+# fi
+
+# check_val "${IPPROVCNT}"
+# if [ $? -eq 0 -a "${VAL}" -ne 16 ]
+# then
+# 	modify_file ${N_SY}/route route 16 ${VAL}
+# fi
+
+# rm -f /tmp/HOLD_uw1.1_defines /tmp/HOLD_uw1.1_ints
+
+# }
+# #
+# #END-TUNABLES-END-TUNABLES-END-TUNABLES-END-TUNABLES-END-TUNABLES
+# #
+
+IDBUILD_FLAG=0
+${CONF}/bin/idbuild ${ID_MODS} >>${TMP} 2>&1
+if [ "$?" -ne "0" ]
+then
+	IDBUILD_FLAG=1
+fi
+
+#
+#	add the appropriate devices 
+#
+
+if pkginfo -i es >/dev/null 2>&1
+then
+	SYS_PUTDEV="range=SYS_PRIVATE-SYS_PRIVATE state=private 
+			mode=static ual_enable=y other=>y startup=y 
+			startup_level=SYS_PRIVATE startup_owner=root>rw- 
+			startup_group=other>--- startup_other=>---"
+	USR_PUTDEV="range=SYS_RANGE_MAX-SYS_RANGE_MIN state=pub_priv
+			mode=static ual_enable=y other=>y startup=y
+			startup_level=USER_LOGIN startup_owner=root>rw-
+			startup_group=other>rw- startup_other=>rw-"
+	SUB_PUTDEV="range=SYS_RANGE_MAX-SYS_RANGE_MIN state=pub_priv
+			mode=static ual_enable=y other=>y startup=y
+			startup_level=USER_LOGIN startup_owner=root>rw-
+			startup_group=other>rw- startup_other=>---"
+else
+	SYS_PUTDEV=""
+	USR_PUTDEV=""
+	SUB_PUTDEV=""
+fi
+
+for DRV in arp icmp igmp incf ip ipip rip
+do
+	putdev -a $DRV cdevlist="/dev/$DRV,/dev/inet/$DRV" \
+		desc="$DRV protocol" $SYS_PUTDEV 2>/dev/null
+done
+
+# For historical reasons, the name of the llcloop device is /dev/loop
+
+putdev -a llcloop cdevlist="/dev/loop,/dev/inet/loop" \
+	desc="$llcloop protocol" $SYS_PUTDEV 2>/dev/null
+
+#
+# These devices are intended to be opened by services
+# with only the P_DEV privilege, so the startup_level is set to
+# USER_LOGIN.
+#
+putdev -a tcp cdevlist="/dev/tcp,/dev/inet/tcp" \
+	desc="tcp protocol" $USR_PUTDEV 2>/dev/null
+
+#
+#	create explicit tcp sub-devices -- needed by uucp
+#	TCP_CDEV builds a string of these minor devices
+TCP_CDEV=
+
+for MINOR in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 \
+	15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+do
+	#	Build putdev cdevlist minor devices list
+	if [ -z "$TCP_CDEV" ]
+		then TCP_CDEV="/dev/inet/tcp${MINOR}"
+		else TCP_CDEV="$TCP_CDEV,/dev/inet/tcp${MINOR}"
+	fi
+done
+#
+#	distinct device alias for subdevices, mode 660
+putdev -a tcp_subdev desc="tcp subdevices" cdevlist=$TCP_CDEV $SUB_PUTDEV 2>/dev/null
+
+putdev -a udp cdevlist="/dev/udp,/dev/inet/udp" \
+	desc="udp protocol" $USR_PUTDEV 2>/dev/null
+
+
+# create the NET role; if it is already there, ignore error
+#/usr/bin/adminrole -n NET > /dev/null 2>&1
+
+#The following for-loop assigns the commands to the NET role.  Privileges
+#are gotten right from /etc/security/tcb/privs.
+#
+#for cmd in /usr/bin/rdate /usr/sbin/ifconfig /usr/sbin/in.routed \
+#	/usr/sbin/route /usr/sbin/nslookup /usr/sbin/slink /usr/sbin/arp \
+#	/usr/bin/ruptime /usr/bin/rwho /usr/sbin/in.rwhod /usr/sbin/in.named
+#do
+#	base=`basename $cmd`
+#	privs=`
+#	egrep ":${cmd}$" /etc/security/tcb/privs| #Find command in tcb database
+#	sed 's/^.*%inher,\(.*\):.*/\1/p' |	  # get the set of inher privs
+#	sed 's/^.*%fixed,\(.*\):.*//p' |	  # delete the fixed privs
+#	sed 's/,/:/gp'				  # changed ,'s to :'s
+#	`
+#	if [ -z "$privs" ]
+#	then
+#		if [ ! -f $cmd ]
+#			then	echo "Warning: $cmd not found on the system.\c"
+#				echo "	Not adding to TFM."
+#				continue
+#			else	adminrole -a $base:$cmd NET
+#		fi
+#	else
+#		adminrole -a $base:$cmd:$privs NET
+#	fi
+#done
+
+if [ ! -c /dev/pts/0 ] && [ $HOW_INSTALL != ON_BFLOP ]
+then
+SUBJ=`gettxt inet.pkg:105 "pseudo-terminals have not been installed"`
+TEXT=`gettxt inet.pkg:106 "WARNING: pseudo-terminals have not been installed on this machine.\nInternet commands such as rlogin and rsh require psuedo-terminals.\nPsuedo-terminals are part of the Networking Support Utilities package;\nplease re-install that package.\n"`
+/usr/bin/mailx -s "$SUBJ" root >/dev/null 2>&1 <<!
+$TEXT
+!
+fi
+
+#--------------------begin /etc/netconfig setup------------------
+#
+#	add the appropriate entries to /etc/netconfig
+#
+
+rm -f /tmp/netconfig
+
+# Add $1  $2          $3 $4   $5  $6       $7
+#     tcp tpi_cots_ord v inet tcp /dev/tcp /usr/lib/tcpip.so,/usr/lib/resolv.so
+# to $8 if not present in /etc/netconfig
+#
+Add_netconfig()
+{
+	if grep "[ 	]$4[ 	][ 	]*$5[ 	][ 	]*$6[ 	]" /etc/netconfig >/dev/null 2>&1
+	then
+		: Already there!
+	else
+		echo "$1	$2	$3	$4	$5	$6	$7" >> $8
+	fi
+}
+
+Add_netconfig tcp tpi_cots_ord v inet tcp /dev/tcp \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig udp tpi_clts v inet udp /dev/udp \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /tmp/netconfig
+
+Add_netconfig icmp tpi_raw - inet icmp /dev/icmp \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+Add_netconfig igmp tpi_raw - inet igmp /dev/igmp \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+Add_netconfig rawip tpi_raw - inet - /dev/rawip \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+# IPv6 entries
+Add_netconfig tcp6 tpi_cots_ord v inet6 tcp /dev/tcpipv6 \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+Add_netconfig udp6 tpi_clts v inet6 udp /dev/udpipv6 \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+Add_netconfig icmpv6 tpi_raw - inet6 icmpv6 /dev/icmpv6 \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+Add_netconfig rawipv6 tpi_raw - inet6 - /dev/rawipv6 \
+		/usr/lib/tcpip.so,/usr/lib/resolv.so /etc/netconfig
+
+if [ -s /tmp/netconfig ]
+then
+	if [ -r /etc/netconfig ]
+	then
+		grep -v "^#" /etc/netconfig >>/tmp/netconfig
+		grep "^#" /etc/netconfig >>/tmp/netconfig
+	fi
+	cat </tmp/netconfig >/etc/netconfig
+fi
+
+rm -f /tmp/netconfig
+
+#--------------------end /etc/netconfig setup------------------
+
+[ "$UPDEBUG" = YES ] && goany
+
+#
+#  Delete the tcp entry from the sac and then replace it.  
+#
+sacadm -r -p tcp >/dev/null 2>&1
+sacadm -a -p tcp -t listen -c "/usr/lib/saf/listen -m inet/tcp0 tcp 2>/dev/null" -v `nlsadmin -V` -n 3  2>/dev/null
+SACRET=$?
+[ "${SACRET}" != "0" -a "${SACRET}" != "10" ] && \
+	echo "sacadm -a -p tcp failed - returned ${SACRET}" >>${UPERR}
+
+[ "$UPDEBUG" = YES ] && goany
+
+#
+############# Begin UPGRADE AND OVERLAY #######################
+#
+# if $1/$2 $3/$2 have the same data, do nothing.
+# If they do not, cd $1 and cpio $2 to $3
+# preserve modes, date when transfering file.
+Copy () {
+	if cmp -s $1/$2 $3/$2 2>/dev/null
+	then	: do nothing
+	else	[ -d $1 -a -d $3 -a -r $1/$2 ] &&
+			{	cd $1
+				cpio -ump $3 << !
+$2
+!
+			}
+	fi
+}
+
+[ "$PKGINSTALL_TYPE" != "NEWINSTALL" ] && {
+	BackupETC=/etc/inst/save.user/etc
+
+	[ -f $BackupETC/inet/bootptab ] &&
+		Copy $BackupETC/inet bootptab /etc/inet
+
+	[ -f $BackupETC/bootptab ] && {
+		[ ! -L /etc/bootptab ] && {
+			mv /etc/bootptab /etc/inet
+			ln -s /etc/inet/bootptab /etc/bootptab
+		}
+		Copy $BackupETC bootptab /etc/inet
+	}
+
+	#if the original 1.X - 2.01 /etc/inet/bootptab
+	#is present, then the (2.1) /etc/inet/bootptab.samp will suffice,
+	#since they are the same sample.
+	#
+	#there is no 2.1  /etc/inet/bootptab unless the administrator
+	#creates one
+	#
+	#so if /etc/inet/bootptab is the same as the sample, we remove it
+	#
+	#NOTE this is run as a subshell as it creates lots of vars
+
+	[ "$PKGINSTALL_TYPE" != "OVERLAY" -a \
+	  -f /etc/inet/bootptab -a -f /etc/inet/bootptab.samp ] && 
+	  grep '^/etc/inet/bootptab[ 	]' 2>/dev/null \
+		/var/sadm/install/contents && (
+
+	   #has it changed since install?
+	   if /usr/sbin/pkgchk -p /etc/inet/bootptab inet 2>/dev/null
+
+	   then	pkgchk_bootptab=true
+
+	   else	pkgchk_bootptab=false
+
+		#acutally, pkgchk_bootptab may yet be set to true.
+		#we are in the process of installing the inet package here,
+		#so pkgchk may not find the contents file in a consistant
+		#state.  We will check the length, checksum, uid, grp by hand.
+		if grep '^/etc/inet/bootptab[ 	]' 2>/dev/null >&2 \
+			</var/sadm/install/contents |
+		   read fnm vrbs n md root sys len checksum sec security &&
+		   [ "$fnm" = /etc/inet/bootptab -a root = "$root" -a \
+		     sys = "$sys" -a -n "$len" -a -n "$checksum" ]
+		then
+			ls -l /etc/inet/bootptab 2>/dev/null |
+			   read lsmd lnks lsroot lsys lslen rest 2>/dev/null &&
+			   [ "$sys" = "$lsys" -a "$root" = "$lsroot" -a \
+			     "$len" = "$lslen" -a \
+			     "X$checksum" = X"`sum </etc/inet/bootptab |
+					  awk '{print $1;}'`" ] 2>/dev/null &&
+				pkgchk_bootptab=true
+		fi
+	   fi
+
+	   #if pkgchk_bootptab is true, then we need to remove
+	   #/etc/inet/bootptab, since a started in.bootpd will
+	   #read this sample file.
+
+	   $pkgchk_bootptab && {
+		rm -f /etc/inet/bootptab 2>/dev/null
+		/usr/sbin/removef inet /etc/inet/bootptab >/dev/null 2>&1
+		mv $BackupETC/inet/bootptab $BackupETC/inet/bootptab.old.$$ \
+			2>/dev/null
+	   }
+	)
+}
+
+
+[ "$PKGINSTALL_TYPE" != "NEWINSTALL" ] && {
+
+#	AUTOMERGE will be set when the system is being UPGRADED or
+# 	or OVERLAYED....If the package is being added via pkgadd
+#	then the AUTOMERGE will be set to "Yes".
+
+#	If AUTOMERGE=Yes, ${SCRIPTS}/pkgmrgconf will 
+#	merge the config files listed in $UPGRADE_STORE/${PKGINST}.sav.
+#	If merge failed, it informs user which files the merge failed.
+
+#	If AUTOMERGE=No, ${SCRIPTS}/pkgmrgconf will 
+#	inform user where there old config files live and that
+#	the system will use new versions of the config. files
+
+	${SCRIPTS}/pkgmrgconf "${PKGINST}" "$AUTOMERGE" "$NAME" >/dev/null 2>&1
+}
+
+[ "$UPDEBUG" = YES ] && goany
+
+
+# cleanup patch files from /var/sadm/install/contents and rm them
+
+${SCRIPTS}/up_cleanup "${PKGINST}"
+
+#
+# remove the nics map file
+#
+rm -f /etc/inst/nics/nics.map
+
+#
+############# End   UPGRADE AND OVERLAY #######################
+#
+
+#
+# If HOW_INSTALL = ON_BFLOP, then we skip this step.
+# This may use nics to get addresses from bootp in postreboot.
+#
+
+if [ -x /usr/sbin/netcfg -a "${HOW_INSTALL}" = "NORMAL" ]
+then
+	#
+	# Case of pkgadd on running system.
+	#
+	netcfg
+fi
+
+#
+# If HOW_INSTALL = ON_BFLOP, then we skip this step.
+# This manipulates files based on the address.
+#
+
+[ "${HOW_INSTALL}" != ON_BFLOP ] && {
+	Listener_Setup
+}
+
+#
+#	Add /dev/inet to /etc/ttysrch to speed up ttyname
+#
+echo "/dev/inet	MF" >>/etc/ttysrch
+
+#
+#	Add /dev/_tcp mount entry to vfstab
+#
+	echo "/dev/_tcp	-	/dev/_tcp	specfs	-	yes	dev=tcp" >> /etc/vfstab
+
+#
+#	Create /etc/passwd and /etc/group entry for UID_NOBODY
+#	so in.fingerd can run
+#
+UID_NOBODY="`grep '^nobody:' /etc/passwd | cut -d: -f3`"
+GID_NOBODY="`grep '^nobody:' /etc/group | cut -d: -f3`"
+if [ -z "$UID_NOBODY" ]
+then
+	touch /noshell
+	chmod +x /noshell
+	if [ -z "$GID_NOBODY" ]
+	then
+		useradd -c 'unprivileged user' -d /nonexistent \
+			-s /noshell nobody
+	else
+		# already have a group nobody -- use it
+		useradd -c 'unprivileged user' -d /nonexistent \
+			-s /noshell -g ${GID_NOBODY} nobody
+	fi
+	rm -f /noshell
+	UID_NOBODY="`grep '^nobody:' /etc/passwd | cut -d: -f3`"
+fi
+if [ -z "$GID_NOBODY" -a ! -z "$UID_NOBODY" ]
+then
+	if cut -d: -f3 </etc/group | grep "^${UID_NOBODY}\$" >/dev/null
+	then
+		# already have group using nobody's uid
+		GID_NOBODY="`grep '^nobody:' /etc/passwd | cut -d: -f4`"
+	else
+		GID_NOBODY=$UID_NOBODY
+	fi
+	echo "nobody::${GID_NOBODY}:" >>/etc/group
+	/usr/sbin/pwconv
+	/sbin/creatiadb
+	usermod -g ${GID_NOBODY} nobody
+fi
+
+#	Create inetd as a port monitor.  Version doesn't matter
+#	since inetd doesn't use _pmtab.
+#
+
+# The following ( ) shell scripts are to capture WARNING
+# messages resulting from installing the package
+# in Maintenance mode (aka init S) when the sac
+# program is not running or has never yet been run.
+# The database files are correctly updated when these
+# error numbers are received, the messages usually read:
+#
+# warning - could not ascertain sac status
+
+(	SACOUT="`sacadm -a -p inetd -t inetd -c /usr/sbin/inetd \
+			-v 1 -y \"internet daemon\" 2>&1`"
+	RET2=$?
+	if [ 10 = $RET2 -o 0 = $RET2 ]
+	then
+		exit 0
+	else
+		# display messages other than "inetd already exists"
+		[ "$RET2" != 6 ] && echo "$SACOUT" 1>&2
+		exit $RET2
+	fi
+)
+
+# If root is a defined user and has inetd in the TFM database,
+# then we do not need to add it again.
+adminuser root | grep "inetd:/usr/sbin/inetd" >/dev/null 2>&1
+rc=$?
+
+[ $rc = 1 ] && {
+	# Enable inetd to run under the SAC through tfadmin with privileges
+	# The first try may fail due to root not added as a TFM user yet.
+
+	CMD="inetd:/usr/sbin/inetd:allprivs"
+	adminuser -a $CMD root >/dev/null 2>&1
+
+	# We may not be able to add TFM users without using the "-n" option.
+	# If above fails, try again with -n.
+	if [ $? -ne 0 ]
+		then	adminuser -n -a $CMD root 
+	fi
+}
+
+
+#
+#	for security release, let them know how to disable inet services.
+#
+#
+#/usr/bin/mail root >/dev/null 2>&1 <<!
+#Subject: inet package installation: how to disable inet services
+#
+#The inet services have been installed.  In order to disable access to 
+#or from this system in the future, use the /etc/inet/inet.priv -d script.
+#If you need to enable the inet services afterwards, you can run
+#/etc/inet/inet.priv -e in single user mode to restore file modes
+#and privileges.
+#!
+
+#
+# Install the SCOadmin managers...
+#
+
+CLASSCONF=/sbin/classconf
+OSACONF=/sbin/osaconf
+SCOADMIN=/usr/lib/scoadmin
+
+/usr/bin/scoadmin -p Networking -f -c $SCOADMIN/dns/dns.obj
+/usr/bin/scoadmin -p Networking -f -c $SCOADMIN/ncm/ncm.obj
+/usr/bin/scoadmin -p Networking -f -c $SCOADMIN/ftp/ftp.obj
+/usr/bin/scoadmin -p Networking -f -c $SCOADMIN/aas/aas.obj
+/usr/bin/scoadmin -p Networking -f -c $SCOADMIN/dhcp/dhcp.obj
+/usr/bin/scoadmin -H /usr/lib/netcfg/wansw -f -c $SCOADMIN/slip/slip.obj
+
+
+${OSACONF} -A sco dnsOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/dnsOsa
+${CLASSCONF} -A sco dNSystem dnsOsa
+${CLASSCONF} -A sco dNSPrimary dnsOsa
+${CLASSCONF} -A sco dNSSecondary dnsOsa
+${CLASSCONF} -A sco dNSStub dnsOsa
+${CLASSCONF} -A sco dNSHint dnsOsa
+${CLASSCONF} -A sco hostTabs dnsOsa
+${CLASSCONF} -A sco hostTab dnsOsa
+${CLASSCONF} -A sco hostTabEntry dnsOsa
+
+
+${OSACONF} -A sco ncmOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/ncmOsa
+${CLASSCONF} -A sco nis ncmOsa
+${CLASSCONF} -A sco ntp ncmOsa
+${CLASSCONF} -A sco netconfig ncmOsa
+
+${OSACONF} -A sco ftpOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/ftpOsa
+${CLASSCONF} -A sco ftp ftpOsa
+${CLASSCONF} -A sco ftpDenyHost ftpOsa
+${CLASSCONF} -A sco ftpDenyUser ftpOsa
+${CLASSCONF} -A sco ftpAccess ftpOsa
+${CLASSCONF} -A sco ftpMessage ftpOsa
+${CLASSCONF} -A sco ftpClass ftpOsa
+${CLASSCONF} -A sco ftpLimit ftpOsa
+${CLASSCONF} -A sco ftpLog ftpOsa
+${CLASSCONF} -A sco ftpShutdown ftpOsa
+${CLASSCONF} -A sco ftpVirtual ftpOsa
+${CLASSCONF} -A sco ftpAnon ftpOsa
+${CLASSCONF} -A sco ftpAnonHome ftpOsa
+
+${OSACONF} -A sco netInterfaceOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/netInterfaceOsa
+${CLASSCONF} -A sco netInterface netInterfaceOsa
+
+${OSACONF} -A sco inconfigOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/inconfigOsa
+${CLASSCONF} -A sco inconfig inconfigOsa
+
+${OSACONF} -A sco aasOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/aasOsa
+${CLASSCONF} -A sco aasPool aasOsa
+${CLASSCONF} -A sco aasServer aasOsa
+${CLASSCONF} -A sco aasDatabase aasOsa
+${CLASSCONF} -A sco aasLocation aasOsa
+
+${OSACONF} -A sco dhcpOsa LOOP_BACK sco_Tcl_osa $SCOADMIN/netosa/dhcpOsa
+${CLASSCONF} -A sco dhcpSubnet dhcpOsa
+${CLASSCONF} -A sco dhcpClient dhcpOsa
+${CLASSCONF} -A sco dhcpUserClass dhcpOsa
+${CLASSCONF} -A sco dhcpVendorClass dhcpOsa
+${CLASSCONF} -A sco dhcpOption dhcpOsa
+${CLASSCONF} -A sco dhcpGlobal dhcpOsa
+${CLASSCONF} -A sco dhcpStandard dhcpOsa
+${CLASSCONF} -A sco dhcpServer dhcpOsa
+
+#
+# If we're running from install on boot, no need to setup owner since
+# the postreboot.sh will take care of it.  if, however, this is an
+# after-the-fact pkgadd, the owner has to be setup here.
+#
+
+[ -f /etc/inst/scripts/postreboot.sh ] || {
+	set `grep mail= /var/sadm/install/admin/* | cut -f2 -d=`
+	while [ $# -ne 0 ]
+	do
+	    [ "$1" != "root" ] && ${SCOADMIN}/account/make-owner $1 2>/dev/null
+	    shift
+	done
+}
+
+# Now clean up
+#
+removef $PKGINST - < ${REMF_FILES} >/dev/null 2>&1
+removef -f $PKGINST
+rm -f ${REMF_FILES}
+
+# Do not clean up /tmp/inet since postreboot.sh uses it
+# to determine if the inet package was installed by the 
+# boot floppy scripts. It it was, then postreboot.sh will
+# run the inet request script.
+rm -fr /tmp/inet/* 1>/dev/null 2>&1
+
+#
+#	wrap up with installf -f  and exit message (required reboot)
+#
+
+installf -f $PKGINST
+
+# 
+# if the idbuild failed then exit with error message..
+#
+if [ ${IDBUILD_FLAG} -eq 1 ]
+then
+	exit ${FAILURE}
+fi
+
+exit 	10

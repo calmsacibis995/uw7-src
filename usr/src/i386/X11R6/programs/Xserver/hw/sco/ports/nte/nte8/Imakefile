@@ -1,0 +1,138 @@
+/*
+ *	@(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ * Modification History
+ *
+ * S007, 27-Jun-94, hiramc
+ *	ready for 864/964 implementation
+ * S006, 13-Jul-93, staceyc
+ * 	added flag to determine if driver is to use i/o ports
+ * S005, 17-Jun-93, staceyc
+ * 	fonts and stipples
+ * S004, 16-Jun-93, staceyc
+ * 	fast text
+ * S003, 11-Jun-93, staceyc
+ * 	mono images
+ * S002, 09-Jun-93, staceyc
+ * 	blit and solid routines
+ * S001, 08-Jun-93, staceyc
+ * 	add bits-per-pixel to defines
+ * S000, 03-Jun-93, staceyc
+ * 	created
+ * 
+ */
+
+#include <Server.tmpl>
+
+#ifndef NTELIB
+#define NTELIB nte8
+#define NTE8
+nte8= nte8
+NTE_PIXEL_SIZE= 8
+MAP_LINEAR= 0
+USE_IO_PORTS= 0
+USE_BT_DAC= 0
+#endif
+
+.SUFFIXES: .i .S
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+.c.S:
+	$(CC) -S $(CFLAGS) $*.c
+	mv $*.asm $*.S
+
+SRCS =	nteCmap.c nteCursor.c nteData.c nteGC.c \
+	nteImage.c nteInit.c nteScreen.c nteWin.c \
+	nteBlit.c nteSolid.c nteMono.c nteGlyph.c \
+	nteClip.c nteFont.c nteTile.c nteStip.c btCursor.c
+
+OBJS =	nteCmap.o nteCursor.o nteData.o nteGC.o \
+	nteImage.o nteInit.o nteScreen.o nteWin.o \
+	nteBlit.o nteSolid.o nteMono.o nteGlyph.o \
+	nteClip.o nteFont.o nteTile.o nteStip.o btCursor.o
+
+STD_DEFINES = ServerDefines
+
+/*
+ *     INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+ *	-I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+ *	-I$(SERVERSRC)/ddx/mi -I$(INCLUDESRC)
+ */
+
+   INCLUDES = -I. -I.. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+       DDXLIBS = lib$(NTELIB).a
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+
+DEFINES= -DNTEHEAD=$(NTELIB) -DNTE_BITS_PER_PIXEL=$(NTE_PIXEL_SIZE) \
+	-DNTE_SCREEN_NAME=\"NTELIB\" -DNTE_MAP_LINEAR=$(MAP_LINEAR) \
+	-DNTE_USE_IO_PORTS=$(USE_IO_PORTS) -DNTE_USE_BT_DAC=$(USE_BT_DAC)
+
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o: 
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+NormalLibraryTarget($(NTELIB),$(OBJS))
+SharedXDriverTarget($(NTELIB),6.0,$(OBJS),shared,..)
+LintLibraryTarget($(NTELIB),$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule($(NTELIB),$(DDXLIBS))
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(nteCmap.c,LinkDirectory)
+LinkDepSourceFile(nteConsts.h,LinkDirectory)
+LinkDepSourceFile(nteCursor.c,LinkDirectory)
+LinkDepSourceFile(nteData.c,LinkDirectory)
+LinkDepSourceFile(nteDefs.h,LinkDirectory)
+LinkDepSourceFile(nteGC.c,LinkDirectory)
+LinkDepSourceFile(nteImage.c,LinkDirectory)
+LinkDepSourceFile(nteInit.c,LinkDirectory)
+LinkDepSourceFile(nteMacros.h,LinkDirectory)
+LinkDepSourceFile(nteProcs.h,LinkDirectory)
+LinkDepSourceFile(nteScreen.c,LinkDirectory)
+LinkDepSourceFile(nteWin.c,LinkDirectory)
+LinkDepSourceFile(nteBlit.c,LinkDirectory)
+LinkDepSourceFile(nteSolid.c,LinkDirectory)
+LinkDepSourceFile(nteMono.c,LinkDirectory)
+LinkDepSourceFile(nteGlyph.c,LinkDirectory)
+LinkDepSourceFile(nteClip.c,LinkDirectory)
+LinkDepSourceFile(nteFont.c,LinkDirectory)
+LinkDepSourceFile(nteTile.c,LinkDirectory)
+LinkDepSourceFile(nteStip.c,LinkDirectory)
+LinkDepSourceFile(btCursor.c,LinkDirectory)
+
+#endif
+
+DependTarget()
+
+#ifdef NTE8
+InstallHDKMultiple($(SRCS) nteConsts.h nteDefs.h nteMacros.h nteProcs.h Imakefile,$(HDKPORTSDIR)/nte/nte8)
+
+#endif

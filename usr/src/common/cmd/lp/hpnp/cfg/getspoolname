@@ -1,0 +1,179 @@
+#!/bin/ksh
+#ident	"@(#)getspoolname	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+OPTION=$1
+DEFAULT=$2
+TYPE=$3
+
+case $OS in
+
+  9000/*)
+    if [ "$TYPE" = "class" ]
+    then
+      DEFAULT=""
+    else
+      echo $DEFAULT | grep '^[a-zA-Z0-9_]*$' > /dev/null
+      VALID=$?
+      if [ $VALID -eq 0 -a -n "$DEFAULT" ]
+      then
+        # Name can be only 14 chars or less
+        LENGTH=`expr "$DEFAULT" : '.*'`
+        if [ $LENGTH -gt 14 ]
+        then
+          VALID=1
+        fi
+      fi
+      if [ $VALID -ne 0 ]
+      then
+        DEFAULT=""
+      fi
+    fi
+    ;;
+  sunx)
+    ;;
+esac
+
+while [ 0 ] 
+do
+  echo ""
+  if [ -n "$DEFAULT" ]
+  then
+    if [ "$OS" = "sunx" ]
+    then
+      echo "Enter the lpr peripheral name (default=$DEFAULT): $NL"
+    else
+      echo "Enter the lp spooler destination name (default=$DEFAULT): $NL"
+    fi
+  else
+    if [ "$TYPE" = "class" ]
+    then
+      echo "Enter the spooler class for the peripheral to join (optional): $NL"
+    else
+      if [ "$OS" = "sunx" ]
+      then
+        echo "Enter the lpr peripheral name: $NL"
+      else
+        echo "Enter the lp spooler destination name: $NL"
+      fi
+    fi
+  fi
+  read -r SPOOLNM
+  if [ "$SPOOLNM" = "q" ]
+  then
+    exit 1
+  fi
+  if [ -z "$SPOOLNM" ]
+  then
+    if [ "$TYPE" = "class" ]
+    then
+      exit 2
+    fi
+    if [ -n "$DEFAULT" ]
+    then
+      SPOOLNM=$DEFAULT
+      break
+    else
+      continue
+    fi
+  fi
+  if [ "$SPOOLNM" = "?" ]
+  then
+    case $OPTION in
+      option6hp)
+	if [ "$TYPE" = "class" ]
+	then
+          echo ""
+	  echo "A class defines a group of peripherals.  A peripheral class can be"
+	  echo "used as a print destination instead of a peripheral name.  The first"
+	  echo "available peripheral in the peripheral class will print the next"
+	  echo "job queued to that peripheral class.  If no peripheral class is"
+	  echo "entered, the peripheral will not be added to any class."
+	else
+          echo ""
+          echo "Enter the name to be used as the destination in an \"lp\" command."
+          echo "The name should match the peripheral's network name, but it does"
+	  echo "not have to.  For example, the lp destination name can be \"p1\""
+	  echo "and the name known on the network (and stored stored in /etc/hosts)"
+	  echo "can be \"koala\"."
+	fi
+	echo ""
+        echo "The name is limited to 14 characters and must consist entirely"
+        echo "of the characters A-Z, a-z, 0-9, and _ (underscore)."
+        echo ""
+        $QUITHELP
+        continue
+	;;
+      option6sun)
+	echo ""
+        echo "Enter the peripheral name to be used in an \"lpr -Pperipheral\" command."
+        echo "The name should match the peripheral's network name, but it does"
+	echo "not have to.  For example, the lpr peripheral name can be \"p1\""
+	echo "and the name known on the network (and stored stored in /etc/hosts)"
+	echo "can be \"koala\"."
+	echo ""
+	$QUITHELP
+        ;;
+      option8hp)
+        echo ""
+        echo "Enter the name used as the destination in an \"lp\" command."
+	echo "This destination is removed from the spooler."
+	echo ""
+	$QUITHELP
+	;;
+      option8sun)
+        echo "Enter the peripheral name used in an \"lpr -Pperipheral\" command."
+	echo "The /etc/printcap entry for this peripheral will be removed.  You"
+	echo "will be asked if the spool directory for this peripheral should"
+	echo "also be removed."
+	echo ""
+	$QUITHELP
+	;;
+    esac
+    continue
+  fi
+  case $OPTION in
+    option6hp|option8hp)
+      echo $SPOOLNM | grep '^[a-zA-Z0-9_]*$' > /dev/null
+      VALID=$?
+      if [ $VALID -eq 0 ]
+      then
+        # Name can be only 14 chars or less
+        LENGTH=`expr "$SPOOLNM" : '.*'`
+        if [ $LENGTH -gt 14 ]
+        then
+          VALID=1
+        fi
+      fi
+      if [ $VALID -ne 0 ]
+      then
+        echo ""
+        echo "$SPOOLNM is an invalid name.  The name is limited to 14"
+        echo "characters and must consist entirely of the characters A-Z,"
+        echo "a-z, 0-9, and _ (underscore)."
+	echo ""
+	continue
+      fi
+      ;;
+    option6sun|option8sun)  # no limits
+      ;;
+  esac
+  break
+done
+
+echo $SPOOLNM > "$TMP/SPOOLNM"
+exit 0

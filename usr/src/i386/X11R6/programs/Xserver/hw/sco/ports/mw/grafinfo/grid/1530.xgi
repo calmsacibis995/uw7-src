@@ -1,0 +1,346 @@
+/*
+ *    @(#) 1530.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* *********************************************************************** *
+ * GRID/1530.XGI - XEGIA(tm) GrafInfo File for Grid 1500 Laptop  *
+ *                                                                         *
+ *        Copyright (c) 1989 Metagraphics Software Corporation             *
+ *      269 Mount Hermon Road, PO 66779, Scotts Valley, CA 95066           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                    GRID.1530.CGA.640x400-PLASMA                         *
+ *                    GRID.1530.CGA.640x400-LCD                            *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+VENDOR GRID    "Grid Systems"
+ MODEL  1530     "Grid 1530 Display"
+  CLASS  CGA        "CGA"
+   MODE   640x400-PLASMA  "640x400 PLASMA"   
+
+      MEMORY (0xb8000,0x08000);           /* Base Address, Length */
+      PORT   (0x3d0-0x3df);
+
+      DATA
+         {
+	 XDRIVER = "mw";
+	 VISUAL  = "StaticGray";
+	 DEPTH   = 1;
+         DEVTYPE     = 0;
+         DEVTECH     = 01;    /* Mono Interleaved */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 400;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+         INTERLEAVE  = 4;
+         INTERSIZE   = 0x2000;
+         }
+
+      PROCEDURE SetGraphics  /* Ref Gridcase 1500 Tech.man pp 7-17 */
+         {
+	 /* crct ( Display Controller Secondary Reg.) */
+	 r0  = 0x38;  r1  = 0x28;  r2  = 0x2d;  r3  = 0x0a;
+	 r4  = 0x7f;  r5  = 0x06;  r6  = 0x64;  r7  = 0x70;
+	 r8  = 0x02;  r9  = 0x01;  r10 = 0x06;  r11 = 0x07;
+	 r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         bout(16, 0x3D4, 0x3D5);
+
+         /* ****** Switch to Plasma400Mode ****** */
+
+         out( 0x7F8, 0x00);                     /* select video subsystem */
+         in ( r63  ,0x7F8);
+         /* if( r63 == 8) external monitor on,not supported in 640x400. */
+         /* if((r63 & 7)==5) This is a plasma display                   */
+         /* else  */
+
+         out( 0x6F8, 0 );    /* Turn off external monitor               */
+
+         out( 0x3DF, 0x81);  /* enable writing to 3DD 3DE               */
+         in ( r63  ,0x3D8);  
+         out( 0x3D8, 0x00);  /* turn off video                          */
+
+         /*        Program Bank Data               */
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x81);  /* enable controller    */
+
+         out( 0x3DD, 0x20);  out(0x3DE, 0x00);  /* New Plasma 400 Bankdata */
+         out( 0x3DD, 0x21);  out(0x3DE, 0x4F);  
+         out( 0x3DD, 0x22);  out(0x3DE, 0x10);  
+         out( 0x3DD, 0x23);  out(0x3DE, 0x81);  
+         out( 0x3DD, 0x24);  out(0x3DE, 0xE2);  
+         out( 0x3DD, 0x25);  out(0x3DE, 0xF5);  
+         out( 0x3DD, 0x26);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x27);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x28);  out(0x3DE, 0x11);  
+         out( 0x3DD, 0x29);  out(0x3DE, 0x40);  
+         out( 0x3DD, 0x2A);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2B);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2C);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2E);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2F);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x30);  out(0x3DE, 0x53);  
+         out( 0x3DD, 0x31);  out(0x3DE, 0xF4);
+         out( 0x3DD, 0x32);  out(0x3DE, 0xFD);  
+         out( 0x3DD, 0x33);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x34);  out(0x3DE, 0x19);  
+         out( 0x3DD, 0x35);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x36);  out(0x3DE, 0x07);  
+         out( 0x3DD, 0x37);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x38);  out(0x3DE, 0x29);  
+         out( 0x3DD, 0x39);  out(0x3DE, 0xFA);  
+         out( 0x3DD, 0x3A);  out(0x3DE, 0xF4);  
+         out( 0x3DD, 0x3B);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x3C);  out(0x3DE, 0x67);  
+         out( 0x3DD, 0x3D);  out(0x3DE, 0x01);  
+         out( 0x3DD, 0x3E);  out(0x3DE, 0x03);  
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x07);  
+
+         out( 0x3DD, 0x27);  out(0x3DE, 0x0B);  
+
+         /*  Program Mode registers  */
+         out(0x3D8, 0x1E); /* Mode control -> 640x200/400 Graphics Monochrom */
+                           /* ref.Grid 1500     Hardware Tech Ref Man pp7-20 */
+         /*  Set Color Map           */       
+         out(0x3D9, 0x0F); /* Color select ->  border intensity and color */
+
+         out(0x7DF, 0x01); /* Turn on Panel                               */
+         }
+
+      PROCEDURE BlankScreen
+	 {
+                out(0x7DF, 0x00); /* Turn off Panel                        */
+	 }
+
+      PROCEDURE UnBlankScreen
+	 {
+                out(0x7DF, 0x01); /* Turn on Panel                        */
+	 }
+
+      PROCEDURE SetText
+         {
+
+         out( 0x3DF, 0x81);  /* enable writing to 3DD 3DE               */
+         in ( r63  ,0x3D8);  
+         out( 0x3D8, 0x00);  /* turn off video                          */
+
+         /*        Program Bank Data               */
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x81);  /* enable controller    */
+
+         out( 0x3DD, 0x20);  out(0x3DE, 0x00);  /* New Plasma 200 Bankdata */
+         out( 0x3DD, 0x21);  out(0x3DE, 0x4F);  
+         out( 0x3DD, 0x22);  out(0x3DE, 0x07);  
+         out( 0x3DD, 0x23);  out(0x3DE, 0x09);  
+         out( 0x3DD, 0x24);  out(0x3DE, 0x02);  
+         out( 0x3DD, 0x25);  out(0x3DE, 0xB0);  
+         out( 0x3DD, 0x26);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x27);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x28);  out(0x3DE, 0x11);  
+         out( 0x3DD, 0x29);  out(0x3DE, 0x40);  
+         out( 0x3DD, 0x2A);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2B);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2C);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2E);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2F);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x30);  out(0x3DE, 0x71);  
+         out( 0x3DD, 0x31);  out(0x3DE, 0x0A); /* was F6 */  
+         out( 0x3DD, 0x32);  out(0x3DE, 0xFC);  
+         out( 0x3DD, 0x33);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x34);  out(0x3DE, 0x18);  
+         out( 0x3DD, 0x35);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x36);  out(0x3DE, 0x07);  
+         out( 0x3DD, 0x37);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x38);  out(0x3DE, 0x38);  
+         out( 0x3DD, 0x39);  out(0x3DE, 0xFB);  
+         out( 0x3DD, 0x3A);  out(0x3DE, 0xF3);  
+         out( 0x3DD, 0x3B);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x3C);  out(0x3DE, 0x63);  
+         out( 0x3DD, 0x3D);  out(0x3DE, 0x06);  
+         out( 0x3DD, 0x3E);  out(0x3DE, 0x01);  
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x07);  
+
+         out( 0x3DD, 0x27);  out(0x3DE, 0x0B);  
+
+         out(0x3d8, 0x2D); /* Mode Controll -> 80x25 Alphanumeric Monochrome */
+         out(0x3d9, 0x00); /* Color select -> border intensity and color */
+
+	 /* crtc regs (Display controller secondary regs.) */
+         r0 = 0x71;     r1  = 0x50;     r2  = 0x5A;     r3  = 0x0A;
+         r4 = 0x1F;     r5  = 0x06;     r6  = 0x19;     r7  = 0x1C;
+         r8 = 0x02;     r9  = 0x07;     r10 = 0x06;     r11 = 0x07;
+         r12= 0x00;     r13 = 0x00;     r14 = 0x00;     r15 = 0x00;
+         bout(16, 0x3d4, 0x3d5);
+         }
+
+VENDOR GRID    "Grid Systems"
+ MODEL  1530     "Grid 1530 Display"
+  CLASS  CGA        "CGA"
+   MODE   640x400-LCD  "640x400 LCD"   
+
+      MEMORY (0xb8000,0x08000);           /* Base Address, Length */
+      PORT   (0x3d0-0x3df);
+
+      DATA
+         {
+	 XDRIVER = "mw";
+	 VISUAL  = "StaticGray";
+	 DEPTH   = 1;
+         DEVTYPE     = 0;
+         DEVTECH     = 01;    /* Mono Interleaved */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 400;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+         INTERLEAVE  = 4;
+         INTERSIZE   = 0x2000;
+         }
+
+      PROCEDURE SetGraphics  /* Ref Gridcase 1500 Tech.man pp 7-17 */
+         {
+	 /* crct ( Display Controller Secondary Reg.) */
+	 r0  = 0x38;  r1  = 0x28;  r2  = 0x2d;  r3  = 0x0a;
+	 r4  = 0x7f;  r5  = 0x06;  r6  = 0x64;  r7  = 0x70;
+	 r8  = 0x02;  r9  = 0x01;  r10 = 0x06;  r11 = 0x07;
+	 r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         bout(16, 0x3D4, 0x3D5);
+
+         /* ****** Switch to LM758In400Mode ****** */
+
+         out( 0x7F8, 0x00);                     /* select video subsystem */
+         in ( r63  ,0x7F8);
+         /* if( r63 == 8) external monitor on,not supported in 640x400. */
+         /* if((r63 & 7)==5) This is a plasma display                   */
+         /* else  */
+
+         out( 0x6F8, 0 );    /* Turn off external monitor               */
+
+         out( 0x3DF, 0x81);  /* enable writing to 3DD 3DE               */
+         in ( r63  ,0x3D8);  
+         out( 0x3D8, 0x00);  /* turn off video                          */
+
+         /*        Program Bank Data               */
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x81);  /* enable controller    */
+
+         out( 0x3DD, 0x20);  out(0x3DE, 0xC7);  /* LM758_400BankData    */
+         out( 0x3DD, 0x21);  out(0x3DE, 0x9F);  
+         out( 0x3DD, 0x22);  out(0x3DE, 0x0F);  
+         out( 0x3DD, 0x23);  out(0x3DE, 0x81);  
+         out( 0x3DD, 0x24);  out(0x3DE, 0xE2);  
+         out( 0x3DD, 0x25);  out(0x3DE, 0x75);  
+         out( 0x3DD, 0x26);  out(0x3DE, 0x80);  
+         out( 0x3DD, 0x27);  out(0x3DE, 0x8A);  
+         out( 0x3DD, 0x28);  out(0x3DE, 0x66);  
+         out( 0x3DD, 0x29);  out(0x3DE, 0x40);  
+         out( 0x3DD, 0x2A);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2B);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2C);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2E);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2F);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x30);  out(0x3DE, 0x55);  
+         out( 0x3DD, 0x31);  out(0x3DE, 0xF8);  
+         out( 0x3DD, 0x32);  out(0x3DE, 0xFD);  
+         out( 0x3DD, 0x33);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x34);  out(0x3DE, 0x19);  
+         out( 0x3DD, 0x35);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x36);  out(0x3DE, 0x07);  
+         out( 0x3DD, 0x37);  out(0x3DE, 0x60);  
+         out( 0x3DD, 0x38);  out(0x3DE, 0x2A);  
+         out( 0x3DD, 0x39);  out(0x3DE, 0xFC);  
+         out( 0x3DD, 0x3A);  out(0x3DE, 0xF4);  
+         out( 0x3DD, 0x3B);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x3C);  out(0x3DE, 0x67);  
+         out( 0x3DD, 0x3D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x3E);  out(0x3DE, 0x03);  
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x07);  
+
+         out( 0x3DD, 0x27);  out(0x3DE, 0x8B);  
+
+         /*  Program Mode registers  */
+         out(0x3D8, 0x1E); /* Mode control -> 640x200/400 Graphics Monochrom */
+                           /* ref.Grid 1500     Hardware Tech Ref Man pp7-20 */
+         /*  Set Color Map           */       
+         out(0x3D9, 0x0F); /* Color select ->  border intensity and color */
+
+         out(0x7DF, 0x01); /* Turn on Panel                               */
+         }
+
+      PROCEDURE BlankScreen
+	 {
+                out(0x7DF, 0x00); /* Turn off Panel                        */
+	 }
+
+      PROCEDURE UnBlankScreen
+	 {
+                out(0x7DF, 0x01); /* Turn on Panel                        */
+	 }
+
+
+      PROCEDURE SetText
+         {
+	 /* crtc regs (Display controller secondary regs.) */
+         r0 = 0x71;     r1  = 0x50;     r2  = 0x5A;     r3  = 0x0A;
+         r4 = 0x1F;     r5  = 0x06;     r6  = 0x19;     r7  = 0x1C;
+         r8 = 0x02;     r9  = 0x07;     r10 = 0x06;     r11 = 0x07;
+         r12= 0x00;     r13 = 0x00;     r14 = 0x00;     r15 = 0x00;
+         bout(16, 0x3d4, 0x3d5);
+
+         out( 0x3DF, 0x81);  /* enable writing to 3DD 3DE               */
+         in ( r63  ,0x3D8);  
+         out( 0x3D8, 0x00);  /* turn off video                          */
+
+         /*        Program Bank Data               */
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x81);  /* enable controller    */
+
+         out( 0x3DD, 0x20);  out(0x3DE, 0xC7);  /* LM758_200Bankdata    */
+         out( 0x3DD, 0x21);  out(0x3DE, 0x9F);  
+         out( 0x3DD, 0x22);  out(0x3DE, 0x0F);  
+         out( 0x3DD, 0x23);  out(0x3DE, 0x81);  
+         out( 0x3DD, 0x24);  out(0x3DE, 0x02);  
+         out( 0x3DD, 0x25);  out(0x3DE, 0xB1);  
+         out( 0x3DD, 0x26);  out(0x3DE, 0x80);  
+         out( 0x3DD, 0x27);  out(0x3DE, 0x8A);  
+         out( 0x3DD, 0x28);  out(0x3DE, 0x66);  
+         out( 0x3DD, 0x29);  out(0x3DE, 0x40);  
+         out( 0x3DD, 0x2A);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2B);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2C);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2E);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x2F);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x30);  out(0x3DE, 0x55);  
+         out( 0x3DD, 0x31);  out(0x3DE, 0xF8);  
+         out( 0x3DD, 0x32);  out(0x3DE, 0xFD);  
+         out( 0x3DD, 0x33);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x34);  out(0x3DE, 0x19);  
+         out( 0x3DD, 0x35);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x36);  out(0x3DE, 0x07);  
+         out( 0x3DD, 0x37);  out(0x3DE, 0x60);  
+         out( 0x3DD, 0x38);  out(0x3DE, 0x2A);  
+         out( 0x3DD, 0x39);  out(0x3DE, 0xFC);  
+         out( 0x3DD, 0x3A);  out(0x3DE, 0xF4);  
+         out( 0x3DD, 0x3B);  out(0x3DE, 0x0A);  
+         out( 0x3DD, 0x3C);  out(0x3DE, 0x67);  
+         out( 0x3DD, 0x3D);  out(0x3DE, 0x00);  
+         out( 0x3DD, 0x3E);  out(0x3DE, 0x01);  
+         out( 0x3DD, 0x3F);  out(0x3DE, 0x67);  
+
+         out( 0x3DD, 0x27);  out(0x3DE, 0x8B);  
+
+         out(0x3d8, 0x2D); /* Mode Controll -> 80x25 Alphanumeric Monochrome */
+         out(0x3d9, 0x00); /* Color select -> border intensity and color */
+         }

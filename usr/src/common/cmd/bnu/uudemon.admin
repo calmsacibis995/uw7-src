@@ -1,0 +1,35 @@
+#!/usr/lib/uucp/permld /var/spool/uucp
+#ident	"@(#)uudemon.admin	1.3"
+#ident "$Header$"
+#
+#	This shell sends uucp status information to an administrator.
+#	It should started by an entry in uucp's crontab
+#	e.g.
+#
+# 48 8,12,16 * * * /usr/lib/uucp/uudemon.admin > /dev/null
+#
+set +e
+
+export PATH
+PATH=/usr/bin
+MAILTO=uucp
+LOGDIR=/var/uucp/.Log
+ULOG=$LOGDIR/uucico
+TMP=/tmp/uu$$
+
+(uustat -p; uustat -q) > $TMP
+if [ -s $TMP ]
+then
+	(echo "Subject: uu-status"; cat $TMP) | mail $MAILTO
+fi
+
+if [ -f $ULOG/* ]
+then
+	grep passwd $ULOG/* > $TMP
+	if [ -s $TMP ] 
+	then
+		(echo "Subject: passwd check"; cat $TMP) | mail $MAILTO
+	fi
+fi
+rm -f $TMP
+

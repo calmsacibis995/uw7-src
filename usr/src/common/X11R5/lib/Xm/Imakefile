@@ -1,0 +1,248 @@
+#pragma ident	"@(#)m1.2libs:Xm/Imakefile	1.31.1.1"
+XCOMM 
+XCOMM (c) Copyright 1989, 1990, 1991, 1992, 1993 OPEN SOFTWARE FOUNDATION, INC. 
+XCOMM ALL RIGHTS RESERVED 
+XCOMM 
+XCOMM 
+XCOMM Motif Release 1.2.2
+XCOMM 
+XCOMM   $RCSfile$ $Revision$ $Date$
+#include	<Motif.tmpl>
+#include	<Motif.rules>
+
+#undef	FontObj
+#define DoNormalLib NormalLibXt
+#define DoSharedLib SharedLibXt
+#define DoDebugLib DebugLibXm
+#define DoProfileLib ProfileLibXm
+#include <Library.tmpl>
+
+MKCATTOOL = $(TOP)/tools/MSGTools/mkcatdefs/mkcatdefs
+
+#ifdef RsArchitecture
+REQUIREDLIBS = $(TOOLKITSRC)/libXt.a $(XLIBSRC)/libX11.a
+#endif
+
+#define IHaveSubdirs
+SUBDIRS = BC_1_1 lib1.1
+
+
+    INCLUDES = -I. -I$(INCLUDESRC) -I$(MINCLUDESRC)
+
+INSTALLFLAGS = $(INSTINCFLAGS)
+
+    LINTLIBS = $(LINTXLIB) $(LINTXTOOL)
+
+SRCH_DEFINES = -DLIBDIR=\"$(XWINLIBDIR)\" -DINCDIR=\"$(XWINHOME)/include/X11\"
+BINDINGS_DEF = -DXMBINDDIR_FALLBACK=\"$(XWINLIBDIR)/Xm/bindings\"
+EXTRA_DEFINES = -UNO_REGCOMP -DUSE_COLOR_OBJECT -DUSE_FONT_OBJECT -DCDE_FILESB \
+		-DCDE_MENU_BTN -DCDE_RESOURCES -DCDE_TAB -DI18N_MSG \
+		-DCDE_BIND -DCDE_INTEGRATE -DCDE_VISUAL -DXT_HAS_TRANS_FIX \
+		-DNOVELL -DNON_OSF_FIX -DCDE_DRAG_ICON \
+		-DCDE_NO_DRAG_FROM_LABELS -DNEED_STRCASECMP \
+		-DHAS_WIDECHAR_FUNCTIONS -D_SIMPLE_R
+#		-DSUPPORT_ZERO_WIDTH -DHAS_WIDECHAR_FUNCTIONS
+
+
+LOCAL_HDRS = ColorObj.h ColorObjP.h	FontObj.h	FontObjP.h	\
+	     IconFile.h IconFileP.h ImageCachI.h _DtHashP.h _xpmP.h _xpmI.h
+LOCAL_SRCS = ColorObj.c	FontObj.c \
+	     DtHash.c IconFile.c \
+             XpmCrDataFI.c XpmCrDataFP.c XpmCrIFData.c \
+             XpmCreate.c XpmData.c XpmHashtable.c XpmMisc.c XpmParse.c \
+             XpmRdFToI.c XpmRgb.c XpmScan.c
+LOCAL_OBJS = ColorObj.o	FontObj.o \
+	     DtHash.o IconFile.o \
+             XpmCrDataFI.o XpmCrDataFP.o XpmCrIFData.o \
+             XpmCreate.o XpmData.o XpmHashtable.o XpmMisc.o XpmParse.o \
+             XpmRdFToI.o XpmRgb.o XpmScan.o
+
+HEADERS = $(LOCAL_HDRS) \
+	ArrowB.h      ArrowBG.h       ArrowBGP.h      ArrowBP.h \
+        BulletinB.h     BulletinBP.h    CacheP.h        CascadeB.h \
+        CascadeBG.h     CascadeBGP.h    CascadeBP.h     Command.h \
+        CommandP.h      CutPaste.h      CutPasteP.h     DialogS.h \
+        DialogSP.h      DialogSEP.h     DragC.h         DragCP.h \
+        DragDrop.h      DragIcon.h      DragIconP.h     DragOverS.h \
+        DragOverSP.h    DropTransP.h    DropSMgr.h      DropSMgrP.h \
+        DropTrans.h     DrawingA.h      DrawingAP.h     DrawnB.h \
+        DrawnBP.h       FileSB.h        FileSBP.h       Form.h \
+        FormP.h         Frame.h         FrameP.h        Label.h \
+        LabelG.h        LabelGP.h       LabelP.h        List.h \
+        ListP.h         MainW.h         MainWP.h        MenuShell.h \
+        MenuShellP.h    MessageB.h      MessageBP.h     PanedW.h \
+        PanedWP.h       PushB.h         PushBG.h        PushBGP.h \
+        PushBP.h        RCUtilsP.h      RowColumn.h     RowColumnP.h \
+        SashP.h         Scale.h         ScaleP.h        ScrollBar.h \
+        ScrollBarP.h    ScrolledW.h     ScrolledWP.h    SelectioB.h \
+        SelectioBP.h    SeparatoG.h     SeparatoGP.h    Separator.h \
+        SeparatorP.h    TextF.h         TextFP.h        TextFSelP.h \
+        TextSelP.h      Text.h          TextInP.h       TextOutP.h \
+        TextP.h         TextStrSoP.h    ToggleB.h       ToggleBG.h \
+        ToggleBGP.h     ToggleBP.h      Xm.h            XmP.h \
+        BaseClassP.h    ManagerP.h      PrimitiveP.h    GadgetP.h \
+        XmStrDefs.h     VaSimpleP.h     VirtKeys.h      VirtKeysP.h \
+        ExtObjectP.h    Display.h       DisplayP.h      Screen.h \
+        ScreenP.h       ShellEP.h       VendorS.h       VendorSP.h \
+        VendorSEP.h     WorldP.h        DesktopP.h      AtomMgr.h \
+        Protocols.h     ProtocolsP.h    MwmUtil.h       TransltnsP.h \
+        RepType.h       XmosP.h         DrawP.h         TearOffP.h \
+        TearOffBP.h     MenuUtilP.h     XmAll.h		XmI.h
+
+SRCS1 = $(LOCAL_SRCS) \
+	ArrowB.c        ArrowBG.c       BulletinB.c     CallbackI.c \
+        CascadeB.c      CascadeBG.c     Command.c       CutPaste.c \
+        Dest.c          DialogS.c       DialogSE.c      DragBS.c \
+        DragC.c         DragOverS.c     DragICC.c       DragIcon.c \
+        DragUnder.c     DrawingA.c      DrawnB.c        DropSMgr.c \
+        DropSMgrI.c     DropTrans.c     ExtObject.c     FileSB.c \
+        Form.c          Frame.c         Gadget.c        GadgetUtil.c \
+        GeoUtils.c      ImageCache.c    Label.c         LabelG.c \
+        List.c          MainW.c         MapEvents.c     MenuShell.c \
+        MenuUtil.c      MessageB.c      PanedW.c        PushB.c \
+        PushBG.c        ReadImage.c     Region.c        ResConvert.c \
+        ResInd.c        RowColumn.c     RCUtils.c       Sash.c \
+        Scale.c         ScrollBar.c     ScrolledW.c     SelectioB.c \
+        SeparatoG.c     Separator.c     Simple.c        Text.c \
+        TextIn.c        TextOut.c       TextStrSo.c     TextSel.c \
+        ToggleB.c       ToggleBG.c      TrackLoc.c      UniqueEvnt.c \
+        VaSimple.c      VirtKeys.c      Visual.c        XmString.c \
+        XmStrDefs.c     TextF.c         TextFSel.c      AtomMgr.c \
+        Cache.c         Protocols.c     Primitive.c     Manager.c \
+        Traversal.c     TravAct.c       TraversalI.c    BaseClass.c \
+        Desktop.c       Messages.c      Transltns.c     RepType.c \
+        Xmos.c          Draw.c          TearOff.c       TearOffB.c \
+        XmIm.c          GMUtils.c       Display.c       Screen.c \
+        ShellE.c        VendorS.c       VendorSE.c      World.c \
+        Obsolete.c      StrObsolete.c
+
+OBJS1 = $(LOCAL_OBJS) \
+	ArrowB.o        ArrowBG.o       BulletinB.o     CallbackI.o \
+        CascadeB.o      CascadeBG.o     Command.o       CutPaste.o \
+        Dest.o          DragBS.o        DragC.o         DragICC.o \
+        DragIcon.o      DragOverS.o     DragUnder.o     DrawingA.o \
+        DrawnB.o        DropSMgr.o      DropSMgrI.o     DropTrans.o \
+        FileSB.o        Form.o          Frame.o         Gadget.o \
+        GadgetUtil.o    GeoUtils.o      ImageCache.o    Label.o \
+        LabelG.o        List.o          MainW.o         MapEvents.o \
+        MenuShell.o     MenuUtil.o      MessageB.o      PanedW.o \
+        PushB.o         PushBG.o        ReadImage.o     Region.o \
+        ResConvert.o    ResInd.o        RowColumn.o     RCUtils.o \
+        Sash.o          Scale.o         ScrollBar.o     ScrolledW.o \
+        SelectioB.o     SeparatoG.o     Separator.o     Simple.o \
+        Text.o          TextIn.o        TextOut.o       TextStrSo.o \
+        TextSel.o       ToggleB.o       ToggleBG.o      UniqueEvnt.o \
+        Visual.o        XmString.o      XmStrDefs.o     TextF.o \
+        TextFSel.o      AtomMgr.o       Cache.o         TrackLoc.o \
+        Protocols.o     XmIm.o          GMUtils.o
+
+OBJS2 = Primitive.o     Manager.o       DialogS.o       DialogSE.o \
+        Traversal.o     TravAct.o       TraversalI.o    VaSimple.o \
+        ExtObject.o     BaseClass.o     VirtKeys.o      Desktop.o \
+        Messages.o      Transltns.o     RepType.o       Xmos.o \
+        Draw.o          TearOff.o       TearOffB.o      Display.o \
+        Screen.o        ShellE.o        VendorS.o       VendorSE.o \
+        World.o         Obsolete.o      StrObsolete.o
+
+#if BuildMotif
+/*
+ * Added for mkcatdefs Tool
+ *
+ */
+all:: XmMsgI.h
+XmMsgI.h: Xm.msg
+        $(RM) XmMsgI.h Xm.cat
+        $(MKCATTOOL) Xm Xm.msg > Xm1.msg
+        $(MV) Xm_msg.h XmMsgI.h
+        echo "extern nl_catd Xm_catd;" >> XmMsgI.h
+        gencat Xm.cat Xm1.msg
+
+    SRCS = $(SRCS1)
+    OBJS = $(OBJS1) $(OBJS2)
+
+LibraryObjectRule()
+
+SpecialLibObjectRule(TextIn.o,,$(ALLDEFINES))
+SpecialLibObjectRule(TextF.o,,$(ALLDEFINES))
+
+#else /* BuildMotif */
+all::
+lint::
+depend::
+#endif /* BuildMotif */
+
+SpecialLibObjectRule(Xmos.o,$(ICONFIGFILES),$(SRCH_DEFINES))
+SpecialLibObjectRule(VirtKeys.o,$(ICONFIGFILES),$(BINDINGS_DEF))
+
+#if DoSharedLib
+#if BuildMotif
+#if DoNormalLib
+SharedLibraryTarget(Xm,$(SOXMREV),$(OBJS),shared,..)
+CreateRelocatableObjs(Xm,$(OBJS),shared,..)
+#else
+SharedLibraryTarget(Xm,$(SOXMREV),$(OBJS),.,.)
+CreateRelocatableObjs(Xm,$(OBJS),.,.)
+#endif
+#endif /* BuildMotif */
+InstallSharedLibrary_m(Xm,$(SOXMREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+#if BuildMotif
+NormalLibraryTarget(Xm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Xm,$(USRLIBDIR))
+#endif
+#if DoProfileLib
+#if BuildMotif
+ProfiledLibraryTarget(Xm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Xm_p,$(USRLIBDIR))
+#endif
+#if DoDebugLib
+#if BuildMotif
+DebuggedLibraryTarget(Xm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Xm_d,$(USRLIBDIR))
+#endif
+
+#if BuildMotif
+LintLibraryTarget(Xm,$(SRCS))
+InstallLintLibrary(Xm,$(LINTLIBDIR))
+#endif /* BuildMotif */
+
+BuildIncludes($(HEADERS),Xm,..)
+InstallMultiple($(HEADERS),$(INCROOT)/Xm)
+
+#if BuildMotif
+
+/* Create 'all' target for lib1.1.  Note: can't make 'all' in BC_1_1 */
+#define PassCDebugFlags
+MakeSubdirs(lib1.1)
+
+DependTarget()
+NormalLintTarget($(SRCS))
+
+#ifdef UseVista
+VistaMapRule(libXm.M,libXm.a)
+#endif
+#endif /* BuildMotif */
+
+/*
+ * Certain architectures have a bug that produces a bad
+ * shared library if Obsolete.o is included.
+ */
+
+#if SharedLibXm && defined(BugAffectingSharedXm)
+Obsolete.o:
+	_DebuggedObjCompile($(_NOOP_))
+	_ProfiledObjCompile($(_NOOP_))
+	$(MV) Obsolete.c Obsolete.c~
+	echo "static char _obs_str[] =\"Obsolete.c not supported\";" > Obsolete.c
+	_SharedObjCompile($(_NOOP_))
+	$(MV) Obsolete.c~ Obsolete.c
+	_NormalObjCompile($(_NOOP_))
+#endif
+
+install::Xm1.msg
+	MakeDir($(MSGCATDIR))
+	$(INSTALL) $(INSTALLFLAGS) Xm1.msg $(MSGCATDIR)/Xm.msg

@@ -1,0 +1,774 @@
+#!/bin/ksh
+#ident	"@(#)option2	1.3"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+export ALLOWLIST1 ALLOWLIST2 ALLOWLIST3 ALLOWLIST4 ALLOWLIST5 ALLOWLIST6
+export ALLOWLIST7 ALLOWLIST8 ALLOWLIST9 ALLOWLIST10
+export CONTACT
+export DT144TAG
+export GETCOMNAM
+export HATAG
+export IDLETO
+export IPADDR
+export LOCATE
+export NAME
+export RNAME
+export SETCFG
+export SNGATEWAY
+export SNMASK
+export SNMP
+export STCOMNAM
+export SNMPTRAP
+export SNMPTRPAUTH
+export SYSLOGIP SYSLOGFAC
+export TRAPLIST1 TRAPLIST2 TRAPLIST3 TRAPLIST4
+export TRPCOMNAM
+
+if [ -z "$INETDCONF" ]
+then
+	INETDCONF="/etc/inetd.conf"
+fi
+
+if grep "^bootps" "$INETDCONF" > /dev/null 2>&1
+then
+  :
+else
+  echo "\n\"bootps\" service not found in $INETDCONF"
+  echo "\nConfigure inetd to support the bootps service if /etc/bootpd"
+  echo "exists or install the HP Network Printer Interface software again"
+  echo "to acquire the BOOTP software."
+  echo "\nPress the return key to return to the main menu ... $NL"
+  read -r RESP
+  exit 1
+fi
+
+grep "^tftp" "$INETDCONF" > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+  echo "\nThe tftp service is not configured on this system.  Add the tftp"
+  echo "service to /etc/inetd.conf and create the tftp home directory"
+  echo "if it does not exist.  Signal inetd to read the /etc/inetd.conf"
+  echo "change. See the tftpd(1M) and inetd.conf(4) man pages for"
+  echo "details."
+  echo "\nPress the return key to return to the main menu ... $NL"
+  read -r RESP
+  exit 1
+elif [ ! -d "$TFTPDIR" ]
+then
+  echo "\nThe tftp directory $TFTPDIR does not exist.  Create the tftp home"
+  echo "and run hpnpcfg again."
+  echo "\nPress the return key to return to the main menu ... $NL"
+  read -r RESP
+  exit 1
+fi
+  
+USEIPADDR=0
+SETCFG=NO
+
+ADDZIP=NO
+
+echo "\nYou will be asked a series of questions.  After all of the questions have"
+echo "been answered, the answers are used to create an $BOOTPTABLE entry.  If"
+echo "necessary, a configuration file is created for configurable parameters "
+echo "not provided by BOOTP.  This configuration file is retrieved by the"
+echo "network printer with TFTP after receiving the BOOTP response."
+echo ""
+echo "IP addresses are stored in both $BOOTPTABLE and the configuration file."
+echo "You can supply a hostname as an answer to certain questions and the"
+echo "IP address will be looked up for you.  You will be asked to confirm the"
+echo "the address found or to choose one of a list of addresses found."
+echo ""
+echo "These responses apply to all questions:"
+echo "    \"q\"      - returns you to the main menu"
+echo "    \"?\"      - prints help text"
+echo "    <return> - skips optional parameters or selects default value"
+echo ""
+echo "If you make a mistake on one of the questions, complete the configuration"
+echo "and manually edit $BOOTPTABLE or the configuration file (to be named"
+echo "at the end of the configuration) to correct the mistake.  Entering \"q\""
+echo "quits the configuration and causes all of your answers to be lost."
+echo ""
+echo "Press the return key to continue ... $NL"
+read -r RESP
+
+gethatag
+if [ $? -ne 0 ]
+then
+  exit 1
+else
+  HATAG="`cat $TMP/UHATAG`"
+  rm -f -- "$TMP/UHATAG"
+  echo $HATAG > "$TMP/ACTIVEHWADDR"
+fi
+
+# Ask the user to select a name for the peripheral
+
+while [ -z "$NAME" ]
+do
+  getname "option2" ""
+  if [ $? -ne 0 ]
+  then
+    # q was entered
+    exit 1
+  fi
+  NAME="`cat $TMP/NAME`"
+
+  SHORTNAME="`echo $NAME | awk -F. '{print $1}'`"
+  if grep "^$SHORTNAME:" $BOOTPTABLE > /dev/null 2>&1
+  then
+      echo "\nAn $BOOTPTABLE entry already exists for $SHORTNAME.  Completing"
+      echo "this configuration process will replace this $BOOTPTABLE entry."
+      if [ -f "$CONFIGDIR/$SHORTNAME.cfg" ]
+      then
+        echo "The network interface configuration file $CONFIGDIR/$SHORTNAME.cfg"
+        echo "will be overwritten."
+      fi
+      while [ 0 ]
+      do
+        echo "\nDo you want to choose a different name? (y/n/q default=n) $NL"
+        read -r RESP
+        if [ "$RESP" = "?" ]
+        then
+	  echo "\nEnter \"n\" to continue with the configuration process.  After"
+	  echo "all the questions have been answered, the existing $BOOTPTAB entry"
+	  echo "for $SHORTNAME will be removed and a new entry is created."
+	  echo "If a configuration file exists, that will be replaced also."
+	  echo ""
+	  echo "Enter \"y\" to choose a different name"
+	  echo ""
+	  $QUITHELP
+	  continue
+        fi
+        if [ "$RESP" = "q" ]
+        then
+          exit 1
+        fi
+        if [ "$RESP" = "y" ]
+	then
+          NAME=""
+        fi
+	break
+    done
+  fi
+done
+
+#
+# Remember for later use
+#
+mv "$TMP/NAME" "$TMP/SAVENAME"
+
+#  Ask user to enter IP address for the peripheral
+
+LOOKUPADDR="`gethostaddr $NAME`"
+getipaddr "$LOOKUPADDR"
+if [ $? -ne 0 ]
+then
+  exit 1
+else
+  IPADDR="`cat -- $TMP/IPADDR`"
+fi
+
+SEL=""
+if [ "$LOOKUPADDR" = "$IPADDR" ]
+then
+  SEL="n"
+fi
+
+until [ "$SEL" = "y" -o "$SEL" = "n" ]
+do
+  echo "\nAdd $NAME to $HOSTTABLE? (y/n/q default=y): $NL"
+  read -r SEL
+  if [ -z "$SEL" ]
+  then
+    SEL="y"
+  fi
+  if [ "$SEL" = "q" ]
+  then
+    exit 1
+  fi
+  if [ "$SEL" = "?" ]
+  then
+    echo "\nThere must be a way to map the name to an IP address so network"
+    echo "services can refer to the printer by name.  The host table,"
+    echo "/etc/hosts, is one way to provide this mapping.  NIS (Network"
+    echo "Information Service) and DNS (Domain Name System) are the other"
+    echo "ways. "
+    echo ""
+    echo "Enter \"y\" if you are using the host table--an entry will be "
+    echo "added to $HOSTTABLE for you.  The printer configuration will"
+    echo "continue after the entry is made.  If your $HOSTTABLE file"
+    echo "is updated automatically from a master source, add the name and"
+    echo "IP address to your master source after the configuration is"
+    echo "complete."
+    echo ""
+    echo "Enter \"n\" to go on with the configuration anyway."
+    echo ""
+    $QUITHELP
+  fi
+  if [ "$SEL" = "n" ]
+  then
+    USEIPADDR=1
+    mv -- "$TMP/IPADDR" "$TMP/SAVEIPADDR"
+    echo ""
+    echo "********************************************************************"
+    echo "Peripheral name and IP address were not added to the host table."
+    echo "You may complete the BOOTP/TFTP configuration without problem.  The"
+    echo "verification tests (menu choices 4 and 5) must use the IP address"
+    echo "instead of the name.  The spooler configuration (menu choice 6) will"
+    echo "complete, but give you a warning that the name can not be looked up."
+    echo ""
+    echo "After completing the configuration and verifications, add the name"
+    echo "and IP address to your master host table source, NIS (Network"
+    echo "Information Service,) or DNS (Domain Name System.)"
+    echo "********************************************************************"
+    break
+  fi
+  if [ "$SEL" = "y" ]
+  then
+    #  name and IP address in /etc/hosts
+    putpnameinhost $IPADDR $NAME
+    if [ $? -ne 0 ]
+    then
+      echo "\nERROR: failed to add $NAME to $HOSTTABLE."
+      exit 1
+    else
+      echo "\nPeripheral name and IP address have been added to $HOSTTABLE."
+      echo "If your $HOSTTABLE file is updated automatically from a master"
+      echo "source, add the name and IP address to your master source after"
+      echo "the configuration is complete."
+    fi
+  fi
+done
+
+if [ -f "$TMP/IPADDR" ]
+then
+  rm -f -- "$TMP/IPADDR"
+fi
+
+# ******************************
+#  START BOOTP PORTION RIGHT HERE
+#
+# Start collecting information for BOOTP
+
+#  Obtain the Subnet mask
+
+getsubnetmask
+if [ $? -ne 0 ]
+then
+  exit 1
+else
+  SNMASK="`cat -- $TMP/SNMASK`"
+  rm -f -- "$TMP/SNMASK"
+fi
+
+#  Obtain the default gateway
+
+getdefgateway
+if [ $? -ne 0 ]
+then
+  #  A q was entered so return to main menu"
+  exit 1
+else
+  SNGATEWAY="`cat -- $TMP/GATEWY`"
+  rm -f -- "$TMP/GATEWY"
+fi
+
+#  Get syslog server
+
+getsyslog
+if [ $? -ne 0 ]
+then
+  #  A q was entered so return to main menu"
+  exit 1
+else
+  SYSLOGIP="`cat -- $TMP/SYSLOGIP`"
+  rm -f -- "$TMP/SYSLOGIP"
+  SYSLOGFAC=""
+  if [ -f "$TMP/SYSLOGFAC" ]
+  then
+    SYSLOGFAC="`cat -- $TMP/SYSLOGFAC`"
+  fi
+  rm -f -- "$TMP/SYSLOGFAC"
+  if [ -n "$SYSLOGFAC" ]
+  then
+    SETCFG="YES"
+  fi
+fi
+
+  #  Get idle time out value
+
+  getidleto
+  if [ $? -ne 0 ]
+  then
+    #  A q was entered so return to main menu"
+    exit 1
+  else
+    IDLETO="`cat -- $TMP/IDLETO`"
+    rm -f -- "$TMP/IDLETO"
+  fi
+
+  if [ -n "$IDLETO" ]
+  then
+    SETCFG="YES"
+  fi
+
+
+  #  Get access list
+
+  SEL=""
+  until [ "$SEL" = "y" -o "$SEL" = "n" ]
+  do
+    echo "\nDo you want to limit printer access to certain hosts or"
+    echo "networks of hosts with an access list? (y/n/q default=n): $NL"
+    read -r SEL
+    if [ -z "$SEL" ]
+    then
+      SEL="n"
+    fi
+    if [ "$SEL" = "?" ]
+    then
+      echo "\nAn access list specifies which host or networks of hosts the"
+      echo "printer will accept print data connections from.  If the access"
+      echo "list is empty, the printer will accept connections from all"
+      echo "hosts.  The access list is limited to 10 entries.  The default is"
+      echo "an empty list.\n"
+      echo "A network access list entry is comprised of a network number and an"
+      echo "address mask.  (The address mask is your network or subnet mask.)"
+      echo "A host access list entry is comprised of a host address and an"
+      echo "address mask of 255.255.255.255.  The address mask may be omitted"
+      echo "for a host entry.  An address mask of 0.0.0.0 is not allowed."
+      echo ""
+      $QUITHELP
+    else
+      if [ "$SEL" = "q" ]
+      then
+        exit 1
+      fi
+    fi
+  done
+  
+  if [ "$SEL" = "y" ]
+  then
+    ALLOWLISTCNT=1
+    while [ 0 ]
+    do
+      getaccesslist
+      RETCODE=$?
+      if [ $RETCODE -eq 1 ]
+      then
+	exit 1
+      fi
+      if [ $RETCODE -eq 2 ]
+      then
+        :
+      else
+        case $ALLOWLISTCNT in
+	  1) ALLOWLIST1=`cat -- $TMP/ALLOWLIST`;;
+          2) ALLOWLIST2=`cat -- $TMP/ALLOWLIST`;;
+          3) ALLOWLIST3=`cat -- $TMP/ALLOWLIST`;;
+          4) ALLOWLIST4=`cat -- $TMP/ALLOWLIST`;;
+          5) ALLOWLIST5=`cat -- $TMP/ALLOWLIST`;;
+          6) ALLOWLIST6=`cat -- $TMP/ALLOWLIST`;;
+          7) ALLOWLIST7=`cat -- $TMP/ALLOWLIST`;;
+          8) ALLOWLIST8=`cat -- $TMP/ALLOWLIST`;;
+          9) ALLOWLIST9=`cat -- $TMP/ALLOWLIST`;;
+          10) ALLOWLIST10=`cat -- $TMP/ALLOWLIST`;;
+        esac
+        rm -f -- "$TMP/ALLOWLIST"
+        ALLOWLISTCNT=`expr $ALLOWLISTCNT + 1`
+      fi
+      if [ $ALLOWLISTCNT -gt 10 ]
+      then
+        echo "\nAccess list is limited to 10 entries.  Continuing with the"
+	echo "rest of the configuration."
+        break
+      else
+        SEL=""
+        until [ "$SEL" = "y" -o "$SEL" = "n" ]
+        do
+        echo "\nDo you want to add another access list entry? (y/n/q default=n): $NL"
+        read -r SEL
+	if [ -z "$SEL" ]
+	then
+	  SEL="n"
+	fi
+        if [ "$SEL" = "?" ]
+        then
+          echo ""
+          TEMP=`expr $ALLOWLISTCNT - 1`
+          echo "$TEMP entries have been made into the access list."
+          echo "A maximum of ten entries can be made."
+	  echo ""
+	  $QUITHELP
+        else
+          if [ "$SEL" = "q" ]
+          then
+            exit 1
+          fi
+        fi
+        done
+        if [ "$SEL" = "n" ]
+        then
+          break
+        fi
+      fi
+    done
+  fi
+
+  if [ -n "$ALLOWLIST1" ]
+  then
+    SETCFG="YES"
+  fi
+
+  #  Determine if user wants to set up SNMP information
+
+  SEL=""
+  until [ "$SEL" = "y" -o "$SEL" = "n" ]
+  do
+    echo "\nDo you want to configure SNMP related parameters? (y/n/q default=n): $NL"
+    read -r SEL
+    if [ -z "$SEL" ]
+    then
+      SEL="n"
+    fi
+    if [ "$SEL" = "q" ]
+    then
+      exit 1
+    fi
+    if [ "$SEL" = "?" ]
+    then
+      echo "\nBy default, requests to read the value of certain variables with "
+      echo "SNMP (Simple Network Management Protocol) are permitted.  This"
+      echo "allows the proper operation of SNMP-based programs, such as hpnpstat"
+      echo "and hpnpadmin, which read these variables."
+      echo ""
+      echo "By default, the requests to set variables with SNMP are not permitted."
+      echo "To turn on the SNMP set capability, configure a \"set\" community name."
+      echo "The SNMP set capability can be used by hpnpadmin.  For example,"
+      echo "the -r option to hpnpadmin can be used to set a variable with SNMP"
+      echo "to cause the printer to redo its bootup sequence."
+      echo ""
+      echo "We recommend that you at least configure the \"Location\" and"
+      echo "\"Contact\" entries.  The location helps administrators track where"
+      echo "the printer is and the contact helps users find out whom to"
+      echo "contact for problems.  These can be obtained from the printer's"
+      echo "status page or with \"hpnpadmin -l <printer>\"."
+      echo ""
+      $QUITHELP
+    fi
+  done
+  
+  SNMP="NO"
+  if [ "$SEL" = "y" ]
+  then
+    SETCFG="YES"
+    SNMP="YES"
+    while [ 0 ]
+    do
+      echo "\nEnter printer location (optional): $NL"
+      read -r LOCATE
+      if [ "$LOCATE" = "?" ]
+      then
+        echo ""
+        echo "The location is a description of the physical location of the"
+        echo "network printer.  The description can contain blanks and is"
+	echo "limited to 64 characters.  An example of a location is: equipment"
+	echo "room near post p3."
+        echo ""
+	$QUITHELP
+	continue
+      fi
+      if [ "$LOCATE" = "q" ]
+      then
+        exit 1
+      fi
+      break
+    done
+    while [ 0 ]
+    do
+      echo "\nEnter printer contact (optional): $NL"
+      read -r CONTACT
+      if [ "$CONTACT" = "?" ]
+      then
+        echo "\nThe contact is the name of the network printer's administrative"
+        echo "contact, plus information on how to contact the person. The"
+	echo "description can contain blanks and is limited to 64 characters."
+	echo "An example of a contact is: John Doe x3456."
+        echo ""
+	$QUITHELP
+	continue
+      fi
+      if [ "$CONTACT" = "q" ]
+      then
+        exit 1
+      fi
+      break
+    done
+    echo ""
+    echo "********************************************************************"
+    echo "The following two questions ask you to input SNMP \"get\" and \"set\""
+    echo "community names.  These names are going to be stored in a file that"
+    echo "is retrieved by the network printer with TFTP.   Files available"
+    echo "from TFTP can be accessed by any host on the network and so the community"
+    echo "names are not secure."
+    echo ""
+    echo "If you specify community names, we suggest the community names you "
+    echo "choose for your printer be different from those used for other "
+    echo "systems within your administrative domain."
+    echo "********************************************************************"
+    while [ 0 ]
+    do
+      echo "\nEnter SNMP \"get\" community name (optional): $NL"
+      read -r GETCOMNAM
+      if [ "$GETCOMNAM" = "?" ]
+      then
+        echo "\nA community name is a password that enables SNMP access to MIB"
+        echo "values on the network printer.  Community names are not highly"
+        echo "secure; they go unencrypted across the network.  The \"get\" community"
+        echo "name limits which SNMP GetRequests are responded to.  By default,"
+        echo "the network printer responds to all GetRequests.  The \"get\""
+        echo "community name is limited to 32 characters."
+        echo ""
+        echo "Keep in mind that the \"get\" community name is kept in a file that"
+        echo "the network printer retrieves with TFTP.  While steps can be"
+        echo "taken to reduce the likelihood of others being able to retrieve"
+        echo "this file, the \"get\" community name will never be completely protected."
+        echo ""
+	$QUITHELP
+	continue
+      fi
+      if [ "$GETCOMNAM" = "q" ]
+      then
+        exit 1
+      fi
+      break
+    done
+    if [ -n "$GETCOMNAM" ]
+    then
+      echo $GETCOMNAM > "$TMP/GETCOMNAM"
+      echo ""
+      echo "Note: To avoid supplying the get community name every time"
+      echo "      you run hpnpadmin or hpnpstat, you can add an entry in "
+      echo "      /usr/lib/hpnp/hpnpsnmp like: $NAME $GETCOMNAM"
+    fi
+    while [ 0 ]
+    do
+      echo "\nEnter SNMP \"set\" community name (optional): $NL"
+      read -r STCOMNAM
+      if [ "$STCOMNAM" = "?" ]
+      then
+        echo "\nA community name is a password that enables SNMP access to MIB"
+        echo "values on the network printer.  Community names are not highly"
+        echo "secure; they go unencrypted across the network.  The \"set\" community"
+        echo "name limits which SNMP SetRequests are responded to.  In addition,"
+        echo "SetRequests are only honored if the sending host is on the access"
+        echo "list.  By default, the network printer does not respond to"
+        echo "any SetRequests.  The \"set\" community name is limited to 32 characters."
+        echo ""
+        echo "Keep in mind that the \"set\" community name is kept in a file that"
+        echo "the network printer retrieves with TFTP.  While steps can be"
+        echo "taken to reduce the likelihood of others being able to retrieve"
+        echo "this file, the \"set\" community name will never be completely protected."
+        echo ""
+	$QUITHELP
+	continue
+      fi
+      if [ "$STCOMNAM" = "q" ]
+      then
+        exit 1
+      fi
+      break
+    done
+  
+    SEL=""
+    until [ "$SEL" = "y" -o "$SEL" = "n" ]
+    do
+      echo "\nDo you want SNMP traps sent? (y/n/q default=n): $NL"
+      read -r SEL
+      if [ -z "$SEL" ]
+      then
+	SEL=n
+      fi
+      if [ "$SEL" = "?" ]
+      then
+	echo "\nSNMP traps are asynchronous notifications of some event that"
+	echo "has happened.  SNMP traps are useful only with network management"
+	echo "software.  The network printer will send cold start traps,"
+	echo "authentication failure traps, and enterprise specific traps."
+	echo "The enterprise specific traps include status changes and error"
+	echo "conditions.  Traps are sent to specific hosts and include a \"trap\""
+	echo "community name.  Up to 4 hosts can be sent SNMP traps."
+	echo ""
+	echo "Enter \"y\" and you will be asked what hosts to send the traps to."
+	echo ""
+	echo "Enter \"n\" to continue the configuration process."
+        echo ""
+	$QUITHELP
+      fi
+      if [ "$SEL" = "q" ]
+      then
+        exit 1
+      fi
+    done
+    SNMPTRAP="NO"
+    if [ "$SEL" = "y" ]
+    then
+      SNMPTRAP="YES"
+      TRAPLIST1=""
+      TRAPLIST2=""
+      TRAPLIST3=""
+      TRAPLIST4=""
+      TRPDSTCNT=0
+      if [ "$SEL" = "y" ]
+      then
+        while [ $TRPDSTCNT -lt 4 ]
+        do
+           gettrapdest
+	   RETCODE=$?
+	   if [ $RETCODE -eq 1 ]
+	   then
+	     exit 1
+	   fi
+           if [ $RETCODE -eq 0 ]
+	   then
+             TRPDSTCNT=`expr $TRPDSTCNT + 1`
+   	     if [ $TRPDSTCNT -eq 1 ]
+   	     then
+               TRAPLIST1=`cat $TMP/TRPLST`
+             elif [ $TRPDSTCNT -eq 2 ]
+   	     then
+               TRAPLIST2=`cat $TMP/TRPLST`
+             elif [ $TRPDSTCNT -eq 3 ]
+   	     then
+               TRAPLIST3=`cat $TMP/TRPLST`
+             elif [ $TRPDSTCNT -eq 4 ]
+  	     then
+               TRAPLIST4=`cat $TMP/TRPLST`
+  	     echo "\nAll 4 trap destinations have been specified.  Continuing"
+	     echo "with the configuration."
+  	     break
+             fi
+             rm -f -- "$TMP/TRPLST"
+           fi
+          SEL=""
+          until [ "$SEL" = "y" -o "$SEL" = "n" ]
+          do
+            echo "\nEnter another SNMP trap destination? (y/n/q default=n): $NL"
+            read -r SEL
+	    if [ -z "$SEL" ]
+	    then
+	      SEL="n"
+	    fi
+      	    if [ "$SEL" = "?" ]
+      	    then
+	      echo "\nUp to 4 trap destinations can be specified.  $TRPDSTCNT trap"
+	      echo "destinations have been specified so far."
+      	      echo ""
+      	      echo "Enter \"n\" to complete the trap destination configuration."
+	      $QUITHELP
+            fi
+    	    if [ "$SEL" = "q" ]
+    	    then
+      	      break
+    	    fi
+          done
+          if [ "$SEL" = "n" -o "$SEL" = "q" ]
+          then
+            break
+          fi
+        done
+      fi
+
+      while [ 0 ]
+      do
+        echo "\nEnter SNMP \"trap\" community name (optional): $NL"
+        read -r TRPCOMNAM
+      	if [ "$TRPCOMNAM" = "?" ]
+      	then
+      	  echo "\nThe SNMP \"trap\" community name is sent with SNMP traps."
+	  echo "The \"trap\" community name is limited to 32 characters."
+          echo ""
+	  $QUITHELP
+	  continue
+	fi
+        if [ "$TRPCOMNAM" = "q" ]
+        then
+          exit 1
+        fi
+	break
+      done
+      
+      SEL=""
+      until [ "$SEL" = "y" -o "$SEL" = "n" ]
+      do
+        echo "\nDo you want SNMP authentication traps sent? (y/n/q default=n): $NL "
+        read -r SEL
+	if [ -z "$SEL" ]
+	then
+	  SEL="n"
+	fi
+      	if [ "$SEL" = "?" ]
+      	then
+	  echo "\nAuthentication traps indicate that an SNMP request was received"
+	  echo "and the community name check failed.\n"
+	  $QUITHELP
+	fi
+        if [ "$SEL" = "q" ]
+        then
+	  exit 1;
+        fi
+      done
+      SNMPTRPAUTH="NO"
+      if [ "$SEL" = "y" ]
+      then
+        SNMPTRPAUTH="YES"
+      fi
+    fi
+  fi
+
+DEBUG=OFF
+if [ "$DEBUG" = "ON" ]
+then
+  echo "HATAG is $HATAG"
+  echo "NAME is $NAME"
+  echo "IPADDR is $IPADDR"
+  echo "SNMPTRAP is $SNMPTRAP"
+  echo "LOCATE is $LOCATE"
+  echo "CONTACT is $CONTACT"
+  echo "GETCOMNAM is $GETCOMNAM"
+  echo "STCOMNAM is $STCOMNAM"
+  echo "SNMPTRAP is $SNMPTRAP"
+  echo "TRPDSTCNT is $TRPDSTCNT"
+  echo "TRAPLIST1 is $TRAPLIST1"
+  echo "TRAPLIST2 is $TRAPLIST2"
+  echo "TRAPLIST3 is $TRAPLIST3"
+  echo "TRAPLIST4 is $TRAPLIST4"
+  echo "SNMASK is $SNMASK"
+  echo "SNGATEWAY is $SNGATEWAY"
+  echo "TRPCOMNAM is $TRPCOMNAM"
+  echo "SNMPTRPAUTH is $SNMPTRPAUTH"
+fi
+
+
+bootptabadd
+
+echo "\nThe printer BOOTP/TFTP configuration is complete.  Complete menu"
+echo "item 3 to test the BOOTP/TFTP configuration before powering on your"
+echo "printer.\n"
+echo "Press the return key to continue ... $NL"
+read -r RESP
+echo ""

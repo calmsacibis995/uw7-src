@@ -1,0 +1,163 @@
+The following is the first attempt of a build documentation. I guess you
+need a few days to get all the tools and software and the patches
+installed, so this gives me some time to finish the patch set from 3.1.1
+to 3.1.1-os2.
+
+
+0. Tools and software needed (get from hobbes.nmsu:/pub/32bit/gnu dir,
+   unless otherwise told)
+
+   - OS/2 2.11 or OS/2 Warp (commercial product)
+   - TCP/IP 2.0 latest available CSD, 
+     or Warp IAK (no real network) (commercial product)
+     (other TCP/IP for OS/2 products UNSUPPORTED, get the REAL one) 
+   - link386 (part of OS/2 and Warp)
+   - gzip
+   - tar
+   - chmod
+   - patch
+   - find
+   - rm, mv, cp
+   - tee
+   - grep
+   - sed
+   - gawk
+   - GNU make 3.71/3.72 (no other make usable)
+   - emx09a emxfix02 bsdlib gcc g++ as ar
+   - groff
+
+   - X11R6 Sources xc1.tar.gz, xc2.tar.gz from ftp.X.org
+   - X11R6 public fixes fix-01 to fix-11 (ftp.X.org)
+   - XFree86 source upgrade X11R6 -> XFree86-3.1.1 (ftp.xfree86.org)
+   - 3.1.1-os2.diff.gz (from ???)
+
+1. Get xc1.tar.gz, xc2.tar.gz and un-tar them into a reasonably large 
+   HPFS directory (>=300MB). xc3.tar.gz is unformated specs and postscript 
+   hardcopies of the documentation, you won't need this. Save space, you'll
+   badly need it RSN. Just worth mentioning: the gzip I use prints the
+   irritating message "gzip: stdout: Broken pipe" at the end if you use it
+   in conjunction with tar as "gzip -dc file.tar.gz | tar xvf -".
+   This is nonfatal.
+
+   At that stage, don't follow the recommendations in some doc file
+   to remove certain server\hw directories (omron, dec, sun, etc.) or the
+   xc\test subtree, as some of the X patches to be applied will be very
+   unhappy without them (read: you'll have to deal with plenty rejects
+   manually).
+
+   I have based everything under d:\x11, so my directory
+   structure will be like this:
+	d:\x11
+	d:\x11\xc
+	d:\x11\xc\config
+	d:\x11\xc\config\cf
+	d:\x11\xc\lib
+	d:\x11\xc\lib\X11
+	... and so on, I think you'll see the pattern.
+
+2. Do chmod -R a+rw on the xc directory and below, to remove the read-only
+   access right from various files. Alternatively you can use attrib -r
+   on any file in the tree.
+
+3. Create the following directories:
+   xc\programs\Xserver\hw\hp\input\drivers
+
+4. Read the XFree86-3.1.1 installation instructions before proceeding now.
+   It is likely that they have prepared a patch that relies on having the 
+   X consortium's public patches first. This was the case last time.
+   If this is the case, apply X Consortium's public patches 1-11. Do this with 
+   "patch -p -E <fix-nn 2>&1 | tee fixlog" from the d:\x11 dir. Don't use the
+   -s option as recommended in the X patches header, this is the quiet option,
+   and you will miss a problem if there is one.
+   Use "find . -name *.orig -print -exec rm {} ;"
+   to remove any old files after each patch to recover space. Carefully watch 
+   the patch process for any rejected or "fuzz"ed patches. fix-01 will
+   fail with 4 files in a xc\doc dir if you don't have xc3.tar.gz unpacked.
+   This is non-fatal. Simply answer patch's question to ignore these
+   offending patches with YES.
+   You needn't apply the special file fix3docs.tar.gz which comes 
+   with fix-03, but you must install fix-03 (even if it is almost empty).
+
+5. Do anything that is required to patch X11R6 up to XFree86-3.1.1.
+   The precise procedure is not fixed yet; these instructions were created
+   from a source that was successively patched up from XFree86-3.1 through
+   several stages of beta versions. However, I suppose the procedure will
+   be similar to the one to be performed for XFree86-3.1: You have a diff
+   file and a tar file. Apply the diff file first (note below!) and then
+   go to the xc\programs\xserver\hw directory and remove the entire xfree86
+   subtree. Then unpack the tar file to get the new xfree86 tree. Warning:
+   read the instructions for XFree86-3.1.1 when it arrives!
+
+   Important note: OS/2 patch from Hobbes has a problem that it won't create
+   new directories while creating new files. So, before applying the
+   xfree86 diff file, do a "grep /dev/null diff_file > list" on it. The
+   resulting file will contain lines "*** /dev/null timestamp" and
+   "diff -c /dev/null FILENAME", and probably some further junk lines.
+   Use a text editor to convert the diff lines into a list of directory names
+   (remove the basename part from the file path) and mkdir these directories
+   if they do not already exist. Later, you will find a script "added.cmd"
+   and a file "added-3.*" or similar that will do this tedious process
+   automatically for you.
+
+6. Run the patch 311-os2*.diff, which will upgrade XFree86-3.1.1 to my
+   latest OS/2 release level. The * may denote a letter; if there is more
+   than a single file, apply them starting with 311-os2.diff, 311-os2a.diff
+   in alphabetic order. Again watch for rejected files; please report to
+   me, if there is a problem.
+
+7. From xc\config\util, get buildos2.cmd and put it in the xc directory.
+   Go to xc\config\cf and edit xf86site.def to match the following:
+   (some options are commented out, which means the converse is set by
+   default):
+	#define BuildLBX NO		(not fully ported yet)
+	#define BuildLBXCompatible NO	(see above)
+	#define BuildFonts YES		(you want fonts first time)
+	#define BuildServersOnly NO	(you want all)
+	#define BuildFresco NO  	(not yet ported)
+	#define ForceNormalLib NO	(not tested, but why would you want them)
+
+8.  Important: Go to the directory xc\util\compress and make compress.exe
+    there. Install the compress.exe program produced there in your path.
+    I stumbled more than once on half-ported compress programs on OS/2 ftp
+    servers that are defective w.r.t. reading and writing stdin/stdout. In
+    some stage (font compression) otherwise you will get a core dump of
+    mkfontdir, because all compressed fonts are corrupt.
+ 
+9.  If you are absolutely sure: from a cmd line, execute
+
+	buildos2
+
+    and wait...
+
+    Look into buildos2.cmd: this will create a buildxc.log file which
+    traces the proceed of building. This file may become 1MB or larger.
+
+10. If the build went successful, you might try to run some clients on
+    a remote Xserver. Set the environment variable 
+      SET DISPLAY=foobar.foo.bar:0.0
+    to point to a host running an Xserver.
+    The host, here called foobar.foo.bar, must be resolvable from
+    a nameserver or \tcpip\etc\hosts; alternatively you can also use
+    the four-number convention as in
+      SET DISPLAY=123.45.67.89:0.0
+    Make the LIBPATH point to the directory drive:\x11\xc\usrlib; this
+    is where make puts uninstalled versions of the X11 DLLs to.
+    Try running some simple X client, such as xclock. Since the clients
+    are not yet installed, some resources (application defaults) are
+    possibly not set properly; the bitmap editor, for instance does not
+    find certain widgets; this should be fixed later. The cmd window
+    where you started the client will be filled with excessive debug output
+    coming from the Xtrans interface (see xtrans.c, DEBUG flag). This currently
+    makes execution of clients quite slow, but it allows debugging of the
+    X protocol.
+
+Okay this is all for now.
+
+
+
+$XFree86: $
+
+
+
+
+$XConsortium: OS2.Notes /main/2 1995/11/12 19:47:52 kaleb $

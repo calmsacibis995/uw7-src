@@ -1,0 +1,345 @@
+#!/sbin/sh
+#ident "@(#)media	15.2	98/01/18"
+#
+# Exit with the appropriate return code, depending on
+# the type of media.
+#
+function cased_exit {
+	case "$media" in
+		tcp)	
+			spx_status=$(svar get spx_status)
+			(( ${spx_status:-0} )) && {
+				display "$INETINST_REMOVE_CONFIG"
+				msg ""
+				footer "$GENERIC_WAIT_FOOTER"
+				netinst_clean ERROR
+				netinst_clean CLEAN
+				wclose $CURWIN
+			}
+			ii_exit NET;;
+		spx)	
+			tcp_status=$(svar get tcp_status)
+			(( ${tcp_status:-0} )) && {
+				display "$INETINST_REMOVE_CONFIG"
+				footer "$GENERIC_WAIT_FOOTER"
+				msg ""
+				netinst_clean ERROR
+				netinst_clean CLEAN
+				wclose $CURWIN
+			}
+			ii_exit NET;;
+		cdrom|tape)	
+			# in case we had tried to configure tcp or spx before
+			tcp_status=$(svar get tcp_status)
+			spx_status=$(svar get spx_status)
+			(( ${tcp_status:-0} || ${spx_status:-0} )) && {
+				display "$INETINST_REMOVE_CONFIG"
+				footer "$GENERIC_WAIT_FOOTER"
+				msg ""
+				netinst_clean ERROR
+				netinst_clean CLEAN
+				wclose $CURWIN
+			}
+			ii_exit NEXT;;
+		*)	ii_exit DIE;;
+	esac
+}
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	#
+	# If we got here by going forward, keep going forward. 
+	# Go on to the net modules, if networking is chosen.
+	# If tape or cdrom is chosen, go on to the next (default) screen.
+	# If we got here by going back, keep going back. 
+	#
+	if [ "$direction" = PREV ]
+	then
+		ii_exit PREV
+	else
+		media=`ivar get SEC_MEDIUM_TYPE`
+		[ -z "$media" ] && media=cdrom
+		cased_exit
+	fi	
+}
+. /isl/ui_modules/common.rc
+
+
+#
+#-----------------------------------------------------------
+#
+
+function noop
+{
+        beep
+}
+
+
+function get_media_choice
+{
+[ -n "$debug" ] && set -x
+	integer height i n initial
+	typeset value menu_id tape cdrom tcp spx
+	
+	#
+	# Default media choices
+	#
+	tape=false
+	cdrom=false
+	tcp=true
+	spx=true
+	
+	#
+	# If a tape drive or a cdrom exists, then their device files
+	# should have been created.
+	#
+	height=5
+	if [ -c /dev/rmt/tape1 ]
+	then
+		tape=true
+		(( height += 1 ))
+	fi
+	if [ -b /dev/cdrom1 ] 
+	then
+		cdrom=true
+		(( height += 1 ))
+	fi
+	
+
+	#
+	# Create the media menu
+	#
+	open_menu -exit 'errmsg "$NOMEDIA"; false' -x 3 -y 1
+	menu_id=$MID
+	n=0
+
+	prompt_widths=""
+	if $tape 
+	then
+		add_menu_item -select 					\
+		"media_choice_update tape"	 			\
+		-entry 'my_msgnoerr tape $INETINST_TAPE_PROMPT' 	\
+		-help "helpwin media.tape" "$INETINST_TAPE"
+		prompt_widths="$prompt_widths ${#INETINST_TAPE}"
+		value[$n]=tape
+		(( n += 1 ))
+	fi
+	if $cdrom 
+	then
+		add_menu_item -select 					\
+		"media_choice_update cdrom"				\
+		-entry 'my_msgnoerr cdrom $INETINST_CDROM_PROMPT' 	\
+		-help "helpwin media.cdrom" "$INETINST_CDROM"
+		prompt_widths="$prompt_widths ${#INETINST_CDROM}"
+		value[$n]=cdrom
+		(( n += 1 ))
+	fi
+	if $tcp 
+	then
+		add_menu_item -select 					\
+		"media_choice_update tcp"	 			\
+		-entry 'my_msgnoerr tcp $INETINST_TCP_PROMPT' 		\
+		-help "helpwin media.tcp" "$INETINST_TCP"
+		prompt_widths="$prompt_widths ${#INETINST_TCP}"
+		value[$n]=tcp
+		(( n += 1 ))
+	fi
+	if $spx 
+	then
+		add_menu_item -select 					\
+		"media_choice_update spx"				\
+		-entry 'my_msgnoerr spx $INETINST_SPX_PROMPT' 		\
+		-help "helpwin media.ipx" "$INETINST_SPX"
+		prompt_widths="$prompt_widths ${#INETINST_SPX}"
+		value[$n]=spx
+		(( n += 1 ))
+        fi
+	add_menu_item -select "cancel_install" 				\
+		-entry 'my_msgnoerr cancel $CANCEL_PROMPT'		\
+		-help 'helpwin caninst' "$INETINST_CANCEL"
+	prompt_widths="$prompt_widths ${#INETINST_CANCEL}"
+	value[$n]=cancel
+	(( n += 1 ))
+
+	#
+	# Given the current value of media, what line should the
+	# menu start off at?
+	#
+	i=0
+	initial=0
+	while (( i < n ))
+	do
+		if [ "$media" = "${value[$i]}" ]
+		then
+			initial=$i
+			break
+		fi
+		(( i += 1 ))
+	done
+
+	set -- "$prompt_widths"
+	max $*
+	(( INETINSTWIDTH = $? + 6 ))
+	place_window $INETINSTWIDTH $height 			\
+		-title "$INETINST_CHOICE"			\
+		-current 'footer "$INETINST_MENU_FOOTER"'
+	main_window=$CURWIN
+	set_hotkey 9 go_back
+	set_hotkey 1 get_help
+	set_hotkey 2 noop
+	run_menu $menu_id $initial
+}
+
+	
+function media_choice_update
+{
+[ -n "$debug" ] && set -x
+	wclose $main_window
+	msg
+	footer
+	media=$1
+	ivar set SEC_MEDIUM_TYPE "$media"
+	cased_exit
+}
+
+function my_msgnoerr
+{
+[ -n "$debug" ] && set -x
+	media=$1
+	shift
+	msgnoerr $*
+}
+
+function cancel_install
+{
+[ -n "$debug" ] && set -x
+	#
+	# If the main window is up, close it.
+	#
+	[ -n "$main_window" ] && wclose $main_window
+	main_window=""
+
+	#
+	# Save this for when we come back here
+	#
+	ivar set SEC_MEDIUM_TYPE "$media"
+	
+	msg
+	footer "$FOOTER1"
+	display -w "$RUSURE"
+	cancel_window=$CURWIN
+	set_hotkey 9 "wclose $cancel_window; main"
+	set_hotkey 3 "write_data"
+	set_hotkey 1 get_help
+	input_handler
+	#
+	# They must really want to die
+	#
+	halt
+}
+
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save this for when we come back here
+	#
+	ivar set SEC_MEDIUM_TYPE "$media"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+# JTB delete this function later
+function go_next_special
+{
+[ -n "$debug" ] && set -x
+
+	# try out new net path
+	ivar set jeremytemptcp goforit
+	go_next
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save this for when we come back here
+	#
+	ivar set SEC_MEDIUM_TYPE "$media"
+	#
+	# Tell the sequencer to go back
+	#
+	cased_exit
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save this for when we come back here
+	#
+	ivar set SEC_MEDIUM_TYPE "$media"
+	#
+	ivar set help_topic media
+	ii_exit HELP
+}
+
+
+function write_data
+{
+[ -n "$debug" ] && set -x
+	wclose $cancel_window
+	display -w "$INSERT_DISK"
+	input_handler
+#	fdtail -w < /isl/ifile
+false
+	if [ $? -eq 0 ]
+	then
+		display -w "$WHEN_REBOOT"
+	else
+		display -w "$ERROR_WRITING"
+	fi
+	input_handler
+	cancel_install
+}
+
+
+#
+# Main
+#
+function main
+{
+[ -n "$debug" ] && set -x
+	# 
+	# Get the initial menu selection.
+	#
+	media=`ivar get SEC_MEDIUM_TYPE`
+	[ -z "$media" ] && media=cdrom
+
+	#
+	# Ask the user, and save their answer.
+	#
+	get_media_choice
+}
+
+#
+# Do it
+#
+main
+
+#
+# Done
+#
+input_handler
+cased_exit

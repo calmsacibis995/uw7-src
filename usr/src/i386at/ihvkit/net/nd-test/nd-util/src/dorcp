@@ -1,0 +1,101 @@
+#! /usr/bin/sh -p
+iclist="ic1"
+ic1="test1"
+
+tet_startup="prepare_tests"
+prepare_tests()
+{
+	if [ -z "$ITERATIONS" ]
+	then
+		tet_delete test1 "Parameter ITERATIONS not set"
+		return
+	fi
+
+	if [ $ITERATIONS -gt 20 ]
+	then
+		tet_delete test1 "Parameter ITERATIONS should be set to a value less than or equal to 20"
+	fi
+
+# Create a small (256 bytes) binary file
+
+	rm -f ${TEMPDIR}/rcp_file* 
+
+	i=0
+	j=0
+	k=0
+	while [ $i -lt 4 ]
+	do
+		while [ $j -lt 8 ]
+		do
+			while [ $k -lt 8 ]
+			do
+				echo "\0$i$j$k\c"
+				k=`expr $k + 1`
+			done
+			k=0
+			j=`expr $j + 1`
+		done
+		j=0
+		i=`expr $i + 1`
+	done >${TEMPDIR}/rcp_file.tmp
+	cp ${TEMPDIR}/rcp_file.tmp ${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	rm ${TEMPDIR}/rcp_file.tmp
+	
+}
+
+test1()
+{
+tet_infoline "RCP_TST_01 Copy a file to remote machine using rcp, copy it back and compare"
+#echo "RCP test started... "
+#echo "please wait for the completion message."
+i=0
+kbytes=1
+while [ $i -lt $ITERATIONS ]
+do
+
+   cnt=1
+   i=`expr $i + 1`
+   while [ $cnt -lt $NODECOUNT ]
+   do
+	node=`eval echo \\$NODE$cnt`
+	echo "Copying a $kbytes KB file to $node" 
+	rcp ${TEMPDIR}/rcp_file $node:${TEMPDIR}/rcp_file
+	if [ $? -ne 0 ]
+	then
+		tet_infoline "remote copy of a $i MB file failed" 
+		tet_result FAIL
+		return
+	else
+		rcp $node:${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.$node
+		if [ $? -ne 0 ]
+		then
+			tet_infoline "Copy back of a $i MB file failed" 
+			tet_result FAIL
+			return
+		else
+			cmp ${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.$node > /dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				tet_infoline "Comparison of a $i MB file failed"
+				tet_result FAIL
+				return;
+			fi
+			rm ${TEMPDIR}/rcp_file.$node
+		fi
+	fi
+	cnt=`expr $cnt + 1`
+    done
+    cp ${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.tmp
+    cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+    rm ${TEMPDIR}/rcp_file.tmp
+    kbytes=`expr $kbytes + $kbytes`
+done
+rm -f ${TEMPDIR}/rcp_file*
+tet_result PASS
+}
+
+. ${TET_SUITE_ROOT}/lib/xpg3sh/tcm.sh
+. ${TET_SUITE_ROOT}/lib/xpg3sh/tetapi.sh

@@ -1,0 +1,48 @@
+XCOMM
+XCOMM	@(#) Imakefile 12.3 95/12/05 
+XCOMM
+XCOMM	Copyright (C) The Santa Cruz Operation, 1984-1990.
+XCOMM	This Module contains Proprietary Information of
+XCOMM	The Santa Cruz Operation, and should be treated as Confidential.
+XCOMM
+XCOMM	S000	Mon Feb 15 11:45:03 PST 1993	mikep@sco.com
+XCOMM	- Completely rewrite file to automate stanza file generation
+XCOMM	S001	Wed Feb 17 12:17:51 PST 1993	mikep@sco.com
+XCOMM	- If you can't find patch, look in the source directory
+XCOMM	S002	Tue Jun  6 15:42:14 PDT 1995    toma
+XCOMM   - updated DESTDIR and make getmons output to monitor.stz
+XCOMM
+
+
+/* usually overridden from the command line */
+DESTDIR= $(TOP)/sco/XDrivers/XDrivers
+
+SYSLIBS= -lc -lx -ll -ly -lld -lm
+GRAFLIB= $(TOP)/tools/graflib/libgraf.a
+GRAFINFODIR= $(DESTDIR)/usr/lib/grafinfo
+MONINFODIR= $(GRAFINFODIR)/moninfo
+PATCH=$(TOP)/util/patch/patch
+
+SPLAT=*
+ALLXGIS=$(SPLAT)/$(SPLAT).xgi
+ALLMONS=$(SPLAT)/$(SPLAT).mon
+
+INCLUDES = -I$(SERVERSRC)/include -I$(TOP)/tools/graflib
+
+all:: getgmodes getmons 
+
+NormalProgramTarget(getgmodes,getgmodes.o,$(GRAFLIB),$(GRAFLIB),$(SYSLIBS))
+NormalProgramTarget(getmons,getmons.o,$(GRAFLIB),$(GRAFLIB),$(SYSLIBS))
+
+clean::
+	$(RM) video.stz monitor.stz
+
+stanza:: getgmodes getmons
+	 rm -f video.stz
+	 _DIR=`pwd`; (cd $(GRAFINFODIR); $$_DIR/getgmodes $(ALLXGIS) > $$_DIR/video.stz)
+	_DIR=`pwd`; (cd $(MONINFODIR); $$_DIR/getmons $(ALLMONS) >> $$_DIR/monitor.stz)
+	patch video.stz < stanza.fixes || $(PATCH) video.stz < stanza.fixes
+	rm -f $(DESTDIR)/../video.stz
+        - $(CP) video.stz $(DESTDIR)/..
+
+depend::

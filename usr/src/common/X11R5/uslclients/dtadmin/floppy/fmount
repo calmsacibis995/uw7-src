@@ -1,0 +1,109 @@
+#! /sbin/sh
+
+#ident	"@(#)dtadmin:floppy/fmount	1.10.1.1"
+#copyright	"%c%"
+
+# /usr/X/adm/fmount:  This is an intermediate script to be used by the 
+# Media Manager to mount peripheral devices under specific mount points
+# reserved by the MediaMgr.  It is not intended to be used from the 
+# command line.  The fmount command is accessible to all desktop users by 
+# default to allow users to mount peripheral devices through
+# the Media Manager only.  If tfadmin fmount is invoked from the command
+# line it might fail with some of the mount(1) command options.
+# The system owner should provide a separate entry for the mount command 
+# in the tfm dtabase for to those users that will be allowed to execute 
+# mount(1) from the command line.
+
+SCRIPT=$0
+ 
+DESKTOP=/usr/X/desktop
+
+if [ ! -d ${DESKTOP} ]
+then
+	echo "${SCRIPT}:  Cannot locate desktop information" >&2
+        exit 1
+fi
+
+
+ARG_LIST="$@"
+
+if [ "$#" -gt 0 ]	
+then
+	do_mnt=1
+else
+	do_mnt=0  #just calling fmount for info display, no actual mount
+fi
+
+while getopts rvpF:V:o: opt
+do
+	case $opt in
+	v | p )	do_mnt=0
+		;;
+	F)	FSYS=$OPTARG	# file system type
+		;;
+	*)	;;
+	esac
+done
+
+if [ $do_mnt =  1 ] 	# actual mount requested
+then
+	while [ "$#" -gt 1 ]
+	do
+		shift
+	done
+	LAST_ARG=${1}
+
+	set `LC_ALL=C /usr/bin/id | /usr/bin/sed 's/[()=]/ /g'`
+	UID=${2}	# user id
+	UNAME=${3}	# user name
+	GID=${5}	# group id
+	IS_OWNER=`/usr/bin/grep '^owner$' ${DESKTOP}/LoginMgr/Users/${UNAME}`
+
+
+	# For non-owner users, validate mount point (last argument).  
+	# A regular user executing fmount with privilege is allowed 
+	# to mount only in the mount points used by MediaMgr,
+	# or under /installr (for dynatext support).
+
+	if [ -z "${IS_OWNER}" ]
+	then
+		case "$LAST_ARG" in
+	
+		/Disk_[A-Z] | /CD-ROM_[1-9]* | /installr)	
+			;;
+	
+		*)	echo "${SCRIPT}:  ${LAST_ARG} is not a valid mount point for ${UNAME}" >&2
+			exit 11		# mount's Permission denied
+			;;
+		esac
+
+	fi
+
+	if [ "${FSYS}" = "dosfs" ]
+	then
+		# For dosfs, there is no Setuid concept. 
+		# There are no permission bits or ownership concept in dosfs,
+		# so we have to specify these in the mount command.
+
+		/sbin/mount -o mask=0111,user=${UID},group=${GID} ${ARG_LIST}
+		exit $?
+
+	else	
+
+		# If user is not system owner, mount with -o nosuid.
+
+		if [ -n "${IS_OWNER}" ]	
+		then
+			/sbin/mount ${ARG_LIST}
+			exit $?
+		else
+			/sbin/mount -o nosuid ${ARG_LIST}
+			exit $?
+		fi
+
+	fi
+
+else
+	/sbin/mount ${ARG_LIST}
+	exit $?
+fi

@@ -1,0 +1,116 @@
+/**/#
+/**/# @(#) Imakefile 12.1 95/05/09 
+/**/#
+/**/# Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+/**/#
+/**/# The information in this file is provided for the exclusive use of the
+/**/# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+/**/# to use, modify, and incorporate this code into other products for 
+/**/# purposes authorized by the license agreement provided they include
+/**/# this notice and the associated copyright notice with any such 
+/**/# product.  The information in this file is provided "AS IS" without 
+/**/# warranty.
+/**/#
+/**/#
+
+/* 	
+ * 	S012 - 02-Feb-93  mikep@sco.com
+ *	  DELL 90c30 is too brain damaged to use the copy trick.  Give them
+ *	  their own file.
+ * 	S011 - 23-Dec-92  juliad@sco.com
+ *	  Added none to XGIDIRS
+ * 	S010 - 19-Nov-92  mikep@sco.com
+ *	  remove S008.  Its already being handled and cp's break make install
+ * 	S009 - 19-Nov-92  edb@sco.com
+ *        remove evc directory - evc/evc.tmpl was moved to olivetti
+ * 	S008 - 19-Nov-92  edb@sco.com
+ *        add cp wd90c11.xgi , it was overlooked since wd gets special treat
+ * 	S007 - 18-Nov-92  mikep
+ *	  add wd.  Note the 90c30 file will be replaced by the sed script
+ * 	S006 - 18-Nov-92  buckm
+ *	  add diamond
+ * 	S005 - 15-Nov-92  buckm
+ *	  add tseng
+ * 	S004 - 12-Nov-92  mikep
+ *	  add olivetti
+ * 	S003 - 11-Nov-92  mikep
+ *	  Remove destination before installing
+ * 	S002 - 01-Oct-92  juliad
+ *	  added DESTDIR to grafinfo installs
+ * 	S001 - 03-Sep-92  edb@sco.com
+ *	  copied from aga, all other grafinfos added
+ */
+
+XGIDIRS= ast \
+	ati \
+	bull \
+	chips \
+	cirrus \
+	cnrstone \
+	compaq \
+	dell \
+	eizo \
+	genoa \
+	grid \
+	hercules \
+	ibm \
+	ncr \
+	none \
+	oak \
+	olivetti \
+	orchid \
+	paradise \
+	quadram \
+	sni \
+	stb \
+	tecmar \
+	toshiba \
+	trident \
+	tseng \
+	verticom \
+	video7 \
+	wd
+
+DECDIR=    dec
+INTELDIR=  intel
+WDDIR=     wd
+ZENDIR=    zds
+
+GRAFDIR=   $(USRLIBDIR)/grafinfo
+
+SPLAT=*
+
+all:
+
+MakeDirectories(install,$(GRAFDIR))
+
+# Copy grafinfo files to distribution directory
+# wd90c30.xgi needs to be edited for computer vendors with a 90C30 chip on the motherboard.
+
+install:: 
+	( set -x; 	\
+	for i in $(XGIDIRS) ;\
+	do \
+		$(MKDIRHIER) $(DESTDIR)$(GRAFDIR)/$$i ;\
+		for j in $$i/$(SPLAT) ;\
+		do  \
+			rm -f $(DESTDIR)$(GRAFDIR)/$$j ;\
+		done ;\
+		copy -rn $$i/ $(DESTDIR)$(GRAFDIR)/$$i;\
+	done ;\
+	$(MKDIRHIER) $(DESTDIR)/usr/X11R6.1/lib/vidconf/AOF/UNIQUE/compaq ;\
+	$(RM) $(DESTDIR)/usr/X11R6.1/lib/vidconf/AOF/UNIQUE/compaq/ps-cl;\
+	mv $(DESTDIR)$(GRAFDIR)/compaq/ps-cl.unq $(DESTDIR)/usr/X11R6.1/lib/vidconf/AOF/UNIQUE/compaq/ps-cl )
+	$(MKDIRHIER) $(DESTDIR)$(GRAFDIR)/$(DECDIR)
+	$(MKDIRHIER) $(DESTDIR)$(GRAFDIR)/$(WDDIR)
+	$(MKDIRHIER) $(DESTDIR)$(GRAFDIR)/$(INTELDIR)
+	$(MKDIRHIER) $(DESTDIR)$(GRAFDIR)/$(ZENDIR)
+	rm -f $(DESTDIR)$(GRAFDIR)/$(WDDIR)/wd90c30.xgi
+	sed -e 's/vendorName/WD/g' -e 's/vendorPrompt/Western Digital/g' \
+	        < wd/wd90c30.xgi > $(DESTDIR)$(GRAFDIR)/$(WDDIR)/wd90c30.xgi
+	sed -e 's/vendorName/DEC/g' -e 's/vendorPrompt/DEC/g' \
+	        < wd/wd90c30.xgi > $(DESTDIR)$(GRAFDIR)/$(DECDIR)/wd90c30.xgi
+	sed -e 's/vendorName/INTEL/g' -e 's/vendorPrompt/Intel/g' \
+	        < wd/wd90c30.xgi > $(DESTDIR)$(GRAFDIR)/$(INTELDIR)/wd90c30.xgi
+	sed -e 's/vendorName/ZDS/g' -e 's/vendorPrompt/Zenith Data Systems/g' \
+	        < wd/wd90c30.xgi > $(DESTDIR)$(GRAFDIR)/$(ZENDIR)/wd90c30.xgi

@@ -1,0 +1,302 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxroot.sh	1.5 10/9/97 13:39:10 - cmd.vxvm:unixware/support/vxroot.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxroot.sh	1.5"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+: ${VOL_SCRIPTS_BIN:=$__VXVM_ROOT_DIR/usr/lib/vxvm/bin}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+[ $# -eq 1 ] || {
+	egettxt 'Usage: vxroot rootdisk' vxvmshm:542 >&2
+	exit 1
+}
+
+swap=true
+unroot=no
+
+[ -d $STATEDIR ] || volmkdirs
+
+bail()
+{
+	egettxt "The Volume Manager has failed to setup your boot disk." \
+		vxvmshm:384
+	if [ $unroot = yes ] && [ ! -n "$upgrade" ] ; then
+		egettxt "Restoring original configuration..." vxvmshm:348
+		$VOL_SCRIPTS_BIN/vxunroot
+	fi
+	rm -f $rootfile
+	voladm_continue
+	quit 30
+}
+
+upgrade=
+
+while getopts :U c
+do
+	case $c in
+	U)	upgrade=yes;;
+	esac
+done
+
+shift `expr $OPTIND - 1`
+
+
+if [ -d $rootfile ]; then
+	egettxt "It appears that you are already running root volumes." \
+		vxvmshm:263
+	voladm_yorn -M vxvmshm:142 "Continue anyway" n || quit 10
+fi
+
+## save all the files listed in vxroot.files.sh
+egettxt \
+"The Volume Manager will now set up your Boot Disk as a managed disk.
+
+NOTE: During this operation, block counts of completed copy operations
+      will appear.  These counts can be ignored unless they are
+      accompanied by some error and the operation aborts." vxvmshm:390
+echo ""
+
+if [ ! -f $rootsvfile ]; then
+	egettxt "Saving original configuration..." vxvmshm:352
+	xcmd rm -rf $SAVEDIR $DEVDIR
+	xcmd mkdir -p $SAVEDIR $DEVDIR
+	xcmd cd ${VOLROOT:-/}
+	xcmd find `sh $VOL_SCRIPTS_LIB/vxroot.files` -depth -print > $tmpfile1
+	xcmd cpio -pdum $SAVEDIR < $tmpfile1
+	xcmd find dev/root dev/rroot dev/swap dev/rswap -print > $tmpfile1
+	xcmd cpio -pdum $DEVDIR < $tmpfile1
+	xcmd cd $SAVEDIR
+	[ -d $NEWDIR ] || mkdir $NEWDIR
+	xcmd find . -type d -print > $tmpfile2
+	xcmd cpio -pdum $NEWDIR < $tmpfile2
+	xcmd touch $rootsvfile
+fi
+
+egettxt "Generating new configuration..." vxvmshm:239
+
+## kernel sassign file
+#
+#  NOTE: sassign file has been obsoleted since gemini BL11
+#
+# gem	file=/etc/conf/sassign.d/kernel
+# gem	xcmd cat > $tmpfile1 <<-'!'
+# gem		s/^root[ 	].*/root	vol	0/
+# gem		!
+# gem	
+# gem	 Swapability is not reqd. There is normally no entry for swap in \
+# gem	 the file /etc/conf/sassign.d/kernel
+# gem	 Hence the following code is commented out.
+# gem	
+# gem	if [ $swap = "true" ]; then
+# gem		xcmd cat >> $tmpfile1 <<-'!'
+# gem		s/^swap[ 	].*/swap	vol	1	\/dev\/swap/
+# gem			!
+# gem	fi
+# gem	
+# gem	xcmd sed -f $tmpfile1 $SAVEDIR/$file > $NEWDIR/$file
+# gem	if ecmd cmp -s $SAVEDIR/$file $NEWDIR/$file; then
+# gem	egettxt "Changes to the kernel sassign file have failed." vxvmshm:136
+# gem		sleep 5
+# gem		bail
+# gem	fi
+
+## volume sassign file
+#
+## [ not needed, root/swap slice numbers one and two are supported only
+#
+## vol space.c
+
+file=/etc/conf/pack.d/vol/space.c
+
+#gem xcmd cat > $tmpfile1 <<-'!'
+#gem 	/^#define[ 	][ 	]*VOL_NO_SASSIGN/s/define/undef/
+#gem 	/^#undef[ 	][ 	]*VOL_ROOTDEV_IS_VOLUME/s/undef/define/
+#gem 	!
+
+xcmd cat > $tmpfile1 <<-'!'
+	/^#undef[ 	][ 	]*VOL_ROOTDEV_IS_VOLUME/s/undef/define/
+	!
+
+# Kernel need not initiate the swap volume.
+if [ $swap = "true" ]; then
+	xcmd cat >> $tmpfile1 <<-'!'
+		/^#undef[ 	][ 	]*VOL_SWAPDEV_IS_VOLUME/s/undef/define/
+		!
+fi
+
+xcmd sed -f $tmpfile1 $SAVEDIR/$file > $NEWDIR/$file
+if ecmd cmp -s $SAVEDIR/$file $NEWDIR/$file; then
+	egettxt "Changes to the VxVM space.c file have failed." vxvmshm:135
+	sleep 5
+	bail
+fi
+
+## volspec mdevice file
+
+file=/etc/conf/mdevice.d/volspec
+cat > $tmpfile1 <<-'!'
+	/^$depend/s/.*/#&/
+	!
+xcmd sed -f $tmpfile1 $SAVEDIR/$file > $NEWDIR/$file
+if ecmd cmp -s $SAVEDIR/$file $NEWDIR/$file; then
+	egettxt "Changes to the volspec mdevice file have failed." \
+		vxvmshm:137
+	sleep 5
+	bail
+fi
+
+## vol, volspec sdevice file
+#
+#for module in vol volspec
+#do
+#	file=/etc/conf/mdevice.d/$module
+#	cat > $tmpfile1 <<-'!'
+#		$s/	L/	/
+#	!
+#	xcmd sed -f $tmpfile1 $SAVEDIR/$file > $NEWDIR/$file
+#	if ecmd cmp -s $SAVEDIR/$file $NEWDIR/$file; then
+#		egettxt "Changes to the VxVM sdevice file have failed." \
+#			vxvmshm:91
+#		bail
+#	fi
+#done
+#
+## copy modified files
+
+egettxt "Writing new configuration..." vxvmshm:583
+xcmd cd $NEWDIR
+xcmd find . -depth -print > $tmpfile1
+
+unroot=yes				# do a volunroot if command fails
+xcmd cpio -pdum $VOLROOT/ < $tmpfile1
+
+if [ ! -n "$upgrade" ] 
+then
+egettxt \
+"The kernel will now be rebuilt to incorporate configuration changes
+for the Volume Manager." vxvmshm:441
+xcmd /etc/conf/bin/idbuild -B		# rebuild kernel with root devs
+xcmd /etc/conf/bin/idcpunix		# and copy unix
+
+fi
+
+# get the volume character and block major numbers from vxparms
+if [ ! -n "$upgrade" ]
+then
+eval `$VOL_SCRIPTS_BIN/vxparms`
+[ -z "$VOLBMAJOR" ] && echo "zero volcbmajor" && sleep 5
+[ -z "$VOLBMAJOR" ] && bail
+else
+exec 3<&0 < /etc/conf/cf.d/res_major
+while read type num driver
+do
+	case $type in
+	'#'*)	continue;;
+	esac
+	if [ $driver = "vol" ]
+	then
+		if [ $type = "b" ]
+		then
+			VOLBMAJOR=$num
+		else
+			VOLCMAJOR=$num
+		fi
+	fi
+done
+exec 0<&3 3<&-
+fi
+
+
+## make the root nodes
+
+rootdev=$VOLROOT/dev/root
+rrootdev=$VOLROOT/dev/rroot
+swapdev=$VOLROOT/dev/swap
+rswapdev=$VOLROOT/dev/rswap
+
+# Find old swap device name
+if [ -n "$upgrade" ] 
+then
+# During upgrade from UW2.01+ODM2.01 to Eiger8+ODM2.1 
+# swap -l shows that the swap is /dev/dsk/c0b0t0d0s2 which
+# is not the real old swap device.
+
+oldswapdev=/dev/swap
+else
+oldswapdev=`swap -l | grep "^/dev" | awk '{print $1}'`
+fi
+
+# Replace 'swap -a' entry with /dev/vx/dsk/swapvol
+# in the inittabs
+if [ -n "$upgrade" ] 
+then
+LIST="$VOLROOT/etc/conf/init.d/kernel"
+else
+LIST="$VOLROOT/etc/conf/init.d/kernel $VOLROOT/etc/inittab"
+fi
+
+for file in $LIST 
+do
+	xcmd grep -v "/sbin/swap -a $oldswapdev" $file > $file.new
+	xcmd ed - $file.new <<-'!'
+		/^[^:]*::sysinit:\/etc\/init.d\/vxvm-startup/a
+		swp1::sysinit:/sbin/swap -a /dev/vx/dsk/swapvol >/dev/sysmsg 2>&1 ##vxvm
+		.
+		w
+		q
+		!
+	xcmd mv $file.new $file
+done
+
+# Remove old swap entry from /etc/swaptab
+# and replace it with /dev/vx/dsk/swapvol
+
+xcmd sed -e "s?${oldswapdev}?/dev/vx/dsk/swapvol?" $VOLROOT/etc/swaptab > /tmp/swaptab
+xcmd mv /tmp/swaptab $VOLROOT/etc/swaptab
+xcmd echo $oldswapdev > $DEVDIR/oldswapdev
+
+rm -f $rootdev $rrootdev
+xcmd mknod $rootdev b $VOLBMAJOR 0
+xcmd installf -c none base $rootdev b $VOLBMAJOR 0 0600 root sys 2 NULL NULL
+xcmd mknod $rrootdev c $VOLCMAJOR 0
+xcmd installf -c none base $rrootdev c $VOLCMAJOR 0 0600 root sys 2 NULL NULL
+xcmd chmod 600 $rootdev $rrootdev
+if [ $swap = "true" ]; then
+	rm -f $swapdev $rswapdev
+	xcmd mknod $swapdev b $VOLBMAJOR 1
+	xcmd installf -c none base $swapdev b $VOLBMAJOR 1 0600 root sys 2 NULL NULL
+	xcmd mknod $rswapdev c $VOLCMAJOR 1
+	xcmd installf -c none base $rswapdev c $VOLCMAJOR 1 0600 root sys 2 NULL NULL
+	xcmd chmod 600 $swapdev $rswapdev
+fi
+
+touch $rootfile
+
+if [ -n "$upgrade" ] 
+then
+	cp $VOLROOT/etc/vfstab $tmpfile1
+	cat $tmpfile1 | sed -e 's/\/vol\//\/vx\//g'> $tmpfile2
+	cp $tmpfile2 $VOLROOT/etc/vfstab
+fi
+	
+quit 0

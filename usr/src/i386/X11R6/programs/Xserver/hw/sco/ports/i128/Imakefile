@@ -1,0 +1,129 @@
+/*
+ * @(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ *	 Copyright (C) The Santa Cruz Operation, 1991-1996.
+ * 
+ */
+
+#include <Server.tmpl>
+
+GC_SRCS = i128GCFuncs.c i128GCNoOps.c \
+        i128GCSolidOps.c i128GCStippledOps.c \
+        i128GCOpStippledOps.c i128GCTiledOps.c
+
+SRCS =	i128Cmap.c i128Cursor.c i128Data.c i128GC.c \
+	i128Image.c i128Init.c i128Screen.c i128Win.c \
+        i128Rect.c i128Line.c i128Clip.c \
+        i128Mono.c i128Text.c i128PCI.c $(GC_SRCS) i128Pixmap.c
+
+GC_OBJS = i128GCFuncs.o i128GCNoOps.o \
+        i128GCSolidOps.o i128GCStippledOps.o \
+        i128GCOpStippledOps.o i128GCTiledOps.o
+
+OBJS =	i128Cmap.o i128Cursor.o i128Data.o i128GC.o \
+	i128Image.o i128Init.o i128Screen.o i128Win.o \
+        i128Rect.o i128Line.o i128Clip.o \
+        i128Mono.o i128Text.o i128PCI.o $(GC_OBJS) i128Pixmap.o
+
+    DDXLIBS = libi128.a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -DI128_FAST_GC_OPS -DVOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+        -I$(SERVERSRC)/hw/sco/ports/wd \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(i128,$(OBJS))
+SharedXDriverTarget(i128,6.0,$(OBJS),shared,..)
+LintLibraryTarget(i128,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(i128,$(DDXLIBS))
+
+#else /* USLArchitecture */
+
+STD_DEFINES = ServerDefines -DI128_FAST_GC_OPS
+
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(i128,$(OBJS))
+ProfiledLibraryTarget(i128,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(i128,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(i128,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(i128,$(OBJS))
+LintLibraryTarget(i128,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(i128,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+InstallGrafFile(./grafinfo/numbernine,imagine128.xgi,numbernine)
+InstallGrafFile(./grafinfo/numbernine,imagine128.tmpl,numbernine)
+InstallNamedProg(./grafinfo/numbernine/imagine128.sh,imagine128,$(USRLIBDIR)/vidconf/scripts)
+InstallNamedNonExec(./grafinfo/numbernine/imagine128.AOF,imagine128,$(USRLIBDIR)/vidconf/AOF/ID/numbernine)
+InstallNamedNonExec(./grafinfo/numbernine/imagine128.unq,imagine128,$(USRLIBDIR)/vidconf/AOF/UNIQUE/numbernine)
+InstallGrafFile(./grafinfo/numbernine,i128pro.xgi,numbernine)
+InstallGrafFile(./grafinfo/numbernine,i128pro.tmpl,numbernine)
+InstallNamedProg(./grafinfo/numbernine/i128pro.sh,i128pro,$(USRLIBDIR)/vidconf/scripts)
+InstallNamedNonExec(./grafinfo/numbernine/i128pro.AOF,i128pro,$(USRLIBDIR)/vidconf/AOF/ID/numbernine)
+InstallNamedNonExec(./grafinfo/numbernine/i128pro.unq,i128pro,$(USRLIBDIR)/vidconf/AOF/UNIQUE/numbernine)
+
+DependTarget()
+

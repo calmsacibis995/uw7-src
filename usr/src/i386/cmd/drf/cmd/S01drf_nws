@@ -1,0 +1,193 @@
+#! /usr/bin/winxksh
+#ident	"@(#)drf:cmd/S01drf_nws	1.1.1.4"
+
+eval `defadm coterm TERM`
+export TERM
+if [ -z "$LANG" ]
+then
+	LNG=`defadm locale LANG 2>/dev/null`
+	if [ "$?" != 0 ]
+	then LANG=C
+	else eval $LNG
+	fi
+fi
+if [ -z "$LC_ALL" ] 
+then
+	LC_ALL=$LANG
+fi
+export LANG LC_ALL
+
+[ "$RANDOM" = "$RANDOM" ] && exec /usr/bin/xksh /etc/rc3.d/S01drf_nws
+
+function get_sec_medium
+{
+	msg
+	footer 2> /dev/null #clear the footer
+	FOUND=false
+	display "$TAPE_PROMPT"
+	call getkey
+	wclose
+	for i in /dev/rmt/ntape?
+	do
+		check_devs -g ${i} && {
+			SEC_MEDIUM=$i
+			FOUND=true
+			break
+		}
+	done
+	$FOUND || {
+		display "$TAPE_OPEN_ERROR" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+		return 1
+	}
+	footer "$GENERIC_WAIT_FOOTER"
+	tapecntl -w ${SEC_MEDIUM} # Rewind the tape
+	tapecntl -f 512 ${SEC_MEDIUM} # set the fixed block length
+	return 0
+}
+
+function next_tape_prompt
+{
+	wclose
+	footer 2> /dev/null #clear the footer
+	display "$NEXT_TAPE_PROMPT"
+	call getkey
+	wclose
+	display "$DSK_RST_MSG"
+	footer "$GENERIC_WAIT_FOOTER"
+	tapecntl -w ${SEC_MEDIUM} # Rewind the tape
+	tapecntl -f 512 ${SEC_MEDIUM} 
+}
+
+function SYS_restore
+{
+	tapecntl -p1 ${SEC_MEDIUM} #Skip first cpio archive
+	sleep 20	#give the tape time to move, st01 weirdness...
+	[ -f /usr/lib/drf/dd_flag ] && tapecntl -p1 ${SEC_MEDIUM}
+	sleep 20	#give the tape time to move, st01 weirdness...
+#archive of SYS volume on tape has pathname relative to "/"
+	cd /
+ 	( cpio -icmdu -M "" -G STDIO -I ${SEC_MEDIUM}  2>/dev/null 
+	     err=$?
+	     echo one one one
+	     echo Done Done Done
+	     echo $err) |&
+   	
+	while :
+	do
+	      read -p one two three
+	      [ "$one" = "Done" ] && {
+		   read -p err
+		   break
+	      }
+	      if [ "$two" = "of" ]
+	      then
+		   next_tape_prompt
+		   print -p
+	      fi
+	done
+	
+	if [ $err -ne 0 -a $err -ne 2 ] 
+	then
+		   cd /
+		   disp_disk_rst_err
+		   return 1
+	fi
+	cd /
+	# call unlink /usr/sbin/disksetup
+}
+
+function NWS_start
+{
+	eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -v ipx_start_at_boot -v nws_start_at_boot`
+	NWSBOOT=$nws_start_at_boot
+	nwcm -q -s nws_start_at_boot=on #In case they had turned it off
+
+	sh /etc/init.d/nw start	#start NPSD daemon
+	nwcm -q -s login=on	#needed to get the server up (?)
+	sh /etc/init.d/nws start	#start NetWare Server
+
+	until nwserverstatus >/dev/null 2>&1	#nwserverstatus returns 0 (true)
+	do					#when server is fully up
+		echo "return code was $?" >>/tmp/err
+		sleep 10
+	done
+
+	nwcm -q -s login=off	#set NetWare server for limited access mode
+}
+function NWS_stop
+{
+	sh /etc/init.d/nws stop
+	sleep 15
+	sh /etc/init.d/nw stop
+	nwcm -q -s login=on	#reset NetWare server for full access mode
+	nwcm -q -s nws_start_at_boot=$NWSBOOT #set it back the way it was
+}
+
+
+function ask_server_exit
+{
+
+#The first choice was 'continue', so do nothing unless they chose 'cancel'
+
+	case $CHOICE in
+
+		${ASKSERVER_OPT[1]})
+		NWS_SYS_PATH=$(</usr/lib/drf/nws_sys_path)
+		rm $NWS_SYS_PATH/_netware/*
+		call endwin
+		rm /etc/rc3.d/S01drf_nws
+		exit
+		;;
+	esac
+
+	return
+}
+
+function ask_server
+{
+	if [ -z "${ASKSERVER_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A ASKSERVER_OPT ${ASKSERVER_CHOOSE}
+		IFS="$OIFS"
+	fi
+	ASKSERVER=$ASKSERVER_OPT
+
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	CHOOSE_TITLE="$NWS_CHOOSE"
+	choose -f -e -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" -help "helpwin user_limit" -exit 'ask_server_exit' "$ASKSERVER" "${ASKSERVER_OPT[@]}"
+	return
+}
+function NWS_server_check
+{
+	display   "$NWS_SERVER_INFO" -above 1 -below 2
+	_t=$CURWIN
+
+# get user's choice ('single-server' or 'multi-server')
+	ask_server
+	input_handler
+	wclose $_t
+}
+#MAIN
+{
+FPATH=/etc/dcu.d/menus
+SCRIPTS=/etc/dcu.d/scripts
+. $SCRIPTS/funcrc
+. /usr/lib/drf/locale/$LANG/txtstr
+. $SCRIPTS/winrc
+. $SCRIPTS/scr_init
+NWS_server_check
+display -w "$NWS_INFO"
+input_handler
+wclose
+get_sec_medium
+display "$DSK_RST_MSG"
+NWS_start
+SYS_restore
+NWS_stop
+call endwin
+} </dev/vt02 >/dev/vt02
+rm /etc/rc3.d/S01drf_nws

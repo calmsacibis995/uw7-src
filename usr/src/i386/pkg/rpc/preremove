@@ -1,0 +1,73 @@
+#ident	"@(#)preremove	1.3"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+#-----Remove administrative files
+
+rm -f /etc/publickey || exit 1
+rm -f /etc/netid || exit 1
+
+#-----Remove drivers
+FAILURE=1	# fatal error
+
+REBUILD=0
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:51 " The Installable Driver feature has been removed. The %s cannot be removed." ${NAME} 2>&1`
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+			-o ! -x ${CONFBIN}/idcheck ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+for MODULE in krpc ktli des
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RES="$?"
+	if
+		[ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -d ${MODULE}
+		REBUILD=1
+	fi
+done
+
+
+#adminrole -r rpcbind,rpcinfo,rusers,rpc.rwalld,rpc.rusersd,rpc.sprayd,spray,keyserv,newkey,chkey,domainname,keylogin,keylogout NET
+
+if
+	[ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+	
+	${CONFBIN}/idbuild
+	IDERR=$?
+
+	if
+		[ "${IDERR}" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+fi

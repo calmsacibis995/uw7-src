@@ -1,0 +1,32 @@
+#ident	"@(#)cfgintf:i386at/cmd/cfgintf/summary/Text.summary	1.4"
+#ident "$Header$"
+title="System Configuration Information"
+
+lifetime=longterm
+wrap=FALSE
+framemsg=`readfile $INTFBASE/display.msg`
+help=OPEN TEXT $INTFBASE/Text.itemhelp "LISTING"
+
+`
+    /usr/sbin/prtconf | set -l INFO ;
+    if [ $RET -ne 0 ] ;
+    then set -l INFO="Unable to access system configuration information." ;
+    fi ;
+
+    shell expr $DISPLAYH - 2 | set -l MAXROWS ;
+    echo "$INFO" | wc -l | set -l NROWS ;
+    if [ $NROWS -gt $MAXROWS ] ;
+    then set -l NROWS=$MAXROWS ;
+    fi ;
+
+    shell expr $DISPLAYW - 4 | set -l MAXCOLS ;
+    echo "$INFO" | $OBJ_DIR/maxcol | set -l NCOLS ;
+    if [ $NCOLS -gt $MAXCOLS ] ;
+    then set -l NCOLS=$MAXCOLS ;
+    fi ;
+
+`
+
+rows=$NROWS
+columns=$NCOLS
+text="$INFO"

@@ -1,0 +1,169 @@
+#ident	"@(#)pkg.mpu:preremove	1.2.1.1"
+#ident	"$Header$"
+
+LKEYSFILE=/etc/config/licensekeys
+PKGNAME=mpu
+TMP=/tmp/mpu
+OUTFILE=${TMP}/mpuretval
+
+#
+# Make sure LOCALE environment variable is set.  If it's not set
+# then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+DIR=/etc/inst/locale/${LOCALE}/menus/${PKGNAME}
+SHOWKEYS="${DIR}/menu.showkeys"
+KEYRM="${DIR}/menu.keyrm"
+
+_rmkeys()
+{
+	STR=$1
+
+	if [ "${STR}" ]
+	then
+		# Remove the selected key pair(s) from the file
+		grep -v "${STR}" ${LKEYSFILE} >${TMP}/tmpkeysfile 2>/dev/null
+		cat ${TMP}/tmpkeysfile > ${LKEYSFILE}
+	fi
+}
+
+
+mkdir -p ${TMP} 2>/dev/null
+
+grep "^PU"  ${LKEYSFILE} >${TMP}/mpukeys 2>/dev/null
+
+grep "^MPU"  ${LKEYSFILE} >>${TMP}/mpukeys 2>/dev/null
+
+NKEYS=`awk 'END { print NR }' ${TMP}/mpukeys`
+
+#
+# If there is only one PU/MPU key pair left in the file, remove it
+# without asking/prompting the user
+#
+if [ ${NKEYS} -eq 1 ]
+then
+
+	STR=`cat ${TMP}/mpukeys | awk '{print $1}'`
+	_rmkeys ${STR}
+
+	# re-set the resource limit
+	keyadm -s 2>/dev/null
+
+	NKEYS="`expr ${NKEYS} - 1`"
+fi
+
+#
+# If there are no MPU/PU key pairs left in the file, remove
+# menus and temporary files
+#
+if [ ${NKEYS} -eq 0 ]
+then
+	rm -rf /etc/inst/locale/${LOCALE}/menus/${PKGNAME}
+	rm -rf ${TMP}
+	exit 0
+fi
+
+
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+        . /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+        . /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+
+#
+# If there are more than one MPU/PU key pair in the file,
+# must prompt the user via a menu.
+#
+
+if [ ! -s ${SHOWKEYS} ]
+then
+	rm -rf ${TMP}
+	exit 1
+fi
+
+menu -f ${SHOWKEYS} -o ${OUTFILE}  2> /dev/null
+
+if [ $? -ne 0 ]
+then
+	rm -rf ${TMP}
+	exit 1
+fi
+
+
+. ${OUTFILE}
+
+case "${RETURN_VALUE}" in
+1)
+	# User selected to remove NONE of the key pairs.
+	#
+	# fail the pkg removal. There are still MPU/PU key pairs
+	# left in the licensekeys file.
+	#
+	RET=1
+	;;
+
+2)
+	# User selected to remove all the MPU/PU key pairs
+	_rmkeys "^MPU"
+	_rmkeys "^PU"
+
+	# re-set the resource limit
+	keyadm -s 2>/dev/null
+
+	rm -rf /etc/inst/locale/${LOCALE}/menus/${PKGNAME}
+	RET=0
+	;;
+
+*)
+	# User selected to remove an specific MPU key pair
+	N="`expr ${RETURN_VALUE} - 2`"
+
+	# save initial value of file descriptor 0 by dup to file descriptor 3
+	exec 3<&0
+
+	# redefine file descriptor 0 to be the data file
+	exec 0<${TMP}/mpukeys
+
+	i=0
+	while
+		read KEY1 KEY2
+	do
+		i="`expr $i + 1`"
+		if [ $i -eq $N ]
+		then
+			_rmkeys "^${KEY1}"
+
+			# re-set the resource limit
+			keyadm -s 2>/dev/null
+
+			echo "${KEY1}        ${KEY2}" >${TMP}/keyremoved
+			break;
+		fi
+	done
+
+	#restore initial value of file descriptor 0 from file descriptor 3
+	exec 0<&3
+
+	if [ -s ${TMP}/keyremoved ]
+	then
+		menu -f ${KEYRM} -o ${OUTFILE} 2> /dev/null
+	fi
+
+	#
+	# fail the pkg removal. There are still MPU/PU key pairs
+	# left in the licensekeys file.
+	#
+	RET=1
+
+	;;
+esac
+
+rm -rf ${TMP}
+exit ${RET}

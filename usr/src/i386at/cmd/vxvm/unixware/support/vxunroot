@@ -1,0 +1,235 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxunroot.sh	1.3 12/24/97 12:29:45 - cmd.vxvm:unixware/support/vxunroot.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxunroot.sh	1.3"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+voladm_help_push yorn.help
+voladm_menu_push VolumeManager/Unroot
+
+bail()
+{
+	quit 10
+}
+
+eval `vxparms`
+if [ -z "$V_STAND" ]
+then
+	ewritemsg -M vxvmshm:261 \
+	 "Internal error -- cannot determine slice tag for stand slice."
+	quit 10
+fi
+
+ewritemsg -M vxvmshm:501 \
+"This operation will convert your root, stand and swap file systems from
+  volumes to regular partitions."
+
+for vname in rootvol swapvol standvol
+do
+	vxprint -g rootdg -F "%pl_num" $vname > $tmpfile1
+	if [ $? -ne 0 ]
+	then
+		export vname; ewritemsg -M vxvmshm:575 \
+"WARNING: Cannot determine the count of plexes for the $vname volume"
+	else
+		if [ "X`cat $tmpfile1`" != X1 ]
+		then
+export tmpfile1 vname; ewritemsg -M vxvmshm:212 \
+"ERROR: There are `cat $tmpfile1` plexes associated with volume $vname
+         The vxunroot operation cannot proceed."
+			quit 10
+		fi
+	fi
+done
+rm -f $tmpfile1
+
+set_rootdisk
+
+$PRTVTOC -f $tmpfile1 /dev/rdsk/${rootdisk}${VOL_FULL_SLICE}
+exec 3<&0 < $tmpfile1
+standsl=
+rootsl=
+swapsl=
+usrsl=
+varsl=
+homesl=
+while read slice tag flags start size
+do
+	case $slice in
+	[0-9])	sliceno=$slice;;
+	10)	sliceno=a;;
+	11)	sliceno=b;;
+	12)	sliceno=c;;
+	13)	sliceno=d;;
+	14)	sliceno=e;;
+	15)	sliceno=f;;
+	'#'*)	continue;;
+	esac
+	case $tag in
+	$V_STAND)	[ -z "$standsl" ] && standsl=${rootdisk}s$sliceno;;
+	$V_ROOT)	[ -z "$rootsl" ]  && rootsl=${rootdisk}s$sliceno;;
+	$V_SWAP)	[ -z "$swapsl" ]  && swapsl=${rootdisk}s$sliceno;;
+	$V_USR)		[ -z "$usrsl" ]  && usrsl=${rootdisk}s$sliceno;;
+	$V_VAR)		[ -z "$varsl" ]  && varsl=${rootdisk}s$sliceno;;
+	$V_HOME)	[ -z "$homesl" ]  && homesl=${rootdisk}s$sliceno;;
+	esac
+done
+rm -f $tmpfile1
+if [ -z "$standsl" ]
+then
+	ewritemsg -M vxvmshm:182 \
+"Disk $rootdisk has no STAND partition.  The vxunroot operation
+  cannot proceed."
+	quit 10
+fi
+if [ -z "$rootsl" ]
+then
+	ewritemsg -M vxvmshm:181 \
+"Disk $rootdisk has no ROOT partition.  The vxunroot operation
+  cannot proceed."
+	quit 10
+fi
+if [ -z "$swapsl" ]
+then
+	ewritemsg -M vxvmshm:183 \
+"Disk $rootdisk has no SWAP partition.  The vxunroot operation
+  cannot proceed."
+	quit 10
+fi
+
+addition=
+usrda=`vxprint -sF "%device" -e 'assoc.assoc="usr"' | sed -e 's/\(.*\)s./\1/g'`
+if [ "X$usrda" = "X${rootdisk}" ]
+then
+	export usrsl
+	egettxt "  Replace volume usr with $usrsl" vxvmshm:32
+	addition=true
+fi
+
+varda=`vxprint -sF "%device" -e 'assoc.assoc="var"' | sed -e 's/\(.*\)s./\1/g'`
+if [ "X$varda" = "X${rootdisk}" ]
+then
+	export varsl
+	egettxt "  Replace volume var with $varsl" vxvmshm:33
+	addition=true
+fi
+
+homeda=`vxprint -sF "%device" -e 'assoc.assoc="home"' | \
+						sed -e 's/\(.*\)s./\1/g'`
+if [ "X$homeda" = "X${rootdisk}" ]
+then
+	export homesl
+	egettxt "  Replace volume home with $homesl" vxvmshm:31
+	addition=true
+fi
+
+if [ ! -z "$addition" ]
+then
+	ewritemsg -M vxvmshm:246 "In addition to the following..."
+fi
+
+export rootsl standsl swapsl; ewritemsg -M vxvmshm:337 \
+"Replace volume rootvol with $rootsl.
+  Replace volume swapvol with $swapsl.
+  Replace volume standvol with $standsl.
+
+  This operation will require a system reboot.  If you choose to
+  continue with this operation, your kernel will be updated to
+  discontinue use of the Volume Manager for your root and swap
+  devices."
+
+voladm_yorn -M vxvmshm:201 "Do you wish to do this now" y || quit 10
+
+[ -d $STATEDIR ] || volmkdirs
+
+cd $SAVEDIR
+ewritemsg -M vxvmshm:347 "Restoring kernel configuration..."
+[ "$verbose" ] && echo "! find . -print | cpio -pdum $VOLROOT/" >&5
+find . -print | cpio -pdum $VOLROOT/
+
+if not doit /etc/conf/bin/idbuild -B; then
+	ewritemsg -M  vxvmshm:440 \
+"The kernel build failed. The Volume Manager cannot deconfigure
+  the root volume until a kernel can be built.  Correct the problem
+  and run this command again."
+	quit 1
+fi
+if not doit /etc/conf/bin/idcpunix; then
+	ewritemsg -M vxvmshm:391 \
+"The copy of the kernel failed.  Examine your /stand file system to
+  see if it is not mounted, or if it is full or damaged.  Correct the
+  problem and run this command again."
+	quit 1
+fi
+
+#restore swap entry in inittabs
+[ -f $VOLROOT/oldswapdev ] && xcmd rm $VOLROOT/oldswapdev
+
+if [ ! -f $DEVDIR/oldswapdev ]; then
+	ewritemsg -M vxvmshm:509\
+"Unable to determine old swap device. Either root, swap and stand are not
+currently mounted on volumes or else /etc/conf/init.d/kernel and /etc/inittab
+have to be edited manually."
+	quit 10
+else
+oldswapdev=`cat $DEVDIR/oldswapdev`
+
+for file in $VOLROOT/etc/conf/init.d/kernel $VOLROOT/etc/inittab
+do
+	xcmd grep -v "/sbin/swap -a /dev/vx/dsk/swapvol" $file > $file.new
+	xcmd ed - $file.new <<-'!'
+		/^[^:]*::sysinit:\/sbin\/ckroot/i
+		swp1::sysinit:/sbin/swap -a /dev/swap >/dev/sysmsg 2>&1
+		.
+		w
+		q
+		!
+	xcmd mv $file.new $file
+done
+
+xcmd sed -e "s?/dev/vx/dsk/swapvol?${oldswapdev}?" $VOLROOT/etc/swaptab > /tmp/swaptab
+xcmd mv /tmp/swaptab $VOLROOT/etc/swaptab
+xcmd rm $DEVDIR/oldswapdev
+fi
+
+rm -f $tmpfile1
+
+doit sed -e "s;/dev/vx/dsk/standvol\\([	 ]\\);/dev/dsk/$standsl\\1;" \
+	 -e "s;/dev/vx/rdsk/standvol\\([	 ]\\);/dev/rdsk/$standsl\\1;" \
+	 -e "s;/dev/vx/dsk/usr\\([	 ]\\);/dev/dsk/$usrsl\\1;" \
+	 -e "s;/dev/vx/rdsk/usr\\([	 ]\\);/dev/rdsk/$usrsl\\1;" \
+	 -e "s;/dev/vx/dsk/var\\([	 ]\\);/dev/dsk/$varsl\\1;" \
+	 -e "s;/dev/vx/rdsk/var\\([	 ]\\);/dev/rdsk/$varsl\\1;" \
+	 -e "s;/dev/vx/dsk/home\\([	 ]\\);/dev/dsk/$homesl\\1;" \
+	 -e "s;/dev/vx/rdsk/home\\([	 ]\\);/dev/rdsk/$homesl\\1;" \
+		< $VOLROOT/etc/vfstab > $tmpfile1 || quit 10
+doit mv $tmpfile1 $VOLROOT/etc/vfstab || quit 10
+
+doit rm -f $rootfile $rootsvfile
+
+ewritemsg -M vxvmshm:99 \
+"A shutdown is now required to install the new kernel.
+ After exiting the utility, use shutdown -g0 -i6 -y to
+ shutdown the machine, at your convenience."
+
+quit 10

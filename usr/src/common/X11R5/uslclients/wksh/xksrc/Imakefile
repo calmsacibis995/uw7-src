@@ -1,0 +1,137 @@
+/**/#ident	"@(#)wksh:xksrc/Imakefile	1.4"
+/**/#copyright	"%c%"
+
+LOCAL_LIBRARIES =
+SRCS =
+OBJS =
+
+SUBCFLAGS = -O
+UFLAGS = $(SUBCFLAGS)
+ULDFLAGS =
+LIB_KIND = .a
+LIB_SUFFIX =
+LIBC =
+TYPE=DYN
+LIBDL = -l dl
+
+LIBEDIT = libedit.a
+
+MALLOCOBJ =
+
+#if UTSXENV
+KSHSRC = /x/DTXENV/ksh
+#else
+KSHSRC = $(ROOT)/usr/src/$(WORK)/cmd/ksh
+#endif
+
+KSHINC = $(KSHSRC)/include
+KSHSH = $(KSHSRC)/sh
+KSHSHLIB = $(KSHSRC)/shlib
+
+TARGET = xksh
+
+XKSH_OBJS = extra.o xksh_prpar.o xksh_tbls.o docall.o genlib.o basetbl.o
+
+NORMKSH_OBJS = $(KSHSH)/arith.o \
+		$(KSHSH)/args.o \
+		$(KSHSH)/builtin.o \
+		$(KSHSH)/cmd.o \
+		$(KSHSH)/ctype.o \
+		$(KSHSH)/defs.o \
+		$(KSHSH)/edit.o \
+		$(KSHSH)/echo.o \
+		$(KSHSH)/error.o \
+		$(KSHSH)/expand.o \
+		$(KSHSH)/fault.o \
+		$(KSHSH)/history.o \
+		$(KSHSH)/io.o \
+		$(KSHSH)/jobs.o \
+		$(KSHSH)/macro.o \
+		$(KSHSH)/name.o \
+		$(KSHSH)/print.o \
+		$(KSHSH)/service.o \
+		$(KSHSH)/string.o \
+		$(KSHSH)/stak.o \
+		$(KSHSH)/test.o \
+		$(KSHSH)/word.o \
+		$(KSHSH)/xec.o \
+		$(KSHSH)/emacs.o \
+		$(KSHSH)/vi.o \
+		$(KSHSH)/vfork.o \
+		$(KSHSHLIB)/libsh.a
+
+EXTRA_KSH_OBJS = $(KSHSH)/outmsg.o
+
+SHCONFIGHDR = $(KSHINC)/sh_config.h
+
+CHANGED_KSH_OBJS = msg.o main.o
+
+KSH_OBJS = $(NORMKSH_OBJS) $(CHANGED_KSH_OBJS)
+
+CCOPTIONS = -I. -I$(KSHINC) -DKSHELL -DUSER_PROMPT -DTEST_CODE -Dprintf=altprintf -Dgets=altgets -Dfflush=altflush $(DYNFLAG)
+
+.PRECIOUS: xksh
+
+all:: all$(TYPE)
+
+allDYN: gensym.o $(TARGET) $(TARGET).o
+
+DYNFLAG = -DDYNLIB
+GENSYM_ARGS = kshall.o $(XKSH_OBJS) $(MALLOCOBJ)
+
+$(TARGET): nu$(TARGET)
+	@-rm -f O$@; mv -f $@ O$@ 2>/dev/null; rm -f O$@ $@; ln -f nu$@ $@
+
+nu$(TARGET): $(TARGET).o libforce.so $(MALLOCOBJ)
+	$(CC) $(UFLAGS) $(ULDFLAGS) -o nu$(TARGET) $(TARGET).o $(MALLOCOBJ) -L . -l force $(LIBDL)
+
+$(TARGET).o: kshall.o $(XKSH_OBJS)
+	$(LD) -r $(ULDFLAGS) -o $(TARGET).o kshall.o $(XKSH_OBJS)
+
+link:
+	$(CC) $(UFLAGS) $(ULDFLAGS) $(SUBCFLAGS) -o nu$(TARGET) kshall.o $(XKSH_OBJS) -L . -l force $(LIBDL)
+
+linkback:
+	$(LINKBACK)
+
+libforce.so: gensym.o
+	$(CC) -h /usr/lib/libc.so.1 -G -o $@ gensym.o
+
+gensym.c: gensym kshall.o $(XKSH_OBJS) $(MALLOCOBJ)
+	NM=$(NM) ./gensym gensym.c $(GENSYM_ARGS)
+
+clobber:: clobmine
+
+clobmine:
+	$(RM) -f $(XKSH_OBJS) $(CHANGED_KSH_OBJS); \
+	$(RM) -f xksh nuxksh
+
+kshall.o: $(KSH_OBJS)
+	$(LD) $(ULDFLAGS) -r -o $@ $(KSH_OBJS); \
+	for i in $(EXTRA_KSH_OBJS) ; do \
+		if [ -f $$i ] ; then \
+			$(LD) $(ULDFLAGS) -r -o tmp_$@ $$i $@ -lw ; \
+			$(MV) tmp_$@ $@ ; \
+		fi ; \
+	done
+
+dbmalloc.o: dbmalloc.c
+	$(CC) -g -DMTRACE -c dbmalloc.c
+
+msg.o: msg.c extra.h
+
+main.o: main.c
+
+extra.o: extra.c $(SHCONFIGHDR)
+
+gensym: gensym.sh listsyms
+	@-$(RM) -f gensym
+	@$(CP) gensym.sh gensym; chmod 555 gensym
+
+listsyms: listsyms.sh
+	@-$(RM) -f listsyms
+	@cp listsyms.sh listsyms; chmod 555 listsyms
+
+depend::
+
+install::

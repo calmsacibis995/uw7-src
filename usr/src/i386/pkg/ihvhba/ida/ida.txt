@@ -1,0 +1,77 @@
+The following Release Notes should be read before attempting to 
+use the beta version of the Compaq IDA Host Bust Adapter Driver.
+
+Release Notes for Compaq Intelligent Drive Array (IDA)
+------------------------------------------------------
+
+The Compaq IDA is drive array technology used to distribute data
+across a series of hard disks.  It unites these hard disks into
+a single higher-performance logical drive.  The drive array is
+managed by the Compaq IDA Controller.  All four Compaq IDA 
+controllers -- IDA, IDA-2, IDAE, and SMART -- are supported
+by the Compaq IDA HBA Driver.
+
+
+PLEASE READ THE FOLLOWING INSTALLATION NOTES BEFORE CONTINUING:
+
+
+Installation Notes
+------------------
+
+If you are installing with a SMART controller:
+
+	Insert the Compaq HBA Drivers Diskette when prompted at installation
+	time.  The install will take place using the IDA HBA Driver.
+
+If you are installing with IDA, IDA-2, or IDAE controllers:
+
+	After installation is complete and you have rebooted the system, 
+	insert the Compaq HBA Drivers Diskette and type
+
+		pkgadd -d diskette1 ida
+
+	This will install the IDA HBA Driver and schedule an idbuild
+	for the next time you reboot.  After the next reboot, the IDE
+	emulation will be disabled and you will be running with the
+	IDA HBA Driver.
+
+System Configuration:
+---------------------
+
+Configure logical drives using the Compaq EISA Configuration Utilities
+disk.  The HBA Driver expects the first controller to be installed at
+interrupt 10.  
+
+When configuring multiple IDA controllers, if the boards are not
+in ascending slot order, the iobase address in the System file
+must include the correct slot number (i.e. the iobase address for
+a board in slot 2 would be 2c80 through 2c9f).  If the boards are inserted
+in slot order, the driver will find the controllers and automatically
+detect the boot device.  
+
+If there are multiple controllers installed at the same interrupt, it
+will be necessary to edit the System file, /etc/conf/sdevice.d/ida.
+The driver is installed to detect level-sensitive interrupts, type 4.
+Below is a sample System file with two ida controllers configured.
+
+$version 1
+ida	Y	0	5	4	10	1c80	1c9f	0	0	-1
+ida	Y	-1	5	4	10	2c80	2c9f	0	0	-1
+
+The unit number field of the System file should be -1 for all controllers
+except the boot controller, which should be unit number 0.
+
+Tested Configurations:
+----------------------
+SMART controller as bootable controller with 1 and 2 logical drives.
+
+SMART controller as bootable controller with 1 logical drive and 
+	IDAE controller with one drive.
+
+IDA-2 controller as bootable controller with 1 and 2 logical drives.
+
+IDA-2 controller as bootable controller with 1 logical drive and 
+	IDA controller with one drive. 
+
+IDA controller as bootable controller with 1 logical drive.
+

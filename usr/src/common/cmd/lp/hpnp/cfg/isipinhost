@@ -1,0 +1,57 @@
+#!/bin/ksh
+#ident	"@(#)isipinhost	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  check if ip address already used in /etc/hosts
+#
+
+if [ ! -f "$HOSTTABLE" ]
+then
+	echo "ERROR: $HOSTTABLE doesn't exist."
+	exit 1
+fi
+
+if [ -n "$1" ]
+then
+	IPADDR="$1"
+else
+	echo "No ip-address parameter supplied in call to $0"
+	exit 3
+fi
+
+#
+# Put backslashes in front of dots before looking
+# up address.
+#
+IPADDR=`echo $IPADDR | sed -e "s/\./\\\\\./g"`
+if grep "^$IPADDR[     ]*[A-z]*" "$HOSTTABLE" >/dev/null 2>&1
+then
+	exit 0
+else
+	exit 4
+fi
+
+#rm $TMP/HOSTNAME > /dev/null 2>&1
+#awk '$1 == '\"$IPADDR\"' { print $2}' $HOSTTABLE > $TMP/HOSTNAME 
+#cat $TMP/HOSTNAME | egrep '[a-z|A-Z]' > /dev/null 2>&1
+
+#if [ $? -eq 0 ]
+#then
+#	rm $TMP/HOSTNAME > /dev/null 2>&1
+#	exit 0
+#else
+#	exit 4
+#fi

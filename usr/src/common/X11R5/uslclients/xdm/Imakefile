@@ -1,0 +1,191 @@
+#ident	"@(#)xdm:Imakefile	1.39.1.14"
+
+XCOMM $XConsortium: Imakefile,v 1.58 91/08/22 14:24:45 rws Exp $
+
+#include <Motif.tmpl>
+#include <Motif.rules>
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+/*
+ * InstallMsgCatalog_1 - the original xdm's catelog message file
+ *	contains too many un-used messages, and also some messages
+ *	will need to change the "\n" location(s) because the movement
+ *	to Motif library. Given these two reasons, a new catelog
+ *	message file is created to replace the older one (i.e., from
+ *	dtlogin.str to xdm.str), to avoid the pdelete/padd headache,
+ *	the old name (dtlogin.str) will still be used in SCCS, it will
+ *	use the new name (xdm.str) at the installation time. 
+ */
+#undef InstallMsgCatalog_1
+#define InstallMsgCatalog_1(this_name,that_name)	@@\
+install::this_name.str					@@\
+	MakeDir($(MSGCATDIR))				@@\
+	$(INSTALL) $(INSTALLFLAGS) this_name.str $(MSGCATDIR)/that_name.str
+
+/* use #define USE_TESTGUI for more GUI  for debug messages, and tstgui */
+#undef USE_TESTGUI
+
+#ifdef USE_TESTGUI
+DASH_D_TESTGUI = -DTESTGUI
+#endif
+
+#if HasXdmAuth
+XDMAUTH_DEFINES = -DHASXDMAUTH
+XDMAUTHOBJS = xdmauth.o
+XDMAUTHSRCS = xdmauth.c
+#endif
+
+#define	USE_IAF
+
+#ifdef USE_IAF
+IAFLIB = -lcmd -liaf
+#else
+IAFLIB =
+#endif
+
+#if HasXdmAuth
+XDMAUTH_DEFINES = -DHASXDMAUTH
+XDMAUTHOBJS = xdmauth.o
+XDMAUTHSRCS = xdmauth.c
+#endif
+
+#if HasSecureRPC
+RPC_DEFINES = -DSECURE_RPC
+RPCOBJS = rpcauth.o
+RPCSRCS = rpcauth.c
+RPCLIB = -lrpcsvc
+#endif
+
+#if SystemV4 || HasShadowPasswd
+PWD_DEFINES = -DUSESHADOW
+#if SystemV
+SYS_LIBRARIES = -lsec
+#endif
+#endif
+
+#ifdef IHaveSubDirs
+#undef InstallXdmConfig
+#define InstallXdmConfig YES
+#endif
+
+   XDMCONFIGDIR = XdmConfigurationSubdirectory
+        SUBDIRS = $(XDMCONFIGDIR) copyright
+
+
+       INCLUDES = -I$(LIBSRC) -I$(TOP)/X11 -I$(TOP)/uslclients/libMDtI
+
+DEPLIBS = $(DEPXMULIB) \
+          $(DEPXTOOLLIB) $(DEPXLIB) $(TOP)/lib/Xau/libXau.a \
+          $(TOP)/lib/Xdmcp/libXdmcp.a
+
+DTLIBSRC = $(LIBSRC)/Dt
+DTLIB = $(DTLIBSRC)/libDt.so
+
+EXTRA_LIBRARIES =
+
+LOCAL_LIBRARIES = $(DTLIB) $(TOP)/uslclients/libMDtI/libMDtI.so\
+		  XmClientLibs $(XMULIB)\
+                  $(TOP)/lib/Xau/libXau.a $(TOP)/lib/Xdmcp/libXdmcp.a \
+                  -lnsl $(IAFLIB) -lsocket $(MEMUTILLIB)
+
+LDLIBS=
+LOCAL_LIBRARIES_2 = $(TOP)/uslclients/libMDtI/libMDtI.so XmClientLibs -lnsl
+
+        LDOPTIONS = $(CDEBUGFLAGS) $(CCOPTIONS) $(LOCAL_LDFLAGS)
+
+          SRCS1 = auth.c daemon.c server.c dpylist.c dm.c error.c file.c \
+		  greet.c netaddr.c reset.c resource.c protodpy.c policy.c \
+		  session.c socket.c streams.c util.c verify.c xdmcp.c \
+		  ggt.c \
+		  dtlogin.c mitauth.c xdmutmp.c ptty.c \
+		  genauth.c access.c choose.c $(XDMAUTHSRCS) $(RPCSRCS)
+          OBJS1 = auth.o daemon.o server.o dpylist.o dm.o error.o file.o \
+		  greet.o netaddr.o reset.o resource.o protodpy.o policy.o \
+		  session.o socket.o streams.o util.o verify.o xdmcp.o \
+		  ggt.o \
+		  dtlogin.o mitauth.o xdmutmp.o ptty.o \
+		  genauth.o access.o choose.o $(XDMAUTHOBJS) $(RPCOBJS)
+          SRCS2 = ggt.c nondesktop.c
+          OBJS2 = ggt.o nondesktop.o
+       DEPLIBS3 = $(TOP)/lib/Xdmcp/libXdmcp.a
+          LIBS3 = $(TOP)/lib/Xdmcp/libXdmcp.a
+       
+       PROGRAMS = xdm nondesktop
+
+ OSMAJORVERSION = OSMajorVersion
+ OSMINORVERSION = OSMinorVersion
+        DEFINES = -DBINDIR=\"$(BINDIR)\" -DXDMDIR=\"$(XDMDIR)\" \
+		$(SIGNAL_DEFINES) $(XDMAUTH_DEFINES) $(RPC_DEFINES) \
+		$(PWD_DEFINES) ConnectionFlags \
+		-DOSMAJORVERSION=$(OSMAJORVERSION) \
+		-DOSMINORVERSION=$(OSMINORVERSION) $(DASH_D_TESTGUI)
+
+XCOMM
+XCOMM Special definitions for compiling default resources; these parameters
+XCOMM should be set in util/imake.includes/site.def or the appropriate .macros
+XCOMM file in that directory.  The lack of initial spaces is to prevent imake
+XCOMM from accidently turning the lines into rules by putting a leading tab.
+XCOMM
+XCOMM Do NOT change these lines!
+XCOMM
+DEF_SERVER = $(XWINBINDIR)/X
+DEF_USER_PATH = DefaultUserPath		/* no leading spaces or imake will */
+DEF_SYSTEM_PATH = DefaultSystemPath	/* indent as rule */
+BOURNE_SHELL = DefaultSystemShell
+RES_DEFINES = '-DDEF_SERVER_LINE=":0 local $(DEF_SERVER) :0"' \
+		  '-DXRDB_PROGRAM="$(XWINBINDIR)/xrdb"' \
+		  '-DDEF_USER_PATH="$(DEF_USER_PATH)"' \
+		  '-DDEF_SYSTEM_PATH="$(DEF_SYSTEM_PATH)"' \
+		  '-DDEF_SYSTEM_SHELL="$(BOURNE_SHELL)"' \
+		  '-DDEF_FAILSAFE_CLIENT="$(XWINBINDIR)/nondesktop"' \
+		  '-DDEF_XDM_CONFIG="$(XWINLIBDIR)/xdm/xdm-config"' \
+                  '-DDEF_LINK_PATH="$(XWINLIBDIR)"' \
+		  '-DDEF_CHOOSER="$(XWINLIBDIR)/xdm/chooser"' \
+		  '-DDEF_AUTH_DIR="/dev/X"'
+#ifdef USE_IAF
+VER_DEFINES = -DUSE_IAF
+#endif
+
+#if UslLocalityTuning
+CCOPTIONS = $(FURCCOPTIONS)
+#endif
+CC = LD_RUN_PATH=$(XWINLIBDIR) $(PFX)cc
+MComplexProgramTarget_1(xdm,$(LOCAL_LIBRARIES),$(SYSLIBS))
+
+#if UslLocalityTuning
+FurMComplexProgramTarget_1(xdm,$(LOCAL_LIBRARIES),$(SYSLIBS))
+
+install:: xdm
+	$(INSTALL) -c $(INSTPGMFLAGS) xdm.F $(DESTDIR)$(BINDIR)
+	$(MV) $(DESTDIR)$(BINDIR)/xdm $(DESTDIR)$(BINDIR)/xdm.nf
+	$(MV) $(DESTDIR)$(BINDIR)/xdm.F $(DESTDIR)$(BINDIR)/xdm
+#endif
+
+MComplexProgramTarget_2(nondesktop,$(LOCAL_LIBRARIES_2),$(SYSLIBS))
+
+#ifdef USE_TESTGUI
+LOCAL_LIBRARIES_3 = ../../lib/Dt/xpm.o $(LOCAL_LIBRARIES_2)
+SRCS3 = getinp.c dtlogin.c greet.c ggt.c
+OBJS3 = $(SRCS3:.c=.o)
+
+MComplexProgramTarget_3(tstgui,$(LOCAL_LIBRARIES_3),$(SYSLIBS))
+#endif
+
+SpecialObjectRule(resource.o, $(ICONFIGFILES), $(RES_DEFINES))
+
+#ifdef USE_IAF
+SpecialObjectRule(verify.o, $(ICONFIGFILES), $(VER_DEFINES))
+#endif
+
+InstallMsgCatalog_1(dtlogin,xdm)
+InstallMsgCatalog(nondesktop)
+
+XCOMM these files depend on HASXDMAUTH
+auth.o policy.o: $(ICONFIGFILES)
+
+#ifdef IHaveSubdirs
+MakeDirectories(install,$(XDMDIR))
+MakeSubdirs($(SUBDIRS))
+#endif

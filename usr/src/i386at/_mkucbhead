@@ -1,0 +1,32 @@
+#ident	"@(#)mk:i386at/:mkucbhead	1.1.1.3"
+#ident	"$Header$"
+
+#
+#	Install UNIX System Compatibility Package header files
+#
+echo "START `basename $0` `date`"
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+
+Srcdir=${Root}/usr/src/${Work}/ucbhead
+Targdir=${Root}/${Mach}/usr/ucbinclude
+TMPFILE=/tmp/ucbhead$$
+
+[ -d ${Targdir} ] || mkdir ${Targdir}
+
+trap "exit 1" 1 2 3 15
+
+#	Determine files to be processed
+echo "$0: Copying ucb headers to ${Targdir}"
+cd ${Srcdir}
+find . -depth -follow -print|cpio -pdmuL ${Targdir}
+
+#	Set file permissions
+cd ${Targdir}
+find . -type f -print|xargs chmod 0644
+
+echo "ENDED `basename $0` `date`"
+exit 0

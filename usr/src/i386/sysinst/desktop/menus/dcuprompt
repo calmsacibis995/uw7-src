@@ -1,0 +1,200 @@
+#ident	"@(#)dcuprompt	15.1"
+
+function gethba
+{
+# gethba ( IHVHBAMODS_indx )
+
+[ -n "$SH_VERBOSE" ] && set -x
+integer _t
+typeset mods module loadname 
+integer hba_err
+
+HBA_PROMPT="${IHVHBAS[$1]}"
+
+while :
+do
+	hba_err=0
+	if sh_mount -Fs5 -r /dev/dsk/f0t ${FLPY} 2>/dev/null || sh_mount -Fdosfs -r /dev/dsk/f0t ${FLPY} 2>/dev/null|| sh_mount -Fs5 -r /dev/dsk/f1t ${FLPY} 2>/dev/null || sh_mount -Fdosfs -r /dev/dsk/f1t ${FLPY} 2>/dev/null
+	then
+		if [ -f ${FLPY}/etc/loadmods -a -f ${FLPY}/etc/load.name ]
+		then
+			grep -v '^$' ${FLPY}/etc/load.name | read loadname
+			[ ! "${IHVHBAS[$1]}" = "$loadname" ] && hba_err=1
+		else
+			hba_err=1
+
+		fi
+
+		sh_umount ${FLPY}
+	else
+		hba_err=1
+	fi
+
+	case $hba_err
+	in
+	0 ) 	footer ""	#clear footer on exit
+		break ;;
+	*) # inserted the hba diskette.
+		place_window $HBA_REINSERTCols $HBA_REINSERTLines+5 -fg $WHITE -bg $BLUE
+		wprintf $CURWIN "$HBA_REINSERT"
+		_t=${#HBA_PROMPT}/2
+		wgotoxy $CURWIN $HBA_REINSERTCols/2-$_t  $HBA_REINSERTLines+1
+		wprintf $CURWIN "$HBA_PROMPT\n"
+		footer "$HBA_FOOTER"
+		call getkey
+		wclose $CURWIN
+		;;
+	esac
+done
+
+for module in ${IHVHBAMODS[$1]} ${IHVHBASTUBS[$1]}
+do
+	[ ! -f /etc/conf/mod.d/$module ] && mods="$mods $module"
+done
+
+(( HBA_MEM_LIMIT < 0 )) && let HBA_MEM_LIMIT*=-1
+loadihv LOAD_MOD "$mods"
+
+}
+
+function dcuprompt
+{
+	typeset _t module lmod
+	integer indx=1 cnt
+	typeset -L20 ffn
+
+	do_DCU=false
+	$SILENT_INSTALL || {
+		display "$DCUprompt" -below 4
+		_t=$CURWIN
+		DCU_choice
+		input_handler
+		wclose $_t
+	}
+	if $do_DCU 
+	then
+		[ -z "$*" ] && wclose $CURWIN
+		footer
+		msg
+		save_ihv_info
+		/sbin/dcu -N 2>/dev/null
+		load_ihv_info
+		place_window  $Floppy2WaitCols $Floppy2WaitLines
+		_t="$CURWIN"
+		wprintf $CURWIN "$Floppy2Wait"
+		footer "$GENERIC_WAIT_FOOTER"
+	else
+		$SILENT_INSTALL || {
+			place_window  $Floppy2WaitCols $Floppy2WaitLines
+			_t="$CURWIN"
+			wprintf $CURWIN "$Floppy2Wait"
+			footer "$GENERIC_WAIT_FOOTER"
+		}
+		save_ihv_info
+		/sbin/dcu -N -S 2>/dev/null
+		load_ihv_info
+	fi
+
+	while  [ "${IHVHBAS[indx]}" != END ]
+	do
+		cnt=0
+		for module in ${IHVHBAMODS[indx]} ${IHVHBASTUBS[indx]}
+		do
+			# Skip it if we already tried this module
+			for lmod in $LOADED_MODS $NOT_LOADED_MODS
+			do
+				[ $module = $lmod ] && continue 2
+			done
+
+			$SILENT_INSTALL || {
+				ffn=$module
+				wprintf $_t "\r%s $ffn"
+			}
+			(( $1 == 0 )) && [ ! -f /etc/conf/mod.d/${module} ] && gethba $indx
+			if [ ! -f /etc/conf/mod.d/${module} ]
+			then
+				badhba $module
+				>/etc/conf/mod.d/$module  # keep a dummy 
+				continue
+			fi
+			
+			if sh_modadmin -l /etc/conf/mod.d/${module} >/dev/null 2>&1
+			then
+				LOADED_MODS="$LOADED_MODS $module"
+				if [ -n "${IHVHBASTUBS[indx]}" ]
+				then
+					case "${IHVHBASTUBS[indx]}"
+					in
+					*${module}*)
+						;;
+					*)
+						let cnt+=1
+						;;
+					esac
+				else
+					let cnt+=1
+				fi
+			else
+				NOT_LOADED_MODS="$NOT_LOADED_MODS $module"
+			fi
+			>/etc/conf/mod.d/$module  # keep a dummy 
+		done
+		(( cnt == 0 )) && IHVHBAS[indx]=""
+		let indx+=1
+			
+	done
+
+ 	for module in ${IHVHBAMODS[0]}
+	do
+		# Skip it if we already tried this module
+		for lmod in $LOADED_MODS $NOT_LOADED_MODS
+		do
+			[ $module = $lmod ] && continue 2
+		done
+
+		$SILENT_INSTALL || {
+			ffn=$module
+			wprintf $_t "\r%s $ffn"
+		}
+		modreg 6 $module
+		sh_modadmin -l $module >/dev/null 2>&1 || {
+			NOT_LOADED_MODS="$NOT_LOADED_MODS $module"
+			continue
+		}
+		LOADED_MODS="$LOADED_MODS $module"
+	done
+
+	[ -n "$NOT_LOADED_MODS" ] && {
+		/sbin/dcu -D $NOT_LOADED_MODS >/dev/null 2>&1
+	}
+	$SILENT_INSTALL || {
+		wclose $_t
+		/sbin/dcu -C 2>/dev/null
+	}
+}
+
+function DCU_choice
+{
+	if [ -z "${DCU_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A DCU_OPT ${DCU_CHOOSE}
+		IFS="$OIFS"
+	fi
+	DCU=$DCU_OPT
+	CHOOSE_FOOTER="$FDFS_FOOTER"
+	choose -f -e -exit DCU_exit -help "helpwin dcu.select" -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$DCU" "${DCU_OPT[@]}"
+}
+
+function DCU_exit
+{
+	case $CHOICE in
+	${DCU_OPT[0]})
+		do_DCU=false
+		;;
+	${DCU_OPT[1]})
+		do_DCU=true
+		;;
+	esac
+}

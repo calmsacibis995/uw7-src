@@ -1,0 +1,114 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.rm.sh	1.2 3/3/97 03:21:41 - cmd.vxvm:common/voladm/disk.rm.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.rm.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push RemoveDisk
+voladm_help_push disk.rm.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:329 "Remove a disk"
+	ewritemsg -M vxvmshm:558 \
+"Use this operation to remove a disk from a disk group.  This
+  operation takes, as input, a disk name.  This is the same name
+  that you gave to the disk when you added the disk to the disk
+  group."
+	voladm_get_disk_dmname
+	rm_dmname=$dmname
+	rm_dgname=$dgname
+
+	vxckdiskrm -g "$dgname" "$dmname" > $tmpfile1 2> $tmpfile2
+	status=$?
+	if [ $status -eq 18 ]
+	then
+		export dmname dgname; ewritemsg -M vxvmshm:172 \
+"Disk $dmname cannot be removed from disk group $dgname because
+  it is the last disk in the disk group.  You may want to remove
+  the disk group instead.  To remove the disk group, quit from this
+  operation and select \\\"Disable access to (deport) a disk group\\\"
+  from the main disk operations menu."
+		voladm_yorn -M vxvmshm:328 "Remove a different disk?" n && continue
+		break
+	elif [ $status -ne 0 ] && [ $status -ne 17 ]
+	then
+		export tmpfile2; ewritemsg -M vxvmshm:512 "Unexpected error: `cat $tmpfile2`"
+		voladm_yorn -M vxvmshm:328 "Remove a different disk?" n && continue
+		break
+	fi
+	if [ -s $tmpfile1 ]
+	then
+		vlist=
+		exec 3<&0 < $tmpfile1
+		while read vname state open
+		do
+			append_list vlist "$vname"
+		done
+		exec 0<&3 3<&-
+		export dmname vlist; ewritemsg -M vxvmshm:434 \
+"The following volumes currently use part of disk $dmname:
+
+  	$vlist
+
+  Volumes must be moved from $dmname before it can be removed."
+		voladm_yorn -M vxvmshm:282 "Move volumes to other disks?" n
+		if [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:328 "Remove a different disk?" n && continue
+			break
+		fi
+		doit vxevac $v_opt -g "$dgname" "$dmname"
+		if [ $? -ne 0 ]
+		then
+			ewritemsg -M vxvmshm:369 \
+"Some volumes cannot be removed from the disk.  The disk cannot
+  be removed.  If you still wish to remove the disk, you will need
+  to remove all remaining volumes from that disk manually."
+			voladm_yorn -M vxvmshm:328 "Remove a different disk?" n && continue
+			break
+		fi
+	fi
+
+	export dmname dgname; ewritemsg -M vxvmshm:344 \
+	 "Requested operation is to remove disk $dmname from group $dgname."
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn -M vxvmshm:328 "Remove a different disk?" n && continue
+		break
+	fi
+
+	doit vxdg -g "$dgname" rmdisk "$dmname" 2> $tmpfile1
+	if [ $? -eq 0 ]
+	then
+		export dmname; ewritemsg -M vxvmshm:326 "Removal of disk $dmname is complete."
+		voladm_yorn -M vxvmshm:332 "Remove another disk?" n || break
+	else
+		export dmname tmpfile1; ewritemsg -M vxvmshm:324 \
+"Removal of disk $dmname failed.
+  Error: `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:328 "Remove a different disk?" n || break
+	fi
+done
+
+quit 0

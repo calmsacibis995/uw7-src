@@ -1,0 +1,84 @@
+#ident	"@(#)pat:pat.man	1.2"
+
+pat(1)
+
+NAME
+	pat - patch ELF or COFF or data file, or running kernel memory
+
+SYNOPSIS
+	/usr/sbin/pat [-trn] binfile sym[+hexoffset] oldhex [= newhex] [sym2...]
+
+DESCRIPTION
+	binfile should be an ELF or COFF object, archive or executable.
+	Or if given 0xhex in place of sym, it may be any data file, to
+	patch at absolute hex[+hexoffset] instead of relative to symbol.
+
+	oldhex and newhex may be in bytes (e.g. b0 b1 b2 00),
+	in shorts (e.g. b1b0 00b2) or in longs (e.g. 00b2b1b0).
+	Use . for a "wildcard" digit, to match any digit found
+	e.g. for relocatable addresses embedded in instructions.
+
+	There may be any number of "sym[+hexoffset] oldhex [= newhex]"
+	patches in one invocation on binfile.  If optional "= newhex"
+	is omitted, pat simply verifies oldhex, without attempting to
+	patch.  No newhex patches are made unless all the oldhex matches.
+
+	pat displays absolute file offsets, with values found and patched.
+	All offsets and values shown are in hexadecimal.  All offsets and
+	values given must be in hexadecimal.
+
+    Options
+	pat recognizes the following options:
+
+	-t  pretends to patch, for testing pat scripts without modifying.
+
+	-r  reverses direction of patches (oldhex<->newhex) to remove them.
+
+	-n  patches /dev/kmem, using binfile to resolve local symbols only:
+	    binfile should be /stand/unix, or the Dynamically Loaded Module.
+	    The symbol "myengnum" (or "processor_index" on SCO OpenServer 5)
+	    is treated specially in this case: binding pat to the given
+	    engine, so that subsequent per-engine addresses may be patched.
+
+    Errors
+	pat returns the following values:
+
+	0    All oldhex matched, all newhex was patched:
+	     values found and values patched are displayed
+
+	1    All newhex matched, no patch was required:
+	     values found are displayed, no error message
+
+	2    Neither oldhex nor newhex matched, file was not patched:
+	     values found are displayed, no error message
+
+	3    Could not find sym, or sym[+hexoffset] was unpatchable,
+	     file was not patched: error message only is shown
+
+	4    Error in reading or writing binfile (or /dev/kmem):
+	     error message only is shown (in the unlikely event that
+	     the file was partly patched, that is noted in the message)
+
+	5    Illegal syntax, file was not patched: error message is
+	     shown, in some cases accompanied by usage description
+
+REFERENCES
+	crash(1M), dis(1), elf(3E), getksym(2), kmem(7), nlist(3E), touch(1)
+	
+NOTICES
+	Unauthorized patching is strongly discouraged.  Patching can
+	easily endanger the integrity of your system.  pat is provided
+	as a tool for use under the direction of SCO Support Services.
+
+	Please make a note of all patches applied, and inform SCO
+	Support Services of them when reporting any problem.  SCO
+	will not support problems introduced by unauthorized patches.
+
+	If a file in a system package is patched, it may later become
+	impossible to remove that package, unless the patch is removed
+	first.  To permit complete removal of patches, pat leaves the
+	modification time of the patched file as it was before patching
+	(when pat is used by root or by the owner of the file).  If you
+	prefer modification time to be updated, use touch(1) after pat.
+
+	Copyright 1997 SCO, Inc.

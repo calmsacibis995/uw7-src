@@ -1,0 +1,113 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxswapreloc.sh	1.3 9/16/97 11:56:36 - cmd.vxvm:unixware/support/vxswapreloc.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxswapreloc.sh	1.3"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+# This file contains commands to be executed after the root fsck but before
+# anything else on the system executes.
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+fsfile=$SYSROOT/etc/vfstab
+
+
+bail()
+{
+	grep -v $rootdisk $pcaplist > $tmpfile1
+	mv $tmpfile1 $pcaplist
+	if not [ -s $pcaplist ]; then
+		rm -f $pcapfile
+		sync
+	fi
+	rm -f $relfile
+	sync
+	ewritemsg -M vxvmshm:320 "Rebooting to recover from swap relocation changes."
+	uadmin 2 1
+}
+
+trap bail INT TERM QUIT HUP
+
+set_OS_variables
+set_rootdisk
+ewritemsg -M vxvmshm:387 \
+	"The Volume Manager is now reconfiguring swap and stand."
+
+dogi_device_rawpath $rootdisk rootrpath
+
+if [ -f $reltmpslcfile ]; then
+	ewritemsg -M vxvmshm:153 "Creating temporary relocation partition ..."
+	xcmd grep '^#reloc-slice' $DISKDIR/$rootdisk/newpart > $tmpfile1
+	exec 3<&0 < $tmpfile1
+	while read id slice tag flags start size; do
+		vxpartadd $rootrpath $slice $tag $flags $start $size
+		[ $? != 0 ] && bail
+	done
+	exec 0<&3 3<&-
+	rm -f $reltmpslcfile
+	sync
+	ewritemsg -M vxvmshm:319 \
+		"Rebooting system to enable temporary relocation partition."
+	uadmin 2 1
+fi
+
+if [ -f $relsavefile ]; then
+	xcmd grep '^#reloc-save' $DISKDIR/$rootdisk/newpart > $tmpfile1
+	exec 3<&0 < $tmpfile1
+	while read id fdev foff tdev toff len; do
+		export fdev foff tdev toff len
+		ewritemsg -M vxvmshm:351 \
+			"Saving /stand: copy $fdev $foff $tdev $toff $len"
+		vxswapcopy $fdev $foff $tdev $toff $len
+		[ $? != 0 ] && bail
+	done
+	exec 0<&3 3<&-
+	rm -f $relsavefile
+	sync
+fi
+
+if [ -f $relvtocfile ]; then
+	grep '^##' $DISKDIR/$rootdisk/newpart > $tmpfile1
+	sed -e 's/^##//' $tmpfile1 > $tmpfile2
+	ewritemsg -M vxvmshm:152 \
+		"Creating temporary relocated boot partitions..."
+	LC_ALL=C export LC_ALL
+	echo y | $EDVTOC -f $tmpfile2 $rootrpath 2>&1 > /dev/null || bail
+	rm -f $relvtocfile
+	sync
+fi
+
+if [ -f $relrestfile ]; then
+	xcmd grep '^#reloc-restore' $DISKDIR/$rootdisk/newpart > $tmpfile1
+	exec 3<&0 < $tmpfile1
+	while read id fdev foff tdev toff len; do
+		export fdev foff tdev toff len
+		ewritemsg -M vxvmshm:346 \
+			"Restoring /stand: copy $fdev $foff $tdev $toff $len"
+		vxswapcopy $fdev $foff $tdev $toff $len
+		rm -f $relrestfile
+		sync
+	done
+	exec 0<&3 3<&-
+	echo
+	rm -f $relfile $relrestfile
+	sync
+fi

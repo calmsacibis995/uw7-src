@@ -1,0 +1,44 @@
+#ident	"@(#)r5fonts:lib/font/fontfile/Imakefile	1.3"
+
+XCOMM $Header$
+XCOMM $XConsortium: Imakefile,v 1.5 91/07/22 22:21:11 rws Exp $
+
+#if SharedFontLibraries
+EXTRA_DEFINES = -KPIC
+#endif
+
+#include <Server.tmpl>
+
+        INCLUDES = -I$(FONTSRC)/include -I../include -I$(FONTSERVERSRC)/include
+         HEADERS = 
+       RENDERERS = 
+
+#ifdef FontFormatDefines
+     FORMAT_DEFS = FontFormatDefines
+#endif
+            SRCS = dirfile.c fontdir.c fontfile.c fontscale.c \
+	    	   fontutil.c defaults.c bitsource.c renderers.c
+            OBJS = dirfile.o fontdir.o fontfile.o fontscale.o \
+	    	   fontutil.o defaults.o bitsource.o renderers.o
+
+SubdirLibraryRule($(OBJS))
+.c.o:
+	@if [ -d native ]; then exit 0; else set -x; mkdir native; fi
+	$(RM) $@ native/$@
+	$(HCC) -c $(HCFLAGS) $(_NOOP) $*.c
+	$(MV) $@ native/$@
+	$(RM) $@
+	$(CC) -c $(CFLAGS) $(_NOOP) $*.c
+
+clean::
+	-@if [ -d native ]; then \
+	(set -x; cd native; $(RM) *.o); else exit 0; fi
+
+includes::
+
+/* NormalLibraryObjectRule() */
+NormalLintTarget($(SRCS))
+
+
+DependTarget()
+

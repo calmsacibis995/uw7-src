@@ -1,0 +1,126 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/README	1.4.5.3"
+#ident "$Header$"
+
+SEE THE NOTES ON EFFICIENCY AT THE END OF THIS FILE.
+
+/etc/init.d contains initialization and termination scripts for changing
+init states.  These scripts are linked when appropriate to files in the
+rc?.d and dinit.d directories.  File names in these directories are
+of the form [SK]nn<init.d filename> where 'S' means start this job, 'K'
+means kill this job, and 'nn' is the relative sequence number for
+killing or starting the job.  When entering a state (init 0,2,3,etc.)
+the rc[0-6] command executes those scripts in /etc/rc[0-6].d that are 
+prefixed with 'K' followed by those scripts prefixed with 'S'.
+The dinit command processes the scripts in dinit.d in a similar
+way, and runs in the background on entering multiuser state.  This
+is an attempt to provide a login prompt as early as feasible.
+
+EXAMPLE: When changing to init state 2 (default multi-user mode),
+	/sbin/rc2 is initiated by the init process. The following
+	steps are performed by /sbin/rc2.
+
+	1. In the directory /etc/rc2.d are files used to stop processes 
+	that should not be running in state 2.  The filenames
+	are prefixed with 'K'.  Each 'K'  file in the directory is
+	executed (by /sbin/rc2) in alpha-numeric order when the system 
+	enters init state 2.  (see example under next item).
+
+	2. Also in the rc2.d directory are files used to start
+	processes that should be running in state 2.  As in the step
+	above, each 'S' file is executed.
+
+	Example:
+
+		The file /etc/netdaemon is a script that will initiate
+		networking daemons when given the argument 'start',
+		and will terminate the daemons if given the argumant
+		'stop'.  It is linked to /etc/rc2.d/S68netdaemon,
+		and to /etc/rc0.d/K67netdaemon.  The file is executed
+		by '/etc/rc2.d/S68netdaemon start' when init state 2
+		is entered and by '/etc/rc0.d/S67netdaemon stop' when
+		shutting the system down.  (But see the NOTES ON
+		EFFECIENCY BELOW.)
+
+NOTE:
+/sbin/rc2 has references to the obsolescent 'rc.d' directory.  These
+references are for compatibility with old INSTALL scripts. New
+INSTALL scripts should use the init.d directory for related executables.
+The same is true for the shutdown.d directory.
+
+NOTES ON EFFICIENCY:
+
+Boot and shutdown performance are interesting to a large class of users.
+These notes give some hints for providing efficient /etc/init.d
+scripts, which are critical to fast boot/shutdown.  The rc? and dinit
+commands are assumed to be run only by shutdown and init.  This makes
+several optimizations possible in the /etc/init.d scripts.
+
+It is easy to recognize "normal" boot from power off or firmware to
+multiuser; "normal" shutdown from multiuser to power off or firmware;
+and administrative shutdown to run state 1.  The rc? and dinit commands
+put enough information in the environment for the rc?.d scripts to avoid
+running who and ps to try to figure out how much work to do.
+
+	_AUTOBOOT - If this string is nonzero in the environment,
+	the system is going multiuser for the first time.  An
+	rc[23].d/S* link is free to assume that none of its startup
+	work has yet been done, and therefore does not have to run
+	ps, for example, to see if daemons have already been started.
+
+	Example:
+
+	start )
+
+	pid=
+	if [ -z "$_AUTOBOOT" ]
+	then
+		set -- `ps -e | grep ' daemon$'`
+		[ $? -eq 0 ] && pid=$1
+	fi
+	if [ -z "$pid" ]
+	then
+		daemon&
+	fi
+
+	_AUTOKILL - If this string is nonzero in the environment, the
+	system is either (1) going down to firmware or power off, or
+	(2) going to run level 1.  In either case the rc? script will
+	issue a killall -9 after running the rc[10].d/K* scripts.
+	This implies that rc[10].d/K* scripts need not and should not
+	issue a kill -9 to their daemons, and usually need not
+	explicitly tear down protocol stacks, etc.  In fact, except
+	for packages that monitor daemons that write administrative
+	databases, e.g., keymaster and lp, few init.d scripts need
+	links to rc[01].d.
+
+	Example:
+
+	stop )
+	if [ -n "$_AUTOKILL" ]
+	then
+		exit 0
+	fi
+	pid=
+	set -- `ps -e | egrep ' daemon$'`
+	[ $? -eq 0 ] && pid=$1
+	if [ -n "$pid" ]
+	then
+		kill -9 $pid 2>/dev/null
+	fi
+
+	_CURR_RL, _CURR_NTIMES, _PREV_RL - These are put into the
+	environment for scripts that need more information than
+	encoded _AUTOBOOT and _AUTOKILL.  This will not be the
+	case for most well-written scripts.
+
+		_CURR_RL - The current run-level.
+
+		_CURR_NTIMES - The number of times the current run-level
+		was previously entered.
+
+		_PREV_RL - The previous run level.
+
+Something that bears emphasizing:  Most init.d scripts do not need rc0.d/K
+or rc1.d/K entries unless exceptional cleanup is needed, because rc0 and
+rc1 issue killall -9 commands.  Keeping rc[01].d small improves the
+possibilities for quick shutdown.

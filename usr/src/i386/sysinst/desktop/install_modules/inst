@@ -1,0 +1,1488 @@
+#!/sbin/sh
+
+#ident 	"@(#)inst	15.4	98/01/18"
+
+#
+# Since we do debugging output, reset the terminal.
+# This will be undone when the winxksh scripts are dotted in.
+# Remove this and the debuggind echo's later.
+#
+stty sane
+
+
+. /funcrc
+. /isl/ivar.ksh
+. /isl/exit_codes.ksh
+
+LANG=`ivar get LANG`
+[ -z "$LANG" ] && LANG=C
+export LANG
+
+export INIT_SCREEN=true
+
+# JTB experimental
+    . /etc/inst/locale/$LANG/menus/inst.txtstrings
+    . /etc/inst/locale/$LANG/menus/partition_sys.txtstrings
+    . /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+    . /etc/inst/locale/$LANG/menus/pkginst.txtstrings
+# end JTB experimental
+
+    . /etc/inst/locale/$LANG/menus/global.txtstrings
+    . /etc/inst/scripts/winrc
+    . /etc/inst/scripts/scr_init
+    . /etc/inst/scripts/choose
+    . /globals.sh
+    . /etc/inst/scripts/tools
+unset INIT_SCREEN
+
+# must remove when the ivar have been set by rusure module
+. /isl/disk.info
+. /isl/partition.info
+. /isl/slice.info
+
+
+# check to see if debugging is turned on, if so place all debug logs into
+# the log file which will exist in the /tmp/log directory
+
+ if ivar check debug_inst
+     then
+        exec 2>> /tmp/log/inst
+        set -x
+        date 1>&2
+        debug=True
+        SH_VERBOSE=True; export SH_VERBOSE
+    fi
+
+# export all the ivar variables into this ksh environment
+# will remove this section to increase performance when 
+# all the ivar variables that are needed have been flushed out
+
+export SILENT_INSTALL=true
+ivar set SILENT_INSTALL true
+ivar set PKGINSTALL NEWINSTALL
+ivar set ROOTFS ${SLTYPE[1]}
+ivar save
+
+
+set -a	# export ifile variables
+. /isl/ifile
+set +a
+
+#       typeset varline vartemp  bval 
+#       while read varline
+#          do
+#	    vartemp=${varline%%=\"*\"}
+#	
+#	    #
+#	    # If it has a . in it, it's not a valid var name
+#	    #
+#	    [[ $vartemp = *.* ]] && continue
+#
+## dump contents of ivar file into the debug log
+#
+#       [ -n "$SHHAH" ] && { 
+#		            bval=${varline#*=\"}
+#		            bval=${bval%%\"}
+#		            export $vartemp="$bval"
+#                           } 
+#
+#            eval $vartemp=${varline#*=}; export $vartemp    
+#         done< /isl/ifile
+
+        eval PRODUCT_ID=\$${SET_NAME}_PRODUCT_ID
+        eval ${PRODUCT_ID}_KEY=$ActKey
+        eval ${PRODUCT_ID}_SerialID=$SerialID
+
+    [ "${SerialID%????????????}" = "$PRODUCT_ID" ] && print "SerialNumber=$SerialNumber\nSerialID=$SerialID\nActKey=$ActKey" > /tmp/serial.save
+
+integer num n
+n=`ivar get hba_num_disks`
+export  DCUDIR=`ivar get DCUDIR`
+
+[ -z "$n" ] && n=0
+num=0
+while (( num <= n ))
+  do
+   export IHVHBAS[$num]=`ivar get hba_diskname[$num]`
+   export IHVHBAMODS[$num]=`ivar get hba_modlist[$num]`
+   export IHVHBAMEDIA[$num]=`ivar get hba_media[$num]`
+   (( num  += 1 ))
+ 
+  done
+
+unset num 
+unset n
+
+function clean_ramd
+{
+		case $1 in
+		1) sh_rm -rf \
+				/etc/conf/drvmap.d \
+				/etc/conf/sdevice.d \
+				/etc/conf/mdevice.d \
+				/etc/dcu.d/locale/$LANG/help \
+				/step1rc \
+				/step2rc
+				;;
+		2) sh_rm -rf \
+				/etc/conf/fsmod.d \
+				/etc/dcu.d \
+				/etc/inst/locale/$LANG/menus/help \
+				/etc/inst/locale/$LANG/menus/txtstrings \
+				/etc/inst/locale/keyboards \
+				/etc/inst/scripts/helpwin \
+				/etc/inst/scripts/netinst \
+				/etc/inst/scripts/nond_init \
+				/etc/inst/scripts/pkgs \
+				/etc/inst/scripts/start \
+				/etc/inst/scripts/useanswers \
+				/sbin/autopush \
+				/sbin/dcu \
+				/sbin/getcylsize \
+				/sbin/memsize \
+				/sbin/modadmin \
+				/sbin/setclk \
+				/sbin/tapeop \
+				/tmp/swapA* \
+				/usr/bin/sflop \
+				/usr/bin/uncompress \
+				/usr/sbin/adpt_type \
+				/usr/sbin/partsize \
+				/usr/sbin/fdisk \
+				/usr/sbin/prtvtoc
+
+			sh_rm -rf \
+				/.extra.d/bin/sap_nearest \
+				/.extra.d/config \
+				/.extra.d/ihvnic_config \
+				/.extra.d/etc/conf/bin/idkname \
+				/.extra.d/etc/conf/bin/idmodreg \
+				/.extra.d/etc/conf/mod_register \
+				/.extra.d/etc/conf/sdev_list \
+				/.extra.d/etc/strcf \
+				/.extra.d/usr/bin/sort \
+				/.extra.d/usr/sbin/bootp \
+				/.extra.d/usr/sbin/ifconfig \
+				/.extra.d/usr/sbin/mknod \
+				/.extra.d/usr/sbin/nwcm \
+				/.extra.d/usr/sbin/nwdiscover \
+				/.extra.d/usr/sbin/ping \
+				/.extra.d/usr/sbin/prtvtoc \
+				/.extra.d/usr/sbin/resmgr \
+				/.extra.d/usr/sbin/route \
+				/.extra.d/usr/sbin/slink
+				;;
+			esac
+
+}
+
+clean_ramd 1
+
+[ -d /.extra.d ] || mkdir /.extra.d
+ sh_mount -F memfs -o swapmax=3000000,rootmode=01777,sfp=65535 /memfs /.extra.d  > /dev/null 2>&1
+
+/sbin/modadmin -U s5 2>/dev/null
+rm -f /etc/conf/fsmod.d/s5
+/sbin/modadmin -U dosfs 2>/dev/null
+rm -f /etc/conf/fsmod.d/dosfs
+PLATFORM_SAVE=$PLATFORM
+
+# added installation medium ivar variables which tell what
+# the gemini product is being installed from.
+
+export SEC_MEDIUM_TYPE=`ivar get SEC_MEDIUM_TYPE`
+export SEC_MEDIUM=`ivar get SEC_MEDIUM`
+
+function retension_tape {
+	display "$RETENSION_WAIT"
+	footer "$GENERIC_WAIT_FOOTER"
+	/sbin/tapeop -t $SEC_MEDIUM
+	footer
+	wclose
+	> /tmp/retension_done
+}
+
+[ "$SEC_MEDIUM_TYPE" = tape ] && {
+	[ -f /tmp/retension_done ] || retension_tape
+}
+
+# calls the partition software to perform erasing the disk and preparing
+# the slices so they can be mounted to the physical media
+# this code use to exist in useanswers module in the unixware days
+
+. /partition_sys
+
+# ivar variable which tells if we are going to perform
+# wipe old unix parition celan from the machine
+# when NOND is yes, we retain the old information
+# which primarily used for upgrades and overlays
+export NOND=`ivar get NOND`
+
+# name of machine that will be running gemini
+export NODE=`ivar get NODE`
+
+#performance kernel tuning
+
+# this is NON-DESTRUCTIVE SECTION
+# this section is not used in the Gemini 1.0 release in 1997
+# this section is for overlays and for upgrades.
+# this code will be commnented out until it is needed
+# the code will remain in this file for information purposes
+	 
+	#if [ "$NOND" = "yes" ] 
+	#then
+	#	display "$NOND_PREP_MSG"
+	#	get_fscks
+	#	umountall> /dev/null 2>&1
+	#	mountloop ${BLOCK_DISK_NODES[0]%s0}s1 $HDROOT
+	#	call unlink $HDROOT/etc/conf/.new_unix
+	#	while read special fsckdev mountp fstyp fsckpass automnt mountopts macceiling
+
+	#	do
+	#		case $mountp in
+
+	#			/usr | /home )
+	#				if [ "$automnt" = "yes" ]
+	#				then
+	#					sh_mount -F$fstyp $special $HDROOT/$mountp
+	#					if [ $? != 0 ]
+	#					then
+	#						/etc/fs/$fstyp/fsck -y $fsckdev > /dev/null 2>&1
+	#						sh_mount -F$fstyp $special $HDROOT/$mountp
+	#						if [ $? != 0 ]
+	#						then
+	#							error=1
+	#						fi
+	#					fi
+	#				fi
+	#				continue;;
+
+	#			/var | /stand )
+	#				sh_mount -F$fstyp $special $HDROOT/$mountp
+	#				if [ $? != 0 ]
+	#				then
+	#					/etc/fs/$fstyp/fsck -y $fsckdev > /dev/null 2>&1
+	#					sh_mount -F$fstyp $special $HDROOT/$mountp
+	#					if [ $? != 0 ]
+	#					then
+	#						error=1
+	#					fi
+	#				fi
+	#				continue;;
+
+	#			*) continue;;
+	#		esac
+	#	done < /tmp/new.vfstab
+	#	sh_rm -fr /.extra.d/etc/fs # Not needed for cdrom install, but won't hurt
+	#	export PKGINSTALL_TYPE AUTOMERGE
+	#	export UPGRADE_STORE=/etc/inst/save.user
+	#	UPTMP=$HDROOT/etc/inst/up/patch
+	#	mkdir -p $HDROOT/$UPGRADE_STORE $UPTMP 2>/dev/null
+	#	mkdir -p $HDROOT/etc/inst/save.orig 2>/dev/null
+	#	export UPTMP
+	#	mkdir -p $HDROOT/$SCRIPTS 2>/dev/null
+	#	rm $HDROOT/tmp/pkg.newinstall
+	#	copy new version of pkgsavfile/chkpkgrel into $HDROOT/usr/sbin/pkginst/
+	#	[ "$PKGINSTALL_TYPE" = "UPGRADE2" ] && {
+	#		cp /usr/sbin/pkginst/* $HDROOT/usr/sbin/pkginst/ || { 
+	#			faultvt "New version of chkpkgrel and pkgsavfile can not be\n #put final backslash back if uncomment
+	#	copied into pkginst/ in the existing file system"
+	#			halt
+	#		}
+	#	}
+
+		# mr#ul95-30719
+	#	[ "$PKGINSTALL_TYPE" != "NEWINSTALL" ] && {
+	#		[ -f $HDROOT/stand/resmgr ] && {
+	#			mkdir -p $HDROOT/$UPGRADE_STORE/stand >/dev/null 2>&1
+	#			cp $HDROOT/stand/resmgr $HDROOT/$UPGRADE_STORE/stand/
+	#		}
+	#	}
+		
+	#	for i in $ALLPKGS
+	#	do
+	#		if (( $i )) && grep "^$i$" /tmp/pkgs >/dev/null 2>&1
+	#		then
+	#			if [ "$PKGINSTALL_TYPE" = "UPGRADE" ]
+	#			then	
+	#			    echo "PKGINSTALL_TYPE=$PKGINSTALL_TYPE" > $HDROOT/var/sadm/upgrade/$i.env
+	#			    echo "AUTOMERGE=$AUTOMERGE" >> $HDROOT/var/sadm/upgrade/$i.env
+	#			else
+	#			    echo "PKGINSTALL_TYPE=$PKGINSTALL_TYPE" > $HDROOT/$UPGRADE_STORE/$i.env
+	#			    echo "AUTOMERGE=$AUTOMERGE" >> $HDROOT/$UPGRADE_STORE/$i.env
+	#			fi
+	#			grep "^$i" /etc/pkg.LIST|$HDROOT/usr/bin/cut -f2 > $UPTMP/$i.LIST
+	#			chroot $HDROOT /sbin/sh -x /usr/sbin/pkginst/pkgsavfiles $i \
+	#				> $HDROOT/etc/inst/save.user/sav.$i.out 2>&1
+	#			grep "^$i" /etc/pkg.LIST|$HDROOT/usr/bin/cut -f2-5 \
+	#				>$HDROOT/etc/inst/save.orig/$i.LIST
+	#			cp $UPTMP/$i.LIST $SCRIPTS
+	#			cp $UPTMP/$i.LIST $HDROOT/$SCRIPTS
+	#			[ -x /etc/inst/scripts/$i.prep ] && {
+	#			    [ "$PKGINSTALL_TYPE" = "UPGRADE" -o \
+	#				  "$PKGINSTALL_TYPE" = "UPGRADE2" ] && {
+	#				cp /etc/inst/scripts/$i.prep $HDROOT/tmp
+	#				chmod 555 $HDROOT/tmp
+	#				chroot $HDROOT /tmp/$i.prep >$HDROOT/$UPGRADE_STORE/$i.prep.out \
+	#					2>$HDROOT/$UPGRADE_STORE/$i.prep.err
+	#			    }
+	#			}
+	#		else
+	#			echo $i >>$HDROOT/tmp/pkg.newinstall
+	#		fi
+	#	done
+		# AS/PEdocs and other misc. cleanup work
+		# It happens after the disk is mounted and volatile files are saved and
+		# before the package removal starts
+	#	if [ "$PKGINSTALL_TYPE" = "UPGRADE2" ]
+	#	then
+	#		ALLdocs="PEdocs ASdocs"
+	#		[ "$LANG" = C ] || [ -z "$LANG" ] || {
+	#			ALLdocs="$ALLdocs ${LANG}PEdocs ${LANG}ASdocs"
+	#		}
+	#		for i in $ALLdocs
+	#		do
+	#			if (( $i )) && grep "^$i$" /tmp/pkgs >/dev/null 2>&1
+	#			then
+	#				[ -f $HDROOT/var/sadm/pkg/$i/pkginfo ] && {
+	#					cp $HDROOT/var/sadm/pkg/$i/pkginfo $HDROOT/tmp/pkginfo.$i
+	#				}
+	#			fi
+	#		done
+			# fix for mr#ul95-13610, 
+			#	"Remove obsolete mail setup files during upgrade"
+			#	
+	#		[ -d $HDROOT/usr/lib/setup/filetypes ] && {
+	#			rm -fr $HDROOT/usr/lib/setup/filetypes
+	#		}
+			# fix for mr#ul95-27017
+			#   "Obsolete space.c in pack.d/lp/ causes kernel build to fail"
+			#	
+	#		[ -f $HDROOT/etc/conf/pack.d/lp/space.c ] && {
+	#			rm -fr $HDROOT/etc/conf/pack.d/lp/space.c
+	#		}
+	#	fi
+
+		# Code to deal with mfpd/lp upgrade 
+	#	if [ "$PKGINSTALL_TYPE" != "NEWINSTALL" ]
+	#	then
+	#		MFPD_DIR=$HDROOT/etc/inst/up/mfpdlp/mfpd
+	#		LP_DIR=$HDROOT/etc/inst/up/mfpdlp/lp
+
+	#		[ -d $MFPD_DIR ] || mkdir -p $MFPD_DIR
+	#		[ -d $LP_DIR ]   || mkdir -p $LP_DIR
+
+	#		if [ -f $HDROOT/etc/conf/mdevice.d/mfpd ]
+	#		then
+			# The mfpd driver exists on the system, so save its System file.
+	#         chroot $HDROOT /etc/conf/bin/idinstall -G -s mfpd > $MFPD_DIR/System.mfpd.save
+	#		fi
+
+	#		if [ -f $HDROOT/etc/conf/mdevice.d/lp ]
+	#		then
+			# The lp driver exists on the system.
+			# If we did NOT save a System file for mfpd, then save the one for lp
+	#			if [ ! -f $MFPD_DIR/System.mfpd.save ]
+	#			then
+	#		chroot $HDROOT /etc/conf/bin/idinstall -G -s lp   > $MFPD_DIR/System.lp.sav
+	#			fi
+	#		fi
+	#	fi
+
+	#	if [ "$PKGINSTALL_TYPE" = "UPGRADE" ]
+	#	then
+	#		UPGRADE="YES"
+	#		rm -f $HDROOT/etc/.app_server 2>/dev/null
+	#		for i in $REMOVE_PKGS
+	#		do
+	#			echo $i >>/tmp/pkgrm.out
+	#			echo $i >>/tmp/pkgrm.err
+	#			chroot $HDROOT /usr/sbin/pkgrm -n $i >>/tmp/pkgrm.out 2>>/tmp/pkgrm.err
+	#			[ $i = "els" ] && if [ "$LANG" = "ja" ]
+	#						then
+	#						/usr/bin/kb_remap -l $LANG vt00 vt01
+	#						else
+	#							/usr/bin/kb_remap -f 88591
+	#						fi
+	#		done
+
+	#		chroot $HDROOT /usr/bin/mv /dev /dev.sav 2>/dev/null
+	#		chroot $HDROOT /usr/bin/mv /etc/conf /etc/conf.sav 2>/dev/null
+	#		mkdir $HDROOT/dev $HDROOT/etc/conf 2>/dev/null
+	#		$REMOVE_UPDATE && {
+	#			rm -fr $HDROOT/var/sadm/pkg/update111	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/pkg/update112	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/pkg/update113	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/pkg/update114	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/pkg/update5j	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/bkup/update111	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/bkup/update112	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/bkup/update113	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/bkup/update114	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/bkup/update5j	2>/dev/null
+	#			rm -fr $HDROOT/var/sadm/pkg/ptf*	2>/dev/null
+	#		}
+
+	#		(cd $HDROOT/var/sadm/upgrade;find . -print|cpio -pdm $HDROOT/etc/inst/save.user >/dev/null 2>&1)
+
+	#	fi
+		# fix for mr#ul95-17018
+	#	[ "$PKGINSTALL_TYPE" = "UPGRADE2" ] && {
+	#		rm $HDROOT/dev/pw	
+	#		rm -f $HDROOT/var/sadm/pkg/cpqupd/install/preremove
+	#		rm -fr $HDROOT/var/sadm/pkg/update20*	2>/dev/null
+	#		for i in $REMOVE_PKGS
+	#		do
+	#			echo $i >>/tmp/pkgrm.out
+	#			echo $i >>/tmp/pkgrm.err
+	#			chroot $HDROOT /usr/sbin/pkgrm -n $i >>/tmp/pkgrm.out 2>>/tmp/pkgrm.err
+	#		done
+	#	}
+	#	( . $SCRIPTS/overlaysav.sh )
+	#	# fix for mr#ul95-28416
+	#	if [ "$PKGINSTALL_TYPE" = "UPGRADE" -o "$PKGINSTALL_TYPE" = "UPGRADE2" ]
+	#	then
+	#		rm -rf $HDROOT/var/options/as.name >/dev/null 2>&1
+	#		rm -rf $HDROOT/var/options/pe.name >/dev/null 2>&1
+	#		rm -rf $HDROOT/var/sadm/pkg/as >/dev/null 2>&1
+	#		rm -rf $HDROOT/var/sadm/pkg/pe >/dev/null 2>&1
+	#	fi
+	#	wclose $CURWIN
+	#  fi #END OF BIG IF Loop concerning NOND=YES
+
+export PATH
+
+PATH=$PATH:$HDROOT/oldroot/usr/bin
+ENV=/funcrc
+SHELL=/sbin/sh
+
+# Preparing to install software...
+display "$PREP_MSG"
+footer "$GENERIC_WAIT_FOOTER"
+rwid=$CURWIN
+
+# Get ui_modules, scripts and txtstrings from media
+get_ui
+cd /
+
+[ -f /tmp/dont.cleanup ] || clean_ramd 2
+
+[ -n "$debug" ] && {
+        chmod 777 /tmp/log/pkg.log
+        chmod 777 /tmp/log/inst
+}
+
+# Copy files listed in /hd.list to /mnt
+copy2hd
+
+rm -rf /isl/ui_modules/*
+
+# This is one very long psuedo function
+
+(
+	cd /
+	if [ $SEC_MEDIUM_TYPE = cdrom ]
+	then
+		sh_umount /cd-rom
+		sh_mount -r -F cdfs $SEC_MEDIUM $HDROOT/cd-rom
+	fi
+
+#	if [ "${SEC_MEDIUM_TYPE}" = "spx" ]
+#	then
+#		read PID < /etc/netware/npsd.pid
+#		kill $PID
+#	fi
+
+	# For debugging or patching, we might need to install our own version of
+	# postreboot.sh.  This version overwrites the one installed by the base
+	#  package.
+#	[ -s $SCRIPTS/postreboot.sh ] && cp $SCRIPTS/postreboot.sh $HDROOT/tmp
+	[ -s /tmp/postreboot.sh ] && cp /tmp/postreboot.sh $HDROOT/tmp
+	[ -s /tmp/passwd.stdin ] && cp  /tmp/passwd.stdin $HDROOT/tmp
+
+	mkdir -p  $HDROOT/isl/log
+	(
+		cd /tmp
+		find . | cpio -pdum $HDROOT/isl/log
+	)
+
+	[ -n "$debug" ] && {
+		   exec 2>> $HDROOT/isl/log/pkg.log
+		   set -x
+		   date 1>&2
+		   debug=True
+	} 
+
+	call chroot $HDROOT
+	export cpio=/tmp/ncp
+	. ${SCRIPTS}/initialize
+
+	echo "TZ=$TZ\nexport TZ" > /etc/TIMEZONE
+	chmod 555 /etc/TIMEZONE
+
+# Close "Preparing to install" window
+	wclose $rwid	
+
+function getHBAS {
+
+	[ -n "$debug" ] && set -x
+	[ ! -d /tmphba ] && mkdir -p /tmphba
+	display "$HBA_FETCH"
+	cd /tmphba
+	case $SEC_MEDIUM_TYPE in
+	cdrom)
+		{
+			read_header 
+			/tmp/ncp -idumDZ '*hbaflop*' 
+		} < /cd-rom/${SET_NAME}.image > /dev/null 2>&1
+		;;	
+	tcp)
+		NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat \
+		-n ${SEC_MEDIUM_TYPE} \
+		-s ${SERVER_INET_ADDR}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+		${SET_NAME}.package | {
+			read_header 
+			/tmp/ncp -idumDZ '*hbaflop*' 
+		} > /dev/null 2>&1
+		;;
+
+	spx)
+		NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat \
+		-n ${SEC_MEDIUM_TYPE} \
+	  	-s ${SERVER_NAME}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+		${SET_NAME}.package | {
+			read_header 
+			/tmp/ncp -idumDZ '*hbaflop*' 
+		} > /dev/null 2>&1
+		;;
+	tape)
+		{
+			read_header
+			/tmp/ncp -idumDZ '*hbaflop*'
+		} < "$SEC_MEDIUM" > /dev/null 2>&1
+	esac
+	
+	wclose
+}
+
+getHBAS
+cd /
+place_window 70 5 -above 2 -below 3 -title "$INSTMSG"
+INSTWID=$CURWIN
+
+function showSet {
+	set -x
+	typeset -L55 setname
+
+	setname=$1
+	wgotoxy $INSTWID 1 1
+	wputstr $INSTWID "$setmsg $setname"
+}
+
+function showPackage {
+set -x
+	typeset -L55 pkgname
+	
+	pkgname=$1
+        wgotoxy $INSTWID 1 2
+	wputstr $INSTWID "$pkgmsg $pkgname"
+}
+
+function showAction {
+
+	set -x
+	typeset -L55 action
+
+	action=$1
+	wgotoxy $INSTWID 1 3
+	wputstr $INSTWID "$actmsg $action"
+}
+
+
+set +x
+. /isl/can_ifile
+set -x
+set -- $UnixWare_PKG_NUMS
+showSet "${pkg_label[$1]}"
+
+showPackage " "
+showAction " "
+
+eval INSTPKGS="\$${SET_NAME}_PKGS"
+case $SEC_MEDIUM_TYPE in
+tcp)
+	# inetinst - make sure we have a locale, get pkgs from server
+	[ -z "${LANG}" ] && LANG="C"
+	NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n ${SEC_MEDIUM_TYPE} \
+	  -s ${SERVER_INET_ADDR}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+	  ${SET_NAME}.package |
+		ds_to_disk $INSTPKGS > /tmp/netinst.out 2>&1 &
+	;;
+
+spx)
+## Fix to save nwconfig file since "nuc" overrides it with crazy values
+	[ -f /etc/netware/nwconfig ] && \
+		cp /etc/netware/nwconfig /etc/netware/nwconfig.isl \
+		> /dev/null 2>&1
+##
+
+	# inetinst - make sure we have a locale, get pkgs from server
+#	typeset -i count=0
+#	until LC_CTYPE="" /usr/sbin/npsd -v >> /tmp/stderr 2>&1
+#	do
+#		[ $count = 5 ] && {
+#			faultvt "npsd failed to restart"
+#			halt
+#		}
+#		call sleep 5
+#		(( count=count+1 ))
+#	done
+#	[ -z "${LANG}" ] && LANG="C"
+	NETPATH=${SEC_MEDIUM_TYPE} LC_CTYPE="" /usr/sbin/pkgcat -n ${SEC_MEDIUM_TYPE} \
+	  -s ${SERVER_NAME}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+	  ${SET_NAME}.package |
+		ds_to_disk $INSTPKGS > /tmp/netinst.out 2>&1 &
+	;;
+cdrom)
+	PKGDEV_MOUNTPT=/cd-rom
+	ds_to_disk $INSTPKGS < /cd-rom/$SET_NAME.image >/dev/null 2>&1 &
+	;;
+tape)
+	for myset in $INSTSETS
+	do
+		[ "$myset" != "UnixWare" ] && {
+			eval INSTPKGS=\"\$INSTPKGS \$${myset}_PKGS\"
+			eval UnixWare_PKG_NUMS=\"\$UnixWare_PKG_NUMS \$${myset}_PKG_NUMS\"
+		}
+	done
+	ds_to_disk $INSTPKGS < $SEC_MEDIUM >/dev/null 2>&1 &
+	;;
+diskette)
+	#NY Not yet implemented
+	;;
+esac
+
+ds_to_disk_PID=$!
+
+PKGDEV="$SEC_MEDIUM"
+[ -f $HDROOT/tmp/log/inst ] && cp $HDROOT/tmp/log/inst /isl/inst.log1
+
+export SILENT_INSTALL=true
+
+. /pkginst /var/tmp/inst $INSTPKGS
+
+[ -f /tmp/unixware.dat ] && {
+	case "$CODE_SET" in
+	PC850)
+		iconv -f PC850 -t 88591 /tmp/unixware.dat
+		;;
+	sjis)
+		iconv -f sjis -t eucJP /tmp/unixware.dat
+		;;
+	*)
+		faultvt "$BAD_CODESET"
+		halt
+		;;
+	esac > /tmp/unixware.tmp
+	call rename /tmp/unixware.tmp /tmp/unixware.dat
+	[ -s /tmp/unixware.dat ] || {
+		faultvt "$UDAT_EMPTY"
+		halt
+	}
+}
+
+# Fix for mr#ul95-29927
+/usr/sbin/filepriv -d /usr/bin/dos >/dev/null 2>&1
+
+echo "$REMOVE_PKGS" | grep merge - >/dev/null 2>&1
+[ $? -eq 0 ] && {
+	grep "### MERGE" /etc/profile             >> /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+	# When found merge items, remove them.
+		rm -f /tmp/profile.tmp
+		grep -v "### MERGE" /etc/profile > /tmp/profile.tmp 2>>/dev/null
+		cp /tmp/profile.tmp /etc/profile
+		rm -f /tmp/profile.tmp
+	fi
+}
+
+
+# The UnixWare set is now installed. Use pkg tools for adding additional 
+# sets/packages. -RD 9/12/97
+# UnixWare is assumed to be the first set in the list so drop it since
+# we are done with it
+
+# Move mailx aside. pkgadd tries to send mail to root and owner
+# This results in mailx delays.
+
+[ -f /bin/mailx ] && {
+	mv /bin/mailx /bin/REALmailx
+	echo "#!/bin/sh\ncat > /dev/null\nexit 0" > /bin/mailx
+	chmod 755 /bin/mailx
+}
+
+set -- $INSTSETS
+shift
+INSTSETS="$*"
+
+# Read setinfo file and get number of parts and order packages in the
+# INSTPKGS variable. This function returns the total number of parts
+# that will be installed. Current setname is in $SET_NAME
+
+function getSetInfo {
+
+	[ -n "$debug" ] && set -x
+	typeset line
+	typeset ordered_PKGS="" ordered_PKG_NUMS=""
+	integer total_parts=0
+	typeset setinfo="/var/sadm/pkg/$SET_NAME/setinfo"
+	typeset index
+
+	[ ! -f "$setinfo" ] && return -1
+
+	INSTPKGS=" $INSTPKGS "
+	{
+		while read line
+		do
+
+			# Ignore comments
+			[[ "$line" = "#"* ]] && continue
+	
+			set -- $line
+			# If package is to be installed then add it
+			# to the ordered list
+			if [[ "$INSTPKGS" = *" $1 "* ]]	
+			then
+				ordered_PKGS="$ordered_PKGS $1"
+				(( total_parts += $2 ))
+				for index in $pkgindices
+				do
+					[ "$1" = "${pkg_code[index]}" ] && \
+						ordered_PKG_NUMS="$ordered_PKG_NUMS $index"
+				done			
+			fi
+		done
+	} < $setinfo
+
+	pkgindices="$ordered_PKG_NUMS"
+	INSTPKGS="$ordered_PKGS"
+	return $total_parts
+}
+				
+# Install additional sets from netinstall server
+# Use a universal NETSERVER variable since the case for TCP and SPX is
+# the same except for the server naming convention
+
+function addSetsFromNet {
+	set -x
+	typeset parts
+	typeset first_part
+	typeset set_long_name pkg_long_name
+
+	NETSERVER="$1"
+	for SET_NAME in $INSTSETS
+	do
+		eval pkgindices="\$${SET_NAME}_PKG_NUMS"
+		[ -z "$pkgindices" ] && continue
+		
+		set -- $pkgindices
+		showSet "${pkg_label[$1]}"
+		export SETINST="${pkg_code[$1]}"
+		export SETNAME="${pkg_label[$1]}"
+		eval showAction \"$PKG_FETCH\"
+		set_long_name="${pkg_label[$1]}"
+		shift
+		pkgindices="$*"
+
+		showPackage " "
+		eval INSTPKGS="\$${SET_NAME}_PKGS"
+		SET_IN_STREAM=0
+
+		while :
+		do
+		
+		NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n \
+		${SEC_MEDIUM_TYPE} \
+		-s ${NETSERVER}:/var/spool/dist/${REL_FULLNAME}/$LANG $SET_NAME | \
+		/usr/bin/pkgtrans - /var/sadm/pkg $SET_NAME \
+		> /dev/null 2>&1
+
+		if (( $? != 0 ))
+		then
+			NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n \
+			${SEC_MEDIUM_TYPE} \
+			-s ${NETSERVER}:/var/spool/dist/${REL_FULLNAME}/$LANG ${SET_NAME}.package | \
+			/usr/bin/pkgtrans - /var/sadm/pkg $SET_NAME \
+			> /dev/null 2>&1
+			if (( $? != 0 ))
+			then
+				eval "display \"$NETSERVER_ERROR_SET\" \
+				-fg $ERROR_FG -bg $ERROR_BG -above 1 -below 4"
+				ERR_WIN=$CURWIN
+				choose -f -e -winparms "-above 8 -below 1 -bg $ERROR_BG -fg $ERROR_FG" "$RETRY" "$RETRY" "$SKIP"
+				input_handler
+				wclose $ERR_WIN
+				if [ "$CHOICE" = "$RETRY" ]
+				then
+					continue
+				else
+					break
+				fi
+			else
+				SET_IN_STREAM=1
+				break
+			fi
+		else
+			break
+		fi
+		done
+
+		[ "$CHOICE" = "$SKIP" ] && continue
+
+		mkdir -p /var/sadm/pkg/${SET_NAME}/install
+			
+		line=$INSTPKGS
+		set -- $line
+		
+		# Get rid of the set name from INSTPKGS 
+		shift
+		INSTPKGS="$*"
+
+		getSetInfo
+		parts=$?
+
+		GAUGE_TITLE="$INST_GAUGE_TITLE"
+		gauge_start $parts -title "$GAUGE_TITLE" -above 8 -below 1
+ 
+		if (( SET_IN_STREAM == 0 ))
+		then
+		for PKGINST in $INSTPKGS
+		do
+			set -- $pkgindices
+			showPackage "${pkg_label[$1]}"
+			pkg_long_name="${pkg_label[$1]}"
+			shift
+			pkgindices="$*"
+			first_part=1
+
+			(
+			NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n \
+			${SEC_MEDIUM_TYPE} \
+			-s ${NETSERVER}:/var/spool/dist/${REL_FULLNAME}/$LANG $PKGINST\
+			| /usr/sbin/pkgadd -d - all 2>&1 
+			
+			if (( $? != 0 ))
+			then
+				print "##**Aiee Penguin in the package**##"
+			fi
+			) |&
+			while read -p line
+			do
+				if [ "$line" = "##**Aiee Penguin in the package**##" ]
+				then
+					eval "display -w \"$NETSERVER_ERROR_PKG\" -fg $ERROR_FG -bg $ERROR_BG"
+					input_handler 
+				else
+					set -- $line
+					if [ "$1" = "##" ]
+					then
+						shift
+						showAction "$*"	
+
+# The Installing part X of Y message from pkgadd will have numbers
+# if a number is found then assume that it is installing parts and increment
+# gauge bar
+
+						if [[ "$*" = *[0-9]"."* ]] \
+						   && [ "$first_part" != "1" ]
+						then
+							gauge_add
+						elif [[ "$*" = *[0-9]"."* ]]
+						then
+							first_part=0
+						fi
+					fi
+				fi
+			done
+			gauge_add
+		done
+			
+		else # If SET_IN_STREAM=1
+			set -- $pkgindices
+			showPackage "${pkg_label[$1]}"
+			pkg_long_name="${pkg_label[$1]}"
+			shift
+			pkgindices="$*"
+			set -- $INSTPKGS
+			PKGINST="$1"
+			first_part=1
+	
+			(
+			NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n \
+			${SEC_MEDIUM_TYPE} \
+			-s ${NETSERVER}:/var/spool/dist/${REL_FULLNAME}/$LANG ${SET_NAME}.package \
+			| /usr/sbin/pkgadd -d - $INSTPKGS 2>&1 
+
+			if (( $? != 0 ))
+			then
+				print "##**Aiee Penguin in the package**##"
+			fi
+			) |&
+			while read -p line
+			do
+				if [ "$line" = "##**Aiee Penguin in the package**##" ]
+				then
+					eval "display -w \"$NETSERVER_ERROR_PKG\" -fg $ERROR_FG -bg $ERROR_BG"
+					input_handler 
+				else
+					set -- $line
+					if [ "$1" = "##" ]
+					then
+						shift
+						showAction "$*"	
+						if [[ "$*" = *[0-9]"."* ]] \
+						   && [ "$first_part" != "1" ]
+						then
+							gauge_add
+						elif [[ "$*" = *[0-9]"."* ]]
+						then
+							first_part=0
+						fi
+					elif [[ "$line" = *"successful."* ]]
+					then
+						[ -n "$pkgindices" ] && {
+						set -- $pkgindices
+						showPackage "${pkg_label[$1]}"
+						pkg_long_name="${pkg_label[$1]}"
+						eval showAction \"$PKG_FETCH\"
+						shift
+						pkgindices="$*"
+						set -- $INSTPKGS
+						PKGINST="$1"
+						shift
+						INSTPKGS="$*"
+						first_part=1
+						}
+						gauge_add
+					fi
+				fi
+			done
+		fi
+			
+		wclose $GAUGEWDW
+	done
+}
+
+function addSetsFromCD {
+
+	[ -n "$debug" ] && set -x
+	typeset SETS_TO_DO=""
+	typeset first_part
+	typeset line
+	typeset parts
+	typeset set_long_name pkg_long_name
+
+	while [ -n "$INSTSETS" ]
+	do
+		for SET_NAME in $INSTSETS
+		do
+			eval pkgindices="\$${SET_NAME}_PKG_NUMS"
+			[ -z "$pkgindices" ] && continue
+		
+			set -- $pkgindices
+			showSet "${pkg_label[$1]}"
+			export SETINST="${pkg_code[$1]}"
+			export SETNAME="${pkg_label[$1]}"
+			set_long_name="${pkg_label[$1]}"
+			eval showAction \"$PKG_FETCH\"
+			shift
+			pkgindices="$*"
+
+			showPackage " "
+			eval INSTPKGS="\$${SET_NAME}_PKGS"
+			/usr/bin/pkgtrans /cd-rom /var/sadm/pkg $SET_NAME \
+			< /dev/zero > /dev/null 2>&1
+
+			if (( $? != 0 ))
+			then
+				[[ "$SETS_TO_DO" != *" $SET_NAME "* ]] && \
+					SETS_TO_DO="$SETS_TO_DO $SET_NAME "
+				continue
+			fi
+			mkdir -p /var/sadm/pkg/${SET_NAME}/install
+			
+			line=$INSTPKGS
+			set -- $line
+			shift
+			INSTPKGS="$*"
+
+			getSetInfo
+			parts=$?
+
+			GAUGE_TITLE="$INST_GAUGE_TITLE"
+			gauge_start $parts -title "$GAUGE_TITLE" \
+				    -above 8 -below 1
+ 
+			for PKGINST in $INSTPKGS
+			do
+				set -- $pkgindices
+				showPackage "${pkg_label[$1]}"
+				pkg_long_name="${pkg_label[$1]}"
+				shift
+				pkgindices="$*"
+				first_part=1
+				(
+				/usr/sbin/pkgadd -d /cd-rom $PKGINST 2>&1 
+
+				if (( $? != 0 ))
+				then
+					print "##**Aiee Penguin in the package**##"
+				fi
+				) |&
+				while read -p line
+				do
+					if [ "$line" = "##**Aiee Penguin in the package**##" ]
+					then
+						eval "display -w \
+							\"$CDROM_ERROR_PKG\" \
+							-bg $ERROR_BG \
+							-fg $ERROR_FG"
+						input_handler
+					else
+						set -- $line
+						if [ "$1" = "##" ]
+						then
+							shift
+							showAction "$*"	
+							if [[ "$*" = *[0-9]"."* ]]\
+						 && [ "$first_part" != "1" ]
+							then
+								gauge_add
+							elif [[ "$*" = *[0-9]"."* ]]
+							then
+								first_part=0
+							fi
+						fi
+					fi
+				done
+				gauge_add
+			done
+			wclose $GAUGEWDW
+		done
+		INSTSETS="$SETS_TO_DO"
+		SETS_TO_DO=""
+		if [ -n "$INSTSETS" ]
+		then
+			sh_umount /cd-rom > /dev/null 2>&1
+			sleep 3
+			display -w "$CDROM_PROMPT"
+			input_handler
+
+			(( mountrc=1 ))
+			while (( mountrc != 0 ))
+			do
+				check_devs -g "$SEC_MEDIUM"
+				(( mountrc=$? ))
+				if (( mountrc == 0 ))
+				then
+					sh_mount -F cdfs -r "$SEC_MEDIUM" \
+					/cd-rom > /dev/null 2>&1 
+					(( mountrc = $? ))
+				fi
+				if (( mountrc != 0 ))
+				then
+					display -w "$CD_MOUNT_ERROR" \
+						-fg $ERROR_FG -bg $ERROR_BG
+					input_handler
+					sleep 3
+				fi
+			done			
+		fi
+	done
+}
+
+case $SEC_MEDIUM_TYPE in
+tcp)
+	[ -n "$INSTSETS" ] && addSetsFromNet "$SERVER_INET_ADDR"
+	;;
+
+spx)
+	if [ -f /etc/netware/nwconfig.isl ]
+	then
+		cp /etc/netware/nwconfig /etc/netware/nwconfig.new \
+		> /dev/null 2>&1
+		mv /etc/netware/nwconfig.isl /etc/netware/nwconfig \
+		> /dev/null 2>&1
+	fi
+	[ -n "$INSTSETS" ] && addSetsFromNet "$SERVER_NAME"
+	[ -f /etc/netware/nwconfig.new ] && \
+		mv /etc/netware/nwconfig.new /etc/netware/nwconfig \
+		> /dev/null 2>&1
+	;;
+
+cdrom)
+	[ -n "$INSTSETS" ] && addSetsFromCD
+	;;
+tape)
+	# NOT SUPPORTED
+	;;
+diskette)
+	#NY Not yet implemented
+	;;
+esac
+
+wclose $INSTWID
+display "$DO_SETUP"
+SETUPWID=$CURWIN
+
+cd /
+[ -s /tmp/postreboot.sh ] && mv /tmp/postreboot.sh ${SCRIPTS}/postreboot.sh
+[ -s /tmp/passwd.stdin ] && mv /tmp/passwd.stdin /usr/bin/passwd.stdin
+mv ${SCRIPTS}/postreboot.sh /etc/init.d/S02POSTINST
+call link /etc/init.d/S02POSTINST /etc/rc2.d/S02POSTINST
+
+# Assign mode/owner/group to all possible mount points.
+/usr/bin/egrep '^(/|/home|/home2|/stand|/tmp|/usr|/var|/var/tmp)[	 ]' \
+	/var/sadm/install/contents |
+while read line
+do
+	set $line
+	chmod $4 $1
+	chown $5 $1
+	chgrp $6 $1
+done
+
+echo "LANG=$LANG" > /etc/default/locale
+> /etc/default/Xim
+chmod 644 /etc/default/locale /etc/default/keyboard /etc/default/Xim
+
+#export KEYBOARD=`ivar get KEYBOARD`
+if [ "$LANG" = "C" -a "$KEYBOARD" = "NONE" ] || [ "$LANG" = "ja" ] ||
+	[ "$KEYBOARD" = "AX" ] || [ "$KEYBOARD" = "A01" ]
+then
+	TERM=${TERM%-ie}
+else
+	echo "COFONT=\"8859-1\"" >/etc/default/cofont
+fi
+if [ "$LANG" = "ja" ]
+then
+	TERM=${TERM%-mb}
+	TERM=${TERM%-ie}-mb
+	echo "MBCONSOLE=yes" >>/etc/default/coterm
+fi
+
+#export IDCMD=`ivar get IDCMD`
+#export UPGRADE=`ivar get UPGRADE`
+#export PKGINSTALL_TYPE=`ivar get PKGINSTALL_TYPE`
+#export RELEASE=`ivar get RELEASE`
+#export UNIX_REL=`ivar get UNIX_REL`
+#export ROOTFS=`ivar get ROOTFS`
+#export CHAR_DISK_NODES[0]=`ivar get CHAR_DISK_NODES[0]`
+
+echo "set -a;AUTOMERGE=$AUTOMERGE\nUPGRADE=$UPGRADE\n\
+PKGINSTALL_TYPE=$PKGINSTALL_TYPE\nTERM=$TERM\nFULL=$FULL" > $SCRIPTS/common.sh
+echo "$RELEASE	$VERSION" > $UNIX_REL
+[ $PKGINSTALL_TYPE = "UPGRADE" ] && > /etc/inst/.kern_rebuild
+
+[ $PKGINSTALL_TYPE = "NEWINSTALL" ] && {
+	print rootfs=$ROOTFS
+} >> /stand/boot
+/usr/lib/dstime/dst_pgen TZ_OFFSET $($SCRIPTS/get_tz_offset) >/dev/null 2>&1
+/usr/sbin/disksetup -b /etc/boot ${CHAR_DISK_NODES[0]}
+
+stty min 1
+
+#$SILENT_INSTALL || . ${SCRIPTS}/loadhba
+. ${SCRIPTS}/loadhba
+
+$SID_MODE && . ${SCRIPTS}/applysid
+for i in $CPQ_HBA_LIST
+do
+	# pkgadd seems to close stdin when called with these options.  Since
+	# we can't allow it to close *our* stdin (the keyboard), we give it
+	# something harmless to close (/dev/zero).
+
+	/usr/sbin/pkgadd -lpqn -d /cd-rom/.cpq.pkgs $i \
+		< /dev/zero >/dev/null 2>> /tmp/more_pkgadd.err
+done
+
+# If the osmp package was installed, the following
+# scripts will exist. Run these scripts to prompt
+# the user for PSM floppies.
+
+# No need to check for req.sh because ISL interview has put PSMINDEX in ifile
+# 8/15/97 - RD Coordinated with Jim Hohman
+if [ -f /tmp/osmp.post.sh ]
+then 
+	# run this script in a subshell to avoid side-effects
+	(
+	. /tmp/osmp.post.sh
+	)
+	call unlink /tmp/osmp.post.sh
+fi
+
+# ETH_HW may not have been set correctly for some of the
+# autosensed network adapters. More often than not, the variable
+# NICS_DRIVER_NAME _is_ set, so let's try to use it.
+ETH_HW=${NICS_DRIVER_NAME}
+
+# Remove the entry if ETH_HW is set.
+#
+# if for some reason (deferred configuration), ETH_HW is still
+# not set, we could try to use the IICARD field in the resmgr
+# to see if there is something there that needs to be removed.
+# IICARD is set only on the network adapter entries being used
+# for network install. This is set in the ii_config script.
+bad_rescmd=0
+if [ -n "$ETH_HW" ]
+then
+	if [ "${NIC_IS_ISA}" == "1" ]
+	then
+		/sbin/resmgr -m ${ETH_HW} -r 2>/tmp/ii_ethhw.err
+	else
+		#/sbin/resmgr -m ${ETH_HW} -p "NETCFG_ELEMENT" \
+		#	-v "-" 2>/tmp/ii_ethhw.err
+		/sbin/resmgr -m ${ETH_HW} -p "MODNAME,s" \
+			-v "-" 2>/tmp/ii_ethhw.err
+	fi
+	[ $? -ne 0 ] && bad_rescmd=1
+else
+	/sbin/resmgr -p "MODNAME IICARD,s" | \
+	while read ii_mod ii_card
+	do
+		if [ "$ii_card" = "1" ]
+		then
+			if [ "${NIC_IS_ISA}" == "1" ]
+			then
+			    /sbin/resmgr -m ${ii_mod} \
+				-r 2>>/tmp/ii_ethhw.err
+			else
+			    #/sbin/resmgr -m ${ii_mod} \
+			    #   -p "NETCFG_ELEMENT" \
+			    #   -v "-" 2>/tmp/ii_ethhw.err
+			    /sbin/resmgr -m ${ii_mod} -p "MODNAME,s" \
+				-v "-" 2>>/tmp/ii_ethhw.err
+			fi
+			[ $? -ne 0 ] && bad_rescmd=1
+
+		fi
+	done
+fi
+
+/sbin/resmgr -r -m net0 2>>/tmp/ii_ethhw.err
+[ $? -ne 0 ] && bad_rescmd=1
+
+[ $bad_rescmd -ne 0 ] && \
+	mv /tmp/ii_ethhw.err /var/sadm/dist/ii_ethhw.err
+
+#
+#  inetinst - make sure we take the networking card out of the
+#  resmgr database BEFORE the idbuild.
+#
+if [ "${SEC_MEDIUM_TYPE}" = "tcp" -o "${SEC_MEDIUM_TYPE}" = "spx" ]
+then
+	#
+	#  if nwnet pkg was not installed, remove entries from /etc/netconfig
+	#
+	[ ! -d /var/sadm/pkg/nwnet ] && {
+		/usr/bin/sed -e "/^ipx/d" -e "/^spx/d" \
+			< /etc/netconfig > /tmp/netconfig.$$
+		mv /tmp/netconfig.$$ /etc/netconfig
+	}
+
+	#
+	#  if inet pkg was not installed, remove entries from /etc/netconfig
+	#
+	[ ! -d /var/sadm/pkg/inet ] && {
+		/usr/bin/sed -e "/^tcp/d" -e "/^udp/d" -e "/^icmp/d" \
+			-e "/^rawip/d" < /etc/netconfig > /tmp/netconfig.$$
+		mv /tmp/netconfig.$$ /etc/netconfig
+	}
+fi
+
+[ -s /tmp/unixware.dat -o $BACK_END_MANUAL = "true" ] && {
+	[ "$SEC_MEDIUM_TYPE" = "cdrom" ] || {
+		faultvt "$COMPLEX_ERROR"
+		halt
+	}
+
+	if [ -f /cd-rom/.extras.d/bin/install_more ] 
+	then
+		cp /cd-rom/.extras.d/bin/install_more $SCRIPTS
+	else
+		faultvt "$NO_INST_MORE"
+		halt
+	fi
+
+	if [ -f /cd-rom/.extras.d/bin/odm ] 
+	then
+		# The odm shell script installs odm during upgrades.
+		# For redbox, the odm script is installed by base package.
+		# We're over-writing that version here.
+		cp /cd-rom/.extras.d/bin/odm $SCRIPTS
+	else
+		faultvt "$NO_ODM"
+		halt
+	fi
+
+	if [ $BACK_END_MANUAL = "true" ]
+	then
+		INSTALL_LIST="UW"
+		$INST_COMPAQ_FS && INSTALL_LIST="compaq $INSTALL_LIST"
+		$INST_JALE_FS && INSTALL_LIST="jale $INSTALL_LIST"
+		#
+		#  if vxvm/vxfs pkgs exist, install the new versions
+		#
+		[ -d /var/sadm/pkg/vxvm -o -d /var/sadm/pkg/vxfs ] && {
+			INSTALL_LIST="$INSTALL_LIST ODM_upgrade"
+		}
+	else
+		# This is a SILENT_INSTALL, get responses from the 
+		# unixware.dat file.	
+		. /tmp/unixware.dat
+		INSTALL_LIST="compaq $INSTALL_LIST "
+		[ "$INST_LANG" = "ja" ] && {
+			export LANG=ja
+			export LC_CTYPE=ja
+			INSTALL_LIST="jale $INSTALL_LIST "
+		}
+	fi
+	# The UnixWare set is already installed. Now install additional sets 
+	# and/or packages.  These include sets/packages the user selected 
+	# and any sets/packages that we automatically install.  
+	wclose $SETUPWID
+	footer
+	msg
+	install_more /cd-rom
+	display "$DO_SETUP"
+	SETUPWID=$CURWIN
+	footer "$GENERIC_WAIT_FOOTER"
+}
+
+[ -f /cd-rom/cpq.inst ] && /cd-rom/cpq.inst
+
+. $SCRIPTS/pdiconfig
+
+# Removed this code for the vxfs is now included into the base CD in post
+# BL6 and BL7 - IMPORTANT NOTE TO HAH MUST REMOVE IT AFTER TEST-FEST     
+
+#$SILENT_INSTALL || $BACK_END_MANUAL || {
+#	[ -d /var/sadm/pkg/vxvm -o -d /var/sadm/pkg/vxfs ] && . $SCRIPTS/odm
+#}
+
+#
+#
+# LEA/CPQ
+#
+# The EFS delivered by Compaq is intended to be patches and the like
+# to a completely installed system ... I am taking a wild guess that
+# this is the appropriate place to access the DOS/System partition and
+# install any EFS packages that may be laying around in the appropriate
+# directories
+#
+#
+
+# this is the mount command that works on my running system ...
+# please feel free to replace it with the appropriate mount command
+# and device parameters, if it will work better the actual mount
+# could be moved inside the braces and replace on the outside
+# of the braces with a piece of code to first identify the
+# existence of a system partition
+# if this whole thing makes anyone nervous, a test for Compaq
+# hardware could be wrapped around the entire thing so that this
+# particular bit of logic would never even happen on another
+# vendor's system
+SYSMOUNT=/mnt
+mount -f dosfs /dev/dsk/c0b0t0d0p1 ${SYSMOUNT} && {
+
+        for PKG in `cat ${SYSMOUNT}/scoisl/scoefs/pkglist` ; do
+                /usr/sbin/pkgadd -lpq -d - all < \
+		${SYSMOUNT}/scoisl/scoefs/${PKG} \
+                > /dev/null 2>> /tmp/cpq_efs.err
+        done
+
+        umount ${SYSMOUNT}
+}
+#
+#
+# LEA/CPQ
+#
+# End of changes to install EFS from system partition
+#
+#
+
+[ -f /usr/sbin/relax ] && /usr/sbin/relax $security > /dev/null 2>&1
+
+wclose $SETUPWID
+footer
+msg
+display "$REBUILD_MSG"
+REBUILD_WID=$CURWIN
+
+#added by hah to free up space.
+
+[ -f  /.extra.d ] && sh_umount /.extra.d
+
+. $SCRIPTS/rebuild
+/etc/conf/bin/idcpunix > /tmp/cpunix.out 2>&1
+wclose $REBUILD_WID
+footer
+msg
+stty min 1
+[ $SEC_MEDIUM_TYPE = cdrom ] && sh_umount /cd-rom
+
+# Put the real mailx back in place
+
+[ -f /bin/REALmailx ] && mv /bin/REALmailx /bin/mailx
+
+while :
+do
+	unset NOT_EMPTY_MSG
+	display -w "$REBOOT_MSG"
+	input_handler
+	if /usr/sbin/check_devs -g /dev/rdsk/f0t &&
+		/usr/bin/dd if=/dev/rdsk/f0t of=/dev/null count=1 2> /dev/null
+		# Some floppy drives do not support the Disk Change Signal (see
+		# FD_DOOR_SENSE in uts/io/io.cf/Dtune).  So, we need to try a read()
+		# using dd to check whether such drives are empty.
+	then
+		NOT_EMPTY_MSG="$FLOPPY_NOT_EMPTY"
+	elif [ $SEC_MEDIUM_TYPE = cdrom ] && /usr/sbin/check_devs -g $SEC_MEDIUM
+	then
+		NOT_EMPTY_MSG="$CD_NOT_EMPTY"
+	fi
+	[ -z "$NOT_EMPTY_MSG" ] || {
+		footer "$WELCOME_FOOTER"
+		input_handler
+		footer
+		continue
+	}
+	break
+done
+call endwin
+/usr/bin/tput clear > /dev/console	#clear the VT00 screen
+/usr/bin/tput clear 				#clear the VT01 screen
+
+# Make /.io directory so that system will not be caught in a boot cycle
+# Mysterious, isn't it ?
+[ ! -d /.io ] && mkdir /.io
+
+)   
+
+# end of the  end ot the sub-shell $HDROOT  
+
+#We are no longer chrooted to $HDROOT.
+
+# Append user parameters to /stand/boot
+cat /stand/boot.append >> /mnt/stand/boot
+
+[ -f $HDROOT/etc/conf/.new_unix ] || {
+	eval "faultvt \"$NO_NEW_UNIX\""
+	halt
+}
+umountall
+/usr/bin/kb_remap -f default
+
+		call uadmin 2 1 #Soft reboot
+

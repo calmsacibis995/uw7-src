@@ -1,0 +1,154 @@
+#ident	"@(#)ihvkit:pdi/mitsumi/README	1.6.2.2"
+
+This directory contains all of the files necessary to build and install a
+non-SCSI CD-ROM driver.  Observe the following precautions before building
+and installing the driver:
+
+1) Read the commented section of hba.h and initialize sdi.h to the appropriate
+   value:
+
+	#define PDI_VERSION	1  for UNIXWARE 1.1
+
+   On a UnixWare 2.x system, the hba.h already contains the correct
+   value (#define PDI_VERSION 4).
+
+2) Make sure that the hardware is configured for the various system parameter
+   values: IRQ, I/O, RAM address, and so on, as provided in mitsumi.cf/System.
+
+3) This directory contains a separate set of configuration files to
+   be used when compiling this driver on a 1.1 platform.  Save the 
+   configuration files under mitsumi.cf (2.0 version of config files) and 
+   replace them with the 1.1 versions available under uw_1.1.cf.  After the
+   replacement has been done, move the hba.h file to the ictha source
+   directory.
+
+
+4) To get a complete top down compile, line and install of the driver execute
+   make with the following options:
+
+	make -f mitsumi.mk clean install
+
+   If you want the mitsumi driver package to be transfered to an HBA 
+   floppy along with a loadable image of the driver (for load on
+   install), execute the makefile with the following option:
+
+	make -f mitsumi.mk hbafloppy
+
+NOTE:  Ensure that both the packaging tools and ksh are currently
+available on the system before trying to generate the HBA floppy.
+Also make sure you that you have a 3 1/2 inch diskette in your floppy
+drive before executing this command.
+
+The packaging tools are available as a part of the "softint" package
+and the ksh is available along with the "advanced commands" package.
+
+Verify the presence of the packaging tools by executing:
+
+		pkginfo -l softint
+
+Verify the presence of the advanced commands by executing:
+
+		pkginfo -l cmds
+
+Notes
+_____
+
+For a better understanding of the layout and use of the HBA floppies,
+refer to the READMEs located under:
+
+	/usr/src/ihvkit/pdi/ihvhba/ihvhba.bldscript 
+
+The directory mitsumi.hbafloppy contains the following files:
+
+bldscript:  Used to package the driver and build an HBA floppy.
+
+mitsumi/copyright:  Copyright file for the driver package.
+
+mitsumi/pkginfo:  Information about the mitsumi driver package.
+
+mitsumi/postinstall:  Postinstall script used during driver package
+		      installation.
+
+mitsumi/preremove:  Preremove script used during driver package removal.
+
+mitsumi/prototype:  Listing of all the components that make up the
+		    mitsumi driver package.
+
+etc/HBAINST:  A script used during the second phase of the installation
+	      using the HBA floppy.
+
+
+The makefile creates the HBA floppy, copies the necessary driver
+component files Driver.o, mitsumi.h, mitsumi (loadable image), Space.c,
+System, Master, Drvmap, loadmods to the necessary sub-directories under
+mitsumi.hbafloppy/mitsumi/tmp/mitsumi.  In addition, it invokes the
+"bldscript" to format the floppy, make the file system, build the driver
+packages and eventually transfer the package to the media.
+
+
+NOTE: When building the 1.1 version of the HBA floppy modify the
+makefile to remove the Drvmap file from the list of installable objects
+(Makefile variable OBJECTS), as well as in the prototype file located in
+mitsumi.hbafloppy/mitsumi.  The Drvmap files are needed for
+autoconfig-ready 2.0 drivers.  In addition, the "bldscript" must be
+modified, so that the '-c' option is added to the two lines where the
+pkgmk command could be run.
+
+Note2:  Because the idtools for UnixWare 1.1 do not contain the functionality
+to generate a viable Driver.o from the loadable module, and the Drvmap file
+does not exist for this release, several additional modifications must be
+made to the installation and build scripts.
+
+	1) Add 'Driver.o' to the list of OBJECTS in the Makefile.
+
+	2) Within the mitsumi.hbafloppy/mitsumi/postinstall script, make
+	   the changes:
+
+	Remove the 4 consecutive lines:
+
+                        if [ -f $SVDIR/drvmap.d/$PKGINST ]
+                        then
+                                cp $SVDIR/drvmap.d/$PKGINST /etc/conf/drvmap.d
+                        fi
+
+	Remove the 7 consecutive lines:
+
+                if [ ! -d $SVDIR/drvmap.d ]
+                then
+                        mkdir $SVDIR/drvmap.d 2>&1 >/dev/null
+                fi
+                mv /etc/conf/drvmap.d/$PKGINST $SVDIR/drvmap.d
+                mv /tmp/$PKGINST/Drvmap /etc/conf/drvmap.d/$PKGINST
+                [ $? -ne 0 ] && abort_install
+
+	Remove the line:
+
+	        /etc/conf/drvmap.d/$PKGINST
+
+	Remove the line:
+
+		do_extract
+
+	Remove the all the lines mentioned below:
+
+# If this package is being added as an add-on package (not being installed
+# from the initial system installation via loadhba), then for non-ISA cards
+# which have boardids run 'dcu -s'.
+if [ "$ROOT" != "/mnt" ]
+then
+	...	<- delete all the lines between and including the then and fi.
+fi
+
+	Edit the following line:
+	From:
+
+	removef ${PKGINST} /tmp /tmp/${PKGINST} /tmp/${PKGINST}/Drvmap \
+
+	To:
+
+	removef ${PKGINST} /tmp /tmp/${PKGINST} \
+
+	2) Add the following line at the end of the
+	   mitsumi.hbafloppy/mitsumi/prototype file, left justified:
+
+	f none  /tmp/mitsumi/Driver.o 0644 root sys

@@ -1,0 +1,498 @@
+#!/bin/osavtcl
+#
+#	@(#)ndscript	11.2	10/24/97	17:35:54
+#	@(#) ndscript 12.15 96/02/01 
+#
+# Copyright (C) 1995 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#
+#cmdtrace on [open /tmp/ndscript w]
+
+set lclPatchArea {__SSO_ID_ST@SCO-aga:Vidconf:5.2.2a                @SSO_ID_END__}
+set SSOPATH "/usr/X11R6.1/lib/vidconf"
+
+loadlibindex /usr/lib/sysadm.tlib
+set SSO_ROOT $SSOPATH/AOF
+
+proc clean_tmp {} \
+{
+	global TMP_DIR
+
+	foreach x [ glob -nocomplain $TMP_DIR/* ] {
+		if { [ file tail $x ] != "acfg_output" } {
+			eval exec rm -rf $x
+		}
+	}
+}
+
+
+proc InitializeGlobals {} \
+{
+	global TMP_DIR SSO_ROOT GFX_ROOT SAFE_TMP_DIR DANGEROUS_TMP_DIR
+
+	source $SSO_ROOT/lib/libSCO.tcl
+
+	set GFX_ROOT /usr/X11R6.1/lib/vidconf/AOF
+	set TMP_DIR $GFX_ROOT/tmp
+	clean_tmp
+
+	set SAFE_TMP_DIR $TMP_DIR/safe
+	system "mkdir -p $SAFE_TMP_DIR"
+	set DANGEROUS_TMP_DIR $TMP_DIR/dangerous
+	system "mkdir -p $DANGEROUS_TMP_DIR"
+}
+
+proc GetVendorList {} \
+{
+	global GFX_ROOT
+
+	set ID_DIR $GFX_ROOT/ID
+
+	set d_l ""
+	foreach drv [ glob -nocomplain $ID_DIR/* ] {
+		set l ""
+		foreach aof_file [ glob -nocomplain $drv/* ] {
+			set x $l
+
+			keylset x AOF_PATH $aof_file
+			set bus_l [ GetValueFromStanza $aof_file ADAPTER BUS ]
+			set is_isa 0
+			foreach b $bus_l {
+				if { $b == "ISA" } {
+					set is_isa 1
+					break
+				}
+			}
+			if { $is_isa } {
+				if [ file exists $drv/acfg ] {
+					set d_s 1
+					keylset x ACFG_PATH $drv/acfg
+				} else {
+					set d_s 0
+				}
+				keylset x DANGEROUS_SEARCH $d_s
+			}
+			set desc_l [ GetValueFromStanza $aof_file ADAPTER DESCRIPTION ]
+			foreach desc $desc_l {
+				lappend d_l $desc
+				keylset x DESCRIPTION $desc
+				set v_l($desc) $x
+			}
+		}
+	}
+
+	set newv_l ""
+
+	foreach d [ lsort $d_l ] {
+		lappend newv_l $v_l($d)
+	}
+
+	return $newv_l
+}
+
+proc ScanAcfgOutput { tmp_dir {aof_dir ""} } \
+{
+	set s_l ""
+	foreach x [ glob -nocomplain $tmp_dir/* ] {
+		set attr_list ""
+		keylset attr_list ACFGO_PATH $x
+
+		if { [ catch { set fd [ StanzaOpen $x STZ_RDWR ] } ] } {
+			puts stderr "[ IntlLocalizeMsg SCO_NDSCRIPT_ERR_STANZA_OPEN ]"
+			exit 1
+		}
+		set id [ StanzaGetVals $fd ID SELECT ]
+		set bdf [ StanzaGetVals $fd BDF SELECT ]
+		set aof_file [ StanzaGetVals $fd ADAPTER AOF ]
+		if { [ string index $aof_file 0 ] == "/" } {
+			set aof_path $aof_file
+		} else {
+			StanzaReplaceValue $fd ADAPTER AOF "[ StripAOFPath $aof_dir ]/$aof_file"
+		}
+		StanzaClose $fd
+
+		set aof_path [ GetAOFPath $x ]
+		keylset attr_list AOF_PATH $aof_path
+		keylset attr_list ID $id
+		keylset attr_list BDF $bdf
+		set desc [ MakeDescription $x ]
+		keylset attr_list DESCRIPTION $desc
+
+		lappend s_l $attr_list
+	}
+	return $s_l
+}
+
+proc write_initdb {aof_file bus desc key_list} \
+{
+	global filename
+	global SAFE_TMP_DIR
+
+	# Strip off the <ver>/ID portion of the AOF
+	# path.
+	
+	set aof_file [ StripAOFPath $aof_file ]
+	set fd [ open $SAFE_TMP_DIR/$filename w ]
+
+	foreach k $key_list {
+		puts $fd "[lindex $k 0]:"
+		puts $fd "	SELECT=[lindex $k 1 ]"
+	}
+	puts $fd "ADAPTER:"
+	puts $fd "	DESCRIPTION=\"$desc\""
+	puts $fd "	BUS=$bus"
+	puts $fd "	AOF=$aof_file"
+
+	close $fd
+	incr filename
+}
+
+proc EISA_MCA_Scan {bus slots id_list} \
+{
+	foreach s $slots {
+		set slot_no [ lindex $s 0 ]
+		set slot_id [ lindex $s 1 ]
+		
+		foreach id $id_list {
+			set i [ keylget id ID ]
+			if { [ format %d 0x$slot_id ] == [ format %d 0x$i ] } {
+				write_initdb [ keylget id AOF ] $bus [ keylget id DESC ] "{SLOT $slot_no}"
+			}
+		}
+	}
+}
+
+proc EISA_Search {id_list} \
+{
+	if [ file exists /etc/eisadump ] {
+		set TMPF /tmp/ncfgsrch$$
+		exec /etc/eisadump >$TMPF
+
+		set sd [ scancontext create ]
+		set fd [ open $TMPF ]
+
+	scanmatch $sd "^ *\[0-9\]+ +\[0-9\]+ +- +boardid" {
+		scan $matchInfo(line) "%d %d - boardid %s" slot func id
+		set EISA_SLOT($slot) [ string tolower $id ]
+	}
+
+		scanfile $sd $fd
+		close $fd
+		unlink $TMPF
+		scancontext delete $sd
+
+		set slots ""
+		if { [ info exists EISA_SLOT ] } {
+			foreach s [ array names EISA_SLOT ] {
+				lappend slots "$s $EISA_SLOT($s)"
+			}
+		}
+
+		EISA_MCA_Scan "EISA" $slots $id_list
+	}
+}
+
+proc MCA_Search {id_list} \
+{
+	set slots [exec slot -f /dev/null | awk "\{ printf \"{%s %s} \", \$1, \$2 \}"]
+	EISA_MCA_Scan "MCA" $slots $id_list
+}
+
+proc PCI_Search {id_list} \
+{
+	global SSO_ROOT
+	if [ file exists /dev/X/pci ] {
+#puts stderr "PCI_Search $id_list"
+
+        set infos [exec $SSO_ROOT/bin/pcislot | awk "\{printf \"{%s} \", \$0 \}"]
+
+	foreach s $infos {
+		set bus_no [ lindex $s 0 ]
+		set dev_no [ lindex $s 1 ]
+		set func_no [ lindex $s 2 ]
+		set slot_id [ lindex $s 3 ]
+		set desc ""
+		set bdf $bus_no$dev_no$func_no
+
+		foreach id $id_list {
+			set ID [ keylget id ID ]
+                        set AOF [ keylget id AOF ]
+
+			if { [ string first $ID $slot_id ] == 0 } {
+				keylset p($AOF) $bdf.DESC "[ keylget id DESC ]" \
+                                        $bdf.BUS $bus_no $bdf.DEV $dev_no \
+                                         $bdf.FUNC $func_no $bdf.ID $slot_id
+			} 
+              	}
+	}
+
+        if { [info exists p] } {
+                set done [array names p]
+        } else {
+                set done ""
+        }
+
+	foreach id $id_list {
+		set ID [ keylget id ID ]
+                set AOF [ keylget id AOF ]
+                set SAFE_DETECT [ keylget id SAFE_DETECT ]
+                set bdf "DETECT"
+
+                if { ([ lsearch -exact $done $AOF ] == -1) && \
+                     ([ string compare $ID "DETECT" ] == 0) && \
+                      [ file exists "$SAFE_DETECT" ] && \
+                      [ file executable "$SAFE_DETECT" ] && 
+                     ([ system "$SAFE_DETECT > /dev/null 2>&1" ] == 0) } {
+                        keylset p($AOF) $bdf.DESC "[ keylget id DESC ]" \
+                                $bdf.BUS "000" $bdf.DEV "000" \
+                                $bdf.FUNC "000" $bdf.ID "000"
+		} 
+        }
+
+	if {[info exists p]} {
+		foreach aof [ array names p ] {
+			foreach bdf [ keylget p($aof) ] {
+				set desc [ keylget p($aof) $bdf.DESC ]
+				set bus_no [ keylget p($aof) $bdf.BUS ]
+				set dev_no [ keylget p($aof) $bdf.DEV ]
+				set func_no [ keylget p($aof) $bdf.FUNC ]
+				set id [ keylget p($aof) $bdf.ID ]
+				set key [ GetValueFromStanza [ lindex $aof 0] ADAPTER KEY ]
+        			write_initdb $aof "PCI" "$desc" "{PCI_BUS $bus_no} \
+                                 {PCI_DEV $dev_no} {PCI_FUNC $func_no} {ID $id} {BDF $bdf}"
+			}
+		}
+	}
+	}
+}
+
+
+proc ISA_Search {id_list} \
+{
+	global SSO_ROOT
+
+	foreach id $id_list {
+		set ID [ keylget id ID ]
+                set AOF [ keylget id AOF ]
+                set SAFE_DETECT [keylget id SAFE_DETECT]
+
+                if { ([ string compare $ID "DETECT" ] == 0) && \
+                      [ file exists "$SAFE_DETECT" ] && \
+                      [ file executable "$SAFE_DETECT" ] && 
+                     ([ system "$SAFE_DETECT > /dev/null 2>&1" ] == 0) } {
+		              keylset p($AOF) $ID.DESC "[ keylget id DESC ]" $ID.ID $ID
+        	} 
+	}
+
+	if {[info exists p]} {
+		foreach aof [ array names p ] {
+			foreach bdf [ keylget p($aof) ] {
+				set id [ keylget p($aof) $bdf.ID ]
+				set desc [ keylget p($aof) $bdf.DESC ]
+				write_initdb $aof "ISA" "$desc" "{ID $id} {BDF DETECT}"
+			}
+		}
+	}
+
+}
+
+
+proc SafeSearch {} \
+{
+	global SAFE_TMP_DIR GFX_ROOT
+
+	# set bustype - EISA, ISA, or MCA
+	set bus_list [exec uname -X | awk "/BusType/ \{ print \$3 \}"]
+	lappend bus_list "PCI"
+
+	set EISA_ids ""
+	set MCA_ids ""
+	set PCI_ids ""
+        set ISA_ids ""
+
+	foreach drv [ glob -nocomplain $GFX_ROOT/ID/* ] {
+		foreach file [ glob -nocomplain $drv/* ] {
+			if { [string first "#" $file] != -1} {
+			# skip backup files with # in name - confuses Stanza
+				continue
+			}
+
+			set card_bus [ GetValueFromStanza $file ADAPTER BUS ]
+			set defdesc [ lindex [ GetValueFromStanza $file ADAPTER DESCRIPTION ] 0]
+			set ids [ GetValueFromStanza $file ADAPTER ID ]
+			set detect [ GetValueFromStanza $file ADAPTER SAFE_DETECT ]
+			foreach id $ids {
+				set d [ lindex [ GetValueFromStanza $file ADAPTER $id ] 0 ]
+				if { $d == "" } {
+					set d $defdesc
+				}
+				keylset item AOF $file
+				keylset item DESC $d
+				keylset item ID $id
+				keylset item SAFE_DETECT $detect
+				lappend ${card_bus}_ids $item
+			}
+		}
+	}
+#puts stderr "EISA: $EISA_ids"
+#puts stderr "MCA: $MCA_ids"
+#puts stderr "PCI: $PCI_ids"
+
+	global filename
+	set filename 0
+	system "rm -f $SAFE_TMP_DIR/*"
+
+	foreach bus $bus_list {
+		case $bus in {
+		MCA	{
+			# No MCA autodetection supported
+			#MCA_Search $MCA_ids
+		}
+		EISA	{
+			# No EISA autodetection supported
+			#EISA_Search $EISA_ids
+		}
+		PCI	{
+			PCI_Search $PCI_ids
+		}
+		ISA	{
+			ISA_Search $ISA_ids
+		}
+		}
+	}
+
+	return [ ScanAcfgOutput $SAFE_TMP_DIR ]
+}
+
+proc Search {item} \
+{
+	global GFX_ROOT DANGEROUS_TMP_DIR
+
+	set acfg_path [ keylget item ACFG_PATH ]
+	set aof_dir [ file dirname [ keylget item AOF_PATH ] ]
+
+	system "rm -f $DANGEROUS_TMP_DIR/*"
+	exec $acfg_path -d $DANGEROUS_TMP_DIR
+
+	return [ ScanAcfgOutput $DANGEROUS_TMP_DIR $aof_dir ]
+}
+
+proc MakeAdapterNotFound {aof_file outfd desc} \
+{
+	# Strip off the <ver>/ID portion of the AOF
+	# path.
+	set aof_path_line [ StripAOFPath $aof_file ]
+
+	foreach i {KEY REQUIRED ADVANCED} {
+		set attrs($i) ""
+		foreach j [ GetValueFromStanza $aof_file ADAPTER $i ] {
+			set types [ GetValueFromStanza $aof_file $j TYPE ]
+			set has [ lsearch -exact $types swconfig ]
+			if { $has != -1 } {
+				set types [ lreplace $types $has $has ]
+				set has_swconfig 1
+			} else {
+				set has_swconfig 0
+			}
+
+			if { $types != "" } {
+				if { $has_swconfig } {
+					set y [ translit " " "," $types ]
+					puts $outfd "$j:"
+					puts $outfd "\tTYPE=$y"
+				}
+				lappend attrs($i) $j
+			}
+		}
+	}
+	set req [ translit " " "," [ concat $attrs(KEY) $attrs(REQUIRED) ] ]
+	set adv [ translit " " "," $attrs(ADVANCED) ]
+
+	puts $outfd "ADAPTER:"
+	puts $outfd "\tDESCRIPTION=\"$desc\""
+	puts $outfd "\tKEY="
+	puts $outfd "\tREQUIRED=$req"
+	puts $outfd "\tADVANCED=$adv"
+	puts $outfd "\tAOF=$aof_path_line"
+}
+
+proc UserSelected {item net_if} \
+{
+	global TMP_DIR SSO_ROOT GFX_ROOT component
+#puts stderr "UserSelected: $item $net_if"
+
+	set ACFG_OUTPUT $TMP_DIR/acfg_output
+	set aof_path [ keylget item AOF_PATH ]
+
+	set x [ split $aof_path / ]
+	set inx [ lsearch $x "AOF" ]
+	set mdi_driver [ lindex $x [ expr $inx-1 ] ]
+
+	if { [ keylget item DESCRIPTION x ] } {
+		set desc $x
+	} else {
+		set desc [lindex [ GetValueFromStanza $ACFG_OUTPUT ADAPTER DESCRIPTION ] 0 ]
+	}
+
+	if { [ keylget item ACFGO_PATH x ] } {
+		# User selected an actual adapter in the machine
+		exec cp $x $ACFG_OUTPUT
+	} else {
+		# User selected a vendor's card class
+
+		set sd [ open $ACFG_OUTPUT w ]
+		MakeAdapterNotFound $aof_path $sd "$desc"
+		close $sd
+	}
+
+	exec mv $ACFG_OUTPUT $GFX_ROOT/sysdb/$net_if
+	set ACFG_OUTPUT $GFX_ROOT/sysdb/$net_if
+
+	set ncfg_args [ list \
+		/usr/bin/ncfgprompter \
+		-title "Network Driver Configuration" \
+		-no_output \
+		-upper_message "Enter the configuration of $desc:" \
+		-lower_message "   * - indicates conflict with other hardware" \
+		-widget_root lli_$mdi_driver \
+		$SSO_ROOT/bin/ndprompter.BE -i $ACFG_OUTPUT $mdi_driver -1 \
+	]
+	return "OK [ list $ncfg_args ]"
+}
+
+# main Main MAIN
+#
+# This portion of the script analyses the requests from the UI and calls
+# the appropriate handler function.  Then it returns the result.  This is
+# done to minimize the complexity of the code in the UI.  Since the interface
+# to this script is well defined, and programatic it can be tested
+# automatically.
+
+ErrorTopLevelCatch {
+set component [ lindex $argv 0 ]
+
+InitializeGlobals
+
+while { [ gets stdin line ] != -1 } {
+#puts stderr "Command is $line"
+    case [ lindex $line 0 ] {
+	SAFE_DETECT {
+		puts stdout [ SafeSearch ]
+	}
+	QUIT {
+		break
+	}
+	default {
+		puts stderr "ndscript: Unknown request '$line'"
+	}
+    }
+    flush stdout
+}
+clean_tmp
+} ndscript

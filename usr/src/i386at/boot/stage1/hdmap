@@ -1,0 +1,19 @@
+#ident	"@(#)stand:i386at/boot/stage1/hdmap	1.2"
+#ident	"$Header$"
+
+# Linker map file for hdboot
+# AT hard disk bootstrap gets loaded at 0:0x7C00
+# Disk mark is at offset 510 (0x1FE)
+# Part B is additional code following the first sector, and will not be
+# loaded by the master bootstrap.
+partB=?RX P0x7E00 V0x7E00 L0x200;
+partB: ?A : bootcmn.o;
+partB: ?A : partnum.o;
+partB:.rodata;
+body=?RX P0x7C00 V0x7C00 L0x1FE;
+body:.text;
+body:.data;
+disk_mark=?R P0x7DFE V0x7DFE;
+disk_mark:disk_mark;
+nobits=? L1;	# L0 doesn't work, so use L1 to catch unwanted .bss
+nobits:?A $NOBITS;

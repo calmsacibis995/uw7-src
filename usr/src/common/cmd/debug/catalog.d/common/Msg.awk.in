@@ -1,0 +1,824 @@
+#ident	"@(#)debugger:catalog.d/common/Msg.awk.in	1.98"
+
+# This file is the input to Msg.awk, the awk script that creates Msgtypes.h,
+# Mcatalog, and Mtable.c.
+
+# Msgtypes.h
+#	defines the enum Msg_id, that lists the types of message passed
+#	between the debugger engine and the user interface.  These describe the
+#	actual contents of the message, not the protocol.
+
+# Mtable.c
+#	contains the initialization code for the table used to format
+#	the messages.  Since each message is translated into a call to printf
+#	for the command line interface, the arguments must always appear in the
+#	specified order
+
+# Mcatalog
+#	contains the format strings, one per line, and is the input
+#	to mkmsgs to create a message database.
+
+# ------ WARNING -------
+# Messages in an existing catalog cannot be modified or removed,
+# because we have no control over the translated catalogs,
+# also, calls to gettxt have hard-coded numbers in them.
+# Messages MUST stay in the same order - after the first release
+# the catalog probably should not be machine generated
+
+# See Msg.awk for the format of individual msgs.
+
+# syncronization messages
+MSG_sync_request	no	-	-
+MSG_sync_response	no	-	-
+MSG_cmd_complete	no	-	-
+MSG_quit	no	-	-
+MSG_script_on	no	-	-
+MSG_script_off	no	-	-
+MSG_assoc_cmd	no	-	-
+
+	# cmd message from the ui to debug
+MSG_command	no	%s	-	-
+
+	# line echoed by debug - generated while in scripts
+	# input line  args: prompt string, cmd line
+MSG_input_line	no	%s%s	-	-
+
+	# extra newline for formatting
+MSG_newline	no	\n	-	-
+
+	# print the string as is, without formatting
+MSG_asis	no	%s	-	-
+
+	# messages from the main driver
+MSG_usage_cmdline	yes	Usage:\n%s [common_options] [[-f all|none|procs] [-r] cmd_line]\n	%s command name	-
+MSG_usage_grab	yes	%s [common_options] [-f all|none|procs] [-l load_file] process...\n	%s command name	-
+MSG_usage_core	yes	%s [common_options] -c core_file object\n	%s command name	-
+MSG_usage_common	yes	       common_options: [-V] [-i c|x] [-X opt] [-d defaults] [-s path] [-Ya|f|g,dir]\n	-	-
+MSG_version	no 	%s: %s%s\n	-	-
+
+	# messages for new lwp
+	# create args: program name, process name
+MSG_createp	yes	New program %s (process %s) created\n	-	-
+MSG_oldargs	no	%s\n	-	-
+MSG_proc_killed	yes	%s killed\n	%s process id	-
+MSG_proc_exec	yes	Process %s exec'd; new executable is %s, program %s\n	-	-
+MSG_proc_fork	yes	Process %s forked; new process %s now controlled\n	-	-
+MSG_new_core	yes	Core image of %s (process %s) created\n	-	-
+MSG_grab_proc	yes	New program %s (process %s) grabbed\n	-	-
+
+MSG_new_pty	yes	Program I/O redirected to pseudo-terminal %s\n	-	-
+	# ps command: current indicator (*), program name, process, pid,
+	#		function, file, line, command
+MSG_ps_header	yes	Program     ID         Pid State    Function   Location        Command\n	-	-
+MSG_ps_core	yes	%s%-10.10s %-7.7s %6d Core     %-10.10s %-15.15s %s\n	-	-
+MSG_ps_dead	yes	 %-10.10s             -1 Dead                                %s\n	-	-
+MSG_ps_release	yes	 %-10.10s             -1 Released                            %s\n	-	-
+MSG_ps_running	yes	%s%-10.10s %-7.7s %6d Running                             %s\n	-	-
+MSG_ps_stepping	yes	%s%-10.10s %-7.7s %6d Stepping                            %s\n	-	-
+MSG_ps_unknown	yes	%s%-10.10s %-7.7s %6d Unknown                            %s\n	-	-
+MSG_ps_stopped	yes	%s%-10.10s %-7.7s %6d Stopped  %-10.10s %-15.15s %s\n	-	-
+
+	# map args: start addr, end addr, size, access permissions, object file
+MSG_map	no	%#.8x..%#.8x\t%#.8x\t%.6s\t%s\n	-	-
+MSG_map_header	yes	Address Map for %s\n Address Range\t\tSize\t\tAccess\tObject File\n	-	-
+
+MSG_prompt	no	%s	-	-
+
+	# events display
+MSG_events	yes	Events for %s, program %s\n	-	-
+MSG_events_proto	yes	Events for (dead) program %s\n	-	-
+MSG_event_header	yes	  ID      Type       Count Condition                      Command List\n	-	-
+MSG_event_header_f	yes	  ID      Type       Count Condition\n	-	-
+MSG_stop_event	yes	[%.4d]%s%s STOP       %5d %-30s %s\n	-	-
+MSG_stop_event_f	yes	[%.4d]%s%s STOP       %5d %s\n\tObject list:\t%s\n\tCommand:\t%s\n	-	-
+MSG_syscall_event	yes	[%.4d]%s%s SYSCALL %-2s %5d %-30s %s\n	-	-
+MSG_syscall_event_f	yes	[%.4d]%s%s SYSCALL %-2s %5d %s\n\tObject list:\t%s\n\tCommand:\t%s\n	-	-
+MSG_signal_event	yes	[%.4d]%s%s SIGNAL           %-30s %s\n	-	-
+MSG_signal_event_f	yes	[%.4d]%s%s SIGNAL           %s\n\tObject list:\t%s\n\tCommand:\t%s\n	-	-
+MSG_onstop_event	yes	[%.4d] %s ONSTOP                                          %s\n	-	-
+MSG_onstop_event_f	yes	[%.4d] %s ONSTOP\n\tObject list:\t%s\n\tCommand:\t%s\n	-	-
+MSG_signal_header	yes	Signal Disposition for %s, program %s\n	-	-
+MSG_sig_caught_default	yes	%4d\tsig%-7s\tcaught\n	-	-
+MSG_sig_ignored_default	yes	%4d\tsig%-7s\tignored\n	-	-
+MSG_event_assigned	yes	EVENT [%d] assigned\n	-	-
+MSG_bkpt_set	no	%#x %d %s	-	-
+MSG_bkpt_set_addr	no	%#x	-	-
+MSG_event_disabled	no	%d %#x	-	-
+MSG_event_enabled	no	%d %#x	-	-
+MSG_event_deleted	no	%d %#x	-	-
+MSG_event_changed	no	%d	-	-
+
+	# process state, produced by LWP::stateinfo()
+MSG_es_stepped	yes	STEPPED %s	-	-
+MSG_step_not_done	yes	STEPPED %s	-	-
+MSG_es_suspend	yes	SUSPENDED %s	-	-
+MSG_es_signal	yes	SIGNALED %d (%s) in %s	-	-
+MSG_es_sysent	yes	SYSTEM CALL ENTRY %d (%s) in %s	-	-
+MSG_es_sysxit	yes	SYSTEM CALL EXIT %d (%s) in %s	-	-
+MSG_es_core	yes	CORE FILE	-	-
+MSG_es_stop	yes	STOP EVENT TRIGGERED: %s%sin %s	-	-
+MSG_core_state	yes	Signal: %s\n	-	-
+MSG_core_state_addr	yes	Signal: %s\tFault address: %#x\n	-	-
+
+
+	# change of current process, program, lwp
+MSG_new_context	yes	Current process is now %s, program %s\n	-	-
+MSG_no_process	yes	No more processes\n	-	-
+MSG_proc_exit	yes	Process %s has exited\n	-	-
+	# releasing a process
+MSG_obsolete_3	yes	Releasing and running process %s\n	-	-
+MSG_obsolete_4	yes	Releasing and suspending process %s\n	-	-
+MSG_release_core	yes	Releasing core image %s\n	-	-
+MSG_proc_start	no	%#x	-	-
+MSG_proc_stop_fcall	no	%#x	-	-
+MSG_rename	no	%s %s	-	-
+MSG_set_frame	no	%#x %d	-	-
+MSG_set_language	no	%s	-	-
+MSG_jump	no	%#x %#x %s %d\n	-	-
+
+	# current location, also produced by LWP::stateinfo()
+	# args: function, file
+MSG_loc_sym_file	yes	 [%s in %s]\n	%s function, %s file	-
+MSG_loc_sym	no	 [%s]\n	-	-
+MSG_loc_unknown	no	\n	-	-
+
+	# source line, args: line #, source line
+MSG_line_no_src	yes	%d:\t<no source text available>\n	%s line	-
+MSG_line_src	no	%d:\t%s\n	-	-
+MSG_disassembly	no	        %#x%s\n	-	-
+MSG_dis_line	no	[%d]%s %#x%s\n	-	-
+MSG_dis_header	yes	Disassembly for %s, Program %s\n	-	-
+MSG_source_file	no	%s	-	-
+
+	# register contents
+MSG_int_reg_newline	no	%s\t0x%.8x\n	-	-
+MSG_int_reg	no	%s\t0x%.8x\t	-	-
+MSG_flt_reg	no	%s %s\n	-	-
+MSG_reg_header	yes	Register Contents for %s, program %s\n	-	-
+
+	# process I/O
+MSG_proc_output	no	%s> %s	-	-
+
+	# alias args: alias name, token string
+MSG_alias	no	%s => %s\n	-	-
+
+	# Raw dump
+MSG_raw_dump_header	yes	Raw Dump for %s, Program %s\n	-	-
+MSG_raw_dump	no	%s\n	-	-
+
+	# Stack trace
+MSG_stack_header	yes	Stack Trace for %s, Program %s\n	-	-
+MSG_stack_frame	no	%s[%d] %s(	-	-
+MSG_stack_arg	no	%s%s=%s	-	-
+MSG_stack_arg2	no	%s%#x	-	-
+MSG_stack_arg3	yes	%spresumed: %#x	%s comma or null,%#x number	-
+MSG_stack_frame_end_1	no	)\t[%s@%d]\n	-	-
+MSG_stack_frame_end_2	no	)\t[%#x]\n	-	-
+	# print expression
+MSG_print_header	no	%s: 	-	-
+MSG_print_val	no	%s	-	-
+
+	# messages from symbols
+MSG_sym_header	yes	Symbols for %s, Program %s\nName                 Location         Line\n	-	-
+MSG_sym_type_header	yes	Symbols for %s, Program %s\nName                 Location         Line  Type\n	-	-
+MSG_sym_type_val_header	yes	Symbols for %s, Program %s\nName                 Location         Line  Type                 Value\n	-	-
+MSG_sym_val_header	yes	Symbols for %s, Program %s\nName                 Location         Line  Value\n	-	-
+MSG_symbol	no	%-20.20s %-15.15s %5.5s\n	-	-
+MSG_symbol_type	no	%-20.20s %-15.15s %5.5s  %s\n	-	-
+MSG_symbol_type_assume	yes	%-20.20s %-15.15s %5.5s  %s (assumed)\n	-	-
+MSG_symbol_val	no	%-20.20s %-15.15s %5.5s  %s\n	-	-
+MSG_symbol_val_assume	yes	%-20.20s %-15.15s %5.5s  %-11s (assuming int)\n	-	-
+MSG_symbol_type_val	no	%-20.20s %-15.15s %5.5s  %-20.20s %s\n	-	-
+MSG_symbol_type_val_assume	yes	%-20.20s %-15.15s %5.5s  %-9.9s (assumed)  %s\n	-	-
+MSG_function	no	%s\n	-	-
+	# working directory
+MSG_pwd	no	%s\n	-	-
+MSG_cd	no	%s\n	-	-
+
+	# unclassified error messages
+ERR_asis	no	%s	-	-
+
+	# specific error messages
+ERR_internal	yes	Inconsistent state in function %s at line %d\n	-	-
+	# messages from libexecon
+ERR_step_watch	yes	Stepping %s to watch stop expression\n	-	-
+ERR_running_proc	yes	Cannot start %s, it is already executing\n	-	-
+ERR_core_cant_run	yes	Cannot start %s, it is a core file\n	-	-
+ERR_core_cant_stop	yes	Cannot stop %s, it is a core file\n	-	-
+ERR_cant_restart	yes	Cannot restart execution of %s\n	-	-
+ERR_sys_cant_stop	yes	Cannot stop %s\n	-	-
+ERR_no_signals	yes	Cannot set signal state in %s\n	-	-
+ERR_no_syscalls	yes	Cannot trace system calls in %s\n	-	-
+ERR_sys_no_faults	yes	Cannot set fault tracing in %s\n	-	-
+ERR_sys_no_breakpt	yes	Cannot set breakpoint at %#x in %s\n	-	-
+ERR_sys_breakpt	yes	Cannot remove breakpoint at %#x in %s\n	-	-
+ERR_breakpt_bad_addr	yes	Invalid address for breakpoint in %s: %#x\n	-	-
+ERR_sys_cancel_sig	yes	Cannot cancel signal in process %s\n	-	-
+ERR_no_follower	yes	Cannot run follower process (%s): %s\n	%s process name, %s error reason	-
+ERR_fork_failed	yes	Fork failed in creating process: %s\n	%s error reason	-
+ERR_fork_child_lost	yes	Process %s forked: could not control child: %s\n	%s process id, %s error reason	-
+ERR_vfork_restart	yes	Process has vforked; restart both parent and child to avoid deadlock\n	-	-
+ERR_proc_exec	yes	Process %s exec'd: could not control new executable\n	-	-
+ERR_used_name	yes	Program name %s already in use; using %s\n	-	-
+ERR_no_access	yes	Could not access %s\n	-	-
+ERR_no_event_id	yes	No active event with id %d\n	-	-
+ERR_bad_event_id	yes	Invalid form for event id: \"%s\"\n	-	-
+ERR_sys_pty_setup	yes	Could not set up pseudo-terminal: %s\n	%s error reason	-
+ERR_sys_pty_read	yes	Could not read from pseudo-terminal %s: %s\n	%s tty name,%s error reason	-
+ERR_sys_map	yes	Cannot read process memory map: %s\n	%s error reason	-
+ERR_branch_tbl	yes	Cannot find branch table in %s\n	-	-
+ERR_stop_expr	yes	Cannot evaluate stop expression in %s\n	-	-
+ERR_expr_scope	yes	Cannot find scope for stop expression in %s\n	-	-
+ERR_obsolete_5	yes	Cannot find return address for function in process %s\n	-	-
+ERR_core_format	yes	Core file format problem\n	-	-
+ERR_core_access	yes	Problem accessing core file %s\n	-	-
+ERR_core_truncated	yes	Core file truncated\n	-	-
+ERR_core_write_regs	yes	Cannot write to core file registers\n	-	-
+ERR_read_reg	yes	Cannot read registers for %s\n	-	-
+ERR_write_reg	yes	Cannot write registers for %s\n	-	-
+ERR_proc_read	yes	Problem reading from process %s, address %#x\n	-	-
+ERR_proc_write	yes	Problem writing to process %s, address %#x\n	-	-
+ERR_stop_intr	yes	Stop directive for process %d has been interrupted\nProcess is running but will be stopped\n	-	-
+ERR_no_segment	yes	Cannot find memory segment for address %#x in process %s\n	-	-
+ERR_no_match	yes	No matching object for item in process list: %s\n	-	-
+ERR_shlib_open	yes	Could not open shared library %s: %s\n	%s file, %s error reason	-
+ERR_proc_setid	yes	Cannot control process %d: it has executed a setuid or setgid program\n	-	-
+ERR_proc_io	yes	Error on I/O to process %d\n	-	-
+ERR_proc_unknown	yes	System error attempting to control process %d\n	-	-
+ERR_bkpt_data	yes	Breakpoint set on data address %#x in %s\n	-	-
+ERR_watch_text	yes	Watchpoint set on text address %#x in %s\n	-	-
+ERR_obsolete_6	yes	Could not copy event %d to process %s\n	-	-
+ERR_obsolete_7	yes	Could not reset event %d in process %s\n	-	-
+ERR_nested_variable	yes	Unsupported: debugger variable %s as value of debugger variable %s\n	-	-
+
+	# messages from libsymbol
+ERR_bad_debug_entry	yes	Unrecognized debugging information at offset %#x\n	-	-
+ERR_debug_entry	yes	Unrecognized debugging information\n	-	-
+ERR_loc_too_complex	yes	Location description too complex\n	-	-
+ERR_obj_version	yes	Unknown object file version %d\n	-	-
+ERR_obj_file_type	yes	Bad object file type %d\n	-	-
+ERR_no_dashg	yes	No debugging information in %s\n	-	-
+ERR_obj_file_read	yes	Cannot read %d bytes from object file at offset %#x\n	-	-
+ERR_assign_coercion	yes	Coercing incompatible pointer types\n	-	-
+ERR_type_assumed	yes	No type information for %s, assuming int\n	-	-
+ERR_obj_file_form	yes	Invalid object file format\n	-	-
+ERR_wrong_mach	yes	Object file for wrong machine type\n	-	-
+ERR_build_type	yes	Cannot build type description\n	-	-
+
+	# error messages from libint
+ERR_no_gui	yes	Cannot invoke %s (Window Interface)\n	-	-
+ERR_bad_dashi	yes	Illegal interface specification: -i%s\n	-	-
+ERR_newer_file	yes	%s newer than %s\n	-	-
+
+	# error messages from libcmd
+ERR_no_while	yes	No pending while loop\n	-	-
+ERR_event_op_bad_cmd	yes	Illegal command to %s\n	-	-
+ERR_event_op_list	yes	Missing event list to %s\n	-	-
+ERR_cant_eval_expr	yes	Could not evaluate expression\n	-	-
+ERR_no_proc	yes	No process\n	-	-
+ERR_already_logging	yes	Logging already enabled\n	-	-
+ERR_no_log_file	yes	No previous logon command\n	-	-
+ERR_cant_create_file	yes	Could not create %s: %s\n	%s file,%s error reason	-
+ERR_cant_append	yes	Cannot append to %s: %s\n	%s file, %s error reason	-
+ERR_line_too_long	yes	Line too long\n	-	-
+ERR_alias_name	yes	\"%s\" is an alias name\n	-	-
+ERR_cmd_name	yes	\"%s\" is a built-in command name\n	-	-
+ERR_unmatch_brack	yes	Unmatched bracket\n	-	-
+ERR_unmatch_paren	yes	Unmatched parenthesis\n	-	-
+ERR_unmatch_brace	yes	Unmatched brace\n	-	-
+ERR_bad_plist	yes	Malformed process list\n	-	-
+ERR_no_alias	yes	%s: No such alias\n	-	-
+ERR_grab_dashl	yes	Only one live object allowed with -l option\n	-	-
+ERR_no_prev_cmd	yes	No previous command to substitute for !\n	-	-
+ERR_shell_cmd	yes	Shell command failed with signal %d\n	-	-
+ERR_shell_cmd_core	yes	Shell command failed with signal %d - core dumped\n	-	-
+ERR_user_var_defined	yes	User variable %s is undefined\n	-	-
+ERR_dashi_cmd	yes	Option -i illegal with associated command\n	-	-
+
+# ^ in syntax msg
+ERR_cmd_pointer	no	%s\n	-	-
+ERR_bad_token	yes	Unrecognized character at %s\n	-	-
+ERR_bad_string	yes	Unmatched quote at %s\n	-	-
+ERR_bad_number	yes	Ill-formed numeric constant at %s\n	-	-
+ERR_bad_character	yes	Ill-formed character constant at %s\n	-	-
+ERR_null_filename	yes	Null filename at %s\n	-	-
+ERR_no_shell_cmd	yes	Shell command expected at %s\n	-	-
+ERR_multiple_io	yes	Multiple I/O redirection at %s\n	-	-
+ERR_dup_option	yes	Duplicated option at %s\n	-	-
+ERR_bad_option	yes	Invalid option %s at %s\n	-	-
+ERR_missing_option	yes	Option expected at %s\n	-	-
+ERR_option_mix	yes	Options %s and %s are mutually exclusive\n	-	-
+ERR_opt_combo_exec	yes	The %s option is illegal with %s\n	-	-
+ERR_dashf_arg	yes	Illegal argument to -f\n	-	-
+ERR_missing_proc	yes	Process name expected at %s\n	-	-
+ERR_missing_string	yes	String expected at %s\n	-	-
+ERR_missing_number	yes	Decimal number expected at %s\n	-	-
+ERR_missing_location	yes	Location expected at %s\n	-	-
+ERR_missing_arg	yes	Argument expected at %s\n	-	-
+ERR_missing_file	yes	File name expected at %s\n	-	-
+ERR_missing_cmd	yes	Command expected at %s\n	-	-
+ERR_missing_signal	yes	Signal expected at %s\n	-	-
+ERR_missing_expr	yes	Expression expected at %s\n	-	-
+ERR_missing_p_expr	yes	Parenthesized expression expected at %s\n	-	-
+ERR_missing_block	yes	Command or block expected at %s\n	-	-
+ERR_missing_event_num	yes	Event number expected at %s\n	-	-
+ERR_missing_event	yes	Event number or command expected at %s\n	-	-
+ERR_missing_id	yes	Identifier expected at %s\n	-	-
+ERR_debug_id_dollar	yes	Debugger user names must begin with '$'\n	-	-
+ERR_too_many_args	yes	Too many arguments at %s\n	-	-
+ERR_loc_syntax	yes	Location syntax error at %s\n	-	-
+ERR_dup_signal	yes	Duplicated signal at %s\n	-	-
+ERR_bad_syscall	yes	Invalid system call specification at %s\n	-	-
+ERR_unexpected_arg	yes	Unexpected argument at %s\n	-	-
+ERR_bad_arg	yes	Invalid argument at %s\n	-	-
+ERR_missing_event_exp	yes	Event expression expected at %s\n	-	-
+ERR_parser_internal	yes	Inconsistent state in parser at %s\n	-	-
+ERR_unfinished_cmd	yes	Unfinished command\n	-	-
+ERR_alias_recursion	yes	Alias recursion at %s\n	-	-
+ERR_syntax_error	yes	Syntax error at %s\n	-	-
+ERR_bad_keyword	yes	Unrecognized keyword at %s\n	-	-
+ERR_extra_curly	yes	Unexpected '}'\n	-	-
+ERR_active_event	yes	No active event with specified id\n	-	-
+ERR_change_dashc	yes	Count is ignored for onstop and signal events\n	-	-
+ERR_pwd_fail	yes	Could not determine current working directory: %s\n	%s error reason	-
+ERR_cwd_fail	yes	Could not change working directory to %s: %s\n	%s directory, %s error reason	-
+ERR_no_new_dir	yes	No directory given and HOME not set\n	-	-
+
+
+	# error messages from debug.d
+ERR_sys_no_alias	yes	Could not open default alias file %s: %s\n	%s file, %s error reason	-
+ERR_multiple_opts	yes	Multiple %s options given; using first\n	-	-
+ERR_cannot_recover	yes	debug: internal error - cannot recover\n	-	-
+ERR_opt_combo	yes	%s: the %s option is illegal with %s\n	-	-
+ERR_create_dashl	yes	%s: the -l option is illegal with a command line\n	-	-
+ERR_grab_dashr	yes	%s: the -r option is illegal with a live process\n	-	-
+ERR_bad_cmd_arg	yes	%s: illegal argument to %s option\n	-	-
+
+	# error messages from libutil
+ERR_cant_open	yes	Cannot open %s: %s\n	%s file, %s error reason	-
+ERR_cant_grab	yes	Could not grab %s\n	-	-
+ERR_obsolete_8	yes	Cannot change event %d; one of its processes is not active\n	-	-
+ERR_opt_change	yes	The %s option is illegal for this type of event\n	-	-
+ERR_no_previous_create	yes	No previous create command\n	-	-
+ERR_sys_pipe	yes	Could not create pipeline: %s\n	%s error reason	-
+ERR_create_fail	yes	Create failed: all resulting processes killed\n	-	-
+ERR_byte_order	yes	Cannot determine byte order of host machine\n	-	-
+ERR_pty_exist	yes	No such pseudo-terminal: %s\n	-	-
+ERR_object_unknown	yes	No object named %s exists\n	-	-
+ERR_prog_no_pty	yes	Program has no associated pseudo-terminal\n	-	-
+ERR_no_source	yes	Source file %s not found\n	-	-
+ERR_bad_list_loc	yes	Invalid location specification for list command\n	-	-
+ERR_no_cur_src	yes	No current source file\n	-	-
+ERR_no_lines	yes	No lines in %s\n	-	-
+ERR_only_n_lines	yes	Only %d lines in %s\n	-	-
+ERR_no_re_match	yes	No match for regular expression\n	-	-
+ERR_bad_re	yes	Invalid regular expression\n	-	-
+ERR_no_previous_re	yes	No previous regular expression\n	-	-
+ERR_obsolete_9	yes	Frame number %d out of range for process %s\n	-	-
+ERR_sys_kill	yes	Could not kill process %s: %s\n	-	-
+ERR_no_entry	yes	No entry \"%s\" exists\n	-	-
+ERR_may_be_overload	yes	Using %s for %s: there may be other overloaded instances\n	-	-
+ERR_no_source_info	yes	No source information for %s\n	-	-
+ERR_unknown_language	yes	Unknown source language: %s\n	-	-
+ERR_name_in_use	yes	Program name \"%s\" already in use\n	-	-
+ERR_no_such_prog	yes	No active processes for program %s\n	-	-
+ERR_evaluation	yes	evaluation failed	-	-
+ERR_unexpected_tag	yes	Unexpected symbol tag %d\n	-	-
+ERR_no_sym_info	yes	Cannot get symbol information for process %s\n	-	-
+ERR_eval_fail_expr	yes	Evaluation of %s failed\n	-	-
+ERR_invalid_num	yes	Invalid number for set expression\n	-	-
+ERR_debug_var_set	yes	Debugger variable %s is read-only\n	-	-
+ERR_debug_var_val	yes	Invalid value for debugger variable %s\n	-	-
+ERR_no_line	yes	Line information has no address for file %s line %d\n	-	-
+ERR_get_addr	yes	Cannot get address for symbol %s\n	-	-
+ERR_loc_debug_var	yes	Invalid debugger variable %s in location specification\n	-	-
+ERR_active_func	yes	No active function named %s\n	-	-
+ERR_invalid_op_running	yes	Invalid operation on running object %s\n	-	-
+ERR_obsolete_10	yes	Invalid operation on dead process %s\n	-	-
+ERR_invalid_op_core	yes	Invalid operation on core file %s\n	-	-
+ERR_concat	yes	Cannot use concatenation in this assignment\n	-	-
+ERR_string_req	yes	String required in this context\n	-	-
+ERR_non_local_jump	yes	Location given for %s is outside the current function.\n	-	-
+ERR_print_format	yes	Illegal format string to print command: %s\n	-	-
+ERR_print_width	yes	Requested field width in print command too large: %d\n	-	-
+
+	# error messages from libmachine
+ERR_get_text	yes	Invalid text address %#x\n	-	-
+ERR_unknown_opcode	yes	Unknown opcode at address %#x\n	-	-
+ERR_dis_text	yes	Problem disassembling probably not text section\n	-	-
+        # messages from libexp
+#
+# from CCresolve.C
+#
+ERR_lhs_novalue	yes	Left side of operator %s has no value\n	-	-
+ERR_rhs_novalue	yes	Right side of operator %s has no value\n	-	-
+ERR_un_novalue	yes	Operand of %s operator has no value\n	-	-
+ERR_lhs_not_integral	yes	Left side of operator %s not integral type\n	-	-
+ERR_rhs_not_integral	yes	Right side of operator %s not integral type\n	-	-
+ERR_un_not_integral	yes	Operand of %s operator not integral type\n	-	-
+ERR_lhs_arithmetic	yes	Left side of operator %s not arithmetic type\n	-	-
+ERR_rhs_arithmetic	yes	Right side of operator %s not arithmetic type\n	-	-
+ERR_un_arithmetic	yes	Operand of %s operator not arithmetic type\n	-	-
+ERR_lhs_scalar	yes	Left side of operator %s not scalar type\n	-	-
+ERR_rhs_scalar	yes	Right side of operator %s not scalar type\n	-	-
+ERR_un_scalar	yes	Operand of %s operator not scalar type\n	-	-
+ERR_not_lvalue	yes	Left side of operator %s not an lvalue\n	-	-
+ERR_non_pointer_lhs	yes	Left side of operator %s not a pointer\n	-	-
+ERR_lhs_not_struct	yes	Left side of operator %s does not reference a structure type\n	-	-
+ERR_invalid_op_type	yes	Operand of %s operator has invalid type\n	-	-
+ERR_operand_not_ptr	yes	Operand of %s operator not a pointer\n	-	-
+ERR_no_addr	yes	Cannot determine address of operand of %s operator\n	-	-
+ERR_lhs_not_ptr	yes	Left side of %s operator not a pointer or array\n	-	-
+ERR_lhs_binop_type	yes	Left side of binary %s operator has invalid type\n	-	-
+ERR_rhs_binop_type	yes	Right side of binary %s operator has invalid type\n	-	-
+ERR_incomp_type_ptr	yes	Operands of %s operator are pointers to incompatible types\n	-	-
+ERR_illegal_ptr_sub	yes	Illegal pointer subtraction\n	-	-
+ERR_incomp_type	yes	Operands of %s operator have incompatible types\n	-	-
+ERR_opd_not_lvalue	yes	%s operator: operand assigned to is not a modifiable lvalue\n	-	-
+ERR_no_type	yes	No type information for '%s'\n	-	-
+ERR_cond_not_scalar	yes	Conditional expression in '?:' operator is not a scalar type\n	-	-
+ERR_cond_incomp_types	yes	'condition ? a : b', types of a and b are incompatible\n	-	-
+ERR_invalid_lhs_cast	yes	Left side of cast does not specify a valid type\n	-	-
+ERR_rhs_cast_novalue	yes	Right side of cast does not have a value\n	-	-
+ERR_invalid_cast	yes	Cannot cast right side operand to type of left side operand\n	-	-
+ERR_invalid_type	yes	Invalid type\n	-	-
+#
+ERR_not_function	yes	'%s' is not a function, cannot call\n	-	-
+ERR_type_mismatch	yes	Arguments passed to %s do not match formal parameter types\n	-	-
+ERR_toomany_args	yes	Too many arguments in call to %s\n	-	-
+ERR_not_enough_args	yes	Not enough arguments in call to %s\n	-	-
+ERR_unknown_debug_var	yes	Unknown debugger variable: %s\n	-	-
+ERR_no_symbol_info	yes	No symbol information for '%s'\n	-	-
+ERR_invalid_name	yes	'%s' is not the name of a structure or union\n	-	-
+ERR_invalid_enum_name	yes	'%s' is not the name of an enumeration\n	-	-
+ERR_opr_not_supported	yes	Operator %s not supported\n	-	-
+ERR_C_conversion	yes	Type conversion not legal in ANSI/ISO C\n	-	-
+ERR_arg_eval	yes	Cannot evaluate argument to function call\n	-	-
+ERR_call_stack	yes	Problem setting up stack for function call in %s\n	-	-
+ERR_restore_stack	yes	Could not restore stack correctly after function call in %s\n	-	-
+ERR_format_spec	yes	Illegal format specifier%s\n	-	-
+ERR_short_read	yes	Formatted print string too long, truncated\n	-	-
+ERR_float_eval	yes	Floating point error encountered; cannot evaluate\n	-	-
+ERR_quote_match	yes	String or character constant does not end\n	-	-
+ERR_escape	yes	Non-standard escape sequence \\%s\n	-	-
+ERR_newline_string	yes	Newline found in string constant\n	-	-
+ERR_float_const	yes	Malformed floating-point constant\n	-	-
+ERR_syntax	yes	%s at ^\n	%s error notification	-
+ERR_syntax_loc	no	%s\n	-	-
+ERR_stop_operator	yes	Operator %s not allowed in stop expression\n	-	-
+ERR_stop_func	yes	Function address constant; illegal in this type of stop expression\n	-	-
+ERR_export_type	yes	Cannot export %s; it is not a user-defined variable\n	-	-
+ERR_putenv	yes	Could not add %s to environment\n	-	-
+ERR_int_overflow	yes	Integer constant overflow: %s\n	-	-
+ERR_comment_form	yes	Malformed comment\n	-	-
+ERR_debug_var_form	yes	Illegal form for debugger variable\n	-	-
+ERR_ellipsis	yes	Illegal ellipsis notation \'..\' - use \'...\'\n	-	-
+ERR_octal_const	yes	Illegal digit(s) found in octal constant\n	-	-
+ERR_illegal_char	yes	Illegal character %s\n	-	-
+ERR_parameter_type	yes	No type information for parameters of %s\n	-	-
+ERR_operator_support	yes	Operator %s not supported; operator ignored\n	-	-
+ERR_prototype	yes	Illegal function prototype\n	-	-
+ERR_class_ref	yes	Left side of operator %s does not reference a class object\n	-	-
+ERR_rhs_not_ptr	yes	Right side of operator %s not a pointer\n	-	-
+ERR_ref_ref_val	yes	Expression a->*b; cannot evaluate b\n	-	-
+ERR_id_qualifiers	yes	Invalid identifier qualification\n	-	-
+ERR_func_qualifier	yes	Function %s in qualifier is not an active function\n	-	-
+ERR_frame_qualifier	yes	Frame qualifier %d out of range for active stack frames\n	-	-
+ERR_block_source	yes	No source information for block at line %d\n	-	-
+ERR_line_not_block	yes	Line number %d does not specify a block\n	-	-
+ERR_block_not_current	yes	Line number %d does not specify a block in the current function\n	-	-
+ERR_not_typedef	yes	Identifier %s is not a typedef\n	-	-
+ERR_obsolete_11	yes	Ambiguous call to overloaded function %s\n	-	-
+ERR_store_class	yes	Storage class of object ignored\n	-	-
+ERR_type_convert	yes	Cannot do type conversion\n	-	-
+ERR_array_bounds	yes	Array index %d beyond high bound for array (%d)\n	-	-
+ERR_enum_val	yes	No value for enumeration literal %s\n	-	-
+ERR_obj_info	yes	Cannot determine address or type of %s\n	-	-
+ERR_assign_left_value	yes	Cannot get value for left side of assignment statement\n	-	-
+ERR_assign_right_value	yes	Cannot get value for right side of assignment statement\n	-	-
+ERR_ptr_dereference	yes	Dereference of pointer failed\n	-	-
+ERR_select_lvalue	yes	Cannot determine location for enclosing object in member selection\n	-	-
+ERR_select_register	yes	Cannot handle structure or union in register\n	-	-
+ERR_select_member	yes	Cannot determine location for member %s\n	-	-
+ERR_not_member	yes	Selected member does not represent a valid field in the structure, class or union\n	-	-
+ERR_element_size	yes	Array element size unknown\n	-	-
+ERR_index_value	yes	Cannot get value of array index\n	-	-
+ERR_sizeof	yes	Cannot compute size of object\n	-	-
+ERR_reg_addr	yes	Cannot take address of register\n	-	-
+ERR_op_left_side	yes	Cannot get value for left side operand of %s\n	-	-
+ERR_op_right_side	yes	Cannot get value for right side operand of %s\n	-	-
+ERR_op_unary	yes	Cannot get value for operand of %s\n	-	-
+ERR_pointer_arith	yes	Cannot do pointer arithmetic on operand of unknown size\n	-	-
+ERR_assume_size	yes	Cannot determine size of object, assuming %d\n	-	-
+#
+# Messages from libedit
+ERR_fc_syntax	yes	Illegal syntax for fc command\n	-	-
+ERR_fc_range	yes	Number out of range for fc command\n	-	-
+ERR_fc_found	yes	Previous command not found\n	-	-
+#
+# Help command support
+#
+# Headers, etc.
+MSG_help_hdr_commands	yes	Debugger Commands:\n	-	-
+MSG_help_hdr_topics	yes	Other Topics:\n	-	-
+MSG_help_hdr_sigs	yes	Valid signals:\n	-	-
+MSG_help_hdr_sys	yes	Valid system call names:\n	-	-
+MSG_help_get_alias	yes	Type \'alias\' to see the current aliases.\n	-	-
+MSG_help_get_help	yes	Type \'help <topic>\' for specifics of a command or topic.\n	-	-
+MSG_help_topics	no	%s\n	-	-
+MSG_signame	no	%2d %-12.12s	-	-
+MSG_sys_name	no	%3d %-17.17s	-	-
+ERR_help_bad_cmd	yes	No such command or topic: %s\n	-	-
+ERR_help_no_help	yes	No help available for %s\n	-	-
+
+# ---------------------- Messages new after SVR 4.2 -------------------------
+
+# threads messages
+MSG_new_core_thread	yes	Core image of thread %d (%s) created\n	-	-
+MSG_new_thread	yes	New thread %d created (%s)\n	-	-
+MSG_thread_exit	yes	Thread %s has exited\n	-	-
+MSG_thread_create	yes	Thread %s has created new thread %s\n	-	-
+MSG_thread_count	yes	Created %d thread(s) for process %s\n	-	-
+MSG_core_thread_count	yes	Created core image(s) of %d thread(s) for process %s\n	-	-
+MSG_new_curr_thread	yes	Current thread is now %s, program %s\n	-	-
+MSG_give_up_lwp	yes	Multiplexed thread %s has given up its LWP\n	-	-
+MSG_pick_up_lwp	yes	Multiplexed thread %s has been picked up by an LWP\n	-	-
+MSG_thr_suspend	yes	Thread %s has been suspended\n	-	-
+# 2 continue messages needed for gui to distinguish states
+MSG_thr_continue	yes	Thread %s has been continued\n	-	-
+MSG_thr_continue_off_lwp	yes	Thread %s has been continued\n	-	-
+MSG_es_halted	yes	HALTED %s	-	-
+MSG_thread_fork	yes	Process %s (thread %s) forked; new process %s now controlled\n	-	-
+
+# libexecon errors
+ERR_core_threads	yes	Problem accessing thread data in core file, process %s\n	-	-
+ERR_thread_setup	yes	Problem accessing thread data in process %s\n	-	-
+ERR_lwp_control	yes	Could not control light-weight process %d for process %s\n	-	-
+ERR_invalid_op_off_lwp	yes	Invalid operation on idle thread %s\n	-	-
+ERR_follower_thread	yes	Problem setting up follower thread\n	-	-
+ERR_core_lwp_not_found	yes	Cannot find core file information for LWP %d\n	-	-
+ERR_libthreads	yes	Inconsistency in interface with threads library for process %s\n	-	-
+ERR_sig_pending	yes	Problem reading pending signals for %s\n	-	-
+ERR_sig_cancel	yes	Problem cancelling signals in %s\n	-	-
+ERR_thread_no_lwp	yes	Cannot find LWP specified by thread descriptor: %s\n	-	-
+ERR_thread_control	yes	Could not control thread %d for process %s\n	-	-
+ERR_thread_create	yes	Could not control new thread created in process %s\n	-	-
+ERR_thread_addr	yes	Illegal address for thread start function in thread created for process %s\n	-	-
+ERR_proc_name	yes	Illegal form for process name: %s\n	-	-
+ERR_thread_name	yes	Illegal form for thread name: %s\n	-	-
+ERR_lwp_unknown	yes	System error attempting to control light-weight process %d\n	-	-
+ERR_invalid_op_suspended	yes	Invalid operation on suspended thread %s\n	-	-
+ERR_reg_read_off_lwp	yes	Register contents inconsistent: thread %s in context switch\n	-	-
+ERR_reg_write_off_lwp	yes	Cannot write registers: thread %s in context switch\n	-	-
+ERR_self_ctl	yes	Cannot grab debugger process\n	-	-
+ERR_stop_lvalue	yes	Expression: %s does not yield an lvalue\n	-	-
+ERR_thread_release_suspended	yes	-s flag to release ignored for thread: %s\n	-	-
+ERR_expr_thread_id	yes	Process %s has threads: thread id required in this context\n	-	-
+ERR_faulting_not_user	yes	Faulting LWP for %s not attached to a user thread\n	-	-
+
+# misc messages
+MSG_sig_caught_addr	yes	%4d\tsig%-7s\tcaught\t%#x\n	%d signal number, %s signal name, %#x address	-
+MSG_sig_ignored_addr	yes	%4d\tsig%-7s\tignored\t%#x\n	%d signal number, %d signal name, %#x address	-
+MSG_es_halted_off_lwp	yes	HALTED (off LWP) %s	-	-
+
+# query messages
+MSG_response	no	%d	-	-
+ERR_bad_query_answer	yes	'%s' is not one of the valid choices\n	-	-
+QUERY_which_function	yes	%s is overloaded. Enter the number of the function to use, or 0 (zero) to cancel:\n%s	-	-
+QUERY_which_func_or_all	yes	%s is overloaded. Enter the number of the function to use, or 0 (zero) to cancel:\n%s%d\tAll of the above\n	-	-
+
+# new libexp messages
+MSG_calling	yes	Calling %s\n	-	-
+MSG_type	no	%s\n	-	-
+MSG_type_derived	yes	%s (or %s)\n	-	-
+MSG_start_class	no	-	-
+MSG_start_array	no	-	-
+MSG_val_close_brack	no	%s}%s	-	-
+MSG_print_member1	no	%s%s%s=%s\n	-	-
+MSG_print_member2	yes	%sstatic %s=%s\n	-	-
+MSG_array_member	no	%s[%d]=%s\n	-	-
+
+ERR_cant_get_type	no	Cannot determine type of expression\n	-	-
+ERR_ptr_to_void	yes	Cannot dereference void *\n	-	-
+ERR_restore_regs	yes	Could not restore registers correctly after function call in %s\n	-	-
+ERR_float_overflow	yes	Floating point constant overflow: %s\n	-	-
+ERR_float_underflow	yes	Floating point constant underflow: %s\n	-	-
+ERR_no_this	yes	Function %s has no \"this\" pointer; stopping on all calls\n	-	-
+ERR_bad_vtbl	yes	Unknown virtual function table layout\n	-	-
+ERR_no_enumeration	yes	Operand of %s cannot be an enumeration\n	-	-
+ERR_no_symbol_in_ctxt	yes	No symbol information for '%s' in '%s'\n	-	-
+ERR_sizeof_operand	yes	Operand of sizeof cannot be function or bitfield\n	-	-
+ERR_opr_not_C	yes	Operator %s not supported in C expressions\n	-	-
+ERR_no_object	yes	Object or object pointer missing for member %s\n	-	-
+ERR_not_base	yes	%s is not a base class of %s\n	-	-
+ERR_no_conversions	yes	Conversion functions are not yet supported\n	-	-
+ERR_arg_no_value	yes	Function argument has no value\n	-	-
+
+# new error messages from libutil
+ERR_no_cur_src_obj	yes	No current source file for %s\n	-	-
+ERR_bad_line_number	yes	Line number must be a positive value\n	-	-
+	# ps command for threads: current indicator (*), program name, process, pid,
+	#		function, file, line, command
+MSG_threads_ps_header	yes	Program    ID         Pid Thread State          Function   Location       Command\n	-	-
+MSG_threads_ps_core	yes	%s%-9.9s %-7.7s %6d %6d Core           %-10.10s %-14.14s %s\n	-	-
+MSG_threads_ps_running	yes	%s%-9.9s %-7.7s %6d %6d Running                                  %s\n	-	-
+MSG_threads_ps_stepping	yes	%s%-9.9s %-7.7s %6d %6d Stepping                                 %s\n	-	-
+MSG_threads_ps_unknown	yes	%s%-9.9s %-7.7s %6d %6d Unknown                                 %s\n	-	-
+MSG_threads_ps_stopped	yes	%s%-9.9s %-7.7s %6d %6d Stopped        %-10.10s %-14.14s %s\n	-	-
+MSG_threads_ps_off_lwp	yes	%s%-9.9s %-7.7s %6d %6d Off LWP        %-10.10s %-14.14s %s\n	-	-
+MSG_threads_ps_core_off_lwp	yes	%s%-9.9s %-7.7s %6d %6d Core Off LWP   %-10.10s %-14.14s %s\n	-	-
+MSG_threads_ps_core_suspend	yes	%s%-9.9s %-7.7s %6d %6d Core Suspended %-10.10s %-14.14s %s\n	-	-
+MSG_threads_ps_suspend	yes	%s%-9.9s %-7.7s %6d %6d Suspended      %-10.10s %-14.14s %s\n	-	-
+
+# new usage messages
+MSG_usage_cmdline_loc	yes	Usage:\n%s [common_options] [[-f all|none|procs] [-r] [-l start_loc] cmd_line]\n	%s command name	-
+MSG_usage_threads_common	yes	       common_options: [-V] [-i c|x] [-X opt] [-d defaults] [-s path] [-Ya|g,dir]\n	-	-
+
+# disassembler message - gets sprintf'd into dis line, not printed
+# directly
+ERR_bad_opcode	yes	***** Error - bad opcode\n	-	-
+
+# new libcmd msg
+ERR_missing_hexnum	yes	Hexadecimal number expected at %s\n	-	-
+
+# new libutil msg
+MSG_list_header	yes	Source Listing for %s, Program %s\n	-	-
+# old messages changed slightly for 4.2MP
+MSG_sig_caught	yes	%4d\tsig%-7s\tcaught\t%s\n	%d signal number,%s signal name, %s function	-
+MSG_sig_ignored	yes	%4d\tsig%-7s\tignored\t%s\n	%d signal number,%s signal name,%s function	-
+MSG_release_run	yes	Releasing and running %s\n	-	-
+MSG_release_suspend	yes	Releasing and suspending %s\n	-	-
+ERR_return_addr	yes	Cannot find return address for function in %s\n	-	-
+ERR_event_copy	yes	Could not copy event %d to %s\n	-	-
+ERR_event_reset	yes	Could not reset event %d in %s\n	-	-
+ERR_cannot_change	yes	Cannot change event %d; one of its objects is not active\n	-	-
+ERR_frame_range	yes	Frame number %d out of range for %s\n	-	-
+ERR_invalid_op_dead	yes	Invalid operation on dead object %s\n	-	-
+ERR_ambiguous_call	yes	Ambiguous call to overloaded function. Choices are:\n%s	-	-
+ERR_get_addr_reg	yes	Cannot get address for symbol %s: allocated to a register\n	-	-
+
+# ---------------------- Messages new after SVR 4.2 MP -------------------------
+
+ERR_block_not_in_scope	yes	Line number %d does not specify a block in the current scope\n	%d line	-
+ERR_bad_regex	yes	Invalid regular expression %s\n	-	%s regular expression
+ERR_bad_loc	yes	Invalid location expression\n	-	-
+MSG_es_halted_thread_start	yes	HALTED %s	%s process id	-
+ERR_not_supported_gui	yes	Command not supported from graphical interface\n	-	-
+ERR_thread_change_startup	yes	Cannot handle thread state change during process startup: %s\n	%s process id	-
+ERR_integral_const_for_array	yes	Integral constant required for array bound\n	-	-
+ERR_memory_allocation	yes	Memory allocation error: operation failed\n	-	-
+MSG_set_frame_dir	no	%s	-	-
+ERR_cant_find_symtab	yes	No symbol information for object %s\n	%s object file name	-
+ERR_numeric_var_expected	yes	Variable %s does not evaluate to numeric constant\n	%s variable name	-
+ERR_invalid_signal	yes	Invalid signal specification: %s\n	%s signal name	-
+ERR_no_cmd_with_option	yes	Associated command illegal with option %s\n	%s option letter	-
+MSG_default_signal_header	yes	Default Signal Disposition\n	-	-
+MSG_set_dis_mode	no	%s	-	-
+MSG_dis_src	no	%d:\t%s\n	-	-
+#ifdef	SDE_SUPPORT
+# browser and blink
+MSG_usage_browser_cmdline	yes	Usage:%s [-V] [-f cmdfile ] [data_base_file...]\n	-	-
+ERR_internal_line	yes	Inconsistent state in file %s at line %d\n	-	-
+	# error messages from browse.d
+ERR_browse_cannot_recover	yes	browse: internal error - cannot recover\n	-	-
+ERR_cmd_file_gui	yes	Command file illegal with graphical interface, ignored\n	-	-
+ERR_memory_alloc	yes	Fatal error: memory allocation\n	-	-
+ERR_map	yes	Cannot map file %s into memory: %s\n	-	-
+ERR_not_browser_file	yes	%s is not a browser database\n	-	-
+ERR_file_format	yes	Wrong database version or machine type: %s\n	-	-
+
+
+# browser queries
+MSG_query_start	no	-	-
+MSG_query_ref	no	%s %s %s %d %d %s %s %s %d %s %s\n	-	-
+MSG_query_unref	no	%s %s %s %d %d %s %s %s %d %s %s\n	-	-
+MSG_query_def	no	%s %s %d %s %s %s %s\n	-	-
+MSG_opened_database	yes	Opened database %d using %s\n	-	-
+MSG_db_list	no	%d\t%s\n	-	-
+
+# browser data errors
+ERR_bad_def_index	yes	Invalid definition entry index %d in data file\n	-	-
+ERR_illegal_data_form	yes	Invalid form for data entry in file %s\n	-	-
+
+# parser errors
+ERR_cmd_syntax	yes	Syntax error in command: %s\n	-	-
+ERR_unknown_cmd	yes	Unknown command: %s\n	-	-
+ERR_type_specifier	yes	Illegal type specifier: %s\n	-	-
+ERR_access_specifier	yes	Illegal access mode specifier: %s\n	-	-
+ERR_storage_specifier	yes	Illegal storage class specifier: %s\n	-	-
+ERR_quit_usage	yes	Command usage: quit\n	-	-
+ERR_ref_to_usage	yes	Command usage: ref_to [-u db_id] [-chir] [-t type[,...]] [-f file] [-l bline[,eline]] [-a access[,access...]] [-s storage[,storage...]] [-d df|dc] name\n	-	-
+ERR_ref_from_usage	yes	Command usage: ref_from [-u db_id] [-chir] [-t type[,...]] [-f file] [-l bline[,eline]] [-a access[,access...]] [-s storage[,storage...]] [-d df|dc] name\n	-	-
+ERR_mult_ref_types	yes	Cannot specify more than one of -c, -i, -r\n	-	-
+ERR_def_usage	yes	Command usage: def [-u db_id] [-a access[,...]] [-f file] [-l bline[,eline]] [-s storage[,...]][-t type[,...]] [-d df|dc] [name]\n	-	-
+ERR_script_usage	yes	Command usage: script [-q] filename\n	-	-
+ERR_open_usage	yes	Command usage: open data_base_file\n	-	-
+ERR_close_usage	yes	Command usage: close database_id\n	-	-
+ERR_database_init	yes	Could not initialize database for %s\n	-	-
+ERR_database_id	yes	No open database with id %d\n	-	-
+ERR_no_database	yes	No active databases\n	-	-
+ERR_list_usage	yes	Command usage: list\n	-	-
+
+# Messages from blink
+ERR_blink_usage	yes	Usage: %s [-Vw] [-o output_file] [-L dir_name] [-l lib_name] [-YP,lib_path] file...\n	-	-
+ERR_path_name	yes	Path name too long: %s\n	-	-
+ERR_library_search	yes	Cannot find library: %s\n	-	-
+ERR_blink_cannot_recover	yes	blink: internal error - cannot recover\n	-	-
+ERR_io_error	yes	Error writing output file\n	-	-
+ERR_different_version	yes	Linking two different versions of %s\n	-	-
+#endif
+
+# new messages from libexp
+ERR_divide_by_0	yes	Division by zero\n	-	-
+ERR_debugger_var_op	yes	Pointer arithmetic is not allowed on debugger strings\n	-	-
+ERR_bad_qualifier	yes	Qualifier invalid in this context\n	-	-
+ERR_front_end_error	no	%s\n	-	-
+MSG_print_member3	yes	%sstatic %s%s=%s\n	%s blanks for spacing, %s C++ class name, %s member name %s member value	Do not translate "static"
+ERR_qualifier_mismatch	yes	Non-zero pointer operands must be similarly qualified\n	-	-
+
+# messages from libsymbol
+ERR_unimplemented_dwarf2_loc_op	yes	Unimplemented DWARFII location operator at offset %#x: %s\n	%x section offset, %s symbolic name	-
+
+# messages for whatis
+MSG_type_nonl	no	%s	-	-
+MSG_type_derived_nonl	yes	%s (or %s)	%s C++ class name, %s C++ class name	-
+MSG_sym_kind_debugger	yes	\t[debugger variable]\n	-	-
+MSG_sym_kind_user	yes	\t[user-defined debugger variable]\n	-	-
+MSG_sym_kind_enum_const	yes	\t[enumeration constant	-	-
+MSG_sym_kind_enum_tag	yes	\t[enumeration tag
+MSG_sym_kind_type	yes	\t[typedef name	-	-
+MSG_sym_kind_union	yes	\t[union tag	-	-
+MSG_sym_kind_class	yes	\t[class tag	-	-
+MSG_sym_kind_struct	yes	\t[structure tag	-	-
+MSG_sym_kind_global_var	yes	\t[global variable	-	-
+MSG_sym_kind_file_stat_var	yes	\t[file static variable	-	-
+MSG_sym_kind_local_var	yes	\t[local variable	-	-
+MSG_sym_kind_argument	yes	\t[argument to %s]\n	%s function name	-
+MSG_sym_kind_field	yes	\t[member of %s]\n	%s type name	-
+MSG_sym_kind_static_data_mem	yes	\t[static data member of %s]\n	%s type name	-
+MSG_sym_kind_member_func	yes	\t[member function of %s]\n	%s type name	-
+MSG_sym_kind_global_func	yes	\t[global function	-	-
+MSG_sym_kind_static_func	yes	\t[file static function	-	-
+MSG_sym_kind_undefined	yes	\t[undefined]\n	-	-
+MSG_scope	yes	 in %s]\n	%s file, function, or type name	-
+MSG_scope_block	yes	 in %s, line %d]\n	%s function, %d line number	-
+MSG_no_scope	no	]\n	-	-
+ERR_broken_frame_pc	yes	Top stack frame invalid, program counter out of range\n	-	-
+ERR_broken_frame_sp	yes	Top stack frame invalid, stack pointer out of range\n	-	-
+ERR_frame_fixed	yes	Stack adjusted to start with previous frame\n	-	-
+
+QUERY_search_for_header	yes	File %s was not found.\nSearch program for an included file?\n	%s file name	-
+QUERY_search_for_all_funcs	yes	Static function %s is defined in header file %s.\nSet a breakpoint on all intances?\n	%s function name, %s file name	-
+QUERY_set_break_on_all	yes	Set a breakpoint on all occurrences of %s@%d?\n	%s header file name, %d line number
+
+ERR_no_source_in_obj	yes	Source file %s not found in object %s\n	%s file name, %s shared object name	-
+QUERY_search_for_all	yes	Search for all occurrences of %s@%s?\n	%s file name, %s C/C++ identifier	-
+ERR_using_static	yes	Using %s@%s@%s: there may be other instances\n	%s file name, %s header file name, %s C/C++ identifier	-
+ERR_expr_not_integral	yes	Expression %s does not have integral type\n
+
+MSG_sym_kind_anon_union	yes	\t[anonymous union member	-	-
+MSG_print_member4	yes	%s<unnamed>=%s\n	%s blanks for spacing, %s member value	-
+ERR_non_static_assumed	yes	No type information for %s, assuming non_static member returning int\n	%s function name	-
+
+# messages for Exception Handling
+MSG_eh_event	yes	[%.4d]%s%s EXCEPTION %-2s     %-30s %s\n	-	-
+MSG_eh_event_f	yes	[%.4d]%s%s EXCEPTION %-2s     %s\n\tObject list:\t%s\n\tCommand:\t%s\n	-	-
+MSG_default_eh_header	yes	Default Exception Disposition\n	-	-
+MSG_eh_stopped_default	yes	%s\tstopped\n	-	-
+MSG_eh_ignored_default	yes	%s\tignored\n	-	-
+MSG_es_eh_thrown	yes	EXCEPTION %s THROWN in %s	%s type name, %s process id	-
+MSG_es_eh_caught	yes	EXCEPTION %s CAUGHT in %s	%s type name, %s process id	-
+ERR_eh_setup	yes	Problem accessing exception data in process %s\n	%s process id	-
+ERR_eh_change_startup	yes	Cannot handle exception during process startup: %s\n	%s process id	-
+ERR_no_exception	yes	No exception being thrown or handled; %s not evaluatable\n	%s debugger variable	-
+
+MSG_scope_try_block	yes	 in %s, try block at line %d]\n	%s function, %d line number	-
+MSG_scope_catch_block	yes	 in %s, catch block at line %d]\n	%s function, %d line number	-
+ERR_no_exceptions	yes	Program %s does not use Exceptions\n	%s program name	-
+ERR_exception_in_expr	yes	Exception thrown during expression evaluation\n	-	-
+
+ERR_unimp_dwarf2_entry	yes	Unimplemented DWARFII debugging information entry in section %s\n	%s object file section name	-
+ERR_lang_not_supported	yes	Language %s not supported, reverting to C\n	%s programming language name	-
+ERR_no_sibling	yes	Incomplete debugging information; missing sibling pointers\n
+
+ERR_missing_eh_type	yes	Either \"throw\" and/or \"catch\" must be specified\n	-	Do not translate "throw" or "catch"
+
+MSG_eh_header	yes	Exception Disposition for %s, program %s\n	%s thread id, %s program name	-
+MSG_uses_eh	no	%#x\n	-	-
+MSG_sym_kind_namespace	yes	\t[namespace name]\n	-	-
+MSG_sym_kind_namespace_a	yes	\t[namespace name (assumed)]\n	-	-
+ERR_eh_type_assumed	yes	Type definition for %s not found in %s; treating as \"void *\"\n	%s C++ type name, %s function name	-
+ERR_not_supported_platform	yes	Command not supported on this platform\n	-	-
+ERR_op_not_supported_platform	yes	Operation not supported on this platform\n	-	-
+ERR_no_release_child	yes	Cannot release created processes or children\n of created processes on this platform\n	-	-
+ERR_no_release_suspend	yes	-s option for release ignored on this platform\n	-	-
+MSG_sym_kind_register	yes	\t[machine register]\n	-	-
+ERR_cannot_throw	yes	\"throw\" statements from debugger commands are not supported\n	-	-
+MSG_sym_kind_catch_arg	yes	\t[argument to catch handler]\n	-	-
+MSG_compiler_generated	yes	\t[compiler generated]\n	-	-
+MSG_sym_kind_static_mem_func	yes	\t[static member function of %s]\n	%s type name	-
+MSG_sym_kind_virtual_mem_func	yes	\t[virtual member function of %s]\n	%s type name	-
+
+MSG_function_header	yes	Functions for %s, Program %s\n	%s process id, %s program name	--
+
+ERR_incomplete_dwarf2	yes	Object file has incomplete debugging information\nPlease relink with CC or cc\n

@@ -1,0 +1,453 @@
+#!/usr/bin/sh
+#ident	"@(#)configure	1.2"
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+INTERFACE=/etc/confnet.d/inet/interface
+NETINFO=/usr/sbin/netinfo
+dvc=
+int_flg=0
+rm_flg=0
+REBUILD=
+
+uid=`expr "\`id\`" : '[^=]*=\([^(]*\)(.*'`
+if [ "$uid" -ne 0 ]
+then
+	pfmt -l $LABEL -s error -g $CAT:84 "must be super-user\n"
+	exit 1
+fi
+
+usage()
+{
+dARG=`gettxt "$CAT:82" "device"`
+HARG=`gettxt "$CAT:110" "ip_host"`
+AARG=`gettxt "$CAT:111" "ip_addr"`
+IARG=`gettxt "$CAT:112" "ifconfig_opt"`
+SARG=`gettxt "$CAT:113" "slink_opt"`
+USAGE="
+$0 -i -d <$dARG> [-d <$dARG>...]
+$0 -d <$dARG> [-H <$HARG> -A <$AARG> -I <$IARG> -S <$SARG> [-P <prefix> -U <unit>]]
+$0 -r
+$0 -r -d <$dARG> [-d <$dARG>...]"
+pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE" 2>&1
+exit 1
+}
+
+#process symbolic name $1 and print IP address
+nametoaddr()
+{ 
+HN="`echo $1 | sed 's/\([].*[^/ ]\)/\\\\\1/g'`"
+sed -n -e "s/^\([0-9][0-9.]*\)[	 ][	 ]*${HN}$/\1/p
+t quit
+s/^\([0-9][0-9.]*\)[	 ][	 ]*${HN}[	 #].*$/\1/p
+t quit
+b
+: quit
+q" /etc/inet/hosts 2>/dev/null
+}
+
+broadcast() {
+	split_addr=`sed 's%[.]% %g' <<!
+$1
+!
+`
+	read net_part1 net_part2 net_part3 net_part4 rest <<!
+$split_addr
+!
+	if [ -z "$rest" -a ! -z "$net_part4" ]
+	then	net_len="4"
+	elif	[ -z "$net_part4" -a ! -z "$net_part3" ]
+	#if net length is 3, to convert to 4 part we assume net_part3 is
+	# a 16bit quantity and, we want the "top" byte of the 16bit quantity
+	then	net_len="4"
+		net_part3=`expr $net_part3 / 256`
+	elif	[ -z "$net_part3" -a ! -z "$net_part2" ]
+	#if net length is 2 to convert to 4 part we assume net_part2 is
+	# a 24bit quantity and, we want the "top" 2 bytes
+	then	net_len="4"
+		net_part3=`expr \( $net_part2 % 65536 \)  / 256`
+		net_part2=`expr \( $net_part2 / 65536 \)  % 256`
+	else	pfmt -l $LABEL -s error -g $CAT:114 "Can not construct broadcast address from '%s'\n" $1
+		exit 1	# something strange
+	fi
+
+	if [ "4" = $net_len ]
+	then	echo $net_part1.$net_part2.$net_part3
+	fi
+}
+
+arg_conf() {
+# update /etc/hosts and interface
+
+prefix=${prefix:-`expr $dvc : '\(.*\)_.*'`}
+unit_num=${unit_num:-`expr $dvc : '.*_\(.*\)'`}
+dvc=`echo $dvc`
+device=/dev/$dvc
+
+# if the IP host picked is already in /etc/hosts, don't append
+# the address to the file. Take the corresponding address as
+# the IP addr
+match_host=`nametoaddr $ip_host`
+if [ "$match_host" = "" ]
+then
+	echo "$ip_addr	$ip_host" >> /etc/inet/hosts
+else
+	ip_addr=$match_host
+fi
+#NOTE: For auto instalation, uname -n address does not go into
+#file.  uname -n is the default for this feild to make changing
+#the system name more flexible.
+	if [ `uname -n` = "$ip_host" ]
+	then	ip_host=
+	fi
+
+#NOTE: simmilarly, slink_opt defaults to add_interface
+	if [ add_interface = "$slink_opt" ]
+	then	slink_opt=
+	fi
+
+# if device already exists in the interface file, replace with
+# current values
+egrep "^[^:#]*:[^:]*:[^:]*:[^:]*\/$dvc:" $INTERFACE > /dev/null
+if [ $? = 0 ]
+then	
+ed - $INTERFACE <<!
+/^[^:#]*:[^:]*:[^:]*:[^:]*\/$dvc:/c
+$prefix:$unit_num:$ip_host:$device:$ifconfig_opt:$slink_opt:
+.
+w
+!
+else	
+	echo "$prefix:$unit_num:$ip_host:$device:$ifconfig_opt:$slink_opt:" >> $INTERFACE
+fi
+
+$NETINFO -a -d $dvc -p inet
+
+}
+
+auto_conf() {
+prefix=`expr $dvc : '\(.*\)_.*'`
+unit_num=`expr $dvc : '.*_\(.*\)'`
+dvc=`echo $dvc`
+device=/dev/$dvc
+addr=`uname -n`
+ip_addr=`nametoaddr $addr`
+#NOTE: For auto instalation, uname -n address does not go into
+#file.  uname -n is the default for this feild to make changing
+#the system name more flexible
+addr=
+ifconfig_opt="-trailers"
+	
+# slink_opt is null
+
+# if device already exists in the interface file, replace with 
+# current values
+egrep "^[^:#]*:[^:]*:[^:]*:[^:]*\/$dvc:" $INTERFACE > /dev/null
+if [ $? = 0 ]
+then	
+	ed - $INTERFACE <<!
+/^[^:#]*:[^:]*:[^:]*:[^:]*\/$dvc:/c
+$prefix:$unit_num:$addr:$device:$ifconfig_opt::
+.
+w
+!
+else	
+	echo "$prefix:$unit_num:$addr:$device:$ifconfig_opt::" >> $INTERFACE
+fi
+$NETINFO -a -d $dvc -p inet
+}
+
+rm_conf() {
+if [ ! -s $INTERFACE ]
+then	
+	pfmt -l $LABEL -s error -g $CAT:115 "%s file missing\n" $INTERFACE 2>&1
+	exit 1
+fi
+
+if [ "$dvc" = "" ]
+then	egrep '^#|^lo:' $INTERFACE > /tmp/int.$$
+	mv /tmp/int.$$ $INTERFACE
+	$NETINFO -r -p inet
+else
+	cp $INTERFACE /tmp/int1.$$
+	for i in `echo $dvc`
+	do
+		prefix=`expr $i : '\(.*\)_.*'`
+		unit_num=`expr $i : '.*_\(.*\)'`
+		egrep -v "^[^:#]*:[^:]*:[^:]*:[^:]*/dev/$i:" \
+			/tmp/int1.$$ > /tmp/int2.$$
+		sed -e 's/:/ /g' /tmp/int2.$$ | egrep "^$prefix " | {
+			while read prot bd_num rest
+			do
+				if [ "$bd_num" -gt "$unit_num" ]
+				then	
+					echo $i | egrep $prot$bd_num > /dev/null
+					if [ $? != 0 ]
+					then
+						pfmt -l $LABEL -s warn -g $CAT:116 "You are deleting a network in the middle of a series.  Network\nstatistics recorded in a linear array may be misreported by the\n/usr/bin/netstat command.  The 'unit' numbers are used as an index.  You\nmay decide to manually correct the %s file\nso the unit numbers for each device family prefix start at zero and\nincrease incrementally.\n\n" $INTERFACE 2>&1
+					fi
+				fi
+			done
+		}
+		mv /tmp/int2.$$ /tmp/int1.$$
+		$NETINFO -r -d $i -p inet
+	done
+	mv /tmp/int1.$$ $INTERFACE
+fi
+}
+
+int_conf() {
+NODE=`uname -n`
+if [ -s $INTERFACE ]
+then
+	count=`egrep -v '^#|^lo:' $INTERFACE|grep .|wc -l`
+	count=`expr $count + 1`
+else
+	count=1
+fi
+
+for i in `echo $dvc`
+do
+	if [ $count -gt 1 ]
+	then 	DEF_NAME="$NODE$count"
+	else	DEF_NAME=$NODE
+	fi
+
+	pfmt -l $LABEL -s info -g $CAT:117 "\nIP host names and addresses identify all machines on your network.  The\nhost name is a mnemonic name you choose to match a numeric IP address.\nThe TCP/IP Internet address is the address by which host %s\nwill be known on the network.\n" ${NODE} 2>&1
+	pfmt -s nostd -g $CAT:118 "Typically, an Internet address specified in dot notation will consist\nof your system's network number and the machine's unique host number.\nA typical Internet address looks like 192.9.200.44, where 192.9.200\nis the network number and 44 is the machine's host number.  These\naddresses must be administered by a central authority on your network.\n" 2>&1
+	pfmt -s nostd -g $CAT:119 "Note that using unofficial addresses can lead to network failures that\nare difficult to diagnose.  Until an address is available, it is\nimpossible to communicate with other machines through the network\n\n" 2>&1
+	pfmt -s nostd -g $CAT:120 "Please enter the IP host name for device %s (default: %s): " $i $DEF_NAME 2>&1
+	read HOST
+	if [ "$HOST" = "" ]
+	then	HOST=$DEF_NAME
+	fi
+
+	# if the IP host picked is already in /etc/hosts, don't append
+	# the address to the file. Take the corresponding address as
+	# the IP addr
+	match_host=`nametoaddr $HOST`
+	if [ "$match_host" != "" ]
+	then
+		DEF_ADDR=$match_host
+		pfmt -s nostd -g $CAT:121 "Please initialize the IP address for host %s (default: %s): " ${HOST} $DEF_ADDR 2>&1
+		read IPADDR
+		if [ "$IPADDR" = "" ]
+		then	IPADDR=$DEF_ADDR
+		else	if [ "$IPADDR" != "$DEF_ADDR" ]
+			then	
+				valid_count=`expr $IPADDR : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'`
+				if [ $valid_count -eq 0 ]
+				then	pfmt -l $LABEL -s error -g $CAT:122 "invalid IP address.\n" 2>&1
+					exit 1
+				fi
+				egrep "^$DEF_ADDR" /etc/inet/hosts | {
+					read addr name rest
+					ed - /etc/inet/hosts <<!
+/^$DEF_ADDR/c
+$IPADDR	$name	$rest
+.
+w
+!
+}
+			fi
+		fi
+	else
+		pfmt -s nostd -g $CAT:123 "Please initialize the IP address for host %s: " ${HOST} 2>&1
+		read IPADDR
+		if [ "$IPADDR" = "" ]
+		then	pfmt -l $LABEL -s error -g $CAT:122 "invalid IP address.\n" 2>&1
+			exit 1
+		fi
+		valid_count=`expr $IPADDR : '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'`
+		if [ $valid_count -eq 0 ]
+		then	pfmt -l $LABEL -s error -g $CAT:122 "invalid IP address.\n" 2>&1
+			exit 1
+		fi
+	fi
+
+	if [ "$match_host" = "" ]
+	then
+		echo "$IPADDR	$HOST" >> /etc/inet/hosts
+	fi
+
+	seg=`broadcast $IPADDR`
+	def_ifc_query="info";
+	Y=`gettxt "$CAT:124" "yes"`
+	YINIT=`echo $Y | cut -c1`
+	N=`gettxt "$CAT:125" "no"`
+	NINIT=`echo $N | cut -c1`
+	while [ "$def_ifc_query" != "yes" -a "$def_ifc_query" != "no" \
+		-a "$def_ifc_query" != "ClassC" \
+		-a "$def_ifc_query" != "BerkeleyC" ]
+	do
+	  pfmt -s nostd -g $CAT:126 "Configure host %s with default Ethernet(TM) ifconfig options?\n" $HOST 2>&1
+	  pfmt -s nostd -g $CAT:127 "Info message is long. (%s %s %s %s info; default: info): " $Y $N "ClassC" "BerkeleyC" 2>&1
+	  read def_ifc_query
+	  case "X$def_ifc_query" in
+		Xy|Xyes|XY|XYES|X$Y|X${YINIT})
+			def_ifc_query="yes"
+			segment_addr="-trailers"
+				;;
+		XClassC*|Xclassc*)
+			def_ifc_query="ClassC"
+			segment_addr="netmask 0xffffff00 broadcast $seg.255 -trailers"
+				;;
+		Xberk*|XBerk*)
+			def_ifc_query="BerkeleyC"
+			segment_addr="netmask 0xffffff00 broadcast $seg.0 -trailers"
+				;;
+		Xn|Xno|Xn|XNO|X$N|X${NINIT})
+			def_ifc_query="no"
+			pfmt -s nostd -g $CAT:128 "Please enter the ifconfig option(s) for host %s.\n" $HOST 2>&1
+			pfmt -s nostd -g $CAT:129 "Entering no options is acceptable, just press enter.\n" 2>&1
+			pfmt -s nostd -g $CAT:130 "(ifconfig option(s)): " 2>&1
+			read segment_addr
+				;;
+		*)
+			def_ifc_query="info"
+			pfmt -l $LABEL -s info -g $CAT:131 "\nThe most commonly used ifconfig option list for Ethernet(TM) devices is:\n\t-trailers\nThis is the default ifconfig option list option for your network.  The\n-trailers option is used to synchronize network packet trailer functionality.\n\n" 2>&1
+			pfmt -s nostd -g $CAT:132 "Some machines need to apply 'netmask' and 'broadcast' ifconfig options to allow\nrouting between networks.  The netmask argument identifies the network and\nmachine portions of the address.  The broadcast address is usually the network\naddress with '255' filling in the machine address portion(s).  The 'ClassC'\noption will assign the ifconfig options:\n\t%s\n\n" "netmask 0xffffff00 broadcast $seg.255 -trailers" 2>&1
+			pfmt -s nostd -g $CAT:133 "On Berkeley style networks, the broadcast address has '0' filling in the machine\naddress portion(s).  The BerkeleyC option will assign the ifconfig options:\n\t%s\n\n" "netmask 0xffffff00 broadcast $seg.0 -trailers" 2>&1
+			pfmt -s nostd -g $CAT:134 "Other network devices and protocols may require different ifconfig options.\nSome actually require no ifconfig options.  Please refer to the ifconfig(1m)\nmanual page or documentation specific to your network device if you need other\noptions.  Answer '%s' to the prompt to customize your own ifconfig options.\n\n" $N 2>&1
+				;;
+	  esac
+	done
+	
+	prefix=`expr $i : '\(.*\)_.*'`
+	unit_num=`expr $i : '.*_\(.*\)'`
+#NOTE: For auto instalation, uname -n address does not go into
+#file.  uname -n is the default for this feild to make changing
+#the system name more flexible
+	if [ `uname -n` = "$HOST" ]
+	then	addr=
+	else	addr=$HOST
+	fi
+	device=/dev/$i
+	# if device already exists in the interface file, replace with 
+	# current values
+	egrep "^[^:#]*:[^:]*:[^:]*:[^:]*\/$i:" $INTERFACE > /dev/null
+	if [ $? = 0 ]
+	then	
+		ed - $INTERFACE <<!
+/^[^:#]*:[^:]*:[^:]*:[^:]*\/$i:/c
+$prefix:$unit_num:$addr:$device:$segment_addr::
+.
+w
+!
+else	
+	echo "$prefix:$unit_num:$addr:$device:$segment_addr::" >> $INTERFACE
+fi
+	$NETINFO -a -d $i -p inet
+	count=`expr $count + 1`
+done
+
+inst_count=`cat $INTERFACE|egrep -v "^#"|egrep -v "^lo:0"|wc -l`
+if [ $inst_count -gt 1 ]
+then	pfmt -s nostd -g $CAT:135 "Do you want to set this machine as a gateway? [%s/%s/unchanged] " $YINIT $NINIT 2>&1
+	read ans
+	case $ans in
+		y*|Y*|${YINIT}*) 
+			ipf=`/etc/conf/bin/idtune -g IPFORWARDING | cut -f1`
+			if [ -n "$ipf" -a "$ipf" -eq 0 ]
+			then 
+				/etc/conf/bin/idtune -f IPFORWARDING 1
+				REBUILD=/etc/conf/bin/idbuild
+			fi
+			;;
+		n*|N*|${NINIT}*)
+			ipf=`/etc/conf/bin/idtune -g IPFORWARDING | cut -f1`
+			if [ -n "$ipf" -a "$ipf" -eq 1 ]
+			then 
+				/etc/conf/bin/idtune -f IPFORWARDING 0
+				REBUILD=/etc/conf/bin/idbuild
+			fi
+			;;
+		*)	;;
+	esac
+fi
+}
+
+while getopts id:rH:A:I:S:P:U: i
+do
+	case $i in
+	i)
+		if [ $rm_flg -eq 1 ]
+		then
+			usage
+		fi
+		int_flg=1
+		;;
+	r)
+		if [ $int_flg -eq 1 ]
+		then
+			usage
+		fi
+		rm_flg=1
+		;;
+	d)	
+		dvc="$dvc $OPTARG"
+		;;
+	H)
+		ip_host="$OPTARG"
+		;;
+	A)
+		ip_addr="$OPTARG"
+		;;
+	I)
+		ifconfig_opt="$OPTARG"
+		;;
+	S)
+		slink_opt="$OPTARG"
+		;;
+	P)
+		prefix="$OPTARG"
+		;;
+	U)
+		unit_num="$OPTARG"
+		;;
+	\?)
+		usage
+		;;
+	esac
+done
+
+d_cnt=`echo "$dvc" | wc -w | sed  -e 's/     //'`
+	
+# -d <dvc> [-H <host> -A <addr> -I <ifconfig_opt> -S <slink_opt>]
+if [ $rm_flg -eq 0 -a $int_flg -eq 0 ]
+then	if [ $d_cnt -ne 1 ]
+	then	
+		usage
+	fi
+	if [ "$ip_host" != "" -a "$ip_addr" != "" ]
+	then	arg_conf
+	else	auto_conf
+	fi
+else
+	if [ $rm_flg -eq 1 ]
+	then	
+		rm_conf
+	else
+		# interactive mode
+		int_conf
+	fi
+fi
+
+#patch for the mysterious problem up.save newer than interface
+#even though interface is modified
+rm -f /etc/confnet.d/inet/up.save
+
+$REBUILD

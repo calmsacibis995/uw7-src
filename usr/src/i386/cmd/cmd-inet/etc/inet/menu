@@ -1,0 +1,2439 @@
+#!/usr/bin/winxksh
+#ident	"@(#)menu	1.4"
+
+#
+# /etc/inet/menu obsoleted in BL9 with netcfg.
+#
+echo "$0 has been retired; use /usr/sbin/netcfg instead"
+exit 1
+
+#
+# Leave the rest as is in case netcfg doesn't work as expected.
+#
+
+if [[ -w /var/adm/log ]]
+then	exec 2>/var/adm/log/inet.menu.err
+else	if [[ -w /tmp/inet.menu.err || ! -f /tmp/inet.menu.err ]]
+	then	exec 2>/tmp/inet.menu.err
+	else	exec 2>/tmp/inet.menu.err.$$
+	fi
+fi
+: #debug: set -x
+set +a
+PS4='[$LINENO]+ '
+
+space=" "
+tab="	"
+nl="
+"
+function valid_host
+{
+: #debug: print -u2 function valid_host
+: #debug: set -x
+	#
+	#a missing host...
+	#
+	[[ "$1" = "" ]] && return 0
+
+	#
+	# a legal host names is [a-zA-Z0-9_-]+
+	#
+	case "$1" in
+	(*[!a-zA-Z0-9_.-]*|*[$space$tab]*)
+		errmsg "$inet_illegal_node_name";
+		return 1;
+		;;
+	
+	(*)	: foo
+		return 0;;
+	esac
+}
+
+# process devices
+legaldevs=
+illegaldevs=
+netdevs=`(
+	awk -F\# '{print $1;}' </etc/confnet.d/netdrivers |
+		awk '{print $1;}'
+	awk -F\# '{print $1;}' </etc/confnet.d/inet/interface |
+		awk -F: '{print $4;}' |
+		awk -F/ '{node=$3; for (i = 4; i <= NF; ++i)
+				node=node "/" $i;  print node;}' 
+	) 2>/dev/null |
+		egrep -v '(^|ppp|loop)[ 	]*$' 2>/dev/null |
+		sort -u 2>/dev/null`
+
+	for DR in route inet icmp ip tcp udp llcloop rawip arp app
+	do
+		/sbin/modadmin -l ${DR} >/dev/null 2>&1
+	done
+	#for copywrite messages
+	for DR in tcp ip
+	do	[[ -c /dev/$DR ]] && </dev/$DR
+	done
+	for DR in $netdevs
+	do	if [[ -c /dev/$DR ]] && </dev/$DR
+		then	legaldevs="${legaldevs} $DR"
+		#later code uses both newlines as markers
+		else	illegaldevs="${illegaldevs}
+$DR
+"
+		fi
+	done
+
+[[ ! -t 0 ]] && [[ -c /dev/tty ]] && {
+	: need redirect stdin, it is not a tty
+	exec </dev/tty
+}
+[[ ! -t 1 ]] && [[ -c /dev/tty ]] && {
+	: need redirect stdout, it is not a tty
+	exec >/dev/tty
+}
+
+LANG=${LC_ALL:-${LC_MESSAGES:-${LANG:-${LOCALE}}}}
+if [[ -z "$LANG" ]]
+then
+        LNG=`defadm locale LANG 2>/dev/null`
+        if [[ "$?" != 0 ]]
+        then LANG=C
+        else eval $LNG
+        fi
+        export LANG
+fi
+
+ENV=
+LOCALE=${LANG:-C}
+ROOT=${ROOT:-/}
+INETLOCALEDIR=${ROOT}/etc/inst/locale/${LOCALE}/menus/inet
+LANGDEP_SCRIPTS=$INETLOCALEDIR
+defaultINETLOCALEDIR=${ROOT}/etc/inst/locale/C/menus/inet
+TERM=${TERM:-AT386}
+DCUDIR=${DCUDIR:-${ROOT}/etc/dcu.d}
+INET_DIR=${INET_DIR:-${ROOT}/etc/inet}
+LD_LIBRARY_PATH=${DCUDIR}/dculib:/usr/lib
+LD_RUN_PATH=${LD_LIBRARY_PATH}
+TERMINFO=${ROOT}/usr/share/lib/terminfo
+DCUSCRIPTS=${DCUDIR}/scripts export DCUSCRIPTS
+DCULIBS=${DCUDIR}/dculib export DCULIBS
+DCUMENUS=${DCUDIR}/menus/${LANG} export DCUMENUS
+DCUHELP=${DCUDIR}/locale/${LANG} export DCUHELP
+nicfile=/etc/inst/nics/inet/nic_bdnames
+defaultDCUHELP=${DCUDIR}/locale/C export defaultDCUHELP
+FPATH=:${defaultINETLOCALEDIR}:${DCUDIR}/scripts:${DCUDIR}/menus/${LANG}:${DCUSCRIPTS}:${DCUMENUS}:${DCUHELP}/help:$FPATH
+PATH=/sbin:/usr/sbin:/usr/bin:/etc:/usr/ccs/bin:$PATH export PATH
+let tmp_inet_int=0 REQUEST_BOOTP=0 GLOBAL_ABORT=0 INETMAIN_ABORT=0 INETMAIN_EXIT=0 select_num=0 MIDDLE_ABORT=0
+save_bootp_name=
+
+if	[[ -r ${INETLOCALEDIR}/txtstrings ]]
+then	. ${INETLOCALEDIR}/txtstrings
+else	#have to use C locale, we have no choice. Used in help
+	INETLOCALEDIR=${defaultINETLOCALEDIR}
+	. ${defaultINETLOCALEDIR}/txtstrings
+	LANGDEP_SCRIPTS=$defaultINETLOCALEDIR
+fi
+
+if	[[ -r ${DCUHELP}/help/helpwin ]]
+then	. ${DCUHELP}/help/helpwin
+else	#have to use C locale, we have no choice
+	. ${defaultDCUHELP}/help/helpwin
+fi
+
+#process items in txtstrings
+inet_place_title="${inet_default_title}"
+
+
+function inet_setup
+{
+: #debug: print -u2 function inet_setup
+: #debug: set -x
+	UNAME=`uname -n`
+	if [[ -z "${UNAME}" ]]
+	then	read UNAME </etc/nodename
+	fi
+	INET_nodename=${UNAME}
+
+	typeset excess=
+	[[ -z "${INET_device}" && -n "${legaldevs}" ]] &&
+		read INET_device excess <<!
+${legaldevs}
+!
+	get_current_forwarding
+	load_lib_data
+}
+
+function inet_write_interface
+{
+: #debug: print -u2 function inet_write_interface
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+
+	inet_file_hosts
+
+	if	[[ "${UNAME}" = "${INET_nodename}" ]]
+	then	typeset tmp_INET_nodename=""
+	elif	[[ -z "${INET_nodename}" && -n "${INET_YOUR_IP_ADDRESS}" ]] && (( multi_b ))
+	then	typeset tmp_INET_nodename="${INET_YOUR_IP_ADDRESS}"
+	elif	[[ -z "${INET_nodename}" ]]
+	then	: #debug: : niether name nor ip, can not write interface
+		return 1
+	else	typeset tmp_INET_nodename="${INET_nodename}"
+	fi
+	internal_frame_type "${local_frame}"
+	if	[[ "${tmp_internal_frame_type}" = add_interface ]]
+	then	typeset write_internal_frame_type=
+	else	typeset write_internal_frame_type="${tmp_internal_frame_type}"
+	fi
+	if [[ -n "${INET_device}" ]]
+	then	INET_dev_node=/dev/${INET_device}
+	else	INET_dev_node=
+	fi
+	typeset written="no"
+	if [[ -n "${INET_device}" && -c "${INET_dev_node}" ]]
+	then	[[ -n "${readInterfaceFile}" ]] && {
+		  ccall modifyNetmask ret_readInterfaceFile \
+			"@string_t:!${INET_SUBNET_MASK}!"  \
+			"@string_t:!${INET_BROADCAST_ADDRESS}!"  \
+			"@string_t:!${INET_dev_node}!"  \
+			"@string_t:!${tmp_INET_nodename}!"  \
+			"@string_t:!${write_internal_frame_type}!" &&
+		  ccall writeConfigFile ret_readInterfaceFile &&
+		  written="yes"
+		}
+		if [[ no = $written ]]
+		then	typeset prefix=${INET_device%_[0-9]}
+			typeset unit=${INET_device##*_}       
+			typeset INET_ifconfig1=
+			typeset INET_ifconfig2=
+			[[ -n "${INET_SUBNET_MASK}" ]] &&
+				INET_ifconfig1="netmask ${INET_SUBNET_MASK} "
+		
+			[[ -n "${INET_BROADCAST_ADDRESS}" ]] &&
+				INET_ifconfig2="broadcast ${INET_BROADCAST_ADDRESS} "
+				
+			echo "${prefix}:${unit}:${tmp_INET_nodename}:${INET_dev_node}:${INET_ifconfig1}${INET_ifconfig2}-trailers:${write_internal_frame_type}:" >>/etc/confnet.d/inet/interface
+		fi
+	fi
+
+	if [[ -n "${INET_device}" && \
+		`grep -c "^[ 	]*${INET_device}[ 	][ 	]*inet[ 	]*$" \
+		/etc/confnet.d/netdrivers 2>/dev/null` = 0 ]]
+	then	rm -f /tmp/.netdrivers
+		grep -v "^[ 	]*${INET_device}[ 	]*$" \
+			</etc/confnet.d/netdrivers 2>/dev/null >/tmp/.netdrivers
+		cat >/etc/confnet.d/netdrivers 2>/dev/null /tmp/.netdrivers - <<!
+${INET_device}	inet
+!
+		rm -f /tmp/.netdrivers
+	fi
+}
+
+function inet_write_files
+{
+: #debug: print -u2 function inet_write_files
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+	inet_file_resolv
+#ensure inet_file_router is called after write_gateway,
+#or we must write the config file here as well as there.
+	write_gateway
+	inet_file_router
+	inet_write_interface
+	
+	return 0;	#otherwise we can't leave!
+}
+
+#return the integer value of an ip address in tmp_inet_int.
+function inet_int
+{
+: #debug: print -u2 function inet_int
+: #debug: set -x
+	case "${1}" in
+		0x*)	(( tmp_inet_int = 16#${1#0x} ))
+			return;;
+	esac
+
+	typeset addr_1
+	typeset addr_2
+	typeset addr_3
+	typeset addr_4
+	typeset addr_remainder
+#sorry about the indents, folks
+	IFS="." read addr_1 addr_2 addr_3 addr_4 addr_remainder <<!
+$1
+!
+(( tmp_inet_int = (256*(256*(256*${addr_1}+${addr_2})+${addr_3})+${addr_4}) ))
+}
+
+# If the netmask indicates a zero or all ones
+#	network or host portion of ip address,
+#	of the default router,
+# then tell them.
+#
+# check the broadcast is all ones/zeros in machine portion,
+# check the router address is all ones/zeros in machine portion,
+#called on exit since 2 fields interact
+function check_all_masking
+{
+: #debug: print -u2 function check_all_masking
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+
+	check_netmask_int && check_ip_mask &&
+		check_broadcast_mask && check_route_mask &&
+		return 0
+	return 1
+}
+
+# check vaid netmask
+function check_netmask_int 
+{
+: #debug: print -u2 function check_netmask_int
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+	[[ -z "${INET_SUBNET_MASK}" ]] &&
+		return 0
+
+	inet_int ${INET_SUBNET_MASK}
+	typeset -i addrval=$(( tmp_inet_int ))
+
+	#is -1 == 0xffffffff machine specific or ksh $(( )) generic?
+	(( -1 == addrval || 0 == addrval )) && {
+		errmsg "$inet_illegal_zero_mask"
+		return 1
+	}
+
+	#the netmask should be all ones except for some ones on the right.
+	typeset -i cnt=4 ones=15
+	while (( (cnt<28) && (0==(addrval&(2*ones+1))) ))
+	do	(( ones = 2*ones+1 ))
+		(( cnt = cnt+1 ))
+	done
+
+	(( addrval&ones )) && {
+		errmsg "$inet_illegal_netmask"
+		return 1
+	}
+	(( -1!=(ones|addrval) )) && {
+		errmsg "$inet_illegal_netmask"
+		return 1
+	}
+	return 0;
+}
+
+# network or host portion of ip address illegal
+#called on exit since 2 fields interact
+function check_ip_mask
+{
+: #debug: print -u2 function check_ip_mask
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+	[[ -z "${INET_YOUR_IP_ADDRESS}" || -z "${INET_SUBNET_MASK}" ]] &&
+		return 0
+
+	inet_int ${INET_YOUR_IP_ADDRESS}
+	typeset -i addrval=${tmp_inet_int}
+	inet_int ${INET_SUBNET_MASK}
+	typeset -i maskval=${tmp_inet_int}
+
+	# (netportion)  of netmask is ones.
+	# (hostportion) of netmask is zeros.
+	# hostportion of ipaddress must not be all 0 or 1.
+	(( 0 != ((((addrval)&(~maskval))==0)||
+		 (((addrval)&(~maskval))==(~maskval))) )) &&
+		{ errmsg "$inet_addr_bad_mask" ; return 1 ; }
+
+	# netportion  of ipaddress must not be all 0 or 1.
+	(( 0 != ((((addrval)&( maskval))==0)||
+		 (((addrval)&( maskval))==( maskval))) )) &&
+		{ errmsg "$inet_net_bad_mask" ; return 1 ; }
+	return 0
+}
+
+#called on exit since 2 fields interact
+function check_broadcast_mask
+{
+: #debug: print -u2 function check_broadcast_mask
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+	[[ -z "${INET_BROADCAST_ADDRESS}" || -z "${INET_SUBNET_MASK}" ||
+	  "${INET_BROADCAST_ADDRESS}" = 255.255.255.255 ||
+	  "${INET_BROADCAST_ADDRESS}" = 0x[Ff][Ff][Ff][Ff][Ff][Ff][Ff][Ff] ]] &&
+		return 0
+
+	inet_int ${INET_BROADCAST_ADDRESS}
+	typeset -i addrval=${tmp_inet_int}
+	inet_int ${INET_SUBNET_MASK}
+	typeset -i maskval=${tmp_inet_int}
+	inet_int ${INET_YOUR_IP_ADDRESS}
+	typeset -i netval=${tmp_inet_int}
+
+	# (hostportion) of netmask is zeros.
+	# hostportion of broadcast MUST     be all 0 or 1.
+	(( 0 == ((((addrval)&(~maskval))==0)||
+		 (((addrval)&(~maskval))==(~maskval))) )) &&
+		{ errmsg "$inet_br_addr_bad_mask" ; return 1 ; }
+
+	# (netportion)  of broadcast must be same as IPADDR.
+	(( 0 == (((addrval)&( maskval))==((netval)&( maskval))) )) &&
+		{ errmsg "$inet_br_net_bad_mask" ; return 1 ; }
+
+	return 0
+}
+
+#called on exit since 2 fields interact
+function check_route_mask
+{
+: #debug: print -u2 function check_route_mask
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+# if multiboard, default router need not be in this ine network
+	[[ -z "${INET_ROUTER[0]}" || -z "${INET_SUBNET_MASK}" ||
+	   "${multi_b}" = 1 ]] &&
+		return 0
+
+	inet_int ${INET_ROUTER[0]}
+	typeset -i addrval=${tmp_inet_int}
+	inet_int ${INET_SUBNET_MASK}
+	typeset -i maskval=${tmp_inet_int}
+	inet_int ${INET_YOUR_IP_ADDRESS}
+	typeset -i netval=${tmp_inet_int}
+
+	# (netportion)  of local router must be same as IPADDR.
+	(( ! (((addrval)&( maskval))==((netval)&( maskval))) )) &&
+		{ errmsg "$inet_route_net_mask" ; return 1 ; }
+
+	# (hostportion) of local router must not be ones or zeros.
+	(( 0 != ((((addrval)&(~maskval))==0)||
+		 (((addrval)&(~maskval))==(~maskval))) )) &&
+		{ errmsg "$inet_route_host_mask" ; return 1 ; }
+
+	return 0
+}
+
+#function called when menu containing bootp'd inet values returns.
+#if it returns non-zero we go back to the original bootp screen,
+#so we return 1 after popping up messages about any errors/illegals.
+function inetbootp_exit
+{
+: #debug: print -u2 function inetbootp_exit
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT || REQUEST_BOOTP)) && {
+		return 0;
+	}
+
+	INETMAIN_EXIT=1
+	[[ -n "$INET_DOMAIN_NAME" && \
+	   -z "${INET_DNS_SERVER[0]}" && -z "${INET_DNS_SERVER[1]}" && \
+	   -z "${INET_DNS_SERVER[2]}" ]] && {
+		errmsg "$inet_part_dns" 
+		return 1;
+	}
+
+	if [[ -z "$INET_DOMAIN_NAME" ]]
+	then {	[[ -n "${INET_DNS_SERVER[0]}" || \
+		   -n "${INET_DNS_SERVER[1]}" || \
+		   -n "${INET_DNS_SERVER[2]}" ]] && {
+		errmsg "$inet_part_dns" 
+		return 1;
+	     }
+	}
+	fi
+
+	if check_all_masking
+	then	#the folowing is done when all values are aproved
+		inet_write_files
+		return 0;
+	else	return 1
+	fi
+}
+	
+
+#file operations
+function inet_file_resolv
+{
+: #debug: print -u2 function inet_file_resolv
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+	#if no domain, must stop
+	[[ -z "$INET_DOMAIN_NAME" ]] && return 0
+
+	typeset    file=${INET_ROOT}/etc/resolv.conf
+	typeset -i server=0
+	typeset    data="domain $INET_DOMAIN_NAME"
+
+	#when an ip address is not null, append it to data
+	[[ -n "${INET_DNS_SERVER[0]}" ]] && server=1 && data="$data
+nameserver	${INET_DNS_SERVER[0]}"
+	[[ -n "${INET_DNS_SERVER[1]}" ]] && server=1 && data="$data
+nameserver	${INET_DNS_SERVER[1]}"
+	[[ -n "${INET_DNS_SERVER[2]}" ]] && server=1 && data="$data
+nameserver	${INET_DNS_SERVER[2]}"
+
+	#if a server was appended, we'll see the flag set
+	if (( server ))
+	then	# save any user comments in file
+		typeset    comments=`grep '#' $file |
+				sed 's/^\([^#]*[^ #	][^#]*#\)/#\1/g'`
+		#write the info to the file
+		echo "$data" >$file
+		[[ -n "$comments" ]] &&
+			echo >>$file "$comments"
+		chmod go-w+r $file
+	fi
+}
+
+# add INET_ROUTER[0] data to /etc/inet/conf
+function inet_file_router
+{
+: #debug: print -u2 function inet_file_router
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) && return 0
+
+	#if no router, gracefully return
+	[[ -z "${INET_ROUTER[0]}" && -z "${IP_FORWARD}" ]] &&
+		return 0
+
+###	typeset output;
+###	output=`${INET_ROOT}/usr/sbin/initialize -r ${INET_ROUTER[0]} 2>&1`
+###	: initialize -r ${INET_ROUTER[0]} returned $?, output was "$output"
+
+	[[ -n "${readConfigFile}" ]] &&
+	  ccall modifyDefaultRouter ret_readConfigFile \
+		"@string_t:!${INET_ROUTER[0]}!" &&
+	  ccall writeConfigFile ret_readConfigFile
+}
+
+function inet_file_hosts
+{
+: #debug: print -u2 function inet_file_hosts
+: #debug: set -x
+  (( GLOBAL_ABORT || INETMAIN_ABORT )) &&
+	return 0
+
+  [[ -n "${INET_YOUR_IP_ADDRESS}" && -n "${INET_nodename}" ]] && {
+	typeset TAB='	'
+	typeset SPACE=' '
+	typeset PAT1="^[^#]*[${TAB}${SPACE}]${INET_nodename}[#${TAB}${SPACE}]"
+	typeset PAT2="^[^#]*[${TAB}${SPACE}]${INET_nodename}$"
+	typeset PAT3="^${INET_YOUR_IP_ADDRESS}[${TAB}${SPACE}]"
+	typeset namefind=`egrep "${PAT1}|${PAT2}" </etc/hosts`
+	typeset addrfind=`egrep "${PAT3}" </etc/hosts`
+	
+	#neither name nor address exists
+	[[ -z "${namefind}" && -z "${addrfind}" ]] && {
+		echo "${INET_YOUR_IP_ADDRESS}\t${INET_nodename}" >>/etc/hosts
+		return
+	}
+
+	#1 name and 1 address exists and match
+	[[ "${namefind}" = "${addrfind}" ]] && {
+		#if there were more than one line then there
+		#would be more than one match.  We know the
+		#lines are equal so just test one.
+		#We see if there are any characters newline
+		typeset plusline='*
+?*'
+
+		case "${namefind}" in
+		($plusline)	;;
+		(*)		return 0;;
+		esac
+
+	}
+	sed -e "/${PAT1}/s/^/#/" -e "/${PAT2}/s/^/#/" -e "/${PAT3}/s/^/#/" \
+		< /etc/hosts > /tmp/hosts
+	cat </tmp/hosts >/etc/hosts
+	rm /tmp/hosts >/dev/null 2>&1
+	echo "${INET_YOUR_IP_ADDRESS}\t${INET_nodename}" >>/etc/hosts
+  }
+}
+
+
+#usage: valid_domain domain_name
+function valid_domain
+{
+: #debug: print -u2 function valid_domain
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT || !FLD_CHANGED )) && return 0
+
+	#a missing domain will be warned on form exit
+	if [[ X"$1" = X ]]
+	then	return 0
+	fi
+
+	case "$1" in
+	#illegal domains have
+	#2 or more dots in a row
+	#@signs probably mess with email
+	#space/tab must be strange
+	*[@]*|*..*|*[\ \	]*)
+		errmsg "$inet_illegal_domain"
+		return 1;
+		;;
+#must have dot? start with a-z?
+	esac
+	return 0
+}
+
+#usage: valid_ip_addr ip_address [netmask]
+#netmask allows 0x-style netmask format error message
+function valid_ip_addr
+{
+: #debug: print -u2 function valid_ip_addr
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT || !FLD_CHANGED )) && return 0
+	typeset tmp_errmsg="$inet_illegal_addr"
+	typeset tmp_zero_errmsg="$inet_illegal_zero_addr"
+	if [[ -n "$2" ]]
+	then	tmp_errmsg="$inet_illegal_netmask"
+		tmp_zero_errmsg="$inet_illegal_zero_mask"
+	fi
+
+	#a missing required IP address will be warned on form exit
+	if [[ X"$1" = X ]]
+	then	return 0
+	fi
+	case "$1" in
+	#illegal addresses have non-(digit dot)
+	#2 or more dots in a row
+	#4 or more dots in addr
+#starting octet has leading zero?
+	*[!0-9.]*|*..*|*.*.*.*.*)
+		errmsg "$tmp_errmsg"
+		return 1;
+		;;
+	#numbers greater than 255: four+ digits, [3-9]XX, 2[6-9]X, 25[6-9]
+	*[1-9][0-9][0-9][0-9]*|*[3-9][0-9][0-9]*|*2[6-9][0-9]*|*25[6-9]*)
+		errmsg "$inet_illegal_octet"
+		return 1; ;;
+	#MUST have 3 dots (note:127.0.0.1 == 127.0 but do we deal with it?)
+	*.*.*.*)
+		{
+		case "$1" in
+		#all zeros illegal for ip and netmask
+		0.0.0.0)
+			errmsg "$tmp_zero_errmsg"
+			return 1;;
+#enhance for netmask & ipaddr having non-zero network+machine
+		#leading/trailing zeros illegal for ip, ok for netmask
+		0.*|*.0.0.0)
+			if [[ -n "$2" ]]
+			then	errmsg "$tmp_zero_errmsg"
+				return 1;
+			fi
+		esac
+		return 0;
+		}
+	esac
+	#did not have exactly 3 dots
+	errmsg "$tmp_errmsg"
+	return 1;
+}
+
+#usage: valid_netmask 0xeight-hex-digits
+#usage: valid_netmask ip_address 
+#netmask allows 0x-style netmask format OR valid_ip_addr
+function valid_netmask
+{
+: #debug: print -u2 function valid_netmask
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT || !FLD_CHANGED )) && return 0
+
+	if [[ X"$1" = X ]]
+	then	return 0
+	fi
+
+	case "$1" in
+	0x*)
+		{
+		case "$1" in
+		#non-hex?
+		0x*[!0-9a-fA-F]*)
+			errmsg "$inet_illegal_netmask"
+			return 1;
+			;;
+		#non-zero?
+		0x00000000)
+			errmsg "$inet_illegal_zero_mask"
+			return 1;
+			;;
+		0x[Ff][Ff][Ff][Ff][Ff][Ff][Ff][08CcEe])
+			return 0;;
+		#len==len(0xffffff00)
+		0x????????)
+#enhance here for netmask & ipaddr having non-zero network+machine
+			{
+			case "$1" in
+
+#sensible netmasks are 0xf0000000 0xfffffff0 where you have contiguous
+#regions of 1's on the left and zero's on the right.
+#A netmask of 000a000 is setting up for a disaster, but it is legal.
+#
+#binary		upper/lower hex chars
+#0000 0000	0  0
+#1000 0000	8  0
+#1100 0000	Cc 0
+#1110 0000	Ee 0
+#1111 0000	Ff 0
+#1111 1000	Ff 8
+#1111 1100	Ff Cc
+#1111 1110	Ff Ee
+#	
+#So a region sensibly should never have a:
+# [08BbEe] that is followed by non-zero
+# more than one [8BbEe]
+# an Ff that is followed by non-[08BbEeFF]
+# a last digit that is not [08BbEe]
+# a first digit that is not Ff
+
+0x*[08CcEe]*[!0]*|0x*[8CcEe]*[8CcEe]*|0x*[Ff][!08CcEeFf]*|0x*[!08CcEe]|0x[!Ff])
+#enhance here for experts to overide and use daring netmask
+				errmsg "$inet_dumb_netmask"
+				return 1;
+				;;
+			esac
+			}
+			# check integer form of netmask
+			if check_netmask_int
+			then	return 0
+			else	return 1
+			fi
+			;;
+		esac
+		errmsg "$inet_illegal_netmask"
+		return 1;
+		}
+	esac
+	valid_ip_addr "$1" netmask
+	return $?
+}
+
+function do_slink
+{
+: #debug: print -u2 function do_slink
+: #debug: set -x
+	boot_proc=
+	int_proc=
+	typeset verbose=
+: #debug: verbose=v
+
+	[[ ! -c "${INET_dev_node}" ]] && return 0
+
+	if ${INET_ROOT}/usr/sbin/ifconfig ${INET_ifname} up >/dev/null 2>&1
+	then return
+	fi
+
+	${INET_ROOT}/usr/sbin/slink -${verbose}pc /etc/strcf \
+			boot res > /dev/null &&
+		boot_proc=slink
+	internal_frame_type "${local_frame}"
+	${INET_ROOT}/usr/sbin/slink -${verbose}pc /etc/strcf "${tmp_internal_frame_type}" \
+			res "${INET_dev_node}" "${INET_ifname}" > /dev/null &&
+		int_proc=slink
+	#
+	#  Bring up the interface with a zero address to listen for
+	#  broadcast responses to BOOTP requests.
+	#
+# : typeset -i C=0
+# : #debug:(( C=0 ));export|(set +x;IFS=;while read y;do (( C=C+${#y} ));done;echo export size is $C;) >&2
+# : #debug:(( C=0 ));set|(set +x;IFS=;while read y;do (( C=C+${#y} ));done;echo set var size is $C;) >&2
+# : #debug:(( C=0 ));functions|(set +x;IFS=;while read y;do (( C=C+${#y} ));done;echo functions size is $C;) >&2
+	${INET_ROOT}/usr/sbin/ifconfig ${INET_ifname} up > /dev/null
+	[[ $? != 0 ]] && {
+		# window
+		return 1
+	}
+}
+
+function undo_slink
+{
+: #debug: print -u2 function undo_slink
+: #debug: set -x
+	typeset verbose=
+: #debug: verbose=v
+	[[ -c "${INET_dev_node}" ]] &&
+		[[ -n "${boot_proc}" || -n "${int_proc}" ]] && {
+			typeset p=`ps -ef |
+			egrep \
+			 '[/]usr/sbin/slink -v*pc /etc/strcf (boot res|.* res )'` &&
+			kill `awk '{print $2;}' <<!
+$p
+!
+` 2>/dev/null 
+		}
+}
+
+#inet_get_bootp_values
+#if we do not have the current bootp values, populate them
+function inet_get_bootp_values
+{
+: #debug: print -u2 function inet_get_bootp_values
+: #debug: set -x
+  if (( REQUEST_BOOTP == 1 ))
+  then	display "${bootp_msg}"
+	bp_msg=$CURWIN
+  else	bp_msg=
+  fi
+
+  { # done in an extra layer of {} to clear vars internally
+    # without slamming them externally when bootp times out
+    # without vars.
+
+	INET_bootp_return=1
+	[[ ! -c "${INET_dev_node}" ]] && return
+
+	#this device could not be opened earlier
+	#may cause console messages to destroy screen
+	case "${illegaldevs}" in
+		(*${nl}{INET_dev_node}${nl}*)
+			return;;
+	esac
+
+	do_slink
+
+	if	(( 1 == multi_b ))
+	then	typeset tmp_bootp_name=${save_bootp_name:-${MULTI_nodename}}
+	else	typeset tmp_bootp_name=${save_bootp_name:-${INET_nodename}}
+	fi
+
+	if (( REQUEST_BOOTP == 1 ))
+	then	typeset tries=3
+	else	typeset tries=1
+	fi
+: #debug: typeset before_bootp=`date`
+	typeset INET_bootp_vars=`/usr/sbin/bootp \
+		-a ${INET_ifname} -c $tries ${INET_dev_node} \
+		${tmp_bootp_name} 2>/dev/null`
+	case "${INET_bootp_vars}" in
+	 (*INET_BOOTP_TIMEDOUT=yes*)
+		INET_bootp_return=1 ;;
+	 (*=*)
+		INET_bootp_return=0 ;;
+	 (*)	
+		: interesting, probably no permisions for bootp
+		INET_bootp_return=1 ;;
+	esac
+: #debug: typeset after_bootp=`date`
+
+	undo_slink
+
+	echo $INET_bootp_return $INET_bootp_vars
+  } | read INET_bootp_return INET_bootp_vars
+
+  if [[ -n "${bp_msg}" ]]
+  then	wclose ${bp_msg}
+	bp_msg=
+  fi
+
+  # if the bootp failed, keep all the (edited) values
+  # the user typed in.  If the bootp worked, have to
+  # clear all and then import them.
+  (( 0 == INET_bootp_return )) && {
+	#clear all parameters
+	set -A INET_DNS_SERVER	""
+	set -A INET_ROUTER		""
+	set -A INET_TIME_SERVER	""
+
+	unset	INET_BOOTP_TIMEDOUT \
+		INET_BOOT_FILE_NAME \
+		INET_BROADCAST_ADDRESS \
+		INET_DOMAIN_NAME \
+		INET_HOSTNAME \
+		INET_NIS_DOMAIN_NAME \
+		INET_SERVER_IP_ADDRESS \
+		INET_SUBNET_MASK \
+		INET_TIME_OFFSET \
+		INET_YOUR_IP_ADDRESS \
+		INET_ETHER_ENCAPSULATION
+
+	eval "$INET_bootp_vars"
+  }
+  case "${INET_bootp_vars}" in
+   (*INET_BOOTP_TIMEDOUT=yes*)
+  	inet_place_title="${inet_default_title}" ;;
+   (*=*)
+  	inet_place_title="${inet_bootp_title}" ;;
+   (*)	
+  	: interesting, probably no permisions for bootp
+  	inet_place_title="${inet_default_title}" ;;
+  esac
+}
+
+function external_frame_type
+{
+: #debug: print -u2 function external_frame_type
+: #debug: set -x
+	case "$*" in
+	   (add_interface_SNAP)
+		tmp_external_frame_type="${inet_msg_eth_snap}";;
+
+	   (""|add_interface)
+		tmp_external_frame_type="${inet_msg_eth_II}";;
+
+	   (*) tmp_external_frame_type="$*";;
+	esac
+}
+
+function internal_frame_type
+{
+: #debug: print -u2 function internal_frame_type
+: #debug: set -x
+	case "$1" in
+	   (""|${inet_msg_eth_II}|${inet_msg_tok}|${inet_msg_fddi})
+		#add_interface is the default
+		tmp_internal_frame_type="add_interface";;
+
+	   (${inet_msg_tok_snap}|${inet_msg_eth_snap})
+		tmp_internal_frame_type="add_interface_SNAP";;
+
+	   (add_loop|add_interface_SNAP|add_interface|add_ppp)
+		tmp_internal_frame_type="${1}";;
+	   (*) grep "^$1[ 	]*{" >/dev/null \
+			2>/dev/null /etc/inet/strcf # }match
+			: echo 'really bad frame type!'
+		tmp_internal_frame_type="${1}";;
+	esac
+}
+
+function valid_frametype
+{
+: #debug: print -u2 function valid_frame_type
+: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT || !FLD_CHANGED )) && return 0
+	case "$1" in
+		("") ;;
+		(add_loop|add_interface_SNAP|add_interface|add_ppp) ;;
+		(${inet_msg_eth_snap}|${inet_msg_eth_II});;
+		(${inet_msg_tok_snap}|${inet_msg_tok}|${inet_msg_fddi});;
+
+		(*) grep "^$1[ 	]*{" \
+			  >/dev/null 2>/dev/null /etc/inet/strcf &&  # }match
+			  return 0;
+			errmsg "$inet_frame_missing"
+			return 1;;
+	esac
+	return 0;
+}
+
+function do_frame
+{
+: #debug: print -u2 function do_frame
+: #debug: set -x
+	CHOOSE_TITLE="$inet_frame_title"
+	CHOOSE_FOOTER="$inet_choose_frame_footer"
+	#
+	# if a choice was already made, use that as default.
+	#
+	typeset default_choice=${local_frame}
+	[[ -z "${default_choice}" ]] &&
+		default_choice="${inet_msg_eth_II}"
+	choose -f "$default_choice" \
+		"${inet_msg_eth_II}" "${inet_msg_eth_snap}" \
+		"${inet_msg_tok}" "${inet_msg_fddi}"
+}
+
+#usage: valid_device device_under_/dev
+function valid_device
+{
+: #debug: print -u2 function valid_device
+: #debug: set -x
+	[[ -c /dev/$1 ]] && return 0
+	errmsg "$inet_illegal_device"
+	return 1;
+}
+
+function do_gateway
+{
+: #debug: print -u2 function do_gateway
+: #debug: set -x
+	CHOOSE_TITLE="$inet_pr_gate"	#reused
+	CHOOSE_FOOTER="$inet_choose_frame_footer"
+	#
+	# if a choice was already made, use that as default.
+	#
+	typeset default_choice=${IP_FORWARD}
+	[[ -z "${default_choice}" ]] && default_choice=${No}
+	choose -f -exit 'validation_yes_or_no "$IP_FORWARD"' \
+		"$default_choice" ${Yes} ${No}
+}
+
+function do_device
+{
+: #debug: print -u2 function do_device
+: #debug: set -x
+	CHOOSE_TITLE="$inet_pr_dev"	#reused
+	CHOOSE_FOOTER="$inet_choose_frame_footer"
+	#
+	# if a choice was already made, use that as default.
+	#
+	typeset default_choice=${INET_device}
+	[[ -z "${default_choice}" ]] && {
+		read INET_device excess <<!
+${legaldevs}
+!
+	}
+	choose -f -exit 'valid_device "$INET_device"' \
+		"$default_choice" ${legaldevs} ${illegaldevs}
+}
+
+function display_oldvals
+{
+: #debug: print -u2 function display_oldvals
+: #debug: set -x
+	get_all_old_vals
+: #debug: : INET_get_addr=$INET_get_addr
+: #debug: : INET_get_broadcast=$INET_get_broadcast
+: #debug: : INET_get_dns_1=$INET_get_dns_1
+: #debug: : INET_get_dns_2=$INET_get_dns_2
+: #debug: : INET_get_dns_3=$INET_get_dns_3
+: #debug: : INET_get_domain=$INET_get_domain
+: #debug: : INET_get_netmask=$INET_get_netmask
+: #debug: : INET_get_nodename=$INET_get_nodename
+: #debug: : INET_get_router=$INET_get_router
+: #debug: : INET_get_slink=$INET_get_slink
+: #debug: : broadcast_ret=$broadcast_ret
+
+#if all of these are null, we bet there is no interface file entry.
+[[ -n "${INET_get_addr}" || -n "${INET_get_nodename}" ||
+   -n "${INET_get_slink}" ]] && {
+	external_frame_type "${INET_get_slink}"
+	INET_get_frame_type=${tmp_external_frame_type}
+}
+
+typeset -i width_tmp=${#inet_popup_title}
+for i in "${#INET_get_netmask}" "${#INET_get_broadcast}" \
+  "${#INET_get_domain}" "${#INET_get_nodename}" \
+  "${#INET_get_frame_type}" "${#INET_get_addr}" \
+  "${#INET_get_dns_1}" "${#INET_get_dns_2}" \
+  "${#INET_get_dns_3}"
+do	(( width_tmp < i )) && (( width_tmp = i ))
+done
+
+typeset -L$(( width_tmp )) \
+	width_INET_get_addr=${INET_get_addr:- } \
+	width_INET_get_broadcast=${INET_get_broadcast:- } \
+	width_INET_get_dns_1=${INET_get_dns_1:- } \
+	width_INET_get_dns_2=${INET_get_dns_2:- } \
+	width_INET_get_dns_3=${INET_get_dns_3:- } \
+	width_INET_get_domain=${INET_get_domain:- } \
+	width_INET_get_netmask=${INET_get_netmask:- } \
+	width_INET_get_nodename=${INET_get_nodename:- } \
+	width_INET_get_router=${INET_get_router:- } \
+	width_INET_get_slink=${INET_get_frame_type:- } \
+	width_INET_device=${INET_device:- } \
+	width_blank=
+
+typeset oldvals="${width_INET_get_nodename}"
+
+[[ -z "${ethinfo_gray}" ]] &&
+oldvals="${oldvals}
+${width_INET_device}"
+
+[[ -n "${ethinfo_gray}" ]] &&
+oldvals="${oldvals}
+"
+
+# we did not find the interface file entry.
+# if we do have a device, then we must be using INET_get_addr
+# from our fallback to etc/hosts, so we should not imply we had
+# this interface set up by displaying it as a system file value.
+if [[ -z "${broadcast_ret}" && -z "${ethinfo_gray}" ]]
+then
+	oldvals="${oldvals}
+${width_blank}
+${width_blank}"
+else
+	oldvals="${oldvals}
+${width_INET_get_addr}
+${width_blank}"
+fi
+
+[[ -z "${ethinfo_gray}" ]] &&
+oldvals="${oldvals}
+${width_INET_get_netmask}
+${width_INET_get_broadcast}
+${width_INET_get_router}
+${width_blank}"
+
+oldvals="${oldvals}
+${width_INET_get_domain}
+${width_INET_get_dns_1}
+${width_INET_get_dns_2}
+${width_INET_get_dns_3}"
+
+[[ -z "${ethinfo_gray}" ]] &&
+oldvals="${oldvals}
+${width_blank}
+${width_INET_get_slink}"
+
+msg "$anykey_footer"
+GENERIC_FOOTER="${anykey_footer}" \
+	display -w "${oldvals}" -right 0 \
+	-title "$inet_popup_title" 
+}
+
+function multi_exit
+{
+: #debug: print -u2 function multi_exit
+: #debug: set -x
+	env_multi_exit='
+		OUTER_nodename="'"${MULTI_nodename}"'";
+		INET_device="'"${outer_device}"'";
+		local_frame="'"${OUTER_frame}"'";
+		'
+	: #debug: set -x
+	footer ""
+	msg ""
+	[[ -n "$MULTI_WARN_CURWIN" ]] && wclose $MULTI_WARN_CURWIN
+}
+
+function multiboard
+{
+: #debug: print -u2 function multiboard
+: #debug: set -x
+
+	(( GLOBAL_ABORT )) && {
+		return
+	}
+	(( "${multi_b}" != 1 )) && {
+		return
+	} 
+	env_multi_exit=
+	display "$multi_warn" -above 1 -below 4
+	MULTI_WARN_CURWIN=$CURWIN
+
+	[[ -n "$multifid" ]] && {
+		destroy_form "$multifid"
+		multifid=
+	}
+
+	outer_device=$select_dev
+	MULTI_nodename=
+	INET_nodename=
+	OUTER_frame=
+	multi_screenlines=4
+	typeset -i width_tmp=${#inet_pr_host}
+	typeset excess=
+
+for i in "${#inet_pr_gate}" "${#inet_pr_dev}" "${#inet_pr_frame_type}"
+do	(( width_tmp < i )) && (( width_tmp = i ))
+done
+let MULTI_WIDTH[1]=$width_tmp
+
+#arbitrary len of uname set in boot floppy
+(( width_tmp = 35 ))
+for i in "${#inet_msg_eth_II}" "${#inet_msg_eth_snap}" \
+	"${#inet_msg_tok}" "${#inet_msg_tok_snap}" "${#inet_msg_fddi}" \
+	"${#Yes}" "${#No}"
+do	(( width_tmp < i )) && (( width_tmp = i ))
+done
+(( MULTI_WIDTH[2] = width_tmp ))
+(( len_y_n = ${#Yes} ))
+(( len_y_n < ${#No} )) && (( len_y_n = ${#No} ))
+
+	open_form -exit 'multi_exit'
+	multifid=$FID
+
+: #debug: print -u2 setup_table
+
+	fld_IP_FORWARD=${IP_FORWARD:-${fld_IP_FORWARD}}
+	fld_outer_device=${outer_device}
+	fld_MULTI_nodename=${MULTI_nodename}
+	fld_OUTER_frame=${OUTER_frame}
+	
+	typeset -R${MULTI_WIDTH[1]} PROMPT="$inet_pr_gate"	#reused
+	add_field -ilen "${len_y_n}" -py 0 -p "$PROMPT" \
+		-ix $(( 2+${MULTI_WIDTH[1]} )) -iy 0 \
+		-exit 'read IP_FORWARD <<!
+$fld_IP_FORWARD
+!
+validation_yes_or_no "$IP_FORWARD"' \
+		-entry "msg \"${inet_msg_gate}\" ; footer \"${inet_multi_choose_footer}\"" \
+		-choice "do_gateway"  \
+		fld_IP_FORWARD
+	PROMPT="$inet_pr_dev"
+	add_field -ilen ${MULTI_WIDTH[2]} -p "$PROMPT" \
+		-exit 'read outer_device <<!
+$fld_outer_device
+!
+valid_device "$outer_device"' \
+		-entry "msg \"${inet_msg_dev}\" ; footer \"${inet_multi_choose_footer}\"" \
+		-choice "do_device"  \
+		fld_outer_device
+: #debug: print -u2 outer_device
+
+	PROMPT=$inet_pr_host
+	add_field -ilen ${MULTI_WIDTH[2]} -p "$PROMPT" \
+		-exit 'read MULTI_nodename <<!
+$fld_MULTI_nodename
+!
+valid_host "$MULTI_nodename"' \
+		-entry "msg \"${inet_msg_multi_node}\" ; footer \"${inet_multi_footer}\"" \
+		fld_MULTI_nodename
+
+: #debug: print -u2 MULTI_nodename
+
+	PROMPT=$inet_pr_frame_type
+	add_field -ilen ${MULTI_WIDTH[2]} -p "$PROMPT" \
+		-exit 'read OUTER_frame <<!
+$fld_OUTER_frame
+!
+valid_frametype "$OUTER_frame"' \
+		-entry "msg \"${inet_msg_frame}\" ; footer \"${inet_multi_frame_footer}\"" \
+		-help "helpwin net.frame" -choice "do_frame" \
+		fld_OUTER_frame
+: #debug: print -u2 OUTER_frame
+
+	place_window -below 0 $(( MULTI_WIDTH[1]+MULTI_WIDTH[2]+2 )) $(( multi_screenlines )) -title "$inet_multi_title" -fg $COMBO2_FG -bg $COMBO2_BG
+	MULTI_CURWIN=$CURWIN
+	set_hotkey 8 "(( MIDDLE_ABORT=1 )) ; wclose $MULTI_CURWIN; wclose $MULTI_WARN_CURWIN"
+	run_form $multifid
+
+: #debug: [[ ${IP_FORWARD} != ${fld_IP_FORWARD} ]] && : Match ERROR fld_IP_FORWARD
+: #debug: [[ ${outer_device} != ${fld_outer_device} ]] && : Match ERROR fld_outer_device
+: #debug: [[ ${MULTI_nodename} != ${fld_MULTI_nodename} ]] && : Match ERROR fld_MULTI_nodename
+: #debug: [[ ${OUTER_frame} != ${fld_OUTER_frame} ]] && : Match ERROR fld_OUTER_frame
+}
+
+#this code is duplicated in cmd-inet:common/cmd/cmd-inet/etc/confnet.d/inet/configure
+# return true/false depending on true/false value of idtune parameter
+function idtune_flag_true
+{
+: #debug: print -u2 function idtune_flag_true $1
+: #debug: set -x
+	typeset idtune_val= restofidtuneline=
+	/etc/conf/bin/idtune -g $1 2>/dev/null | read idtune_val restofidtuneline
+	: /etc/conf/bin/idtune -g $1 2>/dev/null returned $?
+	if [[ -z "${idtune_val}" || 0 = "${idtune_val}" ]]
+	then	return 1	# tune flag is zero or missing (?!)
+	else	return 0	# tune flag is "true"
+	fi
+}
+
+# in an upgrade or overlay case, IP_FORWARD will already be
+# "YES" (not translated) when the previous system values had this as a
+# router. 
+# 
+# If this is the case, translate IP_FORWARD and set
+# UPGRADE_ROUTER to "true"
+# 
+# When IP_FORWARD is null, assign IP_FORWARD depending
+# only on IPFORWARDING being set in the current idtune values. 
+function get_current_forwarding
+{
+: #debug: print -u2 function get_current_forwarding
+: #debug: set -x
+
+	if [[ -n "${UPGRADE_ROUTER}" ]]
+	then	return 0
+	fi
+
+	if [[ -z "${UPGRADE_ROUTER}" && "YES" = "${IP_FORWARD}" ]]
+	then	UPGRADE_ROUTER=true
+		IP_FORWARD=${Yes}
+		return 0
+	else	UPGRADE_ROUTER=false
+	fi
+
+	if idtune_flag_true IPFORWARDING
+	then	IP_FORWARD=${Yes}
+	else	IP_FORWARD=${No}
+	fi
+	return 0
+}
+
+# returns true when a valid no is the arg
+function valid_no
+{
+: #debug: print -u2 function valid_no $1
+: #debug: set -x
+
+	typeset -l arg1=$1
+	case $arg1 in
+		$No | $N)
+			return 0;
+			;;
+	esac
+	return 1
+}
+
+# returns true when a valid yes is the arg
+function valid_yes
+{
+: #debug: print -u2 function valid_yes $1
+: #debug: set -x
+
+	typeset -l arg1=$1
+	case $arg1 in
+		$Yes | $Y)
+			return 0;
+			;;
+	esac
+	return 1
+}
+
+
+# returns true when a valid yes or no is the arg
+function validation_yes_or_no
+{
+: #debug: print -u2 function validation_yes_or_no $1
+: #debug: set -x
+
+	if	valid_yes "${1}"
+	then		return 0
+	elif	valid_no "${1}"
+	then		return 0
+	else		return 1
+	fi
+}
+
+
+# idtunes should not be done when they are not needed
+#
+#ensure inet_file_router is called after write_gateway,
+#or we must write the config file here as well as there.
+function write_gateway
+{
+: #debug: print -u2 function write_gateway
+: #debug: set -x
+
+ typeset idchanges=
+
+ if	valid_yes "${IP_FORWARD}"
+ then	if idtune_flag_true IPFORWARDING
+	then	:
+	else	/etc/conf/bin/idtune -f IPFORWARDING 1 &&
+		idchanges=yes
+	fi
+
+	if idtune_flag_true IPSENDREDIRECTS
+	then	:
+	else	/etc/conf/bin/idtune -f IPSENDREDIRECTS 1 &&
+		idchanges=yes
+	fi
+
+#ensure inet_file_router is called after write_gateway,
+#or we must write the config file here as well as there.
+	[[ -n "${readConfigFile}" ]] && {
+		ccall modifyRoutedOptions ret_readConfigFile 0
+		ret_modifyRoutedOptions=p$_RETD
+	}
+
+	if [[ "${idchanges}" = yes ]]
+	then	/etc/conf/bin/idbuild -M ip >/dev/null 2>&1
+		if [[ "$SILENT_INSTALL" != true ]]
+		then
+		   msg " "
+		   GENERIC_FOOTER="${idbuild_footer}" \
+			display -w "${idbuild_route_msg}" \
+			-title "${inet_route_title}" 
+		fi
+	fi
+
+ elif	valid_no "${IP_FORWARD}"
+ then	if idtune_flag_true IPFORWARDING
+	then	/etc/conf/bin/idtune -f IPFORWARDING 0
+		idchanges=yes
+	fi
+
+	if idtune_flag_true IPSENDREDIRECTS
+	then	/etc/conf/bin/idtune -f IPSENDREDIRECTS 0
+		idchanges=yes
+	fi
+
+#ensure inet_file_router is called after write_gateway,
+#or we must write the config file here as well as there.
+	[[ -n "${readConfigFile}" ]] && {
+		ccall modifyRoutedOptions ret_readConfigFile 1
+		ret_modifyRoutedOptions=p$_RETD
+	}
+
+	if [[ "${idchanges}" = yes ]]
+	then	/etc/conf/bin/idbuild -M ip >/dev/null 2>&1
+		if [[ "$SILENT_INSTALL" != true ]]
+		then
+		   msg " "
+		   GENERIC_FOOTER="${idbuild_footer}" \
+			display -w "${idbuild_noroute_msg}" \
+			-title "${inet_route_title}" 
+		fi
+	fi
+ fi
+}
+
+function Try_inet_get_bootp_values
+{
+: #debug: print -u2 function Try_inet_get_bootp_values
+	: #debug: set -x
+	: saved_frame "${local_frame}"
+	: saved_ifname "${INET_ifname}"
+	: REQUEST_BOOTP "${REQUEST_BOOTP}"
+	typeset -i count=0
+	typeset tmp_frame= try_frame= used_types="
+"
+
+	#Though this is set up to loop through *all* these frame
+	# types, we may bail out at the bottom when the user
+	# explicitly requested a bootp with this first frame
+	# type, local_frame
+	for tmp_frame in "${fld_local_frame}" "${INET_get_slink}" \
+		add_interface add_interface_SNAP
+	do	[[ -z "${tmp_frame}" ]] && continue
+
+		internal_frame_type "${tmp_frame}"
+		case "${used_types}" in
+			(*${nl}{tmp_internal_frame_type}${nl}*)
+				continue;;
+		esac
+		try_frame="${tmp_internal_frame_type}"
+		used_types="$used_types${try_frame}
+"
+
+		#These assignments are local to the inet_get_bootp_values call only
+		local_frame="${try_frame}" \
+			INET_ifname=${INET_device%_[0-9]}${count}${INET_device#*_} \
+			inet_get_bootp_values
+
+		if [[ "${INET_bootp_return}" = 0 ]] 
+		then	external_frame_type "${try_frame}"
+			local_frame=${tmp_external_frame_type}
+			INET_ifname=${INET_device%_[0-9]}${INET_device#*_}
+			return 0
+		fi
+
+		if (( REQUEST_BOOTP == 1 ))
+		then	return 0
+		fi
+		(( count=count+1 ))
+	done	
+}
+
+function inetmain
+{
+: #debug: print -u2 function inetmain
+	: #debug: set -x
+	(( GLOBAL_ABORT || INETMAIN_ABORT )) &&
+		return
+
+	[[ -n "$inetfid" ]] && {
+		destroy_form "$inetfid"
+		inetfid=
+	}
+
+	if (( REQUEST_BOOTP == 0 ))
+	then	inet_place_title="${inet_default_title}"
+		#clear all parameters
+		set -A INET_DNS_SERVER	""
+		set -A INET_ROUTER	""
+		set -A INET_TIME_SERVER	""
+		set -A fld_INET_DNS_SERVER	""
+		set -A fld_INET_ROUTER	""
+
+		unset	INET_BOOTP_TIMEDOUT \
+			INET_BOOT_FILE_NAME \
+			INET_BROADCAST_ADDRESS \
+			INET_DOMAIN_NAME \
+			INET_HOSTNAME \
+			INET_NIS_DOMAIN_NAME \
+			INET_SERVER_IP_ADDRESS \
+			INET_SUBNET_MASK \
+			INET_TIME_OFFSET \
+			INET_YOUR_IP_ADDRESS \
+			INET_ETHER_ENCAPSULATION \
+			fld_INET_BROADCAST_ADDRESS \
+			fld_INET_DOMAIN_NAME \
+			fld_INET_SUBNET_MASK \
+			fld_INET_YOUR_IP_ADDRESS \
+			fld_INET_device \
+			fld_INET_nodename \
+			fld_local_frame \
+			save_bootp_name \
+			save_bootp_dev
+	else	fld_INET_nodename=${INET_HOSTNAME:-${fld_INET_nodename:-${INET_nodename}}}
+		: #debug: : nodenametrack INET_HOSTNAME=${INET_HOSTNAME} fld_INET_nodename=${fld_INET_nodename} INET_nodename=${INET_nodename}
+	fi
+
+	typeset locked_name_device=-gray
+	(( 1 == multi_b )) && {
+		locked_name_device=
+		case "${env_multi_exit}" in
+			(*=*)	typeset saved_frame_type=${fld_local_frame}
+				eval ${env_multi_exit}
+				(( REQUEST_BOOTP == 1 )) && 
+					local_frame="${saved_frame_type}" ;;
+		esac
+
+		INET_nodename="${save_bootp_name:-${OUTER_nodename}}"
+	}
+
+	INET_device="${save_bootp_dev:-${INET_device}}"
+	if [[ -n "${INET_device}" ]]
+	then	INET_dev_node=/dev/${INET_device}
+	else	INET_dev_node=
+	fi
+	if [[ ! -c "${INET_dev_node}" ]]
+	then : error complain louder and abort?  exit silently? "${INET_device}"
+	fi
+	if [[ -n "${INET_device}" ]]
+	then	INET_ifname=${INET_device%_[0-9]}${INET_device#*_}
+	else	INET_ifname=
+	fi
+
+	#if there is no ethernet device, prompt 
+	#for /etc/hosts + resolv.conf only.
+	if [[ -c "${INET_dev_node}" ]]
+	then	ethinfo_gray=
+	else	ethinfo_gray=-gray
+	fi
+
+	get_all_old_vals
+		: #debug: : nodenametrack INET_HOSTNAME=${INET_HOSTNAME} fld_INET_nodename=${fld_INET_nodename} INET_nodename=${INET_nodename}
+	Try_inet_get_bootp_values
+		: #debug: : nodenametrack INET_HOSTNAME=${INET_HOSTNAME} fld_INET_nodename=${fld_INET_nodename} INET_nodename=${INET_nodename}
+
+	#assign frame type before merge_old_values
+	[[ -n "${INET_ETHER_ENCAPSULATION}" &&
+	   ( -z "${local_frame}" || 1 == REQUEST_BOOTP ) ]] && {
+		case "${INET_ETHER_ENCAPSULATION}" in
+		(ETHER_II)
+			local_frame="${inet_msg_eth_II}";;
+		(ETHER_SNAP)
+			local_frame="${inet_msg_eth_snap}";;
+		esac
+	}
+
+	merge_old_values
+		: #debug: : nodenametrack INET_HOSTNAME=${INET_HOSTNAME} fld_INET_nodename=${fld_INET_nodename} INET_nodename=${INET_nodename}
+
+	(( 1 == multi_b )) && {
+		[[ -z "${OUTER_nodename}" ]] &&
+			INET_nodename="${save_bootp_name:-${INET_get_nodename}}"
+		(( REQUEST_BOOTP == 0 )) && 
+			local_frame="${OUTER_frame}";
+	}
+
+	REQUEST_BOOTP=0
+	save_bootp_name=
+
+	#Still no value, put in the old value.
+	[[ -z "${local_frame}" ]] && {
+		external_frame_type "${INET_get_slink}"
+		local_frame=${tmp_external_frame_type}
+	}
+
+	#we have the final word from the bootp server
+	[[ -n "${INET_ETHER_ENCAPSULATION}" ]] && {
+		case "${INET_ETHER_ENCAPSULATION}" in
+		(ETHER_II)
+			local_frame="${inet_msg_eth_II}";;
+		(ETHER_SNAP)
+			local_frame="${inet_msg_eth_snap}";;
+		esac
+	}
+
+	let line=1 screenlines=9
+	[[ -c "${INET_dev_node}" ]] && screenlines=$(( screenlines+7 ))
+
+	let width_tmp=${#inet_pr_host}
+	
+	for i in "${#inet_pr_host}" "${#inet_pr_dev}" "${#inet_pr_ip_addr}" \
+		"${#inet_pr_netmask}" "${#inet_pr_router}" "${#inet_pr_dns_servers}" \
+		"${#inet_pr_dns_domain}" "${#inet_pr_nis_domain}" \
+		"${#inet_pr_broadcast}" "${#INET_TITLE[1]}" "${#inet_pr_frame_type}"
+	do	(( width_tmp < i )) && (( width_tmp = i ))
+	done
+	let INET_WIDTH[1]=$width_tmp
+	
+	#arbitrary len of uname set in boot floppy
+	(( width_tmp = 35 ))
+	for i in "${#inet_msg_eth_II}" "${#inet_msg_eth_snap}" \
+		"${#inet_msg_tok}" "${#inet_msg_tok_snap}" \
+		"${#inet_msg_fddi}"
+	do	(( width_tmp < i )) && (( width_tmp = i ))
+	done
+	(( INET_WIDTH[2] = width_tmp ))
+
+	open_form -exit 'inetbootp_exit'
+	inetfid=$FID
+
+		: #debug: : nodenametrack INET_HOSTNAME=${INET_HOSTNAME} fld_INET_nodename=${fld_INET_nodename} INET_nodename=${INET_nodename}
+	fld_INET_nodename=${INET_HOSTNAME:-${fld_INET_nodename:-${INET_nodename}}}
+	fld_INET_device=${INET_device:-${fld_INET_device}}
+	fld_INET_YOUR_IP_ADDRESS=${INET_YOUR_IP_ADDRESS:-${fld_INET_YOUR_IP_ADDRESS}}
+	fld_INET_SUBNET_MASK=${INET_SUBNET_MASK:-${fld_INET_SUBNET_MASK}}
+	fld_INET_BROADCAST_ADDRESS=${INET_BROADCAST_ADDRESS:-${fld_INET_BROADCAST_ADDRESS}}
+	fld_INET_ROUTER[0]=${INET_ROUTER[0]:-${fld_INET_ROUTER[0]}}
+	fld_INET_DOMAIN_NAME=${INET_DOMAIN_NAME:-${fld_INET_DOMAIN_NAME}}
+	fld_INET_DNS_SERVER[0]=${INET_DNS_SERVER[0]:-${fld_INET_DNS_SERVER[0]}}
+	fld_INET_DNS_SERVER[1]=${INET_DNS_SERVER[1]:-${fld_INET_DNS_SERVER[1]}}
+	fld_INET_DNS_SERVER[2]=${INET_DNS_SERVER[2]:-${fld_INET_DNS_SERVER[2]}}
+	fld_local_frame=${local_frame:-${fld_local_frame}}
+
+	typeset -R${INET_WIDTH[1]} PROMPT=$inet_pr_host
+	add_field -py $line -iy $line \
+		-ilen ${INET_WIDTH[2]} -p "$PROMPT" \
+		-ix $(( 2+${INET_WIDTH[1]} )) \
+		-exit 'read INET_nodename <<!
+$fld_INET_nodename
+!
+valid_host "$INET_nodename"' \
+		-entry "main_current_field=fld_INET_nodename; msg \"${inet_msg_node}\" ; footer \"${inet_default_helpless_footer}\"" \
+		${locked_name_device} fld_INET_nodename
+	line=$(( 1+line ))
+
+: #debug: print -u2 INET_nodename
+
+	PROMPT="$inet_pr_dev"	#reused
+	[[ -z "${ethinfo_gray}" ]] &&
+		add_field -py $line -iy $line \
+		-ilen 0 -p "$PROMPT" \
+		${locked_name_device} INET_device
+	[[ -z "${ethinfo_gray}" ]] &&
+		add_field -py $line -iy $line \
+		-ix $(( 2+${INET_WIDTH[1]} )) \
+		-ilen ${INET_WIDTH[2]} \
+		-exit 'read INET_device <<!
+$fld_INET_device
+!
+valid_device "$INET_device"' \
+		-entry "main_current_field=fld_INET_device; msg \"${inet_msg_dev}\" ; footer \"${inet_multi_choose_sys_footer}\"" \
+		-choice "do_device"  \
+		${locked_name_device} fld_INET_device
+		line=$(( 1+line ))
+: #debug: print -u2 ${INET_device}
+
+	PROMPT=$inet_pr_ip_addr
+	add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_YOUR_IP_ADDRESS <<!
+$fld_INET_YOUR_IP_ADDRESS
+!
+valid_ip_addr "$INET_YOUR_IP_ADDRESS"' \
+		-entry "main_current_field=fld_INET_YOUR_IP_ADDRESS; msg \"${inet_msg_ip_addr}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.sysIP" \
+		fld_INET_YOUR_IP_ADDRESS
+	line=$(( 1+line ))
+: #debug: print -u2 INET_YOUR_IP_ADDRESS
+
+	PROMPT=$inet_pr_netmask
+	[[ -z "${ethinfo_gray}" ]] &&
+	  #extra add makes this searchable
+	  line=$(( 2+line-1 )) &&
+	  add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_SUBNET_MASK <<!
+$fld_INET_SUBNET_MASK
+!
+valid_netmask "$INET_SUBNET_MASK"' \
+		-entry "main_current_field=fld_INET_SUBNET_MASK; msg \"${inet_msg_netmask}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.netmask" \
+		fld_INET_SUBNET_MASK &&
+	  line=$(( 1+line ))
+: #debug: print -u2 INET_SUBNET_MASK
+
+	PROMPT=$inet_pr_broadcast
+	[[ -z "${ethinfo_gray}" ]] &&
+	  add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_BROADCAST_ADDRESS <<!
+$fld_INET_BROADCAST_ADDRESS
+!
+valid_ip_addr "$INET_BROADCAST_ADDRESS"' \
+		-entry "main_current_field=fld_INET_BROADCAST_ADDRESS; msg \"${inet_msg_broadcast}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.broad" \
+		fld_INET_BROADCAST_ADDRESS &&
+	  line=$(( 1+line ))
+
+#recalculate INET_BROADCAST_ADDRESS on netmask/ip address delta
+: #debug: print -u2 INET_BROADCAST_ADDRESS
+
+	PROMPT=$inet_pr_router
+	[[ -z "${ethinfo_gray}" ]] &&
+	  add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_ROUTER[0] <<!
+${fld_INET_ROUTER[0]}
+!
+valid_ip_addr "${INET_ROUTER[0]}"' \
+		-entry "main_current_field=fld_INET_ROUTER0; msg \"${inet_msg_router}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.routeIP" \
+		fld_INET_ROUTER[0] &&
+	  line=$(( 1+line ))
+: #debug: print -u2 INET_ROUTER
+	#extra add makes this searchable
+	line=$(( 2+line-1 ))
+
+	PROMPT=$inet_pr_dns_domain
+	add_field -py $line -iy $line -ilen ${INET_WIDTH[2]} -p "$PROMPT" \
+		-exit 'read INET_DOMAIN_NAME <<!
+$fld_INET_DOMAIN_NAME
+!
+valid_domain "$INET_DOMAIN_NAME"' \
+		-entry "main_current_field=fld_INET_DOMAIN_NAME; msg \"${inet_msg_dns_domain}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.dnsname" \
+		fld_INET_DOMAIN_NAME
+	line=$(( 1+line ))
+: #debug: print -u2 INET_DOMAIN_NAME
+
+	PROMPT=$inet_pr_dns_servers
+	add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_DNS_SERVER[0] <<!
+${fld_INET_DNS_SERVER[0]}
+!
+valid_ip_addr "${INET_DNS_SERVER[0]}"' \
+		-entry "main_current_field=fld_INET_DNS_SERVER0; msg \"${inet_msg_dns_servers}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.dnsserv" \
+		fld_INET_DNS_SERVER[0]
+	line=$(( 1+line ))
+: #debug: print -u2 INET_DNS_SERVER[0]
+
+	PROMPT=$inet_pr_dns_server2
+	add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_DNS_SERVER[1] <<!
+${fld_INET_DNS_SERVER[1]}
+!
+valid_ip_addr "${INET_DNS_SERVER[1]}"' \
+		-entry "main_current_field=fld_INET_DNS_SERVER1; msg \"${inet_msg_dns_server2}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.dnsserv" \
+		fld_INET_DNS_SERVER[1]
+	line=$(( 1+line ))
+: #debug: print -u2 INET_DNS_SERVER1
+
+	PROMPT=$inet_pr_dns_server3
+	add_field -py $line -iy $line -ilen 16 -p "$PROMPT" \
+		-exit 'read INET_DNS_SERVER[2] <<!
+${fld_INET_DNS_SERVER[2]}
+!
+valid_ip_addr "${INET_DNS_SERVER[2]}"' \
+		-entry "main_current_field=fld_INET_DNS_SERVER2; msg \"${inet_msg_dns_server3}\" ; footer \"${inet_default_footer}\"" \
+		-help "helpwin net.dnsserv" \
+		fld_INET_DNS_SERVER[2]
+	line=$(( 1+line ))
+: #debug: print -u2 INET_DNS_SERVER2
+
+	PROMPT=$inet_pr_frame_type
+	[[ -z "${ethinfo_gray}" ]] &&
+	  #extra add makes this searchable
+	  line=$(( 2+line-1 )) &&
+	  add_field -py $line -iy $line -ilen ${INET_WIDTH[2]} -p "$PROMPT" \
+		-exit 'read local_frame <<!
+$fld_local_frame
+!
+valid_frametype "$local_frame"' \
+		-entry "main_current_field=fld_local_frame; msg \"${inet_msg_frame}\" ; footer \"${inet_frame_footer}\"" \
+		-help "helpwin net.frame" -choice "do_frame" \
+		fld_local_frame &&
+	  line=$(( 1+line ))
+: #debug: print -u2 local_frame
+
+	# form_finish
+
+	place_window -left 0 $(( $COLUMNS-2 )) $(( screenlines )) -title "$inet_place_title" -fg $COMBO2_FG -bg $COMBO2_BG
+	INETMAIN_CURWIN=$CURWIN
+	set_hotkey 6 display_oldvals
+	set_hotkey 7 hot7
+	set_hotkey 8 "(( INETMAIN_ABORT=1 )); wclose $INETMAIN_CURWIN"
+	run_form $inetfid
+	footer ""
+	msg ""
+
+: #debug: [[ ${INET_nodename} != ${fld_INET_nodename} ]] && : Match ERROR fld_INET_nodename
+: #debug: [[ ${INET_device} != ${fld_INET_device} ]] && : Match ERROR fld_INET_device
+: #debug: [[ ${INET_YOUR_IP_ADDRESS} != ${fld_INET_YOUR_IP_ADDRESS} ]] && : Match ERROR fld_INET_YOUR_IP_ADDRESS
+: #debug: [[ ${INET_SUBNET_MASK} != ${fld_INET_SUBNET_MASK} ]] && : Match ERROR fld_INET_SUBNET_MASK
+: #debug: [[ ${INET_BROADCAST_ADDRESS} != ${fld_INET_BROADCAST_ADDRESS} ]] && : Match ERROR fld_INET_BROADCAST_ADDRESS
+: #debug: [[ ${INET_ROUTER[0]} != ${fld_INET_ROUTER[0]} ]] && : Match ERROR fld_INET_ROUTER[0]
+: #debug: [[ ${INET_DOMAIN_NAME} != ${fld_INET_DOMAIN_NAME} ]] && : Match ERROR fld_INET_DOMAIN_NAME
+: #debug: [[ ${INET_DNS_SERVER[0]} != ${fld_INET_DNS_SERVER[0]} ]] && : Match ERROR fld_INET_DNS_SERVER[0]
+: #debug: [[ ${INET_DNS_SERVER[1]} != ${fld_INET_DNS_SERVER[1]} ]] && : Match ERROR fld_INET_DNS_SERVER[1]
+: #debug: [[ ${INET_DNS_SERVER[2]} != ${fld_INET_DNS_SERVER[2]} ]] && : Match ERROR fld_INET_DNS_SERVER[2]
+: #debug: [[ ${local_frame} != ${fld_local_frame} ]] && : Match ERROR fld_local_frame
+}
+
+#runs the bootp from f7
+function hot7
+{
+: #debug: set -x
+	# in the case where f7 is pressed before the exit function where
+	#the user changed the value, we need to sync the field or we will
+	#miss the data typed, and we will need to check the exit function
+	#of the current fld
+
+	call fld_sync $inetfid
+	(( FLD_CHANGED=1 ))
+
+	typeset ret=1
+	: #debug: : "main_current_field"="$main_current_field"
+	case "$main_current_field" in
+		fld_INET_nodename) read INET_nodename <<!
+$fld_INET_nodename
+!
+valid_host "$INET_nodename"
+ret=$?		;;
+
+		fld_INET_device) read INET_device <<!
+$fld_INET_device
+!
+valid_device "$INET_device"
+ret=$?		;;
+
+		fld_INET_YOUR_IP_ADDRESS) read INET_YOUR_IP_ADDRESS <<!
+$fld_INET_YOUR_IP_ADDRESS
+!
+valid_ip_addr "$INET_YOUR_IP_ADDRESS"
+ret=$?		;;
+
+		fld_INET_SUBNET_MASK) read INET_SUBNET_MASK <<!
+$fld_INET_SUBNET_MASK
+!
+valid_netmask "$INET_SUBNET_MASK"
+ret=$?		;;
+
+		fld_INET_BROADCAST_ADDRESS) read INET_BROADCAST_ADDRESS <<!
+$fld_INET_BROADCAST_ADDRESS
+!
+valid_ip_addr "$INET_BROADCAST_ADDRESS"
+ret=$?		;;
+
+		fld_INET_ROUTER0) read INET_ROUTER[0] <<!
+${fld_INET_ROUTER[0]}
+!
+valid_ip_addr "${INET_ROUTER[0]}"
+ret=$?		;;
+
+		fld_INET_DOMAIN_NAME) read INET_DOMAIN_NAME <<!
+$fld_INET_DOMAIN_NAME
+!
+valid_domain "$INET_DOMAIN_NAME"
+ret=$?		;;
+
+		fld_INET_DNS_SERVER0) read INET_DNS_SERVER[0] <<!
+${fld_INET_DNS_SERVER[0]}
+!
+valid_ip_addr "${INET_DNS_SERVER[0]}"
+ret=$?		;;
+
+		fld_INET_DNS_SERVER1) read INET_DNS_SERVER[1] <<!
+${fld_INET_DNS_SERVER[1]}
+!
+valid_ip_addr "${INET_DNS_SERVER[1]}"
+ret=$?		;;
+
+		fld_INET_DNS_SERVER2) read INET_DNS_SERVER[2] <<!
+${fld_INET_DNS_SERVER[2]}
+!
+valid_ip_addr "${INET_DNS_SERVER[2]}"
+ret=$?		;;
+
+		fld_local_frame) read local_frame <<!
+$fld_local_frame
+!
+valid_frametype "$local_frame"
+ret=$?		;;
+
+		*)	ret=0
+			: #debug: hot7 did not find entry ERROR
+			;;
+	esac
+
+	if [[ $ret != 0 ]]
+	then	: #debug: hot7 found non-zero exit function ERROR
+		return 1
+	fi
+
+	echo $fld_INET_nodename		| read INET_nodename;
+	echo $fld_INET_device		| read INET_device;
+	echo $fld_INET_YOUR_IP_ADDRESS	| read INET_YOUR_IP_ADDRESS;
+	echo $fld_INET_SUBNET_MASK	| read INET_SUBNET_MASK;
+	echo $fld_INET_BROADCAST_ADDRESS	| read INET_BROADCAST_ADDRESS;
+	echo ${fld_INET_ROUTER[0]}	| read INET_ROUTER[0];
+	echo $fld_INET_DOMAIN_NAME	| read INET_DOMAIN_NAME;
+	echo ${fld_INET_DNS_SERVER[0]}	| read INET_DNS_SERVER[0];
+	echo ${fld_INET_DNS_SERVER[1]}	| read INET_DNS_SERVER[1];
+	echo ${fld_INET_DNS_SERVER[2]}	| read INET_DNS_SERVER[2];
+	echo $fld_local_frame		| read local_frame;
+	(( REQUEST_BOOTP=1 ))
+	save_bootp_name=${INET_nodename}
+	save_bootp_dev=${INET_device}
+	wclose $INETMAIN_CURWIN;
+}
+
+#load libs and initial data structs
+function load_lib_data
+{
+: #debug: set -x
+	[[ -z "${inet_stat_libutil}" ]] &&
+	  libload /usr/lib/libutil.so &&
+	  inet_stat_libutil=ok
+
+	[[ -z "${inet_stat_libnsl}" ]] &&
+	  libload /usr/lib/libnsl.so &&
+	  inet_stat_libnsl=ok
+
+	[[ -z "${inet_stat_libsocket}" ]] &&
+	  libload /usr/lib/libsocket.so &&
+	  inet_stat_libsocket=ok
+
+	[[ -z "${inet_stat_tcpip}" ]] &&
+	  libload /usr/lib/tcpip.so &&
+	  call init_winxksh_var_name_addr \
+		'@longp:&env_set' \
+		'@longp:&_tcpip_gethostbyname' \
+		'@longp:&_tcpip_gethostbyaddr' &&
+	  inet_stat_tcpip=ok
+	: loaded libutil libnsl tcpip libsocket
+
+	[[ -z "${readConfigFile}" ]] &&
+	  ccall -r allocReadConfigFile 0 &&
+	  readConfigFile=p$_RETX &&
+	  cdecl -g intp ret_readConfigFile=p$_RETX
+
+	[[ -z "${readInterfaceFile}" ]] &&
+	  ccall -r allocReadConfigFile 1  &&
+	  readInterfaceFile=p$_RETX &&
+	  cdecl -g intp ret_readInterfaceFile=p$_RETX
+}
+
+#get the old values for a device.  note that this 
+#interface file lookup by ip address would be quite different.
+function get_all_old_vals
+{
+: #debug: print -u2 function get_all_old_vals
+: #debug: set -x
+	load_lib_data
+
+	INET_get_addr=
+	INET_get_broadcast=
+	INET_get_dns_1=
+	INET_get_dns_2=
+	INET_get_dns_3=
+	INET_get_domain=
+	INET_get_netmask=
+	INET_get_nodename=
+	INET_get_router=
+	INET_get_slink=
+	INET_get_rt_name=
+	INET_get_nd_val=
+	broadcast_ret=
+
+	#sigh. these are in sub-shells to avoid some sort of corruption
+	#that prevents the correct values from being gotten the Nth time.
+	(
+	  [[ -n "${readConfigFile}" ]] &&
+	     ccall -r simple_getDefaultRouter ret_readConfigFile &&
+	     typeset ret_router=p$RET_X
+	     : #debug: print -u2 retrieved INET_get_router= "<$INET_get_router>"
+
+	  typeset tmp_bootp_name=${save_bootp_name:-${INET_nodename}}
+	  #call simple_getNetmask to get this device entry
+	  #  information from the interface file.
+	  #If the entry can not be found, then do a gethostbyname
+	  #  on the nodename.
+	  #If there is no device entry, request with null addresses
+	  #  to force the gethostbyname only.
+	  if [[ -n "${INET_dev_node}" ]]
+	  then	[[ -z "${readInterfaceFile}" ]] &&
+			cdecl -g intp ret_readInterfaceFile=p0x0
+		ccall simple_getNetmask ret_readInterfaceFile \
+			"@string_t:!${INET_dev_node}!" \
+			"@string_t:!${tmp_bootp_name}!"
+	  else	cdecl -g intp TEMP_readInterfaceFile=p0x0
+		ccall simple_getNetmask TEMP_readInterfaceFile \
+			TEMP_readInterfaceFile \
+			"@string_t:!${tmp_bootp_name}!"
+	  fi
+
+	  [[ -n "${readInterfaceFile}" && -n "${INET_dev_node}" ]] && {
+	      ccall simple_getBroadcast ret_readInterfaceFile \
+	  	"@string_t:!${INET_dev_node}!" &&
+	      	broadcast_ret=$_RETX
+	    }
+	  : #debug: print -u2 retrieved INET_get_addr= "<$INET_get_addr>"
+	  : #debug: print -u2 retrieved INET_get_nodename= "<$INET_get_nodename>"
+	  : #debug: print -u2 retrieved INET_get_nd_val= "<$INET_get_nd_val>"
+	
+	  # we need to expand a null uname when we are in a zero nics
+	  # case (where ethinfo_gray is non-null)
+	  # or this nic is in the interface file (where broadcast_ret
+	  # is a real pointer)
+	  # or this is not a multiple board install
+	  [[ -z "${INET_get_nodename}" &&
+	     ( -n "${broadcast_ret}" ||
+	       -n "${ethinfo_gray}" ||
+	       "${multi_b}" = 0  ) ]] &&
+	    INET_get_nodename="${UNAME}" &&
+	  : #debug: print -u2 retrieved INET_get_nodename= "<$INET_get_nodename>"
+
+	  [[ -r ${INET_ROOT}/etc/resolv.conf ]] && 
+		cut -d\# -f1 ${INET_ROOT}/etc/resolv.conf |
+		grep '^[ 	]*domain[ 	]' |
+		read _literal INET_get_domain _rest
+
+	  [[ -r ${INET_ROOT}/etc/resolv.conf ]] && 
+		cut -d\# -f1 ${INET_ROOT}/etc/resolv.conf |
+		grep '^[ 	]*nameserver[ 	]' | {
+			read _literal INET_get_dns_1 _rest
+			read _literal INET_get_dns_2 _rest
+			read _literal INET_get_dns_3 _rest
+			echo ${INET_get_dns_1} ${INET_get_dns_2} ${INET_get_dns_3}
+		} |
+		read INET_get_dns_1 INET_get_dns_2 INET_get_dns_3
+	  echo "${INET_get_addr}"
+	  echo "${INET_get_broadcast}"
+	  echo "${INET_get_dns_1}"
+	  echo "${INET_get_dns_2}"
+	  echo "${INET_get_dns_3}"
+	  echo "${INET_get_domain}"
+	  echo "${INET_get_netmask}"
+	  echo "${INET_get_nodename}"
+	  echo "${INET_get_router}"
+	  echo "${INET_get_slink}"
+	  echo "${INET_get_rt_name}"
+	  echo "${INET_get_nd_val}"
+	  echo "${broadcast_ret}"
+	) | {
+	  read INET_get_addr
+	  read INET_get_broadcast
+	  read INET_get_dns_1
+	  read INET_get_dns_2
+	  read INET_get_dns_3
+	  read INET_get_domain
+	  read INET_get_netmask
+	  read INET_get_nodename
+	  read INET_get_router
+	  read INET_get_slink
+	  read INET_get_rt_name
+	  read INET_get_nd_val
+	  read broadcast_ret
+	}
+}
+
+#title should reflect that some values
+#are from the system files.
+function update_title_system_files
+{
+: #debug: print -u2 function update_title_system_files
+: #debug: set -x
+	if [[ "${inet_place_title}" = "${inet_default_title}" ]]
+	then	inet_place_title="${inet_oldvals_title}"
+	elif	[[ "${inet_place_title}" = "${inet_bootp_title}" ]]
+	then	inet_place_title="${inet_mixedvals_title}"
+	fi
+}
+
+
+#if we do not have all the current values, populate them
+#from old system files
+function merge_old_values
+{
+: #debug: print -u2 function merge_old_values
+: #debug: set -x
+: INET_get_addr=$INET_get_addr
+: INET_get_broadcast=$INET_get_broadcast
+: INET_get_dns_1=$INET_get_dns_1
+: INET_get_dns_2=$INET_get_dns_2
+: INET_get_dns_3=$INET_get_dns_3
+: INET_get_domain=$INET_get_domain
+: INET_get_netmask=$INET_get_netmask
+: INET_get_nodename=$INET_get_nodename
+: INET_get_router=$INET_get_router
+: INET_get_slink=$INET_get_slink
+
+: INET_DNS_SERVER[0]=${INET_DNS_SERVER[0]}
+: INET_DNS_SERVER[1]=${INET_DNS_SERVER[1]}
+: INET_DNS_SERVER[2]=${INET_DNS_SERVER[2]}
+: INET_ROUTER[0]=${INET_ROUTER[0]}
+: INET_BROADCAST_ADDRESS=$INET_BROADCAST_ADDRESS
+: INET_DOMAIN_NAME=$INET_DOMAIN_NAME
+: INET_HOSTNAME=$INET_HOSTNAME
+: INET_SUBNET_MASK=$INET_SUBNET_MASK
+: INET_YOUR_IP_ADDRESS=$INET_YOUR_IP_ADDRESS
+: local_frame=$local_frame
+: INET_get_frame_type=$INET_get_frame_type
+: INET_bootp_return=$INET_bootp_return
+
+	# in general, apply all of the old dns info.
+	# if any one of them is set, may not want the rest?
+	# bootp really should list them all, so set all or none.
+	#
+	[[ -z "${INET_DNS_SERVER[0]}" && -z "${INET_DNS_SERVER[1]}" && \
+	   -z "${INET_DNS_SERVER[2]}" ]] &&
+	   set -A INET_DNS_SERVER "${INET_get_dns_1}" "${INET_get_dns_2}" "${INET_get_dns_3}" &&
+		update_title_system_files
+	[[ -z "${INET_DOMAIN_NAME}" ]] &&
+		INET_DOMAIN_NAME=${INET_get_domain} &&
+		update_title_system_files
+
+	[[ -z "${INET_ROUTER[0]}" ]] &&
+	   set -A INET_ROUTER "${INET_get_router}" &&
+		update_title_system_files
+	[[ "${multi_b}" = 0 && -z "${INET_ROUTER[0]}" && -r /var/sadm/dist/ii.parms && -O /var/sadm/dist/ii.parms ]] &&
+	   eval "`grep '^ROUTER_INET_ADDR=' /var/sadm/dist/ii.parms` 2>/dev/null" &&
+		set -A INET_ROUTER "${ROUTER_INET_ADDR}"
+
+	#this may never get run.  What to do?  If bootp worked
+	#do not change this automatically, and only change
+	# if the system string is non-null.
+	[[ "${INET_bootp_return}" != 0 && -n "${INET_get_slink}" ||
+	   -z "${local_frame}" ]] && {
+		external_frame_type "${INET_get_slink}"
+		local_frame=${tmp_external_frame_type}
+		update_title_system_files
+	}
+
+	# this may be controversial.
+	# netmask and broadcast addresses are sensible per network.
+	# if they are all blank, we can fill them all in and return.
+
+	[[ -z "${INET_YOUR_IP_ADDRESS}" &&
+	   -z "${INET_SUBNET_MASK}" &&
+	   -z "${INET_BROADCAST_ADDRESS}" ]] && 
+		INET_YOUR_IP_ADDRESS=${INET_get_addr}  &&
+		INET_SUBNET_MASK=${INET_get_netmask}  &&
+		INET_BROADCAST_ADDRESS=${INET_get_broadcast} &&
+		update_title_system_files &&
+		return 0
+
+	# now we are less than certain.
+	[[ -n "${INET_YOUR_IP_ADDRESS}" &&
+	   "${INET_YOUR_IP_ADDRESS}" = "${INET_get_addr}" &&
+	   -z "${INET_SUBNET_MASK}" ]] &&
+		INET_SUBNET_MASK=${INET_get_netmask}
+
+	[[ -n "${INET_YOUR_IP_ADDRESS}" &&
+	   "${INET_YOUR_IP_ADDRESS}" = "${INET_get_addr}" &&
+	   -z "${INET_BROADCAST_ADDRESS}" ]] &&
+		INET_BROADCAST_ADDRESS=${INET_get_broadcast}
+
+: INET_get_broadcast=$INET_get_broadcast
+: INET_get_netmask=$INET_get_netmask
+: INET_get_nodename=$INET_get_nodename
+: INET_get_slink=$INET_get_slink
+
+: INET_BROADCAST_ADDRESS=$INET_BROADCAST_ADDRESS
+: INET_HOSTNAME=$INET_HOSTNAME
+: INET_SUBNET_MASK=$INET_SUBNET_MASK
+
+	[[ -z "${INET_YOUR_IP_ADDRESS}" ]] &&
+		INET_YOUR_IP_ADDRESS=${INET_get_addr}
+
+	[[ "${multi_b}" = 0 && -r /var/sadm/dist/ii.parms && -O /var/sadm/dist/ii.parms ]] && {
+	   [[ -z "${INET_YOUR_IP_ADDRESS}" ]] &&
+		eval "`grep '^MY_INET_ADDR=' /var/sadm/dist/ii.parms 2>/dev/null`" &&
+		INET_YOUR_IP_ADDRESS="${MY_INET_ADDR}"
+	   [[ -z "${INET_SUBNET_MASK}" ]] &&
+		eval "`grep '^MY_NETMASK=' /var/sadm/dist/ii.parms 2>/dev/null`" &&
+		INET_SUBNET_MASK="${MY_NETMASK}"
+	}
+}
+
+#compaq smartstart assignments
+function assign_params
+{
+: #debug: print -u2 function assign_params $*
+: #debug: set -x
+	INET_BROADCAST_ADDRESS=${INET_BROADCAST_ADDRESS[ (( $1 )) ]:-${INET_BROADCAST_ADDR[ (( $1 )) ]}}
+	INET_NW_PROTOCOL=${INET_NW_PROTOCOL[ (( $1 )) ]}
+	INET_NW_TYPE=${INET_NW_TYPE[ (( $1 )) ]}
+	INET_SUBNET_MASK=${INET_SUBNET_MASK[ (( $1 )) ]}
+	INET_YOUR_IP_ADDRESS=${INET_YOUR_IP_ADDRESS[ (( $1 )) ]:-${INET_YOUR_IP_ADDR[ (( $1 )) ]}}
+	INET_device=${INET_device[ (( $1 )) ]}  ###node name without /dev/
+	INET_nodename=${INET_nodename[ (( $1 )) ]}
+	local_frame=${local_frame[ (( $1 )) ]}
+
+	#if the device is wrong or address is missing
+	#then do not let the file be written
+	[[ -c /dev/"${INET_device}" && -n "${INET_YOUR_IP_ADDRESS}" ]]
+	return $?
+}
+
+function selectmain
+{
+: #debug: print -u2 function selectmain
+: #debug: set -x
+	if [ -n "$SELECT_WID" ]
+	then	destroy_menu $SELECT_WID
+		SELECT_WID=
+	fi
+	typeset tmpdev
+	set -A device_array zero_index ${legaldevs} ${illegaldevs}
+	typeset integer lines=1 rightwidth=0 leftwidth=${#device_array[1]} index_lines=1
+	for tmpdev in  ${legaldevs} ${illegaldevs}
+	do	(( leftwidth < ${#device_array[$lines]} )) &&
+			(( leftwidth = ${#device_array[$lines]} ))
+		[[ -r $nicfile ]] &&
+			grep "^${device_array[$lines]}[ 	][ 	]*[^ 	]" $nicfile 2>/dev/null |
+				read filedev sufix[$lines]
+		[[ "$filedev" != "${device_array[$lines]}" ]] &&
+			sufix[$lines]=
+		(( rightwidth < ${#sufix[$lines]} )) &&
+			(( rightwidth = ${#sufix[$lines]} ))
+		lines=$(( 1+lines ))
+	done
+	(( leftwidth = leftwidth+2 ))
+	: #debug: : $leftwidth "${device_array[*]}"
+	: #debug: : $rightwidth "${sufix[*]}"
+
+	typeset -i width_screen=$(( leftwidth+rightwidth ))
+	(( width_screen < ${#inet_multi_title} )) &&
+		(( width_screen = ${#inet_multi_title} ))
+	(( width_screen < ${#exit_select} )) &&
+		(( width_screen = ${#exit_select} ))
+
+	place_window $(( width_screen+4 )) $(( 2+lines )) -title "$inet_multi_title" -current "msgnoerr \"${message_select}\"; footer \"${screen_select_footer}\""
+	SELECT_WID=$CURWIN
+	set_hotkey 8 "(( GLOBAL_ABORT=1 )); wclose $SELECT_WID; wclose $SELECT_WID"
+	open_menu -x 1 -y 1
+	MID_SELECT=$MID
+
+	typeset -L${leftwidth} PROMPT="${device_array[$lines]}"	#reused
+	for tmpdev in  ${legaldevs} ${illegaldevs}
+	do	PROMPT="${device_array[$index_lines]}"
+		add_menu_item -select "valid_device $PROMPT && select_dev=$PROMPT select_num=$(( index_lines-1 )) && wclose $SELECT_WID" -entry "msgnoerr \"${message_select}\"; footer \"${screen_select_footer}\""  "$PROMPT ${sufix[$index_lines]}"
+
+		index_lines=$(( 1+index_lines ))
+	done
+
+	add_menu_item -select "select_dev=$PROMPT; (( GLOBAL_ABORT=1 )); footer '';wclose $SELECT_WID" -entry "msgnoerr \"${exit_select}\""  "${exit_select}"
+	run_menu $MID_SELECT $(( select_num ))
+}
+
+# in the smart start environment, must apply values without prompts
+# since they were prompted for earlier.
+[[ "$SILENT_INSTALL" = true ]] && {
+	#Although this "should have been done already", we need
+	#this for the second&third domain name servers, and the
+	#multiple nic inet parameter arrays.  The arrays
+	#can not go through the export/exec envp interface.
+	[[ -r /tmp/unixware.dat ]] && . /tmp/unixware.dat
+	typeset -i num=1
+	inet_setup
+	#If there is a device that has not been created yet,
+	#or some other problem, fall out of silent install.
+	Unknown_Silent_Device=false
+
+	typeset -i Smart_array_min=${#INET_device[*]}
+	for i in ${#INET_BROADCAST_ADDRESS[*]} \
+		${#INET_NW_PROTOCOL[*]} ${#INET_NW_TYPE[*]} \
+		${#INET_SUBNET_MASK[*]} \
+		${#INET_YOUR_IP_ADDRESS[*]} \
+		${#INET_nodename[*]} ${#local_frame[*]}
+	do	(( i < Smart_array_min )) && (( Smart_array_min = i ))
+	done
+
+	#if vars are not set there was an error,
+	#	so display menu
+	[ -z "$INET_NIC_COUNT" ] && INET_NIC_COUNT=0 &&
+		Unknown_Silent_Device=true
+
+	#if there are no devices, do nothing.
+	(( INET_NIC_COUNT > 0 )) &&
+		if (( num <= Smart_array_min ))
+		then {	if assign_params $num
+			then	inet_write_files
+			else	Unknown_Silent_Device=true
+			fi
+		}
+		else	Unknown_Silent_Device=true
+		fi
+	while (( INET_NIC_COUNT > num ))
+	do	(( num = 1 + num ))
+		if (( num <= Smart_array_min ))
+		then {	if assign_params $num
+			then	inet_write_interface
+			else	Unknown_Silent_Device=true
+			fi
+		}
+		else	Unknown_Silent_Device=true
+		fi
+	done
+
+	#problem.  fall out of silent install.
+	if $Unknown_Silent_Device
+	then SILENT_INSTALL=false
+	else exit 0
+	fi
+}
+
+[ ! -r ${TERMINFO}/?/${TERM} ] &&
+	echo ${TERM} "${missingterm}" &&
+	exit 1
+
+export ROOT LANG TERM TERMINFO DCUDIR LD_LIBRARY_PATH INET_DIR DCUDEBUG UNIX_INSTALL
+#  extracted frmo ident	"@(#)dcu:scripts/dcu	1.3"
+
+: #debug: set -x
+: #debug: print -u2 "dcu called"
+
+STTYS=0
+STTYA=0
+STTYX=0
+struct termios_data c_iflag:ulong c_oflag:ulong c_cflag:ulong c_lflag:ulong c_line:char c_cc:'char [19]'
+struct termiosx_data x_hflag:short x_cflag:short x_rflag:'short [5]' x_sflag:short
+
+function dcusetcolor
+{
+: #debug: print -u2 "$0 called"
+: #debug: set -x
+
+if [[ $1 = "-n" ]]
+then
+	cdecl string_t fmt1='!\\\033[=%d%s!'
+	cdecl string_t cmd_ch1='!F!'
+	cdecl string_t cmd_ch2='!G!'
+
+	ccall altprintf "@string_t:"!\\\033[0m!""
+	ccall ioctl 0 24832 0
+	ccall altprintf "@string_t:"!\\\033[=0E!""
+	ccall altprintf fmt1 7 cmd_ch1
+	ccall altprintf fmt1 0 cmd_ch2
+	ccall altprintf "@string_t:"!\\\033[0m!""
+	ccall altprintf "@string_t:"!\\\033[J!""
+fi
+
+}
+
+function dcuclear
+{
+: #debug: print -u2 "$0 called"
+: #debug: set -x
+	ccall altprintf "@string_t:"!\\\033[2J\\\033[H!""
+}
+
+function getstty
+{
+: #debug: print -u2 "$0 called"
+: #debug: set -x
+
+	cdecl termios_data cbs={}
+	cdecl termios_data cba={}
+	cdecl termiosx_data cbx={}
+
+	ccall ioctl 0 21517 cbs
+	retd=$_RETD
+	cprint -v STTYS cbs
+: #debug: print -u2 $STTYS
+	ccall ioctl 0 21505 cba
+	retd=$_RETD
+	cprint -v STTYA cba
+: #debug: print -u2 $STTYA
+	ccall ioctl 0 22529 cbx
+	retd=$_RETD
+	cprint -v STTYX cbx
+: #debug: print -u2 $STTYX
+}
+
+function setstty
+{
+: #debug: print -u2 "$0 called"
+: #debug: set -x
+	cdecl termios_data cbs="$STTYS"
+	cdecl termios_data cba="$STTYA"
+	cdecl termiosx_data cbx="$STTYX"
+	ccall ioctl 0 21518 cbs
+	retd=$_RETD
+	ccall ioctl 0 21506 cba
+	retd=$_RETD
+	ccall ioctl 0 22530 cbx
+	retd=$_RETD
+}
+
+# main()
+#	Device Configuration Utility
+
+getstty
+integer RESET=0
+
+. ${DCUSCRIPTS}/winrc
+. ${DCUSCRIPTS}/scr_init
+. ${DCUSCRIPTS}/dculib.sh
+. ${DCUDIR}/menus/choose
+
+: #debug: print -u2 "START called"
+SH_VERBOSE=1
+[ -n "$SH_VERBOSE" ] && : #debug: set -x
+integer ninst=8	#max number of board instances allowed
+INTR=$(stty -a)
+INTR=${INTR#*intr = }
+INTR=${INTR%%;*}
+if [ "$INTR" = DEL ]
+then
+	INTR='^?'
+elif [ "$INTR" = '<undef>' ]
+then
+	INTR='^@'
+fi
+stty intr '^@'
+BDTYPE[1]=$none
+typeset STOP=0
+typeset ALLDRIVERS
+### is this obsolete? Color_Console
+
+let tmp_inet_int=0 REQUEST_BOOTP=0 GLOBAL_ABORT=0 INETMAIN_ABORT=0 INETMAIN_EXIT=0 select_num=0 MIDDLE_ABORT=0
+select_dev=
+(( multi_b = 0 ))
+env_multi_exit=
+
+case "${legaldevs} ${illegaldevs}" in
+	(*[!$space$tab$nl]*$space*[!$space$tab$nl]*)
+		(( multi_b = 1 ));;
+	(*[!$space$tab$nl]*$tab*[!$space$tab$nl]*)
+		(( multi_b = 1 ));;
+	(*[!$space$tab$nl]*$nl*[!$space$tab$nl]*)
+		(( multi_b = 1 ));;
+esac
+inet_setup
+
+while (( 0 == $GLOBAL_ABORT && 0 == $INETMAIN_ABORT && 0 == $INETMAIN_EXIT ))
+do
+	# this will loop when the user requests a bootp.
+	# only run the multiboard window without it.
+	if (( 1 == multi_b && 0 == REQUEST_BOOTP ))
+	then	selectmain
+		input_handler
+		: #debug: : select_dev "${select_dev}" , SELECT_WID "${SELECT_WID}"
+		if (( 0 == GLOBAL_ABORT ))
+		then	multiboard
+			input_handler
+		fi
+	fi
+
+	# if there are no abort indications, run the ip form
+	(( 0 == GLOBAL_ABORT && 0 == INETMAIN_ABORT && 0 == INETMAIN_EXIT && 0 == MIDDLE_ABORT )) &&
+		inetmain
+		input_handler
+	: GLOBAL_ABORT ${GLOBAL_ABORT} INETMAIN_ABORT ${INETMAIN_ABORT} INETMAIN_EXIT ${INETMAIN_EXIT} .
+
+	# exit indications from the ip form and middle form are squelched during multiboard
+	if (( multi_b && (0 == REQUEST_BOOTP) ))	
+	then	(( INETMAIN_ABORT=0 ))
+		(( INETMAIN_EXIT=0 ))
+	fi
+	(( MIDDLE_ABORT=0 ))
+
+	if [ -n "$SELECT_WID" ]
+	then	destroy_menu $SELECT_WID
+		SELECT_WID=
+	fi
+
+	[[ -n "$inetfid" ]] && {
+		destroy_form "$inetfid"
+		inetfid=
+	}
+
+	[[ -n "$multifid" ]] && {
+		destroy_form "$multifid"
+		multifid=
+	}
+
+	footer "________________________________________________________________________________" 
+	msg    "________________________________________________________________________________"
+
+	readConfigFile=
+	readInterfaceFile=
+done
+
+[[ -z "${REQDIR}" ]] && {
+	setstty
+	dcusetcolor -n
+	dcuclear
+	/usr/sbin/menu -c
+}
+
+

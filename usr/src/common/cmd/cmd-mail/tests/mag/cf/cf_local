@@ -1,0 +1,903 @@
+# checksum:62675
+#
+#	@(#) sendmail.cf 4.2 96/05/28 
+#
+#******************************************************************************
+#	Copyright (C) 1996 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#===============================================================================
+#
+# Copyright (c) 1983 Eric P. Allman
+# Copyright (c) 1988, 1993
+#	The Regents of the University of California.  All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgement:
+#	This product includes software developed by the University of
+#	California, Berkeley and its contributors.
+# 4. Neither the name of the University nor the names of its contributors
+#    may be used to endorse or promote products derived from this software
+#    without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+#
+
+######################################################################
+######################################################################
+#####
+#####		SENDMAIL CONFIGURATION FILE
+#####
+######################################################################
+######################################################################
+
+# level 7 config file format
+V7
+
+######################
+#   Special macros   #
+######################
+
+# my name for error messages
+DnMAILER-DAEMON
+
+# format of a total name
+Dq$?x$x <$g>$|$g$.
+
+# Configuration version number
+DZSCO5
+
+##################
+#   local info   #
+##################
+
+# who I masquerade as -- domain hiding
+# (null for no masquerading)
+DM
+
+# All the names this host is known by (put all the names & nick names on the 
+# next line, separated by spaces. If you need another line, begin it with "Cw")
+Cw$M
+
+# class E: names that should be exposed as from this host, even if we masquerade
+CEroot
+
+# operators that cannot be in local usernames (i.e., network indicators)
+CO @ % !
+
+# class with just a '.' -- used by rulesets for address parsing
+CP.
+
+# map of known local users on this machine (needed for baduser channel)
+Kusers user -o -m -a.KNOWN
+
+# map of UUCP hosts that we speak to (known UUCP hosts)
+# (built from file /usr/lib/uucp/Systems)
+Kuucp hash -o -m -a.FOUND /etc/mail/table/uucp
+
+# dequoting map
+Kdequote dequote
+
+# enable domain table lookup (null means lookups disabled)
+DD
+# class for flag used to identify successful lookup
+# (class D must be set to same string used for domain, in -a flag)
+CDDMNTAB
+# domain table map
+Kdomain hash -o -a.DMNTAB /etc/mail/table/domain
+
+# This macro is set if the multi-homing channel is enabled.  It is
+# used by the check_rcpt routine to determine if the virtual domains
+# map exists, in order to check for mail addressed to the local host
+# by one if its virtual names.  The Mail Manager GUI automatically
+# sets this macro if the Multihome channel is created.
+# (null means check_rcpt will not check virtual domains map)
+DV
+
+# Enable check_rcpt ruleset to prevent this host from being an SMTP
+# mail relay.  check_rcpt will refuse mail received from a remote host
+# to be sent to a remote host-- except for those in the "trusted" map
+# below.  The message will be rejected during the SMTP dialogue.
+# (null means do not do check_rcpt)
+DC
+# If you enable check_rcpt, you may list all hosts in this map which will
+# be exceptions.  Meaning if the sender is from one of these hosts,
+# we will relay the mail.
+Ktrusted hash -o -m -a.TRUSTED /etc/mail/table/trusted
+
+
+###############
+#   Options   #
+###############
+
+# Default user to run mailers as, needs to be root for root local delivery
+O DefaultUser=root
+
+# strip message body to 7 bits on input?
+O SevenBitInput=False
+
+# SMTP initial login message
+O SmtpGreetingMessage=$j Sendmail $v/$Z ready at $b
+
+# UNIX initial From header format
+O UnixFromLine=From $g  $d
+
+# wait (in minutes) for alias file rebuild
+O AliasWait=10
+
+# location of alias file
+O AliasFile=/etc/mail/aliases
+
+# minimum number of free blocks on filesystem
+O MinFreeBlocks=4
+
+# substitution for space (blank) characters
+O BlankSub=.
+
+# avoid connecting to "expensive" mailers on initial submission?
+O HoldExpensive=False
+
+# checkpoint queue runs after every N successful deliveries
+O CheckpointInterval=1
+
+# default delivery mode
+O DeliveryMode=background
+
+# automatically rebuild the alias database?
+O AutoRebuildAliases=True
+
+# error message header/file
+#O ErrorHeader=/etc/sendmail.oE
+
+# error mode
+#O ErrorMode=p
+
+# save Unix-style "From_" lines at top of header?
+O SaveFromLine=False
+
+# temporary file mode
+O TempFileMode=0600
+
+# match recipients against GECOS field?
+O MatchGECOS=False
+
+# maximum hop count
+O MaxHopCount=17
+
+# location of help file
+O HelpFile=/etc/mail/sendmail.hf
+
+# ignore dots as terminators in incoming messages?
+O IgnoreDots=False
+
+# Insist that the BIND name server be running to resolve names
+O ResolverOptions=
+
+# deliver MIME-encapsulated error messages?
+O SendMimeErrors=True
+
+# Forward file search path
+#O ForwardPath=/var/forward/$u:$z/.forward.$w:$z/.forward
+
+# open connection cache size
+O ConnectionCacheSize=2
+
+# open connection cache timeout
+O ConnectionCacheTimeout=5m
+
+# use Errors-To: header?
+O UseErrorsTo=False
+
+# log level
+O LogLevel=9
+
+# send to me too, even in an alias expansion?
+O MeToo=False
+
+# verify RHS in newaliases?
+O CheckAliases=False
+
+# default messages to old style headers if no special punctuation?
+O OldStyleHeaders=True
+
+# SMTP daemon options
+#O DaemonPortOptions=Port=esmtp
+
+# delimiter (operator) characters
+O OperatorChars=.:%@!^/[]
+
+# privacy flags
+O PrivacyOptions=authwarnings
+
+# who (if anyone) should get extra copies of error messages
+#O PostmasterCopy=Postmaster
+
+# slope of queue-only function
+#O QueueFactor=600000
+
+# queue directory
+O QueueDirectory=/var/spool/mqueue
+
+# read timeout -- now OK per RFC 1123 section 5.3.2
+#Ordatablock=10m
+
+# queue up everything before forking?
+O SuperSafe=True
+
+# status file
+O StatusFile=/etc/mail/sendmail.st
+
+# default message timeout interval
+O Timeout.queuereturn=5d
+
+# time zone handling:
+#  if undefined, use system default
+#  if defined but null, use TZ environment variable passed in
+#  if defined and non-null, use that info
+O TimeZoneSpec=
+
+# list of locations of user database file (null means no lookup)
+O UserDatabaseSpec=
+
+# fallback MX host
+#O FallbackMXhost=fall.back.host.net
+
+# if we are the best MX host for a site, try it directly instead of config err
+O TryNullMXList=False
+
+# load average at which we just queue messages
+O QueueLA=8
+
+# load average at which we refuse connections
+O RefuseLA=12
+
+# work recipient factor
+#O RecipientFactor=30000
+
+# deliver each queued job in a separate process?
+O ForkEachJob=False
+
+# work class factor
+#O ClassFactor=1800
+
+# work time factor
+#O RetryFactor=90000
+
+###########################
+#   Message precedences   #
+###########################
+
+Pfirst-class=0
+Pspecial-delivery=100
+Plist=-30
+Pbulk=-60
+Pjunk=-100
+
+#####################
+#   Trusted users   #
+#####################
+
+Troot
+Tdaemon
+Tuucp
+
+#########################
+#   Format of headers   #
+#########################
+
+H?P?Return-Path: $g
+HReceived: $?sfrom $s $.$?_($?s$|from $.$_) $.by $j ($v/$Z)$?r with $r$. id $i$?u for $u$.; $b
+H?D?Resent-Date: $a
+H?D?Date: $a
+H?F?Resent-From: $q
+H?F?From: $q
+H?x?Full-Name: $x
+HSubject:
+# HPosted-Date: $a
+# H?l?Received-Date: $b
+H?M?Resent-Message-Id: <$t.$i@$j>
+H?M?Message-Id: <$t.$i@$j>
+#
+######################################################################
+######################################################################
+#####
+#####			REWRITING RULES
+#####
+######################################################################
+######################################################################
+
+
+###########################################
+###  Rulset 3 -- Name Canonicalization  ###
+###########################################
+S3
+
+# handle null input (translate to <@> special case)
+R$@			$@ <@>
+
+# basic textual canonicalization -- note RFC733 heuristic here
+R$*<$*>$*<$*>$*		$2$3<$4>$5			strip multiple <> <>
+R$*<$*<$+>$*>$*		<$3>$5				2-level <> nesting
+R$*<>$*			$@ <@>				MAIL FROM:<> case
+R$*<$+>$*		$2				basic RFC821/822 parsing
+
+# handle list:; syntax as special case
+R$*:;$*			$@ $1 :; <@>
+
+# make sure <@a,@b,@c:user@d> syntax is easy to parse -- undone later
+R@ $+ , $+		@ $1 : $2			change all "," to ":"
+
+# localize and dispose of route-based addresses
+R@ $+ : $+		$@ $>96 < @$1 > : $2		handle <route-addr>
+
+# find focus for list syntax
+R $+ : $* ; @ $+	$@ $>96 $1 : $2 ; < @ $3 >	list syntax
+R $+ : $* ;		$@ $1 : $2;			list syntax
+
+# find focus for @ syntax addresses
+R$+ @ $+		$: $1 < @ $2 >			focus on domain
+R$+ < $+ @ $+ >		$1 $2 < @ $3 >			move gaze right
+R$+ < @ $+ >		$@ $>96 $1 < @ $2 >		already canonical
+
+# do some sanity checking
+R$* < @ $* : $* > $*	$1 < @ $2 $3 > $4		nix colons in addrs
+
+# convert old-style addresses to a domain-based address
+#R$- ! $+		$@ $>96 $2 < @ $1 .UUCP >	resolve uucp names
+R$- ! $+		$@ $>96 $2 < @ $1 >		resolve uucp names
+R$+ . $- ! $+		$@ $>96 $3 < @ $1 . $2 >	domain uucps
+#R$+ ! $+		$@ $>96 $2 < @ $1 .UUCP >	uucp subdomains
+R$+ ! $+		$@ $>96 $2 < @ $1 >		uucp subdomains
+
+# if we have % signs, take the rightmost one
+R$* % $*		$1 @ $2				First make them all @s.
+R$* @ $* @ $*		$1 % $2 @ $3			Undo all but the last.
+R$* @ $*		$@ $>96 $1 < @ $2 >		Insert < > and finish
+
+# else we must be a local name
+
+
+################################################
+###  Ruleset 96 -- bottom half of ruleset 3  ###
+################################################
+
+#  At this point, everything should be in a "local_part<@domain>extra" format.
+S96
+
+# do domain table lookups (if enabled)
+R$* < @ $+ > $*			$: $>domains < $D > $1 < @ $2 > $3
+
+# handle special cases for local names
+R$* < @ localhost > $*		$: $1 < @ $j . > $2		no domain at all
+R$* < @ localhost . $m > $*	$: $1 < @ $j . > $2		local domain
+R$* < @ localhost . UUCP > $*	$: $1 < @ $j . > $2		.UUCP domain
+# CHANGE: Do not by-pass numeric address-- allow domain table to process,
+#	  and DNS lookup on it.
+#R$* < @ [ $+ ] > $*		$: $1 < @@ [ $2 ] > $3		mark [a.b.c.d]
+#R$* < @@ $=w > $*		$: $1 < @ $j . > $3		self-literal
+#R$* < @@ $+ > $*		$@ $1 < @ $2 > $3		canon IP addr
+
+# try UUCP traffic as a local address
+R$* < @ $+ . UUCP > $*		$: $1 < @ $[ $2 $] . UUCP . > $3
+R$* < @ $+ . . UUCP . > $*		$@ $1 < @ $2 . > $3
+
+# pass to name server to make hostname canonical
+R$* < @ $* $~P > $*		$: $1 < @ $[ $2 $3 $] . > $4
+
+# local host aliases and pseudo-domains are always canonical
+R$* < @ $=w > $*		$: $1 < @ $2 . > $3
+R$* < @ $* $=P > $*		$: $1 < @ $2 $3 . > $4
+R$* < @ $* . . > $*		$1 < @ $2 . > $3
+
+# if this is the local hostname, make sure we treat is as canonical
+R$* < @ $j > $*			$: $1 < @ $j . > $2
+
+
+##################################################
+###  Ruleset 4 -- Final Output Post-rewriting  ###
+##################################################
+S4
+
+R$*<@>			$@ $1				handle <> and list:;
+
+# strip trailing dot off possibly canonical name
+R$* < @ $+ . > $*	$1 < @ $2 > $3
+
+# externalize local domain info
+R$* < $+ > $*		$1 $2 $3			defocus
+R@ $+ : @ $+ : $+	@ $1 , @ $2 : $3		<route-addr> canonical
+R@ $*			$@ @ $1				... and exit
+
+# UUCP must always be presented in old form
+R$+ @ $- . UUCP		$2!$1				u@h.UUCP => h!u
+
+# delete duplicate local names
+R$+ % $=w @ $=w		$1 @ $j				u%host@host => u@host
+
+
+##############################################################
+###   Ruleset 97 -- recanonicalize and call ruleset zero   ###
+###		   (used for recursive calls)		   ###
+##############################################################
+
+S97
+R$*			$: $>3 $1
+R$*			$@ $>0 $1
+
+
+######################################
+###   Ruleset 0 -- Parse Address   ###
+######################################
+
+S0
+
+R<@>			$#local $: <>		special case error msgs
+R$* : $* ;		$#error $@ USAGE $: "list:; syntax illegal for recipient addresses"
+R<@ $+>			$#error $@ USAGE $: "user address required"
+R<$* : $* >		$#error $@ USAGE $: "colon illegal in host name part"
+
+# CHANGE: Just let numeric addresses go through domain/channel tables
+# handle numeric address spec
+#R$* < @ [ $+ ] > $*	$: $>98 $1 < @ [ $2 ] > $3	numeric internet spec
+#R$* < @ [ $+ ] > $*	$#esmtp $@ [$2] $: $1 < @ [$2] > $3	still numeric: send
+
+# now delete the local info -- note $=O to find characters that cause forwarding
+R$* < @ > $*		$@ $>97 $1			user@ => user
+R< @ $=w . > : $*	$@ $>97 $2			@here:... -> ...
+R$* $=O $* < @ $=w . >	$@ $>97 $1 $2 $3		...@here -> ...
+# need to do this?
+#R$* < @ $=w . >		$: $1				user@here -> user
+
+# send all mail through channel table processing
+R$*			$: $>channels $1
+
+###########################################################################
+###   Ruleset 5 -- special rewriting after aliases have been expanded   ###
+###		   (new sendmail only)					###
+###########################################################################
+
+S5
+R$+			$: $(dequote $1 $)		strip quotes
+R$+ $=O $+		$@ $>97 $1 $2 $3		try again
+
+###########################################################################
+###  Ruleset : domains
+###  Purpose : Send address through domain table, for mapping of hostnames
+###	       to new values, and specification of source routing.
+###########################################################################
+
+Sdomains
+
+# domain tables disabled, so return
+R< > $*				$@ $1
+
+R<$=D> $*<@$+>$*		$: <$3> $2<@$3>$4
+R<$+> $*<@$+>$*			$: <$(domain $1 $)> $2<@$3>$4
+# special case for numeric address (no partial domain matching!)
+R<[$+]> $*<@$+>$*		$@ $2<@$3>$4
+R<$* $~D> $*<@$+>$*		$: <. $1 $2> $3<@ $4>$5
+R$* <$* $~D> $*<@$+>$*		$>domains_helper $1<$(domain $2$3 $)>$4<@$5>$6 
+
+# mark numeric address: [a.b.c.d] -> [.a.b.c.d.]
+# (this makes the following rules view [$+] as one hostname)
+R<$* [$~P $+ $~P] $* . $D > $+		<$1 [.$2$3$4.] $5 . $D > $6
+
+# gateways (multi-value in domain table)
+R<$* $~P $~P $* . $D> $*<@$+>$*		$: <$3 $4 . $D> : $5 @ $1 $2 $7
+R$+ <$* $~P $~P $* . $D> $*<@$+>$*	$: <$4 $5 . $D> : @ $2 $3 : $6 @ $7 $8
+R<$* $~P $~P $* . $D> : $+		$: <@ $1 $2> : <$3 $4 . $D> : $5
+R$+ : < $* $~P $~P $* . $D> : $+	$1 : @ $2 $3 : <$4 $5 . $D> : $6
+R$+ : <$+ . $D> : $+			$:  $1 : @$2 : $3
+R<$+ . $D> : $+				$:  < @ $1 > : $2
+
+# no gateways (1 value in domain table)
+R<$+ . $D> $*<@$+>$*			$: $2 < @ $1 > $4
+R$+ <$+ . $D> $*<@$+>$*			$: < @ $2 > : $3 @ $4 $5
+
+# undo the marking of numeric addresses: [.a.b.c.d.] -> [a.b.c.d]
+R$* [. $+ .] $*				$1 [ $2 ] $3
+
+#####################################################################
+###  Ruleset : domains_helper
+###  Purpose : Subroutine of ruleset 'domains'.  Helper routine used
+###	       to put focus on next parent domain for table lookup.
+#####################################################################
+
+Sdomains_helper
+R$* < $+ . $D > $*		$@ $1 < $2 . $D > $3		match
+R$* < . $- > $*			$@ $3				tried all 
+R$* < . $- . $+ > $*		$@ $1 . $2 < . $3 > $4 		try submatch
+
+
+#########################################################################
+###  Ruleset: channels
+###  Purpose: Address will be processed by each individual channel
+###	      ruleset in the order listed here, to determine the 
+###	      appropriate delivery agent.
+#########################################################################
+
+Schannels
+R$*			$: $>local $1
+R$*			$: $>SMTP $1
+R$*			$: $>badhost $1
+
+
+#########################################################################
+###  Ruleset: Get_domain
+###  Purpose: helper routine of check_rcpt, to isolate hostname portion
+###	      of address, or tag it as a local address
+#########################################################################
+SGet_domain
+R$*			$: $>3 $1		focus on host
+R$* <@ $+. > $*		$1 <@ $2> $3		strip trailing dots
+R$* <@ $+ > $*		$@ $2			isolate host
+R$*			$@ <LOCAL>		no hostname part
+
+
+#########################################################################
+###  Ruleset: check_rcpt
+###  Purpose: refuse mail that is from a remote host and also
+###	      going out to a remote host (prevent this host from
+###	      being a relay)
+#########################################################################
+Scheck_rcpt
+R$*			$: < $C > $1			check_rcpt enabled?
+R<> $+			$@ ok				not enabled
+R<$+> $+		$: $2				enabled
+R$*			$: $>Get_domain $1		focus on host
+R<LOCAL>		$@ ok				mail to local addr ok
+R$=w			$@ ok				mail to localhost ok
+R$*			$: <$V> $1			virtual domains?
+R<> $+			$: $1				no virtual domains
+R<$+> $+		$: $(multihome_MAP $2 $)	check virtual domains
+R$*.FOUND		$@ ok				to virtual dmn ok
+R$*			$: < $&{client_name} > $1	check connecting host
+R<$+> $*		$: < $(trusted $1 $) > $2	check trusted sender
+R<$*.TRUSTED> $*	$@ ok				from trusted host ok
+R<$*> $*		$#error $@ 5.7.2 $: Relay mail from $1 to $2 denied
+
+
+#
+######################################################################
+######################################################################
+#####
+#####		SENDER AND RECIPIENT ADDRESS REWRITING
+#####
+######################################################################
+######################################################################
+
+##############################################################
+###   Rewriting rules for smtp (RFC-822 style addressing)  ###
+##############################################################
+
+# sender envelope
+Sap822_se
+R$*	$: $>11 $1
+# sender header
+Sap822_sh
+R$*	$: $>31 $1
+# recipient envelope
+Sap822_re
+R$*	$: $>71 $1
+# recipient header
+Sap822_rh
+R$*	$: $>71 $1
+
+#
+#  envelope sender and masquerading recipient rewriting
+#
+S11
+R$+			$: $>51 $1			sender/recipient common
+R$* :; <@>		$@ $1 :;			list:; special case
+R$*			$@ $>61 $1			qualify unqual'ed names
+
+
+#
+#  header recipient rewriting if not masquerading recipients
+#
+S21
+# do sender/recipient common rewriting
+R$+			$: $>51 $1
+# unqualified names (e.g., "eric") are qualified by local host
+R$* < @ $* > $*		$@ $1 < @ $2 > $3		already qualified
+R$+			$: $1 < @ $j >			add local domain
+
+#
+#  header sender and masquerading recipient rewriting
+#
+S31
+R$+			$: $>51 $1			sender/recipient common
+R$* :; <@>		$@ $1 :;			list:; special case
+# do special header rewriting
+R$* <@> $*		$@ $1 <@> $2			pass null host through
+R< @ $* > $*		$@ < @ $1 > $2			pass route-addr through
+R$=E < @ $=w . >	$@ $1 < @ $2 >			exposed user as is
+R$* < @ $=w . >		$: $1 <@ $2 @ $M>		masquerade as domain
+R$* < @ $+ @ >		$@ $1 < @ $2 >			in case $M undefined
+R$* < @ $+ @ $+ >	$@ $1 < @ $3 >			$M is defined -- use it
+R$*			$@ $>61 $1			qualify unqual'ed names
+
+#
+#  convert pseudo-domain addresses to real domain addresses
+#
+S51
+# pass <route-addr>s through
+R< @ $+ > $*		$@ < @ $1 > $2			resolve <route-addr>
+# do UUCP heuristics; note that these are shared with UUCP mailers
+R$+ < @ $+ .UUCP. >	$: < $2 ! > $1			convert to UUCP form
+R$+ < @ $* > $*		$@ $1 < @ $2 > $3		not UUCP form
+# leave these in .UUCP form to avoid further tampering
+R< $&h ! > $- ! $+	$@ $2 < @ $1 .UUCP. >
+R< $&h ! > $-.$+ ! $+	$@ $3 < @ $1.$2 >
+R< $&h ! > $+		$@ $1 < @ $&h .UUCP. >
+R< $+ ! > $+		$: $1 ! $2 < @ $Y >
+R$+ < @ >		$: $1 < @ $j >			in case $Y undefined
+R$+ < @ $+ : $+ >	$: $1 < @ $3 >			strip mailer: part
+
+#
+#  common sender and masquerading recipient rewriting
+#
+S61
+R$* < @ $* > $*		$@ $1 < @ $2 > $3		already qualified
+R$=E			$@ $1 < @ $j>			show exposed names
+R$+			$: $1 < @ $M >			user w/o host
+R$+ <@>			$: $1 < @ $j >			in case $M undefined
+
+#
+#  common sender and recipient rewriting with 
+#	no masquerading
+#	and unqualified names (e.g. "eric") are NOT qualified by the local host
+#
+S71
+R$* < @ $* > $*		$@ $1 < @ $2 > $3		already qualified
+R$=E			$@ $1 < @ $j>			show exposed names
+
+##############################################################
+###   Rewriting rules for uucp (RFC-976 style addressing)  ###
+##############################################################
+
+# sender envelope
+Sap976_se
+R$*	$: $>12 $1
+# sender header
+Sap976_sh
+R$*	$: $>12 $1
+# recipient envelope
+Sap976_re
+R$*	$: $>22 $1
+# recipient envelope
+Sap976_rh
+R$*	$: $>42 $1
+
+#
+#  envelope and header sender rewriting
+#
+S12
+# handle error address as a special case
+R<@>				$n			errors to mailer-daemon
+# do not qualify list:; syntax
+R$* :; <@>			$@ $1 :;
+R$* < @ $* . >			$1 < @ $2 >		strip trailing dots
+R$* < @ $=w >			$1			strip local name
+R<@ $- . UUCP > : $+		$1 ! $2			convert to UUCP format
+R<@ $+ > : $+			$1 ! $2			convert to UUCP format
+R$* < @ $+ . UUCP >		$2 ! $1			convert to UUCP format
+R$* < @ $+ >			$2 ! $1			convert to UUCP format
+R$&h ! $+ ! $+			$@ $1 ! $2		$h!...!user => ...!user
+R$&h ! $+			$@ $&h ! $1		$h!user => $h!user
+R$+				$: $U ! $1		prepend our name
+R! $+				$: $k ! $1		in case $U undefined
+
+#
+#  envelope recipient rewriting
+#
+S22
+# don't touch list:; syntax
+R$* :; <@>			$@ $1 :;
+R$* < @ $* . > $*		$1 < @ $2 > $3		strip trailing dots
+R$* < @ $j >			$1			strip local name
+#R<@ $+ . UUCP > : $+		$1 ! $2			convert to UUCP format
+#R<@ $+ > : $+			$1 ! $2			convert to UUCP format
+R<@ $+ > : @ $+			$1 ! $2			convert to UUCP format
+R$+ : @ $+			$1 ! $2			convert to UUCP format
+R$+ : $+ @ $+			$1 ! $3 ! $2		convert to UUCP format
+#R$* < @ $+ . UUCP >		$2 ! $1			convert to UUCP format
+R$* < @ $+ >			$2 ! $1			convert to UUCP format
+
+#
+#  header recipient rewriting
+#
+S42
+# don't touch list:; syntax
+R$* :; <@>			$@ $1 :;		
+R$* < @ $* . > $*		$1 < @ $2 > $3		strip trailing dots
+R$* < @ $j >			$1			strip local name
+#R<@ $+ . UUCP > : $+		$1 ! $2			convert to UUCP format
+#R<@ $+ > : $+			$1 ! $2			convert to UUCP format
+R<@ $+ > : @ $+			$1 ! $2			convert to UUCP format
+R$+ : @ $+			$1 ! $2			convert to UUCP format
+R$+ : $+ @ $+			$1 ! $3 ! $2		convert to UUCP format
+#R$* < @ $+ . UUCP >		$2 ! $1			convert to UUCP format
+R$* < @ $+ >			$2 ! $1			convert to UUCP format
+R$&h ! $+ ! $+			$@ $1 ! $2		$h!...!user => ...!user
+R$&h ! $+			$@ $&h ! $1		$h!user => $h!user
+R$+				$: $U ! $1		prepend our name
+R! $+				$: $k ! $1		in case $U undefined
+
+#
+#  envelope sender rewriting for uucp domain mailer
+#
+S52
+# handle error address as a special case
+R<@>				$n			errors to mailer-daemon
+# pass everything to standard SMTP mailer rewriting
+R$*				$@ $>11 $1
+
+#
+#  envelope sender rewriting for uucp-uudom mailer
+#
+S72
+# handle error address as a special case
+R<@>				$n			errors to mailer-daemon
+# do not qualify list:; syntax
+R$* :; <@>			$@ $1 :;
+R$* < @ $* . >			$1 < @ $2 >		strip trailing dots
+R$* < @ $=w >			$1			strip local name
+R<@ $- . UUCP > : $+		$1 ! $2			convert to UUCP format
+R<@ $+ > : $+			$1 ! $2			convert to UUCP format
+# CHANGE: Allow UUCP addresses with multiple word before the .UUCP : 
+#	  of form $+.UUCP
+#R$* < @ $- . UUCP >		$2 ! $1			convert to UUCP format
+R$* < @ $+ . UUCP >		$2 ! $1			convert to UUCP format
+R$* < @ $+ >			$@ $2 ! $1		convert to UUCP format
+R$&h ! $+ ! $+			$@ $1 ! $2		$h!...!user => ...!user
+R$&h ! $+			$@ $&h ! $1		$h!user => $h!user
+R$+				$: $M ! $1		prepend masquerade name
+R! $+				$: $j ! $1		in case $M undefined
+
+
+#######################################################
+###    Rewriting rules for locally delivered mail   ###	
+#######################################################
+
+# sender envelope
+Saplocal_se
+R$*	$: $>10 $1
+# sender header
+Saplocal_sh
+R$*	$: $>31 $1
+# recipient envelope
+Saplocal_re
+R$*	$: $>20 $1
+# recipient envelope
+Saplocal_rh
+R$*	$: $>40 $1
+
+S10
+R<@>			$n			errors to mailer-daemon
+R$+			$: $>40 $1
+
+S20
+R$+ < @ $* >		$: $1			strip host part
+
+S40
+
+
+######################################################################
+######################################################################
+#####
+#####			MAILER DEFINITIONS
+#####
+######################################################################
+######################################################################
+
+
+#################
+###  Mailers  ###
+#################
+
+###  program mailer ###
+Mprog,	P=/bin/sh, F=lsDFMPeu, S=10/31, R=20/40, D=$z:/,
+	A=sh -c $u
+Mlocal, P=/etc/mail/slocal, F=lsDFMPhoAw5:|/@8, S=aplocal_se/aplocal_sh, 
+	R=aplocal_re/aplocal_rh, M=20000000, A=slocal $u
+MSMTP, P=[IPC], F=mlsDFMPeu8, S=ap822_se/ap822_sh, R=ap822_re/ap822_rh, E=\r\n, 
+	L=990, M=20000000, A=IPC $h
+Mbadhost, P=[IPC], F=mlsDFMPeu8, S=ap822_se/ap822_sh, R=ap822_re/ap822_rh, 
+	E=\r\n, L=990, M=20000000, A=IPC $h
+
+
+######################################################################
+######################################################################
+#####
+#####		BUILT-IN CHANNEL TABLE DEFINITIONS
+#####
+######################################################################
+######################################################################
+
+# If address is of form "local_part<@hostname>", where "hostname" is the
+# local host, or if address has no "<@hostname>" part, then return the
+# address with "<FOUND>" pre-pended.
+Slocal_TBL
+R$+ < @ $=w . >			$@ < FOUND > $1 <@ $2 .>
+R$* < @ $+ > $*			$@ $1 < @ $2 > $3
+R$+				$@ < FOUND > $1				
+
+# If address has an "<@hostname>" part, and if "hostname" can be resolved
+# by DNS, then return address with "<FOUND>" pre-pended.
+Sdns_TBL
+R$* < @ $+ . > $*		$: $1 < @ $[ $2 $] . > $3
+R$* < @ $+ .. > $*		$@ < FOUND > $1 < @ $2 . > $3
+
+# If address has an "<@hostname>" part, and if hostname is a known
+# UUCP host, then return address with "<FOUND>" pre-pended.
+Suucp_TBL
+R$* < @ $+ . > $*		$: $1 < @ $(uucp $2 $) . > $3
+R$* < @ $+ . FOUND . > $* 	$@ < FOUND > $1 < @ $2 . > $3
+
+# If address is of form "local_part<@hostname>extra", where "hostname" is
+# not the local host, then return address with "<FOUND>" pre-pended.
+Sremote_TBL
+R$* < @ $=w . > $*		$@ $1 < @ $2 . > $3
+R$* < @ $+ . > $*		$@ < FOUND > $1 < @ $2 . > $3
+
+# Table for baduser channel.
+# If address is either:
+# 	1) "local_part<@hostname>", where "hostname" is the local host, and 
+#	   "local_part" is an unknown user
+# 	2) just the "local_part", and is an unknown user
+# then return the address with the string "<FOUND>" prepended.
+# Otherwise, just return the address as is.
+#
+# NOTE: This lookup is really only effective in ruleset 5, which processes
+#	addresses resolved to local delivery *after* aliasing.
+Sbaduser_TBL
+R$+ < @ $=w . >			$: $(users $1 $) < @ $2 . >
+R$+ . KNOWN < @ $=w . >		$@ $1 < $2 . >
+R$+ < @ $=w . >			$@ < FOUND > $1 < @ $2 . >
+R$* < @ $+ . > $*		$@ $1 < @ $2 . > $3
+R$+				$: $(users $1 $)
+R$+ . KNOWN			$@ $1
+R$+				$@ < FOUND > $1
+
+######################################################################
+######################################################################
+#####
+#####			CHANNEL DEFINITIONS
+#####
+######################################################################
+######################################################################
+
+Slocal
+R$*			$: $>local_TBL $1
+R<FOUND>$+		$# local $@ gateway $: $1
+SSMTP
+R$*<@$+.>$*		$: $>dns_TBL $1<@$2.>$3
+R<FOUND>$*<@$+.>$*	$# SMTP $@ $2 $: $1<@$2.>$3
+Sbadhost
+R$*<@$+.>$*		$: $>remote_TBL $1<@$2.>$3
+R<FOUND>$*<@$+.>$*	$# badhost $@ $2 $: $1<@$2.>$3

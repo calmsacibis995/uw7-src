@@ -1,0 +1,81 @@
+# **************************************************************************
+#	@(#) Imakefile 11.1 97/10/22
+# 	Copyright (c) 1990		The Santa Cruz Operation, Inc.
+# 
+# 	All rights reserved.  No part of this program or publication may be
+# 	reproduced, transmitted, transcribed, stored in a retrieval system,
+# 	or translated into any language or computer language, in any form or
+# 	by any means, electronic, mechanical, magnetic, optical, chemical,
+# 	biological, or otherwise, without the prior written permission of:
+# 	
+# 		The Santa Cruz Operation , Inc.		(408) 425-7222
+# 		400 Encinal St., Santa Cruz, California 95060 USA
+# 
+# **************************************************************************
+# 
+# M010, Wed Sep 18 18:51:44 GMT 1996, kylec@sco.com
+#	Remove deadkeysymdef.h
+# M009, 25-Oct-95, garyh, SCO-59-6970
+#	Include new datafile, deadkeysymdef.h
+# M008, 08-Jun-95, kylec
+#       new version of xsconfig.sh.  Only install file for new version.
+# M007, 01-Mar-93, juliad
+#     Install wx200.kbd also
+# M006, 05-Aug-92, hess
+# 	use installprogram for xsconfig, so it can be striped.
+# M005, 31-Jul-92, hess
+# 	bring into R5 tree
+# M004, 26-Nov-91, hess
+# 	change keys101.kbd to misc.kbd, it holds misc key that are not output
+# 	by 'mapkey -c', and so must be somewhere, but the name '101' was 
+# 	misleading.  Remove XK_Mode_switch from misc.kbd, this will be 
+#	defined in the mod.usa or mod.intl files, depending on the environment.
+# M003, 26-Nov-91, mikep
+#	change mapkey to default.
+# M002, 06-Oct-91, mikep
+# 	change CDEBUGFLAGS to CCOPTIONS so that they aren't overridden
+#	from above.
+# M001, 13-Sep-91, hess
+# 	don't install mouse3.mou, it's not supported any longer. 
+# M000, 04-Sep-91, hess
+#	install xsconfig in BINDIR
+#
+
+#include <Server.tmpl>
+#define IHaveSubdirs
+
+DATAFILES = keysymdef.h 
+INCLUDES = -I. -I$(SERVERSRC)/include -I$(INCLUDESRC)
+CCOPTIONS = -DNOPROTO -DLIBDIR=\"$(LIBDIR)\"
+SRCS = xsconfig.c alloc.c lexer.c symtab.c xserror.c
+OBJS = xsconfig.o alloc.o lexer.o symtab.o xserror.o
+CONFIG = definitions/DEFAULT translations/DEFAULT \
+  keysyms/DEFAULT keysyms/misc/DEFAULT modifiers/DEFAULT keyctrl/DEFAULT
+
+#ifdef BuildXKB
+XKBSUBDIRS = xkb
+#endif
+
+SUBDIRS = definitions keyctrl keysyms modifiers translations $(XKBSUBDIRS)
+
+all :: xsconfig $(DATAFILES)
+
+.Xsco.cfg: xsconfig xsconfig.sh
+	./xsconfig -o .Xsco.cfg $(CONFIG)
+
+MakeSubdirs($(SUBDIRS))
+
+SingleProgramTarget(xsconfig,$(OBJS),,);
+LinkSourceFile(keysymdef.h,$(INCLUDESRC))
+BuildServerIncludes(config.h,include/xsconfig,../..)
+InstallHDKMultiple(config.h,$(HDKSERVERDIR)/include/xsconfig)
+MakeDirectories(install,$(LIBDIR)/xsconfig)
+InstallMultiple($(DATAFILES),$(LIBDIR)/xsconfig)
+InstallProgram(xsconfig,$(BINDIR))
+InstallNamedProg(xsconfig.sh,xsconfig.sh,$(LIBDIR)/xsconfig)
+InstallSubdirs($(SUBDIRS))
+
+DependTarget()
+
+clean::
+	$(RM) keysymdef.h

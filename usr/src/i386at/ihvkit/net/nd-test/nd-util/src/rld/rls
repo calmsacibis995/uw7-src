@@ -1,0 +1,45 @@
+# master script for remote login testing
+wait:TR1,TR1,"# ","$ ",l1,l1
+label:timeout
+msg:"timeout"
+exit:1
+label:l1
+send:"LOGIN MCHN\n"
+wait:TR1,TR1,"ogin: ","# ",l2,lt
+goto:timeout
+label:lt
+msg:"LOGIN failed to connect"
+exit:1
+label:l2
+loop:2
+send:"UID\n"
+wait:TR1,TR1,"assword:","# ",l3,lt
+endloop
+goto:timeout
+label:l3
+send:"PWD\n"
+wait:TR1,TR1,"(ansi)","# ",l4,l5
+goto:timeout
+label:l4
+send:"\n"
+wait:TR1,TR1,"# ","# ",l5,l5
+goto:timeout
+label:l5
+send:"PS1=xyzzy#\n"
+wait:TR1,TR1,"\nxyzzy#","\nxyzzy#",l6,l6
+goto:timeout
+label:l6
+loop:10000
+	send:"cat FILE1\n"
+	wait:TR1,TR2,"xyzzy#","xyzzy#",l7,l7,FILE2
+	goto:timeout
+	label:l7
+	time:done
+endloop
+label:done
+send:"exit\n"
+wait:TR1,TR1,"# ","$ ",l8,l8
+goto:timeout
+label:l8
+msg:"TEST done: %d iterations completed"
+exit:0

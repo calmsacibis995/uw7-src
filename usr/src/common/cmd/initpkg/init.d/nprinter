@@ -1,0 +1,46 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/nprinter	1.2"
+#ident	"$Id$"
+
+#	Nprinter Startup
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+CAT=uxrc
+LABEL="UX:$0"
+
+eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -C -v binary_directory -v nprinter_config_directory`
+NWBIN=$binary_directory
+NPRINTDIR=$nprinter_config_directory
+USAGE="$0 { start | stop }"
+
+if [ ! -d $NWBIN ]
+then			
+	# have to have /usr mounted
+	exit 1
+fi
+
+case $1 in
+'start')
+
+	# remove the nprinter.pid if one exists.
+	rm -f $config_dir/$NPRINTDIR/nprinter.pid	
+	LC_MESSAGES="$LANG" $NWBIN/restartnp
+	;;
+
+'stop')
+
+	# remove the nprinter.pid file since we are going down.
+	rm -f $config_dir/$NPRINTDIR/nprinter.pid	
+	
+	;;
+esac

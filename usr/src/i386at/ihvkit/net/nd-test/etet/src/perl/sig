@@ -1,0 +1,43 @@
+#!/bin/sh
+usrinclude="/usr/include"
+: generate list of signal names
+case "$sig_name" in
+'')
+#first try /usr/include
+    set X `cat $usrinclude/signal.h $usrinclude/sys/signal.h 2>&1 | awk '
+$1 ~ /^#define$/ && $2 ~ /^SIG[A-Z0-9]*$/ && $3 ~ /^[1-9][0-9]*$/ {
+    sig[$3] = substr($2,4,20)
+    if (max < $3 && $3 < 60) {
+	max = $3
+    }
+}
+
+END {
+    for (i=1; i<=max; i++) {
+	if (sig[i] == "")
+	    printf "%d", i
+	else
+	    printf "%s", sig[i]
+	if (i < max)
+	    printf " "
+    }
+    printf "\n"
+}
+'`
+    shift
+#if usr include didn't work, try 'csh'
+    case $# in
+    0)  echo 'kill -l' >/tmp/foo$$
+	set X `csh -f </tmp/foo$$`
+	shift
+#if csh didn't work, usr a hard coded list
+	case $# in
+	0)set HUP INT QUIT ILL TRAP IOT EMT FPE KILL BUS SEGV SYS PIPE ALRM TERM
+	    ;;
+	esac
+	;;
+    esac
+    sig_name="NONE $*"
+    ;;
+esac
+echo $sig_name

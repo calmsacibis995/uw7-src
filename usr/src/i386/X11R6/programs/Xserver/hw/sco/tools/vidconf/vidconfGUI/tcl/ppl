@@ -1,0 +1,930 @@
+#******************************************************************************
+#                                ppl
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)ppl	11.1	10/22/97	12:39:05
+#	@(#) ppl 12.9 96/02/12 
+#
+# Copyright (C) 1995-1997 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+# globals for this module
+set pplpos 1
+set DESTROYED 0
+
+#==========================================================================
+# VideoPPL --
+#	Displays a point and pick list containing all video adapters.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc VideoPPL {cbs} \
+{
+   global OK FAIL pplpos screenList screenIndex
+   global MINPPLCOLS MAXPPLROWS MINPPLROWS
+   global DESTROYED GRAFINFO
+ 
+   VtLock
+   set dialog [keylget cbs dialog]
+
+   SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_VIDEO_LOAD]
+   LoadVideos
+   set vidfn [VtFormDialog $dialog.vidfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_VIDEO_TITLE] \
+        -borderWidth [IsCharm] \
+        -ok -okCallback ProcessPPLSelection \
+	-cancel -cancelCallback VxEndFormCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+
+   set action [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_PPL_VIDEO_ACTION]
+   set vlab [VtLabel $vidfn.vlab -label $action]
+
+   set vcols $MINPPLCOLS
+   set itemlist [BuildScreenList "VIDEO_LIST" vcols]
+
+   # there were no grafinfo files or no .xgi files with valid data
+   if {$itemlist == ""} {
+	VtDestroyDialog $vidfn
+	FatalErrMesg \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_GRAFINFO_FILES \
+			[list $GRAFINFO]] \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+		$FAIL
+	# not reached
+   }
+
+   # determine longest string
+   set tmpcols [string length $action]
+   if {$vcols < $tmpcols} {
+	set vcols $tmpcols
+   }
+
+   # adjust number of cols as appropriate
+   set vcols [SetColumnFudge [SetMaxPPLCols $vcols]]
+
+   # determine number of rows to use
+   set rows [llength $itemlist]
+   if {$rows > $MAXPPLROWS} {
+	set rows $MAXPPLROWS
+   } elseif {$rows < $MINPPLROWS} {
+	set rows $MINPPLROWS
+   }
+
+   set pplpos 1
+   set vppl [VtList $vidfn.vppl \
+	-autoSelect 1 \
+	-rows $rows \
+	-columns $vcols \
+	-itemList $itemlist \
+	-callback ForceSelectCB \
+	-defaultCallback ProcessPPLSelection \
+	-rightSide FORM \
+	-bottomSide FORM]
+   VtSetFocus $vppl
+   SelectItem $vppl $itemlist $screenList $screenIndex
+
+   VxSetVar $vidfn FILTER VIDEOPPL
+   VxSetVar $vidfn ppllist $vppl
+   set DESTROYED 0
+   VtShow $vidfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# MonitorPPL --
+#	Displays a point and pick list containing all monitors.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MonitorPPL {cbs} \
+{
+   global OK FAIL pplpos curList curIndex
+   global MINPPLCOLS MAXPPLROWS MINPPLROWS
+   global DESTROYED MONINFO
+
+   VtLock
+   set dialog [keylget cbs dialog]
+
+   SaStatusBarSet [VxGetVar $dialog statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MONITOR_LOAD]
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   LoadMonitors
+
+   set monfn [VtFormDialog $dialog.monfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MONITOR_TITLE] \
+        -borderWidth [IsCharm] \
+        -ok -okCallback ProcessPPLSelection \
+        -cancel -cancelCallback VxEndFormCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+
+   set frame [VtFrame $monfn.frame \
+	-shadowType ETCHED_OUT]
+
+   set mlabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_PPL_VIDEO_ADAPTER \
+	[list [GetVendorPr $vendor $model] [GetModelPr $vendor $model]]]
+
+   set mlab [VtLabel $frame.mlab -label $mlabel]
+
+   set action [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_PPL_MONITOR_ACTION]
+   set alab [VtLabel $monfn.alab \
+	-label $action]
+
+   set moncols $MINPPLCOLS
+   set itemlist [BuildScreenList "MONITOR_LIST" moncols]
+   # there were no moninfo files or no .mon files with valid data
+   if {$itemlist == ""} {
+	VtDestroyDialog $monfn
+	FatalErrMesg \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_MONINFO_FILES \
+			[list $MONINFO]] \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR]] \
+		$FAIL
+	# not reached
+   }
+
+   # determine longest string
+   set tmpcols [string length $mlabel]
+   if {$moncols < $tmpcols} {
+	set moncols $tmpcols
+   }
+   set tmpcols [string length $action]
+   if {$moncols < $tmpcols} {
+	set moncols $tmpcols
+   }
+
+   # adjust number of cols as appropriate
+   set moncols [SetColumnFudge [SetMaxPPLCols $moncols]]
+
+   # determine number of rows to use
+   set rows [llength $itemlist]
+   if {$rows > $MAXPPLROWS} {
+	set rows $MAXPPLROWS
+   } elseif {$rows < $MINPPLROWS} {
+	set rows $MINPPLROWS
+   }
+
+   set pplpos 1
+   set mppl [VtList $monfn.mppl \
+	-autoSelect 1 \
+	-rows $rows \
+	-columns $moncols \
+	-itemList $itemlist \
+	-callback ForceSelectCB \
+	-defaultCallback ProcessPPLSelection \
+	-rightSide FORM \
+	-bottomSide FORM]
+   VtSetFocus $mppl
+
+   SelectItem $mppl $itemlist $curList $curIndex
+
+   VxSetVar $monfn FILTER MONITORPPL
+   VxSetVar $monfn ppllist $mppl
+   set DESTROYED 0
+   VtShow $monfn
+   VtUnLock
+}
+
+
+proc PerformTestCB { cbs } \
+{
+	global appvals TESTMODE
+
+	set class $appvals(selectedClass)
+	set mode $appvals(selectedMode)
+
+	set TestStatus [system "$TESTMODE -d [GetCurVendor].[GetCurModel].$class.$mode "]
+	InfoMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_COMPLETE]
+}
+
+proc CancelTestCB { cbs } \
+{
+}
+
+#==========================================================================
+# TestFunctionCB -- (for now, only a message display)
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc TestFunctionCB { cbs } \
+{
+	global resPos appvals
+
+	set dialog [keylget cbs dialog]
+	# ppl list widget holding selection
+	set widget [VxGetVar $dialog ppllist]
+
+	set pos [VtListGetSelectedItem $widget -byPositionList]
+#
+#	save the selections in the appvals array for use by
+#	the PerformTestCB
+#
+	set appvals(selectedClass) [lindex $resPos($pos) 0]
+	set appvals(selectedMode) [lindex $resPos($pos) 1]
+
+	set WarnMsg "[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_WARNING_0] [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_WARNING_1] [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_WARNING_2]"
+	Getyn $WarnMsg \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_CONTINUE] PerformTestCB \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_TEST_CANCEL] CancelTestCB
+}
+
+#==========================================================================
+# ResolutionPPL --
+#	Displays a point and pick list containing all resolutions for 
+#	the selected video adapter.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ResolutionPPL {cbs} \
+{
+   global pplpos curList curIndex appvals
+   global MINPPLCOLS MAXPPLROWS MINPPLROWS
+   global DESTROYED
+
+   VtLock
+   set dialog [keylget cbs dialog]
+   SaStatusBarSet [VxGetVar $dialog statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_RESOLUTION_LOAD]
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   SetVideos [list [list $vendor $model]]
+
+	if $appvals(onlocalhost) {
+   set resfn [VtFormDialog $dialog.resfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_RESOLUTION_TITLE] \
+        -borderWidth [IsCharm] \
+        -ok -okCallback ProcessPPLSelection \
+	-applyLabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MAIN_TEST] \
+	-applyCallback TestFunctionCB \
+        -cancel -cancelCallback ChkRemoveResCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+	} else {
+   set resfn [VtFormDialog $dialog.resfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_RESOLUTION_TITLE] \
+        -borderWidth [IsCharm] \
+        -ok -okCallback ProcessPPLSelection \
+        -cancel -cancelCallback ChkRemoveResCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+	}
+
+   set rlabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_PPL_VIDEO_ADAPTER \
+		[list [GetVendorPr $vendor $model] [GetModelPr $vendor $model]]]
+
+   set frame [VtFrame $resfn.frame \
+        -shadowType ETCHED_OUT]
+
+   set rlab [VtLabel $frame.rlab -label $rlabel]
+
+   set action [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_PPL_RESOLUTION_ACTION]
+   set alab [VtLabel $resfn.alab \
+	-label $action]
+
+   set rescols $MINPPLCOLS
+   set itemlist [BuildScreenList "RESOLUTION_LIST" rescols]
+
+   # determine longest string
+   set tmpcols [string length $rlabel]
+   if {$rescols < $tmpcols} {
+	set rescols $tmpcols
+   }
+   set tmpcols [string length $action]
+   if {$rescols < $tmpcols} {
+	set rescols $tmpcols
+   }
+
+   # adjust number of cols as appropriate
+   set rescols [SetColumnFudge [SetMaxPPLCols $rescols]]
+
+   # determine number of rows to use
+   set rows [llength $itemlist]
+   if {$rows > $MAXPPLROWS} {
+	set rows $MAXPPLROWS
+   } elseif {$rows < $MINPPLROWS} {
+	set rows $MINPPLROWS
+   }
+
+   set pplpos 1
+   set rppl [VtList $resfn.rppl \
+	-autoSelect 1 \
+        -rows $rows \
+        -columns $rescols \
+        -itemList $itemlist \
+	-callback ForceSelectCB \
+	-defaultCallback ProcessPPLSelection \
+	-rightSide FORM \
+	-bottomSide FORM]
+   VtSetFocus $rppl
+
+   SelectItem $rppl $itemlist $curList $curIndex
+
+   VxSetVar $resfn FILTER RESPPL
+   VxSetVar $resfn ppllist $rppl
+   set DESTROYED 0
+   VtShow $resfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# ProcessPPLSelection --
+#       Callback for video adapter, monitor and resolution
+#	point and pick lists.
+#	
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ProcessPPLSelection {cbs} \
+{
+   global OK FAIL
+   global VLOADED
+   global videoList monitorList resPos
+   global screenList screenIndex
+   global curList curIndex
+   global DESTROYED
+
+   # Enter in list widget calls okCallback and defaultCallback
+   # By the time the second callback gets here the VtListGetSelectedItem
+   # fails because the widget is gone.
+   #XXX - is this a bug?
+   if {$DESTROYED} {
+	return
+   }
+   set DESTROYED 1
+
+   set dialog [keylget cbs dialog]
+   # ppl list widget holding selection
+   set widget [VxGetVar $dialog ppllist]
+
+   # check list type so we call correct routine. 0=VtList, 1=VtDrawnList
+   set flag 0
+   catch {set flag [VxGetVar $widget listtype]}
+   if {$flag == 1} {
+   	set pos [VtDrawnListGetSelectedItem $widget -byPositionList]
+   } else {
+   	set pos [VtListGetSelectedItem $widget -byPositionList]
+   }
+
+   set filter [VxGetVar $dialog FILTER]
+   if {$filter == "AUTOPPL"} {
+      set pos [VtDrawnListGetSelectedItem $widget -byPositionList]
+      # translate the position in the autodetect ppl list to videoListMap
+      set pos [lindex [VxGetVar $dialog "posmap"] [incr pos -1]]
+      # now act as though we came through VIDEOPPL ...
+      set filter "VIDEOPPL"
+   }
+   if {$filter == "VIDEOPPL"} {
+      # button origin refers to either Add or Modify from the main screen
+      set button [VxGetVar [GetMainDialogID] BUTTON]
+   } else {
+      if {$filter == "RESPPL"} {
+	if {[GetScreenType] == "MODIFY_SCREEN"} {
+	   ResCheckDup $dialog [lindex $resPos($pos) 0] [lindex $resPos($pos) 1]
+	}
+      }
+      # dlist - refers to the drawnlist widget passed in from the 
+      #	        previous screen that called the ppl.
+      set dlist [VxGetVar [GetMainDialogID] DLISTID]
+   }
+   VtDestroyDialog $dialog
+
+   case $filter {
+   "VIDEOPPL"
+      {
+      # videoList pos(ition) corresponds to the pos index of videoList
+      keylget videoList($pos) VENDOR vendor
+      keylget videoList($pos) MODEL model
+      # description for new selection
+      set vendormodelPr \
+	[list "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"]
+
+      # Determine if any CARDs in screenList match the new selection.
+      # If any do, do a Modify otherwise do an Add.  If Modify button 
+      # was used and non of the Card descriptions match the new selected 
+      # card, warn them and then delete the old card and then Add a new one.  
+      set type {}
+      set len [llength $screenList]
+      for {set cnt 0} {$cnt < $len} {incr cnt} {
+      	  set elem [lindex $screenList $cnt]
+      	  keylget elem TYPE type
+	  # just need to check the type CARDS - they hold the description
+	  if {$type == "CARD"} {
+	     keylget elem DESCRIPTION desc
+	     set desc [list $desc]
+
+             if {$desc == $vendormodelPr} {
+	        # selection made matched a card already configured
+		if {[GetScreenType] == "ADD_SCREEN"} {
+		   # ADD_SCREEN but same card selected, proceed to modify
+		   SetScreenType "MODIFY_SCREEN"
+		   set screenIndex $cnt
+		   InfoMesg \
+			[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MODIFY_CONFIGURED \
+				$vendormodelPr] \
+			"InfoVideoCB $vendor $model"
+		   MainLoop
+		} else {
+		   # MODIFY_SCREEN and same card selected
+      		   AddScreenCheck $vendor $model
+		   MainLoop
+		}
+	     }
+	  }
+      }
+      # card selected not configured - make sure we do an ADD_SCREEN
+      SetScreenType "ADD_SCREEN"
+      # Code moved to a function so it can be reached via callback also
+      AddScreenCheck $vendor $model
+      }
+   "MONITORPPL" 
+      {
+      keylget monitorList($pos) MONVENDOR monvendor
+      keylget monitorList($pos) MONMODEL monmodel
+      SetCurMonVendor $monvendor
+      SetCurMonModel $monmodel
+      SetCurMonDescription
+      # update dlist which refers to the drawnList in the prior screen
+      ReDrawChainTree $dlist $curList
+
+      # check for special help on this monitor
+      set topicstring "[GetCurMonVendor].[GetCurMonModel]"
+      if {[IsHelpTopic $topicstring] == 1} {
+          DisplayHelpTopic [GetCurMonDescription] $topicstring NoopFunc
+      }
+
+      # in curList MONITOR=1 index go to RESOLUTION=2 index
+      incr curIndex 
+      # dlistCB can be either AddVideoList or ModifyVideoList 
+      # restipple and reselect list items
+      set dlistCB [VxGetVar $dlist dlistcb]
+      $dlistCB
+      SetFocusAddOK
+      }
+   "RESPPL"
+      {
+      set class [lindex $resPos($pos) 0]
+      set mode [lindex $resPos($pos) 1]
+      SetCurClass $class
+      SetCurMode $mode
+      SetCurResDescription
+
+      # updating dlist which refers to the drawnList in the prior screen
+      ReDrawChainTree $dlist $curList
+      DisplayComment $dlist
+
+      # dlistCB can be either AddVideoList or ModifyVideoList 
+      # restipple and reselect list items
+      set dlistCB [VxGetVar $dlist dlistcb]
+      $dlistCB
+      SetFocusAddOK
+
+      if {([GetScreenType] == "MODIFY_SCREEN")} {
+	 # If devices are already configured for this resolution,
+	 # we were called via Modify->Change Resolution.
+	 set ttyshead [GetCurTTYSHEAD]
+	 if {$ttyshead != "{}"} {
+	    # Modify->Change Resolution - save changed resolution to tmpttyList
+	    foreach entry $ttyshead {
+		set tty [lindex $entry 0]
+		set head [lindex $entry 1]
+
+		keylset tmpttylist VALID 1
+		keylset tmpttylist VENDOR [GetCurVendor]
+		keylset tmpttylist MODEL [GetCurModel]
+		keylset tmpttylist CLASS [GetCurClass]
+		keylset tmpttylist MODE [GetCurMode]
+
+		set adapters [GetTMPElement $tty]
+		set adapters [lreplace $adapters $head $head $tmpttylist]
+		SetTMPElement $tty $adapters
+	    }
+	 } else {
+	    FkeySetup [VxGetVar [GetMainDialogID] SUBFORMID] ChkRemoveRes
+	 }
+      }
+      }
+    default
+      {
+      FatalErrMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UNKNOWN_PP $filter] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+	$FAIL
+      # not reached
+      }
+   }
+}
+
+
+#==========================================================================
+# InfoVideoCB --
+#       The user selected a card already configured.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InfoVideoCB {vendor model cbs} \
+{
+   AddScreenCheck $vendor $model
+}
+
+
+#==========================================================================
+# AddScreenCheck --
+#	If screen type to display is ADD_SCREEN and the Modify button 
+#	was selected to get here.  Tell the user that Modifying this
+#	old Video Adapter is going to remove it and put in a new one.
+#
+#	Since a warning message is displayed we have to have the code
+#	broken out into another function.  We need to reach it via the 
+#	warning message callback and via falling through.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddScreenCheck {vendor model} \
+{
+   global screenList screenIndex
+
+   set button [VxGetVar [GetMainDialogID] BUTTON]
+   # if Modify button was used and a new card was selected from list ...
+   if {([GetScreenType] == "ADD_SCREEN") && ($button == "MODIFYBTN")} {
+	set elem [lindex $screenList $screenIndex]
+	keylget elem DESCRIPTION desc
+	set desc [list $desc]
+
+	set vendormodelPr \
+	    [list "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"]
+	WarnMesg [GetMainDialogID] \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MODIFY_VIDEO_ADAPTER \
+			"$vendormodelPr $desc"] \
+		"RemoveVideoCB $vendor $model"
+	MainLoop
+   }
+   HandleSelectedVideo $vendor $model
+}
+
+
+#==========================================================================
+# RemoveVideoCB --
+#       Removes the previously configured Video Adapter from tmpttyList.
+#
+#	Replace all entries in tmpttyList for the old vendor/model
+#	with nothing.  To do this, start at screenIndex and find 
+#	each RESOLUTION (we know we are in vendor model already) 
+#	and pull each TTYSHEAD.  Remove these ttys from tmpttysList.
+#	Do this until we reach the next CARD or end of screenList.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc RemoveVideoCB {vendor model cbs} \
+{
+   global screenList screenIndex
+
+   # screenIndex currently points to card 
+   # start cnt at screenIndex+2 to get to the first RESOLUTION
+   set len [llength $screenList]
+   for {set cnt [expr $screenIndex+2]} {$cnt < $len} {incr cnt} {
+	set elem [lindex $screenList $cnt]
+	keylget elem TYPE type
+	#echo cnt: $cnt, type: $type, elem: $elem
+	if {$type == "CARD"} {
+	   # done
+	   break
+	} elseif {$type == "RESOLUTION"} {
+	   keylget elem TTYSHEAD ttyshead
+	   foreach entry $ttyshead {
+		if {$entry == {}} { break }
+		   #echo tty/head pair: $entry
+		   set tty [lindex $entry 0]
+		   set head [lindex $entry 1]
+		   set adapters [GetTMPElement $tty]
+		   set hlen [llength $adapters]
+	           # if only one head - assign to nothing 
+		   if {$hlen == 1} {
+		      SetTMPElement $tty {}
+		   } elseif {$hlen >= [expr $head+1]} {
+			# multiple heads cases
+			set adapters [lreplace $adapters $head $head]
+			SetTMPElement $tty $adapters
+		   }
+	   }
+	}
+   }
+   HandleSelectedVideo $vendor $model
+}
+
+
+#==========================================================================
+# HandleSelectedVideo  --
+#       Handles new video adapter selection.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc HandleSelectedVideo {vendor model} \
+{
+   VtLock
+   set columns 0
+   # build screen type of either ADD_SCREEN or MODIFY_SCREEN
+   set screentype [GetScreenType]
+   BuildScreenList $screentype columns
+   VtUnLock -once
+ 
+   SetCurVendor $vendor
+   SetCurModel $model
+   SetCurDescription
+   SetVideos [list [list $vendor $model]]
+
+   # check for special help on this video adapter
+   set topicstring "[GetCurVendor].[GetCurModel]"
+   if {[IsHelpTopic $topicstring] == 1} {
+	DisplayHelpTopic [GetCurVendorModelPr] $topicstring HandleScripts
+   } else { 
+	HandleScripts
+   }
+}
+
+
+#==========================================================================
+# HandleScripts --
+#       Called after HandleSelectedVideo to execute the vidsetup and/or
+#	vidscript specified in the grafinfo file if there is one.  
+#	Then call into the Add or Modify screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc HandleScripts {{cbs {}}} \
+{
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set vidsetup [GetVidsetup $vendor $model]
+   set vidscript [GetVidscript $vendor $model]
+   if {$vidsetup != {}} {
+      CheckScript $vidsetup
+      RunScript $vidsetup 0
+   }
+   if {$vidscript != {}} { 
+      CheckScript $vidscript
+      RunScript $vidscript 1
+   }
+
+   set screentype [GetScreenType]
+   if {$screentype == "MODIFY_SCREEN"} {
+	Modify
+   } elseif {$screentype == "ADD_SCREEN"} {
+	Add
+   }
+}
+
+
+#==========================================================================
+# CheckScript --
+#       Called by HandleScripts to verify the script is valid.
+#	If script does not exist, we bounce back to main screen.
+#
+# Parameters:
+#	script - executable script name
+# Returns: none
+#--------------------------------------------------------------------------
+proc CheckScript {script} {
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+
+   set errstr [CheckExe $script]
+   if {$errstr != ""} {
+	set script [list $script]
+	set vendormodelPr \
+	      	"[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+	# ErrMesg w/ scrollbars - string contains VIDSCRIPT path - is long.
+	ErrMesg [format "%s:\n\n%s" $vendormodelPr $errstr]
+	MainLoop
+	# not reached
+   }
+}
+
+
+#==========================================================================
+# RunScript --
+#       Run the specified VIDSETUP or VIDSCRIPT script.
+#
+# Parameters:
+#	script	- executable script name
+#	interactive - flag 
+#		0=not interactive (VIDSETUP), 1=interactive (VIDSCRIPT)
+# Returns: none
+#--------------------------------------------------------------------------
+proc RunScript {script interactive {vendor {}} {model {}}} {
+   global OK FAIL VIDSETUP_ERR
+   global videoList VLOADED vlMapCnt
+
+   if {[IsInteractive]} {
+      set vendor [GetCurVendor]
+      set model [GetCurModel]
+   }
+   if {! $interactive} {
+      # VIDSETUP (non-interactive) - save off possible errors to VIDSETUP_ERR
+      set cmd [format %s%s $script " > $VIDSETUP_ERR 2>&1" ]
+      set retstatus [RunCommand $cmd $interactive]
+   } else {
+      # VIDSCRIPT (interactive) - errors are echo'd in the script.
+      set retstatus [RunCommand $script $interactive]
+   }
+   # retstatus == {status} {mesg}
+   set status [lindex $retstatus 0]
+   set mesg [lindex $retstatus 1]
+   if {! $interactive} {
+       # VIDSETUP script
+       if {$status != 0} {
+	    # VIDSETUP exited with a non-zero exit status.  Display 
+	    # error message (include VIDSETUP_ERR file contents).
+	    set errstr ""
+	    for_file line $VIDSETUP_ERR {
+		append errstr [format "$line\n"]
+	    }
+	    system "rm -f $VIDSETUP_ERR"
+	    set vendormodelPr \
+		"[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+
+	    # VIDSETUP_ERR could be empty - still display that script failed.
+	    ErrMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_VIDSETUP \
+			[list "$vendormodelPr" "$errstr"]]
+	    if {![IsInteractive]} {
+		ExitErrMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] $FAIL
+	    }
+	    MainLoop
+	}
+   } else {
+       # VIDSCRIPT script
+       if {$status != 0} {
+	    # VIDSCRIPT exited with a non-zero exit status. Bounce back
+	    # to main screen and let them start over.  This probably means 
+	    # that the user aborted the script or didn't configure the card 
+	    # properly - don't display an error message here.
+	    MainLoop
+	} else {
+	 # No error occurred
+	 # get all the model files currently in this vendors directory
+	 # check later to see what new files were created by the script if any.
+	 set models [GetVendorModels $vendor]
+
+         # remove old videoList, cause a new one to be created,
+         # reload videoList to keep parallel lists in sync
+         # with new xgi files that might have been created by VIDSCRIPT.
+	 #
+	 # NOTE: Via AutoDetect route, the only settings in videoList are
+	 # those starting at vlMapCnt.  Do not unset videoList or we loose
+	 # RESOLUTIONS for cards already configured.
+         set VLOADED 0
+	 if {[info exists videoList]} {
+	    if {$vlMapCnt == 1000} {
+	    	unset videoList
+	    }
+	 }
+   	 SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	     [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_VIDEO_RELOAD]
+         LoadVideos
+
+	 # reload all preexisting ttyList resolutions that we just blew away
+   	 InitTTYListPrompts
+
+         # figure out what new .xgi file(s) (models) were created if any
+	 set model [GetNewVendorModel $vendor $model $models]
+	 SetCurModel $model
+
+	 # vendor/model xgi file was updated, get new information
+         SetVideos [list [list $vendor $model]]
+	} 
+   }
+}
+
+
+#==========================================================================
+# ForceSelectCB --
+#       If they make a selection and then try to select again, 
+#	force the same selection.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ForceSelectCB {cbs} \
+{
+   global pplpos
+
+   set widget [keylget cbs widget]
+   set pplpos [GetListSelection $widget $pplpos]
+}
+
+
+#==========================================================================
+# SelectItem -- 
+#
+#	Select item and display in view port of list.
+#
+# Parameters: 
+#	widget - regular or drawn list widget to make selection in
+#	itemlist - list of items in drawn list widget
+#	list - actual curList or screenList list
+#	listIndex - index in above list
+# Returns: none
+#--------------------------------------------------------------------------
+proc SelectItem {widget itemlist list listIndex {drawn ""}} \
+{
+    if {$drawn != ""} {
+        set drawn Drawn
+    }
+
+   # NOTE:
+   # first item in string list to search starts at index=0
+   # first item in a VtList is at index=1, not at 0.
+   set index -1
+   set desc ""
+   set elem [lindex $list $listIndex]
+   keylget elem DESCRIPTION desc
+   set desc [string trim $desc]
+
+   # default list selection to previously configured card - if there is one
+
+   # Do not select an element if itemlist has 0 elements.
+   # One element in itemlist, make it the default selection.
+   # If there was a previous selection, default to this element.
+   # If there isn't a default selection, select the first element.
+   set itemlen [llength $itemlist]
+   if {$itemlen == 1} { 
+      set desc [string trim [lindex $itemlist 0]]
+      set index 0
+   } elseif {$itemlen > 1} {
+      set index [lsearch -exact $itemlist $desc]
+      # desc could be SCO_VIDCONF_GUI_MSG_NOADAPTERS which won't match
+      # select the first element
+      if {$index == -1} {
+         set desc [string trim [lindex $itemlist 0]]
+         set index 0
+      }
+   }
+
+   if {$index != -1} {
+      # Raise the selected element into the view port.
+      Vt${drawn}ListSelectItem $widget -position [expr $index+1]
+      Sa${drawn}ListShowSelectedItem $widget 0
+      #VtSetValues $widget -topItemPosition [expr $index+1]
+      #echo "Item selected at $index: $desc"
+   }
+}
+
+
+#==========================================================================
+# ResCheckDup --
+# 	Verify new resolution isn't the same as one already configured.
+#
+# Parameters:
+#	dialog - of parent form
+#	class - class of selected resolution
+#	mode - mode of selected resolution
+# Returns: none
+#--------------------------------------------------------------------------
+proc ResCheckDup {dialog class mode} \
+{
+   global curList DESTROYED
+
+  set len [llength $curList]
+  for {set cnt 2} {$cnt < $len} {incr cnt} {
+      set adapter [lindex $curList $cnt]
+      set curclass [keylget adapter CLASS]
+      set curmode [keylget adapter MODE]
+      if {($curclass == $class) && ($curmode == $mode)} {
+	 set DESTROYED 0
+   	 set vendor [keylget adapter "VENDOR"]
+   	 set model [keylget adapter "MODEL"]
+         set resdesc [GetClassModePr $class $mode \
+				[GetResolutions $vendor $model]]
+	 WarnMesg $dialog \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PPL_RES_CONFIGURED \
+		[list $resdesc]]
+	 MainLoop
+      }
+  }
+}

@@ -1,0 +1,267 @@
+#ident  "@(#)can_table	16.11	98/03/03"
+#
+# can_table
+#
+#
+# This file contains a table describing individual "cans", "services", 
+# and "packages", and the interdependencies between them.
+# The table is meant to be edited by hand.
+#
+# 
+# Canned configurations are collections of services (and possibly packages).
+# Services are collections of packages.
+#
+#
+# To define the list of absolutely required packages for installation:
+#       REQUIRED_PKGS   base ls ...        
+#
+# To define the list of packages that should *never* be installed:
+#       FORBIDDEN_PKGS  dshm osmp compaq nwsup nwsrv ... 
+# Note:  REQUIRED_PKGS override FORBIDDEN_PKGS.
+#
+# To define a CAN, the format is:
+#	CAN <shortname>
+#		LABEL <ISL screen item label>
+#		DESC  <ISL screen descriptive text, line1>
+#		      <line2...>
+#		SVCS  <shortnames of SERVICEs comprising this CAN>
+#		PKGS  <shortnames of loose PACKAGEs also in this CAN>
+# The SVCS field is now ignored and should be removed from CAN definitions.
+# The PKGS field is required.
+#
+# To define a SERVICE, the format is:
+#	SERVICE <shortname>
+#		LABEL <ISL screen item label>
+#		DESC  <ISL screen descriptive text, line1>
+#		      <line2...>
+#		PKGS  <shortnames of PACKAGEs comprising this SERVICE>
+# The PKGS field is required.
+#
+# To define a PACKAGE, the format is:
+#	PACKAGE <package name abbreviation (see "man 4 pkginfo")>
+#		LABEL <ISL screen item label>
+#		DESC  <ISL screen descriptive text, line1>
+#		      <line2...>
+#		PKGS  <shortnames of other PACKAGEs required by this PACKAGE>
+# The PKGS field is present only when the package depends upon other packages.
+# Note: The gen.pkg.table script automatically generates the pkg_table file
+#       containing PACKAGE definitions.  
+#       Should PACKAGEs ever be defined by hand in this can_table file?
+#       What PACKAGE would not have a pkginfo file for gen.pkg.table to scan?
+#
+# Only DESC fields can span multiple lines.
+# See header comments in the gen.can.ifile script for notes on 
+# translated DESC fields in can_desc.* files.
+#
+
+
+################################################################################
+# Design issues (things to do):
+# Potential extensions to the format and/or content of this file 'can_table':
+#
+# 1)	Hand-crafted PACKAGE definitions: see Note above.
+#	Impact on 'services' UI module:  low.
+#
+# 2)	Package incompatibility:
+#		Some packages are incompatible with others.
+#		If a new tag could be added to the PACKAGE definition
+#			NOT_WITH <pkg ...>
+#		and tranlated into 
+#			pkg_not_with[pkg]="pkg ..."
+#		telling the 'services' UI modules to present radio-buttons
+#		rather than check-boxes in the package choice popup for
+#		a given service.
+#		Note that this solution works only if the incompatible packages
+#		could be logically grouped into a single service which would
+#		present its packages as a radio-buttons rather than check-boxes.
+#		This is overly simplistic.  It is entirely likely that
+#		incompatible packages would span services.
+#	Impact on 'services' UI module:  high.
+#
+# 3)	Products represented as services:
+#		Products are often collections of packages.  
+#		If a product requires all its packages be installed,
+#		then the product should be defined as its own SERVICE.
+#		Currently there is no way to indicate that all of the packages
+#		for a given service are required.
+#		A new tag could be added to the SERVICE definition
+#			ALL_PKGS_REQUIRED
+#		and translated into 
+#			svc_pkgs_req[99]=yes
+#		For a service so marked, the 'services' UI module would 
+#		never popup a package selector for that service; instead,
+#		as that service is toggled on or off, all of its packages
+#		would be selected or unselected.
+#	Impact on 'services' UI module:  low.
+#
+# 4)	Product incompatibilities:
+#		Just as a package can be incompatible with >=0 packages,
+#		a service (product) could be incompatible with >=0 services,
+#		and/or a service could be incompatible with >=0 packages.
+#		Perhaps the NOT_WITH tag could be used for pkg-pkg, prod-prod
+#		and prod-pkg, provided the shortnames are all unique.
+#		How to preserve usability under such a scheme?
+#		What happens if the user installs an incompatible package
+#		after ISL?  Do packages check for this and spew warnings?
+#		Unfortunately, while the user determines the order of packages
+#		that are installed manually, the ISL might install packages
+#		in an order that defeats any incompatibility checking done
+#		by a given package.
+#	Impact on 'services' UI module:  high.
+################################################################################
+
+REQUIRED_PKGS base ls acp nsu terminf expect tclrun vtclrun scoadmin
+
+LOCALIZED_PKGS de:dele:ls fr:frle:ls es:esle:ls de:TEDlde:TEDdesk fr:TEDlfr:TEDdesk es:TEDles:TEDdesk ja:TEDljpe:TEDdesk de:TEDhde:TEDhelp fr:TEDhfr:TEDhelp ja:TEDhjpe:TEDhelp
+
+FORBIDDEN_PKGS dshm
+
+CAN small
+	LABEL	Small Footprint Server
+	DESC	Choose this profile to install the base operating system
+		and base networking on systems with small memory (<32MB)
+		or disk space (<500MB). This profile does not include
+		graphics services or online documentation.
+	SVCS	utilities network language datamgmt
+	PKGS	base acp cmds inet lp nics nsu terminf scoadmin expect tclrun vtclrun ls
+
+CAN custom	
+	LABEL	Full (All Packages)
+	DESC	Choose this profile to install all packages in the runtime
+		set except multiprocessor support and language supplements.
+		You may need to add additional licenses after installation.
+		See the Installation Guide for details.
+	SVCS	utilities network internet graphics desktop database language netware documentation datamgmt windowsconn
+	PKGS	base lp tclrun expect vtclrun nsu acp mtfrun scoadmin basex xserver xdrivers xclients xcontrib xfonts nsnavAu nsadmin nsfast jdk113 NAVIdoc FTRKdoc scohelp audio TEDlogin TEDdesk TEDdocs TEDhelp TEDman nics netmgt inet netbios ppp server dfs rpc nfs nis ldap nwnet nuc terminf cmds bsdcompat audit acl vxvm vxva uccs uedebug ls BASEdoc BASEman ARCserve ARCdoc visionfs termlite perl5
+
+SERVICE utilities
+	LABEL	Extended OS Utilities
+	DESC	Application compatibility, auditing, compilers, advanced
+		commands, kernel debugger, system administration utilities,
+		multiprocessor support, and printer support.
+	PKGS	lp acl acp audio audit bsdcompat uccs cmds kdb expect tclrun vtclrun terminf scoadmin uedebug osmp mpio perl5
+
+SERVICE network		
+	LABEL	Networking Services
+	DESC	TCP/IP, NFS, and related Internet technologies.
+	PKGS	ldap netbios netmgt nfs nics nis nsu rpc dfs inet ppp server
+
+SERVICE graphics	
+	LABEL	Graphics Services
+	DESC	X11R6 Server, OSF/Motif, SCO Visual Tcl, and video drivers.
+	PKGS	xserver	xfonts xdrivers basex mtfrun xclients xcontrib TEDlogin
+
+SERVICE desktop	
+	LABEL	Desktop Services
+	DESC	The Common Desktop Environment (CDE) desktop.
+	PKGS	TEDdesk TEDdocs TEDhelp TEDman TEDlde TEDles TEDlfr TEDljpe TEDhde TEDhfr TEDhjpe
+
+SERVICE database	
+	LABEL	Online Virtual Disk Volume Administration
+	DESC	Online Virtual Disk Volume administration and management.
+	PKGS	vxva vxvm 
+
+SERVICE language
+	LABEL	Language Supplements
+	DESC	Support for language extensions.
+	PKGS	dele esle frle jale ls
+
+SERVICE documentation
+	LABEL	Documentation Services
+	DESC	Online help topics, manual pages, and documentation services.
+	PKGS	scohelp BASEman BASEdoc
+
+SERVICE internet
+	LABEL	Internet Services
+	DESC	Internet web browsers and servers.
+	PKGS	nsnavAu nsadmin nsfast jdk113 NAVIdoc FTRKdoc
+
+SERVICE datamgmt
+	LABEL	Data Management Services
+	DESC	SCO ARCserve/Open backup and restore.
+	PKGS	ARCserve ARCdoc
+
+SERVICE windowsconn
+	LABEL	Windows Integration Services
+	DESC	Windows integration and connectivity services.
+	PKGS	visionfs termlite
+
+#SERVICE doctor
+#	LABEL	SCO Doctor
+#	DESC	System monitoring and alert services (not yet available).
+#	PKGS	base
+
+SERVICE netware
+	LABEL	SCO NetWare
+	DESC	NetWare Unix client and integration kit.
+	PKGS	nuc nwnet 
+
+#SERVICE afps
+#	LABEL	Advanced File and Print Services
+#	DESC	Windows compatible file and print services (not yet available).
+#	PKGS	base
+
+SET UnixWare
+	LABEL	Core System Services
+	DESC	System services supplied by UnixWare platform.
+	SVCS	utilities network graphics desktop database language netware
+
+SET BaseWeb
+	LABEL	Internet Services
+	DESC	Internet web browsers and servers.
+	SVCS	internet
+
+SET doc
+	LABEL	Documentation Services
+	DESC	Online help topics, manual pages, and documentation services.
+	SVCS	documentation
+
+SET arcserve
+	LABEL	Data Management Services
+	DESC	SCO ARCserve/Open backup and restore.
+	SVCS	datamgmt
+
+SET winsrvcs
+	LABEL	Windows Integration Services
+	DESC	Windows integration and connectivity services.
+	SVCS	windowsconn
+
+LICENSE Base
+	LABEL	Base Edition
+	ID	130
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Enterprise
+	LABEL	Enterprise Edition
+	ID	132
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun vxva vxvm xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Development
+	LABEL	Development System
+	ID	128
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf uccs uedebug vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Departmental
+	LABEL	Departmental Edition
+	ID	131
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Intranet
+	LABEL	Intranet Edition
+	ID	234
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Messaging
+	LABEL	Messaging Edition
+	ID	235
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Free
+	LABEL	Free UnixWare 7
+	ID	129
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun xclients xcontrib xdrivers xfonts xserver
+
+LICENSE Business
+	LABEL	Business Edition
+	ID	236
+	PKGS	ARCdoc ARCserve BASEdoc BASEman TEDdesk TEDdocs TEDhelp TEDlogin TEDman acl acp audio audit base basex bsdcompat cmds dfs expect inet ldap lp ls mtfrun netbios netmgt nfs nics nis nsadmin nsfast nsnavAu jdk113 NAVIdoc FTRKdoc nsu nuc nwnet nwsup perl5 ppp rpc scoadmin scohelp server tclrun terminf termlite uccs uedebug visionfs vtclrun xclients xcontrib xdrivers xfonts xserver

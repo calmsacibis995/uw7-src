@@ -1,0 +1,82 @@
+#!/sbin/sh
+#ident	"@(#)initialize	15.1"
+[ -n "$SH_VERBOSE" ] && set -x
+
+function Add_Flop_To_Device_Tab
+{
+#$1 is drive number (1 or 2)
+#$2 is the drive type (CMOS val)
+#$3 is the /dev/dsk and /dev/rdsk name for the drive
+
+	case $2 in
+	1) DESC="5.25 inch (Low Density) Drive $1"
+	   BLKS=702
+	   DENS="mdens$1LOW"
+	   BLKCYLS=18;;
+	2) DESC="5.25 inch (High Density) Drive $1"
+	   BLKS=2370
+	   DENS="mdens$1HIGH"
+	   BLKCYLS=30;;
+	3) DESC="3.5 inch (Low Density) Drive $1"
+	   BLKS=1422
+	   DENS="mdens$1LOW"
+	   BLKCYLS=18;;
+	4|5|6) DESC="3.5 inch (High Density) Drive $1"
+	   BLKS=2844
+	   DENS="mdens$1HIGH"
+	   BLKCYLS=36;;
+	*) return 0;;
+	esac
+# SVR4.0-style entry.  /usr/bin/ddbconv (run from pkg/base/ifiles/postreboot.sh)
+# converts /etc/device.tab to the new format.
+echo 'diskette'$1':/dev/rdsk/'$3':/dev/dsk/'$3'::desc="'${DESC}'" volume="diskette" capacity="'${BLKS}'" type="'${DENS}'" removable="true" display="false" copy="true" mkdtab="true" mkfscmd="/sbin/mkfs -Fs5 -b 512 /dev/rdsk/'$3 ${BLKS} 2 ${BLKCYLS}'" mountpt="/install" fmtcmd="/usr/sbin/format -i2 /dev/rdsk/'$3'"' >> /etc/device.tab
+}
+
+function SaveFlopEntry
+{
+# $1 is drive number (0 or 1 -- note we will use Drive 1/Drive 2 as
+# user interface to be consistent w/OA&M labels for floppies
+# $2 is the return val from check_devs, indicating what's in BIOS
+
+	integer NUM=${1}+1
+	case $2 in
+
+	1) DRIVE=f${1}d9dt;;
+	2) DRIVE=f${1}q15dt;;
+	3) DRIVE=f${1}3dt;;
+	4|5|6) DRIVE=f${1}3ht;;
+	*) return 0;;
+
+	esac
+
+	grep $DRIVE /etc/device.tab >/dev/null || Add_Flop_To_Device_Tab $NUM $2 $DRIVE
+}
+
+function CheckFloppyDrive
+{
+	check_devs -f 1
+	rc=$?
+	SaveFlopEntry 0 $rc
+	check_devs -f 2
+	rc=$?
+	SaveFlopEntry 1 $rc
+}
+
+# main()
+[ "${INSTALL_TYPE}" = "NEWINSTALL" ] && {
+	print "$RELEASE	PREINST" >$UNIX_REL
+}
+if [ ! -d /var/options ] 
+then
+	# in case they are files
+	rm -rf /var/options /usr/options 1>/dev/null 2>/dev/null
+	# create directory and link 
+	mkdir -p /var/options 1>/dev/null 2>/dev/null
+	ln -s /var/options /usr/options 1>/dev/null 2>/dev/null
+fi
+
+# SVR4.0-style entry.  /usr/bin/ddbconv (run from pkg/base/ifiles/postreboot.sh)
+# converts /etc/device.tab to the new format.
+grep "^spool:" /etc/device.tab >/dev/null || echo 'spool:::/var/spool/pkg:desc="Packaging Spool Directory"'>>/etc/device.tab
+
+CheckFloppyDrive

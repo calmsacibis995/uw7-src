@@ -1,0 +1,439 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxdisksetup.sh	1.2 3/3/97 03:28:54 - cmd.vxvm:unixware/support/vxdisksetup.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxdisksetup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+set_OS_variables
+exec 4>&2
+
+# usage - print a short usage message
+usage() {
+	cat <<! >&2
+`egettxt "\
+Usage: vxdisksetup [-nie] disk-device-address [ attribute ... ]
+
+For detailed help use: vxdisksetup -h
+" vxvmshm:533`
+!
+}
+
+# fullusage - print a verbose usage message
+fullusage() {
+	cat <<! >&2
+`egettxt "\
+vxdisksetup - setup a disk for use with the volume manager
+
+Usage: vxdisksetup [-nie] disk-device-address [ attribute ... ]
+
+Options:
+    -n	Don't perform surface analysis
+    -i	Initialize the private region
+    -e	Allocate the private region at the end of the disk
+
+Attributes:
+    publen=<number>	   Length of public region (used to contain subdisks).
+    privlen=<number>       Length of private region (used for VM private data).
+    puboffset=<number>	   Offset to partition containing public region.
+    privoffset=[-]<number> Offset to partition containing private region.
+    noconfig		   Don't store configuration or log copies on the disk.
+    config		   Do store configuration and log copies (default).
+" vxvmshm:646`
+!
+}
+
+# doit - execute a command, printing the command in verbose mode
+doit() {
+	[ "$verbose" ] && cat <<-% >&4
+			! $*
+			%
+	"$@"
+}
+
+# errmsg - print an error message
+errmsg() {
+	cat <<-! >&2
+	vxdisksetup: $*
+	!
+}
+
+xerrmsg() {
+	if [ "$1" = "-M" ]
+	then
+		_err_cat="$2"
+		_err_def="$3"
+		shift 3
+		_err_msg="`egettxt \"$_err_def\" \"$_err_cat\" \"$@\"`"
+	else
+		_err_msg="$*"
+	fi
+	errmsg "$_err_msg"
+}
+
+# attrvalue - extract the value for an attribute argument
+
+# Usage: attrvalue variable attribute regexp min-value match-error-message
+attrvalue() {
+	if [ "X$3" = Xlength ]
+	then
+		_val1=`expr "\$2" : "^[a-z]*=\(.*\)$"`
+		if [ -z "$_val1" ]; then
+			errmsg "$2: $5"
+			exit 1
+		fi
+		if [ -n "$4" ]; then
+			_val=`strtovoff -n -m $4 -- "\$_val1"`
+		else
+			_val=`strtovoff -n -- "\$_val1"`
+		fi
+		if [ -z "$_val" ]; then
+			errmsg "$2: $5"
+			exit 1
+		fi
+		[ "$_val" -eq 0 ] && {
+			case $_val1 in
+			-*)	_val=-$_val;;
+			esac
+		}
+	else
+		_val=`expr "\$2" : "^[a-z]*=\($3\)$"`
+		if [ -z "$_val" ]; then
+			errmsg "$2: $5"
+			exit 1
+		fi
+	fi
+	eval "$1=\$_val"
+}
+
+
+# argument processing
+
+noanalyze=n
+doinit=
+privatend=
+publen=
+privlen=
+puboffset=
+privoffset=
+noconfig=
+initattrs=
+
+#
+# The y option is actually redundant here, but makes sense in
+# asserting a user response for surface analysis
+#
+while getopts :nyiefvh c
+do
+	case $c in
+	n)	noanalyze=y;;
+	y)	;;
+	i)	doinit=y;;
+	e)	privatend=y;;
+	v)	verbose=yes;;
+	h)	fullusage; exit 1;;
+	?)	usage; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ $# -lt 1 ]
+then
+	usage
+	exit 1
+fi
+address=$1
+shift
+
+
+# The device address must be in the form of a SCSI disk address.
+# The $VOL_FULL_SLICE suffix will be added to form the accessname, and 
+# the appropriate raw disk directory path name will be prefixed to define
+# the path to access the disk raw device.
+
+if vxcheckda $address > /dev/null 2> /dev/null
+then
+	if not dogi_name_is_device $address
+	then
+		invalid_device=yes
+	else
+		dogi_name_daname $address accessname || invalid_device=yes
+		dogi_whole_slice $address wholeaddr || invalid_device=yes
+		dogi_device_rawpath $address rawpath || invalid_device=yes
+	fi
+else
+		invalid_device=yes
+fi
+
+if [ "${invalid_device}" = "yes" ]
+then
+	export address; xerrmsg -M vxvmshm:56 "\
+$address: Device address must be of the form cCbBtTdD where
+
+    C = host bus adapter controller number
+    B = host bus adapter bus number
+    T = target device controller number
+    D = logical unit (disk) number within target device controller"
+	exit 1
+fi
+
+#dogi_whole_slice $address accessname
+
+STAT_SDI_NAME=
+eval `vxparms -s $rawpath`
+if [ -z "$STAT_SDI_NAME" ]
+then
+	export address; xerrmsg -M vxvmshm:60 \
+		"$address: Invalid disk device for vxdisksetup"
+	exit 1
+fi
+if [ "X$STAT_SDI_NAME" != "X$accessname" ]
+then
+	export rawpath; xerrmsg -M vxvmshm:77 \
+		"$rawpath: Device does not match the kernel configuration"
+	exit 1
+fi
+
+
+# If any partitions on this disk are being used, or contain
+# non-standard DA records, then fail.
+
+if [ ! -f $mkdbfile ]
+then
+	dogi_darecs_on_device $address > $tmpfile1
+	if [ -s $tmpfile1 ]
+	then
+		exec 3<&0 < $tmpfile1
+		read da type dm dg stat
+		if [ "X$dm" != "X-" ]
+		then
+			export da dm type dg address;  xerrmsg -M vxvmshm:167 \
+"Disk $da is already being used as $type disk $dm in disk group $dg;
+	Disk cannot be reinitialized."
+			exit 1
+		fi
+		if [ "X$da" != "X$wholeaddr" ] ||
+		   [ "X$type" != Xsliced ]
+		then
+			export da dm type dg address
+			xerrmsg -M vxvmshm:165 \
+"Disk $address contains $type DA record $da;
+	Disk cannot be reinitialized by vxdisksetup."
+			exit 1
+		fi
+		exec <&3 3<&-
+	fi
+fi
+
+# scan through the list of attributes given on the command line
+
+while [ $# -gt 0 ]
+do
+	form=length
+	minvalue=
+	msg=`egettxt "Numeric attribute value expected" vxvmshm:295`
+
+	case $1 in
+	publen=*)     tag=publen; minvalue=1;;
+	privlen=*)    tag=privlen; minvalue=1;;
+	puboffset=*)  tag=puboffset; minvalue=0;;
+	privoffset=*) tag=privoffset; minvalue=;;
+	noconfig)     noconfig=true; shift; continue;;
+	config)	      noconfig=; shift; continue;;
+	*)	          xerrmsg -M vxvmshm:50 \
+		      "$1: Attribute unrecognized" $0 "$@"
+		      exit 1;;
+	esac
+	if eval "[ ! -z \"\$$tag\" ]"
+	then
+		xerrmsg -M vxvmshm:51 \
+			"$1: Duplicate attribute specified" $0 "$@"
+		exit 1
+	fi
+	attrvalue $tag "$1" "$form" "$minvalue" "$msg"
+	shift
+done
+
+
+# Call vxparms to get the tags to use for the public and private
+# region slices.
+
+
+VOL_PUB_SLICE_TAG=
+eval `vxparms`
+if [ -z "$VOL_PUB_SLICE_TAG" ]
+then
+	egettxt "$0: Invalid output from vxparms program." \
+		vxvmshm:38 $0 "$@" >&2
+	quit 1
+fi
+pubtag=$VOL_PUB_SLICE_TAG
+privtag=$VOL_PRIV_SLICE_TAG
+
+#
+# Call disksetup to perform bad-sector analysis and to create default
+# system partitions within the UNIX fdisk partition.  This will create
+# one partition (partition 1) for storing non-system data, which will
+# split up later into the private and public region partitions.
+#
+
+bootfile=/etc/boot
+if [ -f /etc/vxboot ]
+then
+	# check for old versions of /etc/boot that
+	# don't include our boot track modifications.
+	# Replace these older boot tracks with our
+	# own boot track.
+	case `sum < /etc/boot` in
+	# Older USL 4.2 boot tracks: 28501 30, 28726 30
+	# Older Univel boot track:   40490 28
+	"28501 30" | "28726 30" | "40490 28" )
+		bootfile=/etc/vxboot;;
+	esac
+fi
+doit disksetup -b $bootfile -I -d /dev/null $rawpath <<-! > /dev/null
+	$noanalyze
+	y
+	!
+[ $? -eq 0 ] || {
+	xerrmsg -M vxvmshm:635 "disksetup failed, disk cannot be initialized"
+	exit 1
+}
+
+#
+# Disksetup has the unwanted side-effect of removing all slices
+# but the Boot slice and the Alternate Sector/Track slice.  Therefore,
+# we create slice 1 below.
+#
+
+#
+# Read offset and length of Alternate Boot Sector/Track
+#
+
+tmpfile1=/tmp/vx-tmp1
+tmpfile2=/tmp/vx-tmp2
+vxpartinfo $rawpath 8 > $tmpfile1
+exec < $tmpfile1 > $tmpfile2
+read altslice alttag altflags altstart altsize
+echo $altslice $alttag $altflags $altstart $altsize
+
+#
+# Read length of disk
+#
+vxpartinfo $rawpath 0 > $tmpfile1
+exec < $tmpfile1 > $tmpfile2
+read wholeslice wholetag wholeflags wholestart wholesize
+echo $wholeslice $wholetag $wholeflags $wholestart $wholesize
+
+#
+# Calculate length of slice 1
+#
+slice1start=`expr $altstart + $altsize`
+slice1length=`expr $wholesize - $slice1start`
+
+#
+# Add slice one
+#
+vxpartadd $rawpath 1 0x2 0x200 $slice1start $slice1length
+rm -f $tmpfile1 $tmpfile2
+
+#
+# Read the size of partition 1 to determine what we can do with the
+# private and public region partitions.  Fail if the partition was
+# not created (which should not happen) or is invalid.
+#
+
+PART_TAG=
+eval `vxpartinfo -s $rawpath 1 2> /dev/null`
+if [ "X$PART_TAG" = 0x0 ] || [ "X$PART_SIZE" = X0 ]
+then
+	xerrmsg -M vxvmshm:634 \
+		"disksetup did not create a valid partition 1, cannot continue"
+	exit 1
+fi
+start=$PART_START
+size=$PART_SIZE
+
+#
+# supply defaults for all attributes that were not specified on the
+# command line
+#
+
+[ ! -z "$privlen" ] || privlen=1024
+if [ -z "$privoffset" ]
+then
+	if [ `expr $start + $size` -le $STAT_MAX_BOOT_SECTOR ]
+	then
+		privoffset=`expr $size - $privlen`
+	else
+		privoffset=0
+	fi
+fi
+if [ -z "$puboffset" ]
+then
+	if [ "$privoffset" -eq 0 ]
+	then
+		puboffset=`expr $privoffset + $privlen`
+	else
+		puboffset=0
+	fi
+fi
+[ -z "$noconfig" ] || initattrs="$initattrs nlog=0 nconfig=0"
+if [ -z "$publen" ]
+then
+	if [ $puboffset -lt $privoffset ]
+	then
+		publen=`expr $privoffset - $puboffset`
+	else
+		publen=`expr $size - $privoffset - $privlen`
+	fi
+fi
+
+#
+# Adjust the start of the public and private region partitions to be
+# within the current partition 1.
+#
+
+puboffset=`expr $puboffset + $start`
+privoffset=`expr $privoffset + $start`
+
+#
+# remove the old partition 1 and add the public and private region
+# partitions as partitions 14 and 15.  Flag the partitions with our
+# partition type tags, and indicate that they are valid, unmountable.
+#
+
+doit vxpartrm $rawpath 1 || exit 1
+doit vxpartadd $rawpath 14 $pubtag 0x201 $puboffset $publen || exit 1
+doit vxpartadd $rawpath 15 $privtag 0x201 $privoffset $privlen || exit 1
+
+#
+# Initialize the public region.  Define the device just to make sure
+# that it is defined.  (Re-)online it to make sure that the disk
+# driver state is initialized with the new VTOC.
+#
+
+if [ "$doinit" ]
+then
+	doit vxdisk define $accessname 2> /dev/null
+	[ $? -ne 0 ] && { doit vxdisk online $accessname || exit 1; }
+	doit vxdisk -f init $accessname $initattrs
+fi

@@ -1,0 +1,46 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api all");
+	&verify(grep(/test1: startup/,@output)==3 ||
+		grep(/test1: cleanup/,output)==3);
+}
+
+
+sub tp2 {
+	local(%counts);
+	$tp=tp2;
+	@ics=grep(/.test1: ic/,@output);
+	grep(s/(.test1: ic.).*$/$1/,@ics);
+	foreach(@ics) {
+		$counts{$_}++;
+	}
+
+	@different_ics=values(%counts);
+
+	&verify(@different_ics==6);
+		
+}
+
+sub tp3 {
+	local(%counts);
+	$tp=tp3;
+
+	@tps=grep(/.test1: ic/,@output);
+	grep(s/(.test1: )ic. (.*)$/$1$2/,@tps);
+	foreach(@tps) {
+		$counts{$_}++;
+	}
+
+	@different_tps=values(%counts);
+
+	&verify(@different_tps==9);
+		
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

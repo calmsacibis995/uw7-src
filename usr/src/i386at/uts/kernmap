@@ -1,0 +1,33 @@
+#ident	"@(#)kern-i386at:kernmap	1.9.1.2"
+#ident	"$Header$"
+
+# Please note: in order to support selective stripping of symbols
+# (for space conservation), the mini-kernel uses unixsyms to
+# process its symbols. This means it uses a slighly different
+# kernmap.
+
+# Boot-Kernel Interface segment
+bki=NOTE;
+bki:BKI;
+
+# Hook for extending user virtual. Depending on the size of this segment,
+# the kernel base address will "float" up.
+extuvirt=? UP V0xC0000000 XA1;
+extuvirt:.extuvirt;
+
+# The symtab virtual won't be used, but the linker always allocates it;
+# put it somewhere out of the way that can be reclaimed as soon as possible.
+symtab=?R XA0x400000;
+symtab: $SYMTAB;
+symtab: $STRTAB;
+symtab @ _symtab_sz;
+
+# Need to use names other than 'text' and 'data' to override the default
+# segment ordering.
+kdata=?RWX UP XA0x400000;
+kdata: $PROGBITS ?AW;
+kdata: $NOBITS ?AW;
+kdata @ _kdata_sz;
+
+ktext=?RX UP XA0x400000;
+ktext: $PROGBITS ?A!W;

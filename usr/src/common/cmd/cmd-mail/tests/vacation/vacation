@@ -1,0 +1,736 @@
+#!/bin/sh
+#ident "@(#)vacation	11.1"
+
+#
+# Automated test script for vacation program
+#
+# Attempts to achieve complete statement coverage of vacation.c
+#
+
+# utility routines
+
+savecount=0
+
+savecnt() \
+{
+	if [ -f $HOME/vacation.cnt ]
+	then
+		mv $HOME/vacation.cnt trace.$savecount
+		savecount=`expr $savecount + 1`
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+setup() \
+{
+	cleanup
+	mv /usr/lib/sendmail /usr/lib/sendmail.rls
+	# needed for trace file save code
+	cp /usr/bin/vacation $HOME
+	cat << DONE > /usr/lib/sendmail
+#!/bin/sh
+echo \$* > /tmp/msg1
+cat >> /tmp/msg1
+DONE
+	chmod 755 /usr/lib/sendmail
+}
+
+cleanup() \
+{
+	rm -fr /var/mail/root /var/mail/bin /var/mail/$USER
+	rm -fr /tmp/script
+	rm -fr /tmp/out /tmp/out1 /tmp/err /tmp/err1
+	rm -fr /tmp/msg /tmp/msg1
+	rm -fr $HOME/.maildelivery
+	rm -fr $HOME/logfile $HOME/tripnote $HOME/triplog
+	rm -fr $HOME/tripsubject
+	rm -fr $HOME/.signature $HOME/.alter_egos
+	rm -fr $HOME/vacation
+	if [ -f /usr/lib/sendmail.rls ]
+	then
+		mv /usr/lib/sendmail.rls /usr/lib/sendmail
+	fi
+}
+
+waitmail() \
+{
+	/usr/lib/sendmail -q
+	sleep 2
+}
+
+msg1() \
+{
+	cat << DONE > $1
+From: $2
+To: $USER
+Subject: Test Message
+
+Body.
+DONE
+}
+
+msg2() \
+{
+	cat << DONE > $1
+From: $2
+To: bin
+Subject: Test Message
+
+Body.
+DONE
+}
+
+msg3() \
+{
+	cat << DONE > $1
+From: $2
+To: bin
+cc: $USER
+Subject: Test Message
+
+Body.
+DONE
+}
+
+msg4() \
+{
+	cat << DONE > $1
+To: bin
+cc: $USER
+Subject: Test Message
+
+Body.
+DONE
+}
+
+msg5() \
+{
+	cat << DONE > $1
+From: $2
+To: bin
+To1: bin
+cc1: $USER
+Subject: Test Message
+
+Body.
+DONE
+}
+
+test_1() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+root
+To: root
+From: $USER
+Subject: Absence (Automatic reply)
+
+        This is an automatic reply to email you recently sent
+to $USER.  Additional mail to $USER will not result in
+further replies. This mail indicates that the user is not
+responding to your message for the following reason:
+
+        No pre-recorded message file was left by the user.
+However, this feature of the mail system is normally used
+during vacations and other extended absences.
+
+        The Mail System
+DONE
+	diff /tmp/out1 /tmp/msg1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	echo root > /tmp/out1
+	diff /tmp/out1 $HOME/triplog
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_2() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo root > $HOME/triplog ; chown $USER $HOME/triplog
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	if [ -f /tmp/msg1 ]
+	then
+		echo "message was delivered erroneously"
+		cat /tmp/out /tmp/msg1
+		passfail 1
+		return
+	fi
+	echo root > /tmp/out1
+	diff /tmp/out1 $HOME/triplog
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+root
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root already in triplog, no message sent.
+
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_3() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	echo "Hello" > $HOME/tripsubject ; chown $USER $HOME/tripsubject
+	echo "I am not here right now." > $HOME/tripnote ; chown $USER $HOME/tripnote
+	echo "Signature" > $HOME/.signature ; chown $USER $HOME/.signature
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+root
+To: root
+From: $USER
+Subject: Hello
+
+I am not here right now.
+Signature
+DONE
+	diff /tmp/out1 /tmp/msg1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	echo root > /tmp/out1
+	diff /tmp/out1 $HOME/triplog
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_4() \
+{
+	setup
+	msg2 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	echo "bin" > $HOME/.alter_egos ; chown $USER $HOME/.alter_egos
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+root
+To: root
+From: $USER
+Subject: Absence (Automatic reply)
+
+        This is an automatic reply to email you recently sent
+to $USER.  Additional mail to $USER will not result in
+further replies. This mail indicates that the user is not
+responding to your message for the following reason:
+
+        No pre-recorded message file was left by the user.
+However, this feature of the mail system is normally used
+during vacations and other extended absences.
+
+        The Mail System
+DONE
+	diff /tmp/out1 /tmp/msg1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	echo root > /tmp/out1
+	diff /tmp/out1 $HOME/triplog
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+bin
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_5() \
+{
+	setup
+	msg3 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+root
+To: root
+From: $USER
+Subject: Absence (Automatic reply)
+
+        This is an automatic reply to email you recently sent
+to $USER.  Additional mail to $USER will not result in
+further replies. This mail indicates that the user is not
+responding to your message for the following reason:
+
+        No pre-recorded message file was left by the user.
+However, this feature of the mail system is normally used
+during vacations and other extended absences.
+
+        The Mail System
+DONE
+	diff /tmp/out1 /tmp/msg1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	echo root > /tmp/out1
+	diff /tmp/out1 $HOME/triplog
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_6() \
+{
+	setup
+	msg4 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+
+	/bin/su $USER -c "$pgm" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	if [ -f $HOME/triplog ]
+	then
+		echo Unexpected triplog:
+		cat $HOME/triplog
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+vacation: No "From:" line.
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_7() \
+{
+	setup
+	msg5 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is not to me
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_8() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	touch $HOME/triplog
+	chmod 0 $HOME/triplog
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+vacation: Unable to append to triplog
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	passfail $?
+}
+
+test_9() \
+{
+	setup
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	echo root > $HOME/triplog ; chown $USER $HOME/triplog
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+root
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root already in triplog, no message sent.
+
+DONE
+
+	pass=0
+	for addr in "root" "comment <root>" "\"comment\" <root>" "root 	(comment)"
+	do
+		echo > $HOME/logfile
+		msg1 /tmp/msg "$addr"
+		/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+		ret=$?
+		savecnt
+		if [ $ret -ne 0 ]
+		then
+			cat /tmp/out
+			echo "FAIL: $addr"
+			pass=1
+			continue
+		fi
+		diff /tmp/out1 $HOME/logfile
+		ret=$?
+		if [ $ret -ne 0 ]
+		then
+			echo "FAIL: $addr"
+			pass=1
+			continue
+		fi
+		echo "PASS $addr"
+	done
+	passfail $pass
+}
+
+real_1() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	mv /usr/lib/sendmail.rls /usr/lib/sendmail
+
+	/bin/su $USER -c "$pgm -d" < /tmp/msg > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	waitmail
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root
+
+Message is to me
+user root added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	grep "Subject: Absence" /var/mail/root > /dev/null 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		echo "message was not delivered into root's mailbox"
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+real_2() \
+{
+	setup
+	msg1 /tmp/msg root
+	echo > $HOME/logfile ; chown $USER $HOME/logfile
+	mv /usr/lib/sendmail.rls /usr/lib/sendmail
+	echo "*\t-\tpipe\tR\t\"vacation -d\"" > $HOME/.maildelivery
+	chown $USER $HOME/.maildelivery
+	chmod 600 $HOME/.maildelivery
+
+	mail -s "Test message" $USER << DONE
+Body.
+DONE
+	waitmail
+	sleep 5
+	waitmail
+	savecnt
+
+	cat << DONE > /tmp/out1
+
+Triplog contents:
+
+.alter_egos contents:
+
+Header contents
+from line: root@$DOMAIN
+
+Message is to me
+user root@$DOMAIN added to triplog
+
+Sending message...
+DONE
+	diff /tmp/out1 $HOME/logfile
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	grep "Subject: Absence" /var/mail/root > /dev/null 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		echo "message was not delivered into root's mailbox"
+		passfail 1
+		return
+	fi
+	grep "Body." /var/mail/$USER > /dev/null 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		echo "message was not delivered into $USER's mailbox"
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+TEST=""
+
+# test user and it's home directory, configure in advance.
+USER=kurth
+# fully qualified domain name for this machine.
+DOMAIN=eclipse.pdev.sco.com
+
+HOME=/home/$USER
+
+SHELL=/bin/sh
+export SHELL
+
+pgm=/usr/bin/vacation
+
+ cleanup
+
+test="1 2 3 4 5 6 7 8 9"
+real="1 2"
+
+#testlist real_ 2
+#exit 0
+
+testlist test_ $test
+testlist real_ $real
+ cleanup

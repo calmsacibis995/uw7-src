@@ -1,0 +1,22 @@
+#ident	"@(#)preinstall	1.2"
+#	copyright	"%c%"
+
+SCRIPTS=/usr/sbin/pkginst
+PKGINSTALL_TYPE=NEWINSTALL
+
+# Since there is no response file, pkgsavfiles will automatically
+# run chkpkgrel and save AUTOMERGE and PKGINSTALL_TYPE in
+# /etc/inst/save.user/${PKGINST}.env
+
+${SCRIPTS}/pkgsavfiles ${PKGINST}
+
+# When pkgsavfiles is called without previously calling chkpkgrel,
+# AUTOMERGE get set to "Yes" automatically, which we don't want since
+# this package didn't exist in 1.1.  (The postinstall script takes
+# care of special upgrade processing in this case.)
+
+. /etc/inst/save.user/${PKGINST}.env
+if [ "$PKGINSTALL_TYPE" != "OVERLAY" ]
+then
+	echo 'AUTOMERGE="No"' >>/etc/inst/save.user/${PKGINST}.env
+fi

@@ -1,0 +1,165 @@
+#!/bin/sh
+
+#
+# Automated test script for multihome library
+#
+# Attempts to achieve complete statement coverage of multihome.c
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -fr /tmp/out /tmp/out1 /tmp/err
+	rm -fr /var/internet/ip
+}
+
+core_users() \
+{
+	cleanup
+
+	mkdir -p $datadir
+	echo "user1@$virt1 root" > $datafile
+	echo "user2@$virt1 bin" >> $datafile
+	echo "user1@$virt2 root" >> $datafile
+	echo "user2@$virt2 bin" >> $datafile
+	/etc/mail/makemap hash $datafile < $datafile
+
+	$pgm -u \
+		user1@$virt1 \
+		user2@$virt1 \
+		user1@$virt2 \
+		user2@$virt2 \
+		unknown@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+user1@$virt1 root
+user2@$virt1 bin
+user1@$virt2 root
+user2@$virt2 bin
+unknown@$virt1 <nofind>
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+core_domains() \
+{
+	cleanup
+
+	mkdir -p $datadir
+	echo "$virt1 $virt1ip" > $domainfile
+	/etc/mail/makemap hash $domainfile < $domainfile
+
+	$pgm -d \
+		$virt1 \
+		$virt2 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+$virt1 $virt1ip
+$virt2 <nofind>
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+core_names() \
+{
+	cleanup
+
+	mkdir -p $datadir
+	echo "$virt1 $virt1ip" > $domainfile
+	echo "$virt2 1.2.3.4" >> $domainfile
+	/etc/mail/makemap hash $domainfile < $domainfile
+
+	$pgm -n \
+		1.2.3.4 \
+		2.3.4.5 \
+		$virt1ip \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+1.2.3.4 $virt2
+2.3.4.5 <nofind>
+$virt1ip $virt1
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+TEST=""
+
+pgm=libtest
+
+# configuration variables:
+datadir=/var/internet/ip/127.0.0.1/mail
+datafile=/var/internet/ip/127.0.0.1/virtusers
+domainfile=/var/internet/ip/127.0.0.1/mail/virtdomains
+
+# our main machine
+host=eclipse.pdev.sco.com
+
+# our first virtual domain should be in DNS and be aliased.
+virt1=kurthlap.pdev.sco.com
+virt1ip=132.147.193.196
+
+# our second virtual domain should not be in DNS or have an alias.
+# it should also sort after virt1 in case-insensitive comparisons.
+virt2=yohoho.pdev.sco.com
+
+ cleanup
+
+core="users domains names"
+
+#testlist core_ names
+#exit 0
+
+testlist core_ $core
+ cleanup

@@ -1,0 +1,83 @@
+#!/usr/bin/winxksh
+#ident	"@(#)dcu:scripts/start	1.20.1.2"
+
+function dcusilent
+{
+# dcusilent()
+# Called whenever the DCU is invoked and the DCUSCREENS flag is not set.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+integer t=1 x
+case "$DCUMODE" in
+	LITTLE_SILENT | BIG_SILENT )
+		dcuinit
+		RMupdate
+		;;
+	NO_UPDATE )
+		dcuinit
+		RMclose
+		;;
+	DCUDELMODS)
+		dcuinit
+		IHVdelete $DCUMODVALS
+		;;
+esac
+}
+
+#main()  start
+. ${DCUSCRIPTS}/dculib.sh
+libload ${DCULIBS}/dculib.so
+. ${DCUSCRIPTS}/dcurc
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "start called"
+set -x
+}
+integer ninst=8	#max number of board instances allowed
+if [  "$UNIX_INSTALL" = N ]
+then
+	INTR=$(stty -a)
+	INTR=${INTR#*intr = }
+	INTR=${INTR%%;*}
+if [ "$INTR" = DEL ]
+then
+	INTR='^?'
+elif [ "$INTR" = '<undef>' ]
+then
+	INTR='^@'
+fi
+stty intr '^@'
+tab="	"
+nl="
+"
+fi
+BDTYPE[1]=$none
+typeset ALLDRIVERS
+if [ $DCUMODE = DCUSCREENS ]
+then
+	if [ "$DCUCONFLICT" = Y ]
+	then
+		place_window  $CnflWaitCols $CnflWaitLines
+		wprintf $CURWIN "$CnflWait"
+		LDWIN=$CURWIN
+		msgnoerr
+		footer $DCUGENERIC_WAIT_FOOTER
+		dcuinit
+		wclose $LDWIN
+	else
+		place_window  $CnfgWaitCols $CnfgWaitLines
+		wprintf $CURWIN "$CnfgWait"
+		LDWIN=$CURWIN
+		msgnoerr
+		footer $DCUGENERIC_WAIT_FOOTER
+		dcuinit && wclose $LDWIN && return 1
+		wclose $LDWIN
+		dcumain
+		call proc_loop
+	fi
+else
+	dcusilent
+fi

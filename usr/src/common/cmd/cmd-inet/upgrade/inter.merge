@@ -1,0 +1,289 @@
+#ident	"@(#)inter.merge	1.2"
+
+#
+# if there are multiple NICs of the same type (the same prefix in the
+# /etc/confnet.d/inet/interface file) then make sure that on an upgrade
+# the "device" entry match with the ethernet address!!!! 
+# the original string pair of "device" & "ethernet address" is stored in
+# the file "/etc/inet/macaddr" this is populated by the command
+# "/usr/sbin/getmac" run by the "/etc/init.d/inetinit" script.
+#
+# the syntax for getmac is:
+#     /usr/sbin/getmac [device]
+#
+# if the "device" is not specified then getmac will populate 
+# the /etc/inet/macaddr file with appropriate values for all the 
+# valid entries in the /etc/confnet.d/inet/interface.
+#
+# if the "device" is specified, and is valid, then the string
+# pair "device" & "ethernet address" will be generated on the standard output.
+#
+
+#
+# there are four (5) variables that are set in /usr/sbin/pkginst/up_merge
+# script that could be used in this script:
+# ROOT - root directory
+# FILENAME - name of the file, full path without ROOT
+# UP_ORIG - root directory of the original 1.1 volitile files
+# UP_USER - root directory of the volitile files currently on the system
+# MERGEDFILE - full path of the merged file
+#
+
+CHANGED=${UP_USER}
+
+#
+# the variable NICSMAP points to the map file for all the nic that are
+# supported...this file is needed to map the old(1.1) names to new(2.0) 
+# names...format of the file is "oldname  newname"...
+#
+NICSMAP=/etc/inst/nics/nics.map
+
+#
+# cleanup /tmp....
+#
+rm -f /tmp/HOLD_interface* /tmp/HOLD_netdrivers* /tmp/HOLD_macaddr* /tmp/HOLD_newinterface*
+
+#
+# copy the new interface file with comments and loopback to ${MERGEDFILE}
+# remove ppp stuff just in case the new interface file was not installed
+#
+egrep  -v "^[ 	]*ppp:" ${ROOT}/etc/confnet.d/inet/interface > /tmp/HOLD_interface
+cat /tmp/HOLD_interface >${MERGEDFILE}
+
+#
+# extract all the valid entries from the $UP_USER/$FILENAME
+#
+cp ${CHANGED}/${FILENAME} /tmp/HOLD_interface
+# remove comments and blank lines
+egrep  "^[ 	]*[^# 	]" /tmp/HOLD_interface >/tmp/HOLD_interface2
+# remove the entry for loopback and entries that does not have 
+# at least 4 fields.
+/usr/bin/awk ' { FS = ":"
+		 OFS = ":"
+		 if ( $1 != "lo") if ( $4 != "/dev/loop" ) if ( NF >= 4 )
+			printf ("%s\n", $0)
+		} ' /tmp/HOLD_interface2 >/tmp/HOLD_interface
+
+#
+# now remove the ppp entries...they were merged using the ppp.merge script
+#
+egrep  -v "^[ 	]*ppp:" /tmp/HOLD_interface > /tmp/HOLD_interface2
+cp /tmp/HOLD_interface2 /tmp/HOLD_interface
+
+#
+# if upgrading from 2.0 then no need to do anything else...
+# the interface names are the same...and ppp interfaces were removed.
+#
+if [ "$PKGINSTALL_TYPE" = "UPGRADE2" ]
+then
+	cat /tmp/HOLD_interface >> ${MERGEDFILE}
+	sort -u ${MERGEDFILE} >/tmp/HOLD_interface
+	cat /tmp/HOLD_interface > ${MERGEDFILE}
+	exit
+fi
+
+#
+# now extract the entries that does not have a mapping and put them into the 
+# merged file...comment these out because I have no idea what these are.
+#
+cp ${ROOT}/etc/confnet.d/netdrivers /tmp/HOLD_netdrivers
+for i in `cat /tmp/HOLD_interface | cut -d: -f1| sort -u`
+do
+	n=`egrep -c "^$i[ 	]" ${NICSMAP} 2>/dev/null`
+	if [ "$n" = "0" ]
+	then
+		egrep  "^[ 	]*$i:" /tmp/HOLD_interface | awk '{ printf ("#%s\n",$0) }' >>${MERGEDFILE}
+		egrep  -v "^[ 	]*$i:" /tmp/HOLD_interface > /tmp/HOLD_interface2
+		cp /tmp/HOLD_interface2 /tmp/HOLD_interface
+	else
+#
+# now extract the entries that has a map but is not in the 
+# netdrivers file...meaning these boards were removed or not
+# installed at this time...so do not map but comment them out..
+#
+		j=`egrep "^$i[ 	]" ${NICSMAP} | awk ' { print $2 }' 2>/dev/null`
+		m=`egrep -c "^${j}_[0-9].*$" /tmp/HOLD_netdrivers 2>/dev/null`
+		if [ "$m" = "0" ]
+		then
+		egrep  "^[ 	]*$i:" /tmp/HOLD_interface | awk '{ printf ("#%s\n",$0) }' >>${MERGEDFILE}
+		egrep  -v "^[ 	]*$i:" /tmp/HOLD_interface > /tmp/HOLD_interface2
+		cp /tmp/HOLD_interface2 /tmp/HOLD_interface
+		fi
+	fi
+done
+
+
+
+#
+# and now remove all the entries from the /tmp/HOLD_netdrivers file
+# that does not have a mapping for in the interface file...
+# these are new boards that are being installed so they do not have 
+# an entry to be mapped in the interface file...the information must
+# be enterd manualy at the inet.menu...
+#
+for i in `cat /tmp/HOLD_netdrivers | awk '{ printf("%s\n",substr($1,1,length($1)-2)) }' |sort -u`
+do
+	dont_remove_flag=0
+	oldname=`egrep "[ 	]$i[ 	]*$" ${NICSMAP}|awk '{print $1}'`
+
+	for names in $oldname
+	do
+	n=`egrep -c "^[ 	]*${names}:" /tmp/HOLD_interface 2>/dev/null`
+	if [ "$n" != "0" ]
+	then
+		dont_remove_flag=1
+	fi
+	done
+
+	if [ "$dont_remove_flag" = "0" ]
+	then
+		grep -v "^${i}_" /tmp/HOLD_netdrivers >/tmp/HOLD_netdrivers2
+		cp /tmp/HOLD_netdrivers2 /tmp/HOLD_netdrivers
+	fi
+done
+
+#
+# now...we need to do matching of devices using the /etc/inet/macaddr
+# file and /usr/sbin/getmac command if:
+#	 there are duplicate entries in the netdrives files or there
+#	   are duplicate entries in the interfaces file...meaning 
+#	     - there are multiple boards of the same type have been installed...
+#	     - multiple boards of same type is being installed...
+#	     - used to be multiple boards but only one is being installed...
+#
+
+nint=`wc -l /tmp/HOLD_interface | awk '{print $1}'`
+uint=`sort -u -t: +0 -1 /tmp/HOLD_interface | wc -l | awk '{print $1}'`
+nnet=`wc -l /tmp/HOLD_netdrivers | awk '{print $1}'`
+unet=`awk '{ print $1 }' /tmp/HOLD_netdrivers |cut -d_ -f1 |sort -u| wc -l | awk '{print $1}'`
+
+#
+#start the main if for matching.....---------------------------
+#
+if [ "${nint}" != "${nnet}" ] || [ "${nint}" != "${uint}" ] 
+then
+
+#
+# use /usr/sbin/getmac & /etc/confnet.d/netdrivers(/tmp/HOLD_netdrivers) to 
+# obtain new eth addresses
+#
+if [ -s /usr/sbin/getmac -a -s /etc/inet/macaddr ]
+then 
+/usr/bin/awk '{ system ("/usr/sbin/getmac " sprintf("/dev/%s", $1)) }' /tmp/HOLD_netdrivers >/tmp/HOLD_macaddr 2>/dev/null 
+/usr/bin/awk '{ FS = ":"
+		if ($1 != "Usage")
+			print
+	       }' /tmp/HOLD_macaddr >/tmp/HOLD_macaddr2
+>/tmp/HOLD_newinterface
+cat /tmp/HOLD_macaddr2 | while read ndev naddr 
+do
+	n=`egrep -c "${naddr}" /etc/inet/macaddr`
+	if [ "$n" = "1" ]
+	then
+		odev=`egrep "${naddr}" /etc/inet/macaddr | /usr/bin/awk '{ print $1 }'`
+#
+# if the devices are not the same then they need to be mapped...
+#
+		if [ ${odev} != ${ndev} ]
+		then
+			echo ${odev} ${ndev} | /usr/bin/awk '{ odev = $1
+				ndev = $2
+				FS = ":"
+				OFS = ":"
+				while (getline <"/tmp/HOLD_interface" > 0)
+				{
+					if ( odev == $4 )
+					{
+						$4 = ndev
+						$1 = substr(ndev,6,length(ndev)-7)
+						$2 = substr(ndev,length(ndev),1)
+						printf ("%s\n", $0)
+						exit
+					}
+				 }
+				}' >>/tmp/HOLD_newinterface
+#
+# no need to check since the old entry is same as the new one..
+# so just copy it as is...
+# 
+		else
+		 	echo ${odev} | /usr/bin/awk '{ 
+			FS = ":"
+			OFS = ":"
+			odev = $1
+			while (getline <"/tmp/HOLD_interface" > 0)
+			if ($4 == odev)
+				printf ("%s\n", $0)
+			}' >>/tmp/HOLD_newinterface
+		fi
+#
+#remove the entry that was just mapped...
+#			
+		echo ${odev} | /usr/bin/awk '{ 
+			FS = ":"
+			OFS = ":"
+			odev = $1
+			while (getline <"/tmp/HOLD_interface" > 0)
+			if ($4 != odev)
+				printf ("%s\n", $0)
+			}' >/tmp/HOLD_interface2
+		cp /tmp/HOLD_interface2 /tmp/HOLD_interface
+	fi
+done
+
+fi
+#
+# if any other interfaces are left that means:
+# 	- /usr/sbin/getmac or /etc/inet/macaddr is not present, or
+#	-  there were multiple entries but not any longer...
+# so do not map them but comment them out...
+#
+if [ -s /tmp/HOLD_interface ]
+then
+	awk '{ printf ("#%s\n",$0) }' /tmp/HOLD_interface >>/tmp/HOLD_newinterface
+fi
+
+#
+#else for the main if for matching.....---------------------------
+#
+else
+
+#
+# else..that is if no mapping is required...meaning there were/are no
+# mutiple boards of the same type being installed...so just map the 
+# device names and add them to the interfaces file..
+#
+for i in `cat /tmp/HOLD_interface | cut -d: -f1`
+do
+	newname=`egrep "^[ 	]*$i[ 	]" ${NICSMAP}|awk '{print $2}'`
+	echo ${i} ${newname} | /usr/bin/awk '{ 
+			oldname = $1
+			newname = $2
+			FS = ":"
+			OFS = ":"
+			while (getline <"/tmp/HOLD_interface" > 0)
+			if ($1 == oldname)
+				{
+				$1 = newname
+				$4 = sprintf("/dev/%s%s",newname,substr($4,length($4)-1,2))
+				printf ("%s\n", $0)
+				}
+			}' >>/tmp/HOLD_newinterface
+done
+
+fi
+
+#
+# add the mapped interfaces to the ${MERGEDFILE}
+#
+if [ -s /tmp/HOLD_newinterface ]
+then
+	cat /tmp/HOLD_newinterface >> ${MERGEDFILE}
+	sort -u ${MERGEDFILE} >/tmp/HOLD_interface
+	cat /tmp/HOLD_interface > ${MERGEDFILE}
+	for i in `egrep -v "^#" /tmp/HOLD_newinterface|cut -d: -f4|cut -d/ -f3-`
+	do
+		/usr/sbin/netinfo -a -d $i -p inet
+	done
+
+fi

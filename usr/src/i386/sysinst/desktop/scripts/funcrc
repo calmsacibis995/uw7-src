@@ -1,0 +1,1315 @@
+#ident	"@(#)funcrc	15.3	98/01/20"
+
+cdecl 'long *' 'pr=&Pr_format'
+cset 'pr[0]=4'
+cdecl 'int *' 'errno=&Xk_errno'
+export ENV
+alias chmod='cmd chmod'
+alias date='cmd date'
+alias find='cmd find'
+alias mount='cmd mount'
+alias umount='cmd umount'
+alias rm='cmd rm'
+alias cp='cmd cp'
+alias cat='cmd cat'
+alias grep='cmd grep'
+#Commenting this out for now, until us94-15732 is fixed.
+#alias modadmin='cmd modadmin'
+alias chroot='cmd chroot'
+alias mkdir='cmd mkdir'
+alias ln='cmd ln'
+
+FD3=${FD3:-8}
+FD4=${FD4:-9}
+
+#
+# Where are the two mapfiles
+#
+typeset -x ui_mapfile=/isl/ui_map
+typeset -x install_mapfile=/isl/install_map
+
+
+function cmd
+{
+	typeset cmd=$1 path=$(whence -p $1)
+	shift
+	if [ -n "$path" ]
+	then
+		$path "$@"
+		return $?
+	fi
+	sh_$cmd "$@"
+	return $?
+}
+nl='
+'
+struct statvfs f_bsize f_frsize f_blocks f_bfree f_bavail f_files f_ffree f_favail f_fsid f_basetype:'char [16]' f_flag f_namemax f_fstr:'char [32]' f_filler:'char [64]'
+struct timestruc tv_sec tv_nsec
+struct stat dev pad1:'long [3]' ino mode nlink uid gid rdev pad2:'long [2]' size pad3 atime:timestruc ctime:timestruc mtime:timestruc blksize blocks fstype:'char [16]' aclcnt level flags cmwlevel pad4:'long [4]'
+struct memfs_args m_swapmax m_rootmode m_sfp
+struct tm tm_sec tm_min tm_hour tm_mday tm_mon tm_year tm_wday tm_yday tm_isdst
+
+function ismount
+{
+	typeset i PR PR2
+	cdecl statvfs stat={}
+	for i
+	do
+		if [ "$i" = / ]
+		then
+			continue
+		fi
+		if call -c statvfs $i stat
+		then
+			cprint -v PR stat
+			if call -c statvfs ${i%/*}/ stat
+			then
+				cprint -v PR2 stat
+				if [ "$PR" = "$PR2" ]
+				then
+
+					return 1
+				fi
+			else
+				return 1
+			fi
+		else
+			return 1
+		fi
+	done
+	return 0
+}
+
+function df
+{
+	typeset i
+	if [ -f /etc/mnttab -a -f /etc/vfstab ] && whence -p df >/dev/null 2>&1
+	then
+		$(whence -p df) "$@"
+		return $?
+	fi
+	typeset err
+	if [ -z "$dfonce" ]
+	then
+		dfonce=on
+		cdecl 'long *' 'pr=&Pr_format'
+		cset 'pr[0]=4'
+	fi
+	if [ -z "$1" ]
+	then
+		typeset list
+		err=
+		list=/
+		for i in /.extra.d /.save /cd-rom /flpy2 /home /home2 /stand /usr /var /mnt /mnt/cd-rom /mnt/home /mnt/home2 /mnt/mnt /mnt/stand /mnt/tmp /mnt/usr /mnt/var
+		do
+			if ismount $i
+			then
+				list="$list $i"
+			fi
+		done
+		set -- $list
+	else
+		err=on
+	fi
+	cdecl statvfs stat={}
+	typeset -i calc errs=0
+	typeset tmp
+	for i
+	do
+		if call -c statvfs $i stat
+		then
+			let calc=$(cprint stat.f_bfree)*$(cprint stat.f_frsize)/512
+			cprint -v tmp stat.f_ffree
+			call altprintf "%-21.21s%-19.19s%-16.16s%-15.15s$nl" $i \
+				'@string_t:!():!' \
+				"@string_t:!$calc blocks!" \
+				"@string_t:!$tmp files!"
+		elif [ -n "$err" ]
+		then
+			let errs=errs+1
+			print -u2 $i: cannot stat
+		fi
+	done
+	return $errs
+}
+
+function sh_pg
+{
+	[ -z "${USELINES}" ] && USELINES=22
+	FILE=$1
+		
+	[ ! -f ${FILE} ] && {
+		echo "Cannot open ${FILE}: no such file or directory"
+		return
+	}
+
+	lines=0
+	totlines=0
+	while read CURLINE
+	do
+		let lines="$lines + 1"
+		let totlines="$totlines + 1"
+		echo "${totlines}: ${CURLINE}"
+		[ ${lines} = ${USELINES} ] && {
+			read x < /dev/console
+			lines=0
+		}
+	done < ${FILE}
+}
+	
+function sh_date
+{
+	if [ -n "$1" ]
+	then
+		case "$1" in
+		+*)
+			;;
+		*)
+			print -u2 'Cannot set time, yet'
+			return 1
+		esac
+		typeset format=${1#?}
+	else
+		typeset format='%c'
+	fi
+	call time
+	cdecl 'char [100]' buf=
+	cdecl 'int *' time=$_RETX
+	call -c localtime time
+	call -c strftime buf 100 "@string_t:!$format!" $_RETX
+	eval echo `cprint buf`
+}
+
+function sh_find
+{
+	typeset i prepend= line= FILES=
+	for i
+	do
+		case "$i" in
+		-*)
+			;;
+		*)
+			FILES="$FILES $i"
+		esac
+	done
+	ls -R $FILES XXX 2>/dev/null | while read line
+	do
+		case "$line" in
+		'')
+			;;
+		*:)
+			prepend=${line%:}/
+			#echo $prepend
+			;;
+		*)
+			echo $prepend$line
+		esac
+	done
+}
+
+function fsname
+{
+	call -n malloc 30
+	buf=$_RETX
+	call sysfs 2 $i $buf
+	call altprintf "%s$nl" $buf
+	call free $buf || :
+}
+
+function mountloop
+{
+	typeset i ERR err
+	for i in vxfs sfs ufs s5 bfs
+	do
+		if sh_mount -F$i "$@"
+		then
+			return 0
+		fi
+	done
+	for i in vxfs sfs ufs s5 bfs
+	do
+		sh_mount -c -F$i "$@"
+		cprint -v err errno
+		if [ "$err" != "22" ]
+		then
+			if [ ! -x /etc/fs/$i/fsck -o -n "$fscked" -o "$err" = "16" ]
+			then
+				ERR=$err
+				continue
+			fi
+			/etc/fs/$i/fsck -y /dev/rdsk/${1##*/} >/dev/null 2>&1
+		fi
+		if sh_mount -F$i "$@"
+		then
+			return 0
+		fi
+	done
+	if [ -z "$ERR" ]
+	then
+		call strerror 22
+	else
+		call strerror $ERR
+	fi
+	call altfputs 2 $_RETX
+	return 1
+}
+
+struct vx_mountargs1 msize mflags primaryspec
+
+function sh_mount
+{
+	typeset phases=0 fs= ro=0 fscked ERR
+	typeset swapmax=0 rootmode=0 sfp=0
+
+	integer ret check
+	call sysfs 1 vxfs
+	typeset vxfsno=$_RETD
+	call sysfs 1 memfs
+	typeset memfsno=$_RETD
+	call sysfs 1 ufs
+	typeset ufsno=$_RETD
+	call sysfs 1 sfs
+	typeset sfsno=$_RETD
+	call sysfs 1 bfs
+	typeset bfsno=$_RETD
+	call sysfs 1 s5
+	typeset s5no=$_RETD
+	typeset fstyp_nos="$vxfsno $ufsno $sfsno $bfsno $s5no"
+
+	while getopts 'cF:ro:?' c
+	
+	do
+		case "$c" in
+		r)
+			ro=1
+			;;
+		F)
+			fs=$OPTARG
+			call sysfs 1 $fs
+			typeset fsno=$_RETD
+			typeset fstyp_nos=$_RETD
+			;;
+		c)
+			phases='0 1'
+			;;
+		o)
+			OLDIFS="$IFS"
+			IFS=","
+			eval $OPTARG
+			IFS="$OLDIFS"
+			;;
+		\?)
+			print -u2 Oops: $*
+		esac
+	done
+	let OPTIND=OPTIND-1
+	shift $OPTIND
+	if [ ! "$fsno" -eq $memfsno ] 
+	then 
+		readable $1 >/dev/null 2>&1 || {
+		print -u2 "Cannot open special: $1"
+		return 1
+	}
+	fi
+	if [ ! -d "$2" ]
+	then
+		print -u2 "Cannot access directory: $2"
+	return 1
+	fi
+	integer i
+	fscked=
+	ret=1
+	for check in $phases
+	do
+		for i in $fstyp_nos
+		do
+			if (( vxfsno == i ))
+			then
+				#cdecl 'int *' flag=0x20
+				typeset msize=12
+				typeset mflags=0x20
+				call -n malloc 10
+				primaryspec=$_RETX
+				call strcpy $primaryspec $i
+				cdecl -g vx_mountargs1 "vxargs1={$msize,$mflags,$primaryspec}"
+				call -c mount $1 $2 "$ro|4" $i vxargs1 12
+				mountrc=$?
+				call free $primaryspec || :
+			elif (( memfsno == i ))
+			then
+				cdecl -g memfs_args "margs={$swapmax,$rootmode,$sfp}"
+				call -c mount $1 $2 "$ro|4" $i margs 12
+				mountrc=$?
+			else
+				call mount $1 $2 "$ro|2" $i
+				mountrc=$?
+			fi
+			if [ "$mountrc" = 0 ]
+			then
+				ret=0
+				break 2
+			fi
+			cprint -v err errno
+			if [ "$err" != "22" ]
+			then
+				fs=$(fsname $i)
+				if (( !check )) || [ ! -x /etc/fs/$fs/fsck -o -n "$fscked" -o "$err" = "16" ]
+				then
+					ERR=$err
+					fscked=
+					let i=i+1
+					continue
+				fi
+				fscked=on
+				/etc/fs/$fs/fsck -y /dev/rdsk/${1##*/} >/dev/null 2>&1
+			else
+				fscked=
+				let i=i+1
+			fi
+		done
+	done
+	if (( $ret ))
+	then
+		if [ -z "$ERR" ]
+		then
+			call strerror 22
+		else
+			call strerror $ERR
+		fi
+		call altfputs 2 $_RETX
+	fi
+	return $ret
+}
+
+function sh_umount
+{
+	typeset i
+	for i
+	do
+		call umount $i
+		if [ "$?" -ne 0 ]
+		then
+			call altperror
+		fi
+	done
+}
+function sh_rm
+{
+	typeset i c recursive= force= pass=
+	while getopts 'rf' c
+	do
+		case "$c" in
+		r)
+			recursive=on
+			pass="$pass -r"
+			;;
+		f)
+			force=on
+			pass="$pass -f"
+			;;
+		esac
+	done
+	let OPTIND=OPTIND-1
+	shift $OPTIND
+	for i
+	do
+	#	call unlink $i
+	#	if [ "$?" != 0 ]
+	#	then
+			if [ -d "$i" -a ! -L "$i" ]
+			then
+				if [ -n "$recursive" ]
+				then
+					if [ "$(echo $i/*)" != "$i/*" ]
+					then
+						sh_rm $pass $i/*
+					fi
+					if [ "$(echo $i/.[!.]*)" != "$i/.[!.]*" ]
+					then
+						sh_rm $pass $i/.[!.]*
+					fi
+					call rmdir $i || { test -n "$force" || call altperror "Cannot remove $i"; }
+				else
+					print -u2 "Cannot remove $i: directory not empty"
+				fi
+			else
+				call unlink $i || { test -n "$force" || call altperror "Cannot remove $i"; }
+			fi
+	#	fi
+	done
+}
+function onecp
+{
+	trap "return 1" err
+	typeset buf
+	eval exec $FD3\<$1
+	eval exec $FD4\>$2
+	call -n malloc 1024
+	buf=$_RETX
+	while call -r read $FD3 $buf 1024
+	do
+		call -n write $FD4 $buf $_RETX
+	done
+	call free $buf || :
+	eval exec $FD3\<\&-
+	eval exec $FD4\<\&-
+	if [ -x "$1" ]
+	then
+		call chmod "$2" 0777
+	fi
+	return 0
+}
+function sh_cp
+{
+	typeset targ i ret
+	eval targ=\$$#
+	if [ -n "$3" ]
+	then
+		if [ ! -d "$targ" ]
+		then
+			print -u2 "$targ is not a directory"
+			return 1
+		fi
+	fi
+	for i
+	do
+		if [ "$i" != "$targ" ]
+		then
+			if [ -d "$targ" ]
+			then
+				onecp $i $targ/${i##*/}
+				ret=$?
+			else
+				onecp $i $targ
+				ret=$?
+			fi
+		fi
+	done
+	return $ret
+}
+function sh_cat
+{
+	typeset i
+	for i
+	do
+		eval exec $FD3\<$i
+		OIFS="$IFS"
+		IFS=
+		while read -u${FD3} -r line
+		do
+			print -r -- "$line"
+		done
+		IFS="$OIFS"
+		eval exec $FD3\<\&-
+	done
+}
+function match
+{
+	typeset expr
+	case "$1" in
+	\^*\$)
+		expr="${1%?}"
+		expr="${expr#?}"
+		;;
+	\^*)
+		expr="${1#?}*"
+		;;
+	*\$)
+		expr="*${1%?}"
+		;;
+	*)
+		expr="*$1*"
+		;;
+	esac
+	case "$line" in
+	$expr)
+		return 0
+		;;
+	*)
+		return 1
+	esac
+}
+function sh_grep
+{
+	typeset i vflag= xflag= cflag= lflag= nflag= c= noprint= expr=
+	set -f
+	while getopts 'vcxlnbe:f:?' c
+	do
+		case "$c" in
+		v)
+			vflag=1
+			;;
+		x)
+			xflag=1
+			;;
+		c)
+			cflag=1
+			;;
+		l)
+			lflag=1
+			;;
+		n)
+			nflag=1
+			;;
+		b)
+			print 'b option not supported'
+			;;
+		e)
+			expr="$OPTARG"
+			;;
+		f)
+			expr="$(<$OPTARG)"
+			;;
+		esac
+	done
+	let OPTIND=OPTIND-1
+	shift $OPTIND
+	if [ -z "$expr" ]
+	then
+		expr="$1"
+		shift
+	fi
+	noprint=$cflag$lflag
+	integer n=0 c=0 tc=0 nargs=$#
+	for i in $* E_ARGS
+	do
+		[ "$i" = E_ARGS -a $nargs -gt 0 ] && break
+		if ((nargs <= 1))
+		then
+			fname=
+		else
+			fname="$i":
+		fi
+		if ((nargs < 1))
+		then
+			eval exec $FD3\<\&0
+		else
+			[ ! -f $i ] && return 2
+			eval exec $FD3\<$i
+		fi
+		while read -u${FD3} -r line
+		do
+			let n=n+1
+			if match "$expr" "$line"
+			then
+				if test -z "$noprint" && test -z "$vflag"
+				then
+					print -r - "$fname${nflag:+$n:}$line"
+				fi
+				let c=c+1
+			else
+				if test -z "$noprint" && test -n "$vflag"
+				then
+					print -r - "$fname${nflag:+$n:}$line"
+					let c=c+1
+				fi
+			fi
+		done
+		if test "$lflag" && ((c))
+		then
+			print - $i
+		fi
+		let tc=tc+c n=0 c=0
+		eval exec $FD3\<\&-
+	done
+	test "$cflag" && print $tc
+	set +f
+	let tc
+}
+function modreg
+{
+	if [ -z "$modreginit" ]
+	then
+		modreginit=on
+		struct modadm name:'char [16]' typedata:string_t
+	fi
+	call modadm $1 1 "@modadm:{ !$2!, !$2! }" || call altperror 'modadm failed'
+}
+function sh_modadmin
+{
+	typeset buf buf2 OIFS pad path modadmininit
+	integer i id LAST
+	if [ -z "$modadmininit" ]
+	then
+		modadmininit=on
+		struct modstatus ms_id ms_base ms_size ms_rev ms_path:'char [1024]' filler:'char [300]'
+	fi
+
+	case "$1" in
+	-u)
+		call moduload $2 || call altperror
+		;;
+	-l)
+		if [ -z "$2" ]
+		then
+			print -u2 "no module name to load"
+			return 1
+		fi
+		case "$2" in
+		/*)
+			path=$2
+			;;
+		*)
+			path=/etc/conf/mod.d/$2
+		esac
+		call -n modload $path || {
+			call altperror "modload $path failed"
+			return 1
+		}
+		;;
+	-d)
+		if [ -z "$2" ]
+		then
+			print -u2 "no path specified"
+			return 1
+		fi
+		call modpath $2 || {
+			call altperror 'modpath failed'
+			return 1
+		}
+		;;
+	-D)
+		call modpath || {
+			call altperror 'modpath failed'
+			return 1
+		}
+		;;
+# Commenting out the -s option for now.  xksh has a bug that causes
+# sh_modadmin -s to dump core sometimes (us94-15732).
+#	-s)
+#		cdecl modstatus mstat={}
+#		(( i = 1 ))
+#		(( LAST = -1 ))
+#		while call -c modstat $i mstat 1
+#		do
+#			cprint -v id mstat.ms_id
+#			if (( id < 10 ))
+#			then
+#				pad=' '
+#			else
+#				pad=
+#			fi
+#			if (( id != LAST ))
+#			then
+#				call -c altprintf "@string_t:!Module Id: %d,$pad          Module: %s$nl!" $id mstat.ms_path
+#				(( LAST = id ))
+#			fi
+#			(( i += 1 ))
+#		done
+#		;;
+# Commenting out the -U option for now.  It calls modadmin -s, which
+# sometimes dumps core.
+#	-U)
+#		buf="$(sh_modadmin -s)$nl"
+#		buf=${buf%,*$2$nl*}
+#		call moduload ${buf##* } || call altperror
+#		;;
+	esac
+}
+function sh_chroot
+{
+	typeset dir=$1
+	shift
+	if [ ! -d "$dir" ]
+	then
+		print -u2 $dir is not a directory
+		return 1
+	fi
+	case "$dir" in
+	/*)
+		;;
+	*)
+		dir=$PWD/$dir
+		;;
+	esac
+	(
+		cd $dir
+		call chroot $dir
+		exec "$@"
+	)
+}
+function sh_mkdir
+{
+	typeset i opt=
+	if [ "$1" = -p ]
+	then
+		opt=-p
+		shift
+	fi
+	for i
+	do
+		if [ -n "$opt" ]
+		then
+			dir=${i%/*}
+			if [ "$dir" != "$i" -a ! -d "$dir" ]
+			then
+				sh_mkdir -p $dir || return 1
+			fi
+		fi
+		call mkdir $i 0777-$(umask) || call altperror 'mkdir failed'
+	done
+}
+function oneln
+{
+	if [ "$1" = -s ]
+	then
+		shift
+		call symlink $1 $2 || { call altperror 'link failed'; return 1; }
+	else
+		call link $1 $2 || { call altperror 'link failed'; return 1; }
+	fi
+}
+function sh_ln
+{
+	typeset targ i ret opt
+	if [ "$1" = -s ]
+	then
+		shift
+		opt=-s
+	else
+		opt=
+	fi
+	eval targ=\$$#
+	if [ -n "$3" ]
+	then
+		if [ ! -d "$targ" ]
+		then
+			print -u2 "$targ is not a directory"
+			return 1
+		fi
+	fi
+	for i
+	do
+		if [ "$i" != "$targ" ]
+		then
+			if [ -d "$targ" ]
+			then
+				oneln $opt $i $targ/${i##*/}
+				ret=$?
+			else
+				oneln $opt $i $targ
+				ret=$?
+			fi
+		fi
+	done
+	return $ret
+}
+function readable
+{
+	eval exec $FD3\<$1
+	typeset ret=$?
+	eval exec $FD3\<\&-
+	return $ret
+}
+function clean
+{
+	cd /
+	sh_rm -rf /mnt/[!os]* /mnt/sbin /mnt/shlib /mnt/opt /mnt/save
+	sh_rm /mnt/*
+}
+function umountall
+{
+	{
+	cd /
+	sh_umount /mnt/stand
+	sh_umount /mnt/usr
+	sh_umount /mnt/home
+	sh_umount /mnt/home2
+	sh_umount /mnt/tmp
+	sh_umount /mnt/mnt
+	sh_umount /mnt/var/tmp
+	sh_umount /mnt/var
+	sh_umount /mnt/cd-rom
+	} > /dev/null 2>&1
+	sh_umount /mnt
+}
+
+function sh_chmod
+{
+	typeset mode=$1 i
+	integer err=0
+	shift
+	for i
+	do
+		call chmod "@string_t:|$i|" 0$mode || { print -u2 "$i: \c"; call altperror; err=err+1; }
+	done
+	return $err
+}
+
+function sh_newvt
+{
+	# Calls will force fork()
+	(
+		call -n setpgrp
+		{
+		stty erase '^h' kill '^u' intr '^?' -parenb -istrip cs8
+		case "$TERM" in
+		*386*mb)	# multibyte console driver
+			/usr/bin/kb_remap -l $LANG vt0${1:-0}
+			;;
+		esac
+		echo "$MiniWelcome"
+		echo "\033[0${1:-0}z" > /dev/vt01
+		export MiniWelcome
+		[ -s /etc/default/keyboard ] && . /etc/default/keyboard
+		[ -z "$KEYBOARD" ] || [ "$KEYBOARD" = "NONE" ] ||
+			/usr/bin/kb_remap -k $KEYBOARD vt0${1:-0}
+		exec /usr/bin/xksh -i -o vi
+		} >/dev/vt0${1:-0} </dev/vt0${1:-0} 2>/dev/vt0${1:-0}
+	)
+}
+
+function faultvt
+{
+	FaultvtError="$*"
+	export MSGWID=
+	export SHADOW_BOXES=1
+	export INIT_SCREEN=true
+	LANG=${LANG:-C}
+	. /etc/inst/locale/$LANG/menus/global.txtstrings
+	. /etc/inst/scripts/winrc
+	. /etc/inst/scripts/scr_init
+
+	eval "display \"$FAULTVT_MESG\""
+	while :
+	do
+		:	
+	done
+}
+
+function setpasswd
+{
+	(
+		call setpgrp
+		"$@" </dev/console >/dev/console 2>/dev/console
+	)
+}
+
+function mountall
+{
+if readable ${CHAR_DISK_NODES[0]%s0}s1 >/dev/null 2>&1
+then
+	echo Mounting root
+	if sh_mount -c ${BLOCK_DISK_NODES[0]%s0}s1 /mnt
+	then
+		test -d /mnt/stand || mkdir /mnt/stand
+		test -d /mnt/usr || mkdir /mnt/usr
+		test -d /mnt/home || mkdir /mnt/home
+		test -d /mnt/tmp || mkdir /mnt/tmp
+		test -d /mnt/home2 || mkdir /mnt/home2
+		sh_mount -c ${BLOCK_DISK_NODES[0]%s0}sa /mnt/stand >/dev/null 2>&1
+		sh_mount -c ${BLOCK_DISK_NODES[0]%s0}s3 /mnt/usr >/dev/null 2>&1 || sh_mount -c ${BLOCK_DISK_NODES[1]%s0}s3 /mnt/usr >/dev/null 2>&1
+		sh_mount -c ${BLOCK_DISK_NODES[0]%s0}s4 /mnt/home >/dev/null 2>&1 || sh_mount -c ${BLOCK_DISK_NODES[1]%s0}s4 /mnt/home >/dev/null 2>&1
+		sh_mount -c ${BLOCK_DISK_NODES[0]%s0}sc /mnt/home2 >/dev/null 2>&1 || sh_mount -c ${BLOCK_DISK_NODES[1]%s0}sc /mnt/home2 >/dev/null 2>&1
+		sh_mount -c ${BLOCK_DISK_NODES[0]%s0}sd /mnt/tmp >/dev/null 2>&1 || sh_mount -c ${BLOCK_DISK_NODES[1]%s0}sd /mnt/tmp >/dev/null 2>&1
+	fi
+fi
+}
+
+function magic
+{
+if [ "$1" = exit ]
+then
+	print "Exiting maintenance mode....."
+	sh_umount /flpy2
+	[ -s /etc/conf/fsmod.d/s5 ] && modadmin -U s5
+	return 0
+fi
+
+print "Preparing maintenance mode....."
+[ -s /etc/conf/fsmod.d/s5 ] && {
+	modreg 4 s5
+	sh_modadmin -l /etc/conf/fsmod.d/s5 2>/dev/null
+}
+if sh_mount -F s5 -r /dev/dsk/f0t /flpy2
+then
+	PATH=$PATH:/flpy2/sbin:/flpy2/usr/bin:/flpy2/usr/sbin:/sbin:/usr/bin:/usr/sbin:/mnt/sbin:/mnt/usr/bin:/mnt/usr/sbin
+	stty erase  echoe
+	if [ "$LANG" = "ja" ]
+	then
+		export T_SUFFIX="mb"
+	else
+		export T_SUFFIX="ie"
+	fi
+	export TERM=AT386-${T_SUFFIX}
+
+	if [ -f /flpy2/.kshrc ]
+	then
+		. /flpy2/.kshrc
+	fi
+	if [ -f /flpy2/etc/conf/mod.d/kdb_util ]
+	then
+		sh_modadmin -l /flpy2/etc/conf/mod.d/kdb_util
+		sh_modadmin -l /flpy2/etc/conf/mod.d/kdb
+	fi
+	[ -d /var/preserve ] || mkdir -p /var/preserve
+	[ ! -f /usr/lib/libcrypt.so ] && ln -s /flpy2/usr/lib/libcrypt.so /usr/lib/libcrypt.so
+	[ ! -f /usr/lib/libcrypt.so.1 ] && ln -s /usr/lib/libcrypt.so /usr/lib/libcrypt.so.1
+	print "'magic exit' to leave maintenance mode."
+else
+	print "'sh_mount -F s5 -r /dev/dsk/f0t /flpy2' failed for maintenance mode"
+fi
+}
+
+function clear_screen
+{
+	print -n '\033[H\033[J'
+}
+
+function halt
+{
+	clear_screen > /dev/console
+	/usr/bin/kb_remap -f default
+	call uadmin 1 0 #Immediate halt
+}
+
+function inst_error
+{
+	faultvt "$INSTerr"
+	halt
+}
+
+function medium_error
+{
+	> $MEDIUM_ERR_FLAG #set a flag so that other processes know about the error
+	exit 1
+}
+
+function menu
+{
+# menu ( menu_cmd_args)
+#	intended to allow menu command to be run on VT
+/usr/sbin/menu $* </dev/vt02 >/dev/vt02 2>/dev/null
+}
+
+# Read a datastream header from stdin
+function read_header
+{
+	integer readsz=512 block_count=1 byte_count read_so_far read_retval
+	typeset buffer
+	typeset nl='
+'
+	cdecl "char [$readsz]" buf=
+
+	while :
+	do
+		(( read_so_far = 0 ))
+		while (( read_so_far < readsz ))
+		do
+			(( byte_count = readsz - read_so_far ))
+			call -c read 0 buf $byte_count
+			(( read_retval = _RETD ))
+			(( read_retval <= 0 || read_retval > byte_count )) && {
+				print -u2 "$0: ERROR: read returned unexpected value."
+				print -u2 "Actual: $read_retval  Expected: $byte_count or less."
+				return 1
+			}
+			buffer="$buffer$(call -c altprintf "%.${read_retval}s" buf)"
+			(( read_so_far += read_retval ))
+		done
+		# The shell strips trailing newlines.  Add them back now.
+		while (( ${#buffer} != block_count * readsz ))
+		do
+			buffer="${buffer}$nl"
+		done
+		(( block_count == 1 )) && {
+			case "$buffer" in
+			*"# PaCkAgE DaTaStReAm:zip"*)
+				;;
+			*)
+				print -u2 "$0: ERROR: Not a datastream."
+				return 2
+				;;
+			esac
+		}
+		case "$buffer" in
+		*"# end of header"*)
+			print -n "$buffer"
+			return 0
+			;;
+		esac
+		(( block_count > 20 )) && {
+			# 20 is an arbitrarily-large high-water mark.
+			# Most datastream headers are only 1 or 2 blocks.
+			print -u2 "$0: ERROR: Datastream header is too large."
+			return 3
+		}
+		(( block_count += 1 ))
+	done
+}
+
+function isreloc
+{
+	[ -n "$2" ] || return 1
+	print $2 |grep "\<$1:" >/dev/null 2>&1
+	return $?
+}
+
+function exppath
+{
+	xpath=$1
+
+	case "$1" in
+	\$*)
+		# delete everything from first / on
+		param=${1%%/*}
+		value=$(eval print $param)
+		case "$1" in
+		*/*)
+			# delete up to and including first /
+			remainder=/${1#*/}
+			;;
+		*)
+			remainder=""
+			;;
+		esac
+		xpath=${value:-${param}}${remainder}
+	esac
+}
+
+function mappath
+{
+	infile=$1
+	fmt_flag=$2
+
+	while read line
+	do
+		unset path
+		unset lpath
+		set -- $line
+		case "$fmt_flag" in
+		0)
+			exppath "$1"
+			case "$xpath" in
+			/*)
+				path="${xpath#/}"
+				;;
+			*)
+				path="$xpath"
+				;;
+			esac
+			;;
+		1)
+			exppath "$1"
+			path=$xpath
+			exppath "$2"
+			path="$path $xpath"
+			;;
+		2)
+			case "$2" in
+			l|s)
+				exppath "${1%%=*}"
+				path=$xpath
+				exppath "${1#*=}"
+				path="$path=$xpath"
+				;;
+			*)
+				exppath "$1"
+				path=$xpath
+				;;
+			esac
+			shift
+			path="$path $*"
+			;;
+		esac
+
+		print "$path"
+	done < $infile
+}
+
+function pkg_reloc
+{
+	unset param
+	unset value
+
+	isreloc "$1" "$2" || return 1
+	param=${2#*${1}:}
+	param=${param%%\ *}
+	value=${param#*=}
+	param=${param%%=*}
+	eval $param=$value
+	export $param
+	return 0
+}
+
+function validate_key
+{
+	#See <sys/keyctl.h>
+	typeset K_VALIDATE=393216
+	struct k_skey sernum:'unchar [16]' serkey:'unchar [16]'
+
+	(( $# == 2 )) || {
+		print 22 #EINVAL
+		return 0
+	}
+	call keyctl $K_VALIDATE "@k_skey:{ !$1!, !$2! }" 1
+	if (( _RETD == -1 ))
+	then
+		print $ERRNO
+		return 0
+	elif (( _RETD == 0 ))
+	then
+		print 0
+		return 0
+	else
+		return 1 # Should never happen.
+	fi
+}
+
+function set_term
+{
+	export TERM=$1
+	call strdup "TERM=$TERM"
+	call -c putenv $_RETX
+}
+
+function Monitor_type 
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset answer
+
+	while :
+	do
+		# Clear the screen and ask the user.
+		print -n "\033[H\033[J$COLOR_PROMPT"
+		read answer
+		case "$answer" in
+		1)
+			set_term AT386-${T_SUFFIX:-ie}
+			break  # break out of the while loop
+			;;
+		2)
+			set_term AT386-M-${T_SUFFIX:-ie}
+			break
+			;;
+		*)
+			print -n "\007"
+			;;
+		esac
+	done
+}
+
+function Color_Console 
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+# TERM is different for multibyte console driver
+# test is specifically Japanese for now.
+	if [ "$LANG" = "ja" ]
+	then
+		export T_SUFFIX="mb"
+	else
+		export T_SUFFIX="ie"
+	fi
+
+	adpt_type
+	case $? in
+	0)
+		#non-integral console
+		set_term ANSI
+		;;
+	1|4)
+		#1=MONO 4=VGA_MONO
+		set_term AT386-M-${T_SUFFIX}
+		;;
+	3)
+		#VGA_COLOR
+		set_term AT386-${T_SUFFIX}
+		;;
+	*)
+		#2=CGA 5=VGA_? 9=EGA 10=unknown controller
+		# Ask whether the user sees color.
+		Monitor_type     
+		;;
+	esac
+	# Force terminal into color 80x25 mode -- work around problem found
+	# on Dell Fastwrite VGA controller
+	[ "${TERM}" = "AT386" -o "${TERM}" = "AT386-ie" ] &&
+		stty VGA_C80x25 1>/dev/null 2>&1
+}
+
+function get_xbus
+{
+	# ISA_BUS  -- 0
+	# EISA_BUS -- 1
+	# MCA_BUS  -- 2
+	ccall sysi86 94
+	print $_RETD
+}
+
+function save_ihv_info
+{
+	integer i=0
+
+	{
+		while (( i < ${#IHVHBAMODS[*]} ))
+		do
+			print IHVHBAMODS[$i]=\"${IHVHBAMODS[i]}\"
+			(( i += 1 ))
+		done
+		(( i = 0 ))
+		while (( i < ${#IHVHBAS[*]} ))
+		do
+			print IHVHBAS[$i]=\"${IHVHBAS[i]}\"
+			(( i += 1 ))
+		done
+	} > /tmp/ihv_info
+}
+
+function load_ihv_info
+{
+	[ -s /tmp/ihv_info ] && . /tmp/ihv_info
+}
+
+function screen_refresh
+{
+	print 'export ENV=/funcrc' > /tmp/drf_env
+	call putenv "ENV=/tmp/drf_env"
+	call win_execute "AbCdEf"  # any non-existing file
+	call unlink /tmp/drf_env
+}
+
+function patch
+{
+	typeset f
+	print 'Please insert the patch-diskette in floppy drive now.'
+	read f?"Press ENTER when ready."
+	print 'Applying patch .... please wait'
+	(cd /mnt;cpio -iuvd </dev/rdsk/f0t)
+	print 'The patch has been applied.  Please remove diskette now.'
+	print 'To return to installation type: ALT-SYSRQ F1'
+}
+
+function max {
+	[ -n "$debug" ] && set -x
+        integer i=1 maxval=0 nparams=$# arg=$1
+        (( maxval = arg ))
+        while (( i < nparams ))
+        do
+                shift
+                (( arg = $1 ))
+                if (( maxval < arg ))
+                then
+                        (( maxval = arg ))
+                fi
+                (( i += 1 ))
+        done
+        return $maxval
+}
+
+#
+# List all the modules. Looks in the module directories.
+# This is used to expand "all" in INITSTATE.
+#
+
+function list_all_modules
+{
+	(cd /
+	 . $ui_mapfile
+	 cd $module_path
+	 echo -n * ""
+	 cd /
+	 . $install_mapfile
+	 cd $module_path
+	 echo *)
+}
+

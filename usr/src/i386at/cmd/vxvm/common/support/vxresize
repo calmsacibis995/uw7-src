@@ -1,0 +1,195 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxresize.sh	1.2 3/3/97 03:17:03 - cmd.vxvm:common/support/vxresize.sh
+#ident	"@(#)cmd.vxvm:common/support/vxresize.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+PATH=/usr/lib/vxvm/bin:/sbin:/usr/sbin:/usr/bin
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+[ -n "$VOLROOT_DIR" ] && {
+	PATH=$VOLROOT_DIR/usr/lib/vxvm/bin:$VOLROOT_DIR/usr/sbin:$PATH
+}
+export PATH
+
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+usage()
+{
+	cat <<! >&2
+`egettxt "\
+Usage: vxresize [-g diskgroup] [-F fstype] [-fxsb] volume new-length [media ...]
+" vxvmshm:541`
+!
+}
+
+quit()
+{
+	rm -f $tmpfile1 $tmpfile2
+	exit $1
+}
+
+doit()
+{
+	[ "$verbose" ] && echo "! $*"
+	("$@")
+}
+
+tmpfile1=${TMPDIR:-/tmp}/vx.1.$$
+tmpfile2=${TMPDIR:-/tmp}/vx.2.$$
+
+trap "quit 1" INT HUP QUIT TERM
+
+F_fstype=
+g_diskgroup=
+f_force=
+x_extend=
+s_shrink=
+b_opt=
+verbose=
+v_opt=
+while getopts :F:g:fxsbv c; do
+	case $c in
+	F)	F_fstype=$OPTARG;;
+	g)	g_diskgroup=$OPTARG;;
+	f)	f_force=yes;;
+	x)	x_extend=yes;;
+	s)	s_shrink=yes;;
+	b)	b_opt=-b;;
+	v)	verbose=yes; v_opt=-v;;
+	?)	usage; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ $# -lt 2 ]
+then
+	usage
+	exit 1
+fi
+vname=$1
+newlen=$2
+shift 2
+
+# determine the current length, usage type, and disk group of the volume
+
+if [ -z "$g_diskgroup" ]
+then
+	vxprint -AQvF "%dgname %name %usetype %len" -- "$vname" 2> /dev/null |
+		grep . > $tmpfile1
+else
+	vxprint -g "$g_diskgroup" -vF "%dgname %name %usetype %len" -- \
+		"$vname" 2> /dev/null > $tmpfile1
+fi
+g_diskgroup=
+oldlen=
+U_usetype=
+exec 3<&0 < $tmpfile1
+while read group vx usetype len
+do
+	oldlen=$len
+	U_usetype=$usetype
+	if [ "X$group" = Xrootdg ]
+	then
+		g_diskgroup=rootdg
+		break
+	fi
+	if [ ! -z "$g_diskgroup" ]
+	then
+		g_diskgroup="$g_diskgroup" group="$group" egettxt \
+"vxresize: $2: Volume is in both groups $g_diskgroup and $group" \
+vxvmshm:656 $0 "$@" 
+		quit 1
+	fi
+	g_diskgroup=$group
+done
+exec 0<&3
+if [ -z "$oldlen" ]
+then
+	egettxt "vxresize: Volume $2: Not found in configuration" \
+		vxvmshm:660 $0 "$@" >&2
+	quit 1
+fi
+
+# if the length is specified as -number or +number, then add to the
+# old length
+
+case $newlen in
+-*|+*)	newlen=$oldlen$newlen;;
+esac
+newlen=`strtovoff "\$newlen" 2>&1`
+case $newlen in
+[0-9]*)	:;;
+*)	newlen="$newlen" egettxt "vxresize: $newlen" vxvmshm:657 >&2
+	quit 1;;
+esac
+
+# make sure that the usage type supports resizing of volumes
+
+resize=${VOL_TYPE_DIR}/$U_usetype/vxresize
+if [ ! -x "$resize" ]
+then
+	U_usetype="$U_usetype" egettxt \
+'vxresize: ERROR: Volume usage type $U_usetype does not support resizes' \
+		vxvmshm:658 >&2
+	quit 1
+fi
+
+# resize the file system and the volume in the appropriate order for
+# a shrink or grow.  Resize the file system even if the size of the
+# volume isn't changing.  This allows a file system size to be adjusted
+# to match the current length of the volume, if it currently differs.
+
+if [ $oldlen -eq $newlen ]
+then
+	vname="$vname" oldlen="$oldlen" egettxt \
+"vxresize: NOTE: Volume $vname: Volume length is already $oldlen" \
+vxvmshm:659
+	doit "$resize" "$F_fstype" "$U_usetype" "$g_diskgroup" "$vname" \
+		$newlen $f_force
+elif [ $newlen -lt $oldlen ]
+then
+	if [ "$x_extend" ]
+	then
+		vname="$vname" oldlen="$oldlen" newlen="$newlen" egettxt \
+"vxresize: Volume $vname length is currently $oldlen
+\twhich is shorter than $newlen" vxvmshm:661 >&2
+		quit 1
+	fi
+	doit "$resize" "$F_fstype" "$U_usetype" "$g_diskgroup" "$vname" \
+		$newlen $f_force || quit $?
+	doit vxassist -g "$g_diskgroup" shrinkto "$vname" $newlen
+elif [ $newlen -gt $oldlen ]
+then
+	if [ "$s_shrink" ]
+	then
+		vname="$vname" oldlen="$oldlen" newlen="$newlen" egettxt \
+"vxresize: Volume $vname length is currently $oldlen
+\twhich is shorter than $newlen" vxvmshm:661 >&2
+		quit 1
+	fi
+	doit vxassist $b_opt -g "$g_diskgroup" growto "$vname" $newlen "$@" &&
+	if [ "X$g_diskgroup" = Xrootdg ] && [ "X$U_usetype" = Xroot ] &&
+	   [ "X$vname" = Xrootvol ]
+	then
+		doit vxbootsetup $v_opt
+	fi
+	doit "$resize" "$F_fstype" "$U_usetype" "$g_diskgroup" "$vname" \
+		$newlen $f_force
+fi
+quit $?

@@ -1,0 +1,32 @@
+#!/usr/bin/sh
+#ident	"@(#)udk-uwcompat:i386/pkg/UW2compat/preremove	1.4"
+
+# UDK preremove script
+
+FAILURE=1	# fatal error
+
+. $PTFVARS
+
+PKGMSG={$PKGINST}.pkg
+
+# if $FILEINFO doesn't exist, it's probably 'cause something went wrong
+# during pkgadd and postinstall never got to create it -- that is,
+# we're now trying to pkgrm a partially installed package so we can perhaps
+# try again.
+
+[ -r $FILEINFO ] || exit 0
+
+
+# make sure the files we installed are still the same
+
+grep "^/.*${PKGINST}" ${CONTENTS} | \
+	awk '($2 == "f" || $2 == "v") {print $1, $7, $8, $9}' | \
+	cmp -s - $FILEINFO
+cmprc=$?
+
+[ $cmprc -eq 0 ] || {
+	message -d `pfmt -s error -g ${PGKMSG}:7 "cannot restore files because they have been replaced by another package.  Cannot remove %s\n" ${NAME} 2>&1`
+	exit $FAILURE
+}
+
+exit 0

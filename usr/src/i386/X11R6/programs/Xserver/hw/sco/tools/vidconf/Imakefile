@@ -1,0 +1,103 @@
+#	@(#)Imakefile	3.1	8/29/96	21:23:28
+#	@(#) Imakefile 11.2 94/04/17
+#
+#       SCCS:@(#)Imakefile12.296/07/31
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1992.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+# 
+#	Fri Aug  9 14:40:32 PDT 1996	-	hiramc@sco.com
+#	- begin porting to Gemini, change devices names, set DESTDIR
+#	- properly, remove tools directory - don't need stanza files yet
+# M016, 5-Dec-95, davidw@sco.com
+#	Update Imakefile to trasverse vidconfGUI and depend properly.
+# M016, 5-Dec-95, davidw@sco.com
+#	Retired build rules for vidconf source and oa/.
+# M015, 7-Sep-94, davidw@sco.com
+#	update format of DEVICES files to include a string representing tty.
+# M014, 24-Apr-94, toma@sco.com
+#	remove oa from SUBDIRS. was getting lots of "va_list undefined"  
+#	errors and oa isnt necessary anymore.
+# M013, 17-Apr-94, davidw@sco.com
+#	Commented out Install rules for most everything for BL8.
+#	Getting ready to remove from sccs next.
+# M012, 27-Jan-94, davidw@sco.com
+#	Temporary move of graphics.sh to graphics.old.sh for BL7 Everest.
+#	Create new mkdev graphics that runs vidconfGUI instead. he he
+# M011, 13-Feb-92, mikep@sco.com
+#	add tools directory
+# M010, 05-Nov92, davidw@sco.com
+# 	added vidscript.c to SRC/OBJ
+# M009, 25-Aug-92, buckm
+# 	remove scripts from SUBDIRS.
+# M008, 02-Aug-92, hess
+# 	add vidiqm
+# M007, 30-Jul-92, hess
+# 	remove grafinfo, they are in ddx/ports/splat
+# 	clean up install rules.	
+# M006,	03-Oct-91, mikep@sco.com
+#	add grafinfo and monitors to SUBDIRS
+# M005,	24-Sep-91, pavelr
+#	add scripts to subdirs
+# M004, 03-Sep-91, hess
+#	make sure /usr/lib/mkdev is present
+# M003, 03-Sep-91, hess
+# 	add rule to install /usr/lib/mkdev/graphics 
+# M002, 03-Sep-91, hess
+# 	install vidconf in /usr/lib/vidconf/vidconf
+# M001, 03-Sep-91, hess
+#	add vidparse to SUBDIRS, clean up install rules
+# M000, 30-Aug-91, hess
+# 	added ./oa directory for liboa.a, sccs this dir
+#	add SUBDIRS=oa
+#
+#	25nov90		scol!hughd
+#	- pointed OA at ../lib/liboa instead of at /
+#
+#	27Aug91		pavelr@sco.com
+#	- massive changes, munged this slowly into an I makefile
+#	- changed rule for making menus
+#	- added libapinp to OALIBS
+#	- added -lx for completion
+#	- put in -lc before -lx to get correct dir routines
+#
+#	5 Sep 91	pavelr
+#	- added depend rule
+
+VIDCONFDIR   = $(USRLIBDIR)/vidconf
+
+#define IHaveSubdirs YES
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+SUBDIRS = vidconfGUI vidparse moninfo autoconfig
+
+#####################################################################
+# 				Rules				    # 
+#####################################################################
+
+MakeSubdirs($(SUBDIRS)) 
+all::   
+
+InstallNamedProg(graphics.sh,graphics,$(USRLIBDIR)/mkdev)
+InstallNamedProg(vidiqm,vidiqm,$(VIDCONFDIR))
+
+# vidconf specific
+DEVICES = $(DESTDIR)$(USRLIBDIR)/vidconf/devices
+
+install:: 
+	MakeDir($(DEVICES))
+	@echo "/dev/vt01 vt01" > $(DEVICES)/vt01
+	@echo "/dev/vt02 vt02" > $(DEVICES)/vt02
+	@echo "/dev/vt03 vt03" > $(DEVICES)/vt03
+	@echo "/dev/vt04 vt04" > $(DEVICES)/vt04
+	@echo "/dev/vt05 vt05" > $(DEVICES)/vt05
+	@echo "/dev/vt06 vt06" > $(DEVICES)/vt06
+	@echo "/dev/vt07 vt07" > $(DEVICES)/vt07
+	@echo "/dev/vt08 vt08" > $(DEVICES)/vt08
+	@echo "/dev/vt09 vt09" > $(DEVICES)/vt09
+	@echo "/dev/vt10 vt10" > $(DEVICES)/vt10
+	@echo "/dev/vt11 vt11" > $(DEVICES)/vt11
+	@echo "/dev/vt12 vt12" > $(DEVICES)/vt12
+
+DependSubdirs($(SUBDIRS))
+

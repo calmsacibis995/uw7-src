@@ -1,0 +1,51 @@
+#ident	"@(#)preinstall	1.4"
+#ident	"$Header$"
+
+############# Begin UPGRADE AND OVERLAY #######################
+#
+# This is required for an Upgrade only when SVR4.2 crypt is not installed
+#
+# This is required in case there is NOT a Driver_d.o in the package
+# (which there is NOT in SVR4.2).  The is really designed to get
+# rid of the old Version 4 Driver_d.o.
+#
+# If I don't do this, the postinstall script will end up linking
+# the old Version 4 Driver_d.o to Driver.o and the new SVR4.2
+# driver ends being moved into oblivion as Driver_i.o.
+#
+
+SCRIPTS=/usr/sbin/pkginst
+UPGRADE_STORE=/var/sadm/upgrade
+
+. $SCRIPTS/updebug
+
+#is it upgrade or overlay?
+#	${SCRIPTS}/chkpkgrel returns    2 if installed pkg is SVR4.2 
+#					4 if installed pkg is SVR4.0 V4
+#					1 if installed pkg if UNK version
+#					0 if pkg is not installed
+
+[ "$UPDEBUG" = "YES" ] && goany
+
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+
+case $PKGVERSION in
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	*)	unset PKGINSTALL_TYPE	;;
+esac
+
+#check if the 'crypt' package is installed
+
+${SCRIPTS}/chkpkgrel crypt
+RC=$?
+case $RC in
+	2)	CRYPT=YES	;;	#SVR4.2 crypt is installed
+	*)	unset CRYPT	;;
+esac
+
+[ "$PKGINSTALL_TYPE" = UPGRADE -a ! "$CRYPT" ] && \
+	rm -f /etc/conf/pack.d/des/Driver_d.o
+
+rm -f $UPGRADE_STORE/${PKGINST}.env $UPGRADE_STORE/crypt.env
+exit 0

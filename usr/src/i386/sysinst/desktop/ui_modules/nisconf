@@ -1,0 +1,481 @@
+#!/sbin/sh
+#ident "@(#)nisconf	15.2     98/01/18"
+
+#-------------------------------------------------------
+
+function noop
+{
+  beep
+}
+
+function skip_test
+{
+	[ -n "$debug" ] && set -x
+
+	# common.rc invokes this to see if this module needs to run,
+	# which is only if the "nis" package will be installed.
+	# If the package is not going to be installed, exit.
+
+	UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+	[[ " $UnixWare_PKGS " = *" nis "* ]] || ii_exit $direction
+
+	# if we've been asked to defer configuration, skip on by.
+	NICS_CHOICE=$(svar get NICS_CHOICE)
+	tcp_defer=$(svar get tcp_defer)
+	[ "$NICS_CHOICE" = "DEFER_CONFIG" -o "$tcp_defer" == "true" ] && {
+		# some of the network postinstall scripts use
+		# empty NICS_TYPE as a way to defer configuration
+		ivar set NIS_TYPE "DEFER"
+		ii_exit $direction
+	}
+}
+
+. /globals.sh
+. /isl/ui_modules/common.rc
+
+function setnows {
+	eval "$1=\"$2\""
+}
+
+# Table of Contents
+# -----------------
+#  go_back
+#  go_next
+#  get_help
+#
+#  valid_nis_type
+#  valid_domain_name
+#  choose_nis_type
+#  choose_nis_type_exit
+#
+#  nis_config_update
+#  nis_config_shutdown
+#  nis_net_config
+#
+#  do_nis_type
+#  do_server_name
+#  entry_get_parms
+
+export DEBUGFILE=/tmp/jtb.debug
+
+# Don't automatically export all subsequently defined variables
+set +a
+PS4='[$LINENO]+ '
+
+
+# ----------------------------------------------------
+# End of generics
+# ----------------------------------------------------
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices.
+	#
+
+	nis_config_update
+	nis_config_shutdown
+
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices if they're valid,
+	# otherwise, stick around.
+	#
+
+	nis_config_update validate
+	retval=$?
+
+	[[ $retval != 0 ]] && return $retval
+
+	nis_config_shutdown
+
+	#
+	# Tell the sequencer to go forward
+	#
+	ii_exit NEXT
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+
+	nis_config_update
+	nis_config_shutdown
+
+	ivar set help_topic nisconf
+	ii_exit HELP
+}
+
+
+# determine if nis type is reasonable
+function valid_nis_type
+{
+[ -n "$debug" ] && set -x
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+	[[ $1 = @(master|slave|client|DEFER) ]] || {
+		errmsg "${inet_invalid_nis_type}"
+		return 1
+	}
+
+	return 0
+}
+
+
+# determine if domain name is reasonable
+function valid_domain_name
+{
+[ -n "$debug" ] && set -x
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+# the following are the rules regarding domain name:
+# First Character  in [A-Za-z]
+# Other Characters in [-A-Za-z0-9]
+# Final Character  in [A-Za-z0-9]
+# Labels are of form  First{Other}*{Final}
+# Full name of form   Label{.Label}*
+#
+# Unacceptable:
+#	non-alphanumeric characters except for . and -
+#	- or a number at the beginning
+#	- or a number right after a .
+#	two . characters in a row
+#	- at the end or before a .
+
+	[[ $1 = @(*[!-A-Za-z0-9.]*|[-0-9]*|*.[-0-9]*|*..*|*-.*|*-) ]] && {
+		errmsg "${inet_invalid_name_char}"
+		return 1;
+	}
+
+	return 0
+}
+
+function valid_ip_addr
+{
+[ -n "$debug" ] && set -x
+
+	case "$1" in
+	#illegal addresses have non-(digit dot)
+	#2 or more dots in a row
+	#4 or more dots in addr
+	#starting octet has leading zero?
+	#begins or ends with a .?
+	*[!0-9.]*|*..*|*.*.*.*.*|.*|*.)
+		errmsg "${via_net_err}"
+		return 1;
+		;;
+	#numbers greater than 255: four+ digits, [3-9]XX, 2[6-9]X, 25[6-9]
+	*[1-9][0-9][0-9][0-9]*|*[3-9][0-9][0-9]*|*2[6-9][0-9]*|*25[6-9]*)
+		errmsg "${via_net_err}"
+		return 1; ;;
+	#MUST have 3 dots (note:127.0.0.1 == 127.0...but do we deal with it?)
+	*.*.*.*)
+		return 0;
+		;;
+	esac
+	#did not have exactly 3 dots
+	errmsg "${via_net_err}"
+	return 1;
+}
+
+
+# choose_nis_type
+#
+# Arguments: $1=current_value $2=destination_field
+
+function choose_nis_type
+{
+[ -n "$debug" ] && set -x
+	CHOOSE_TITLE="${CHOOSE_NIS_TYPE_TITLE}"
+	CHOOSE_FOOTER="${CHOOSE_NIS_TYPE_FOOTER}"
+
+	typeset i
+	typeset t_choice=master
+
+	for i in master slave client
+	do
+		[[ $1 = $i ]] && t_choice="${i}"
+	done
+
+	choose -b -exit choose_nis_type_exit -winparms "-above 4 -below 1" "$t_choice" master slave client
+}
+
+function choose_nis_type_exit
+{
+[ -n "$debug" ] && set -x
+	do_nis_type "$CHOICE"	# Selection has some immediate effects
+	return 0
+}
+
+#
+#  If $1 is "validate", we check to make sure all fields have valid
+#  values.  If so, or if $1 is not "validate", we update the ifile
+#  with all of the shell variables we set here.
+#
+function nis_config_update
+{
+[ -n "$debug" ] && set -x
+
+	footer ""
+	msg ""
+
+	#
+	#  Make sure that this form is completely filled in with 
+	#  valid values.  Each address is piped to a read to eliminate
+	#  leading or trailing whitespace which can foul up commands
+	#  that will use these addresses (like pkgcat).
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	typeset chk_NIS_TYPE
+	typeset chk_NIS_DOMAIN
+	typeset chk_NIS_SERVER[0]
+	typeset chk_NIS_SERVER[1]
+	typeset chk_NIS_SERVER[2]
+
+	setnows chk_NIS_TYPE		$NIS_TYPE
+	setnows chk_NIS_DOMAIN		$NIS_DOMAIN
+	setnows chk_NIS_SERVER[0]	${NIS_SERVER[0]}
+	setnows chk_NIS_SERVER[1]	${NIS_SERVER[1]}
+	setnows chk_NIS_SERVER[2]	${NIS_SERVER[2]}
+
+	[[ $1 = "validate" ]] && {
+
+		valid_nis_type "${chk_NIS_TYPE}"
+		[ $? != 0 -o -z "${chk_NIS_TYPE}" ] && {
+			II_FLD[${II_ERR}]="${NIS_TYPE_PROMPT}"
+			let II_ERR+=1
+		}
+
+		[ "$NIS_TYPE" == "DEFER" ] || {
+		    valid_domain_name "${chk_NIS_DOMAIN}"
+		    [ $? != 0 -o -z "${chk_NIS_DOMAIN}" ] && {
+			II_FLD[${II_ERR}]="${NIS_DOMAIN_PROMPT}"
+			let II_ERR+=1
+		    }
+		}
+
+#		valid_domain_name "${chk_NIS_SERVER[0]}"
+#		[ $? != 0 -o -z "${chk_NIS_SERVER[0]}" ] && {
+#		[ $? != 0 ] && {
+#			II_FLD[${II_ERR}]="${NIS_SERVER_GENERIC_PROMPT}"
+#			let II_ERR+=1
+#		}
+	}
+
+	if [ ${II_ERR} != 0 ] 
+	then
+		eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+		return 1
+	else
+		ivar set NIS_TYPE	"${chk_NIS_TYPE}"
+		ivar set NIS_DOMAIN	"${chk_NIS_DOMAIN}"
+		ivar set NIS_SERVER[0]	"${chk_NIS_SERVER[0]}"
+		ivar set NIS_SERVER[1]	"${chk_NIS_SERVER[1]}"
+		ivar set NIS_SERVER[2]	"${chk_NIS_SERVER[2]}"
+		return 0
+	fi
+}
+
+
+# Close the form and whatever else we need to do before leaving this module
+
+function nis_config_shutdown
+{
+[ -n "$debug" ] && set -x
+
+	if [ -n "$myFID" ]
+	then
+		destroy_form $myFID
+		myFID=
+	fi
+	if [ -n "$myWID" ]
+	then
+		wclose $myWID
+		myWID=
+	fi
+}
+
+
+function nis_net_config
+{
+[ -n "$debug" ] && set -x
+	FOOTER="$NIS_FORM_FOOTER"
+
+	#
+	# Determine width of this menu
+	#
+	typeset II_WIDTH=39		# Width of input field (+4)
+	typeset II_WIDTH_MAX=0
+	typeset field_cnt=7		# 2 lines of blanks, 5 fields
+
+	for i in \
+		"${#NIS_TYPE_PROMPT}" \
+		"${#NIS_DOMAIN_PROMPT}" \
+		"${#NIS_SERVER_UNUSED_PROMPT}" \
+		"${#NIS_SERVER_MASTER_PROMPT}" \
+		"${#NIS_SERVER_SLAVE_PROMPT}" \
+		"${#NIS_SERVER_SLAVE_OPT_PROMPT}"
+	do
+		(( II_WIDTH_MAX < i )) && (( II_WIDTH_MAX = i ))
+	done
+
+	let II_FIELD_LOC=${II_WIDTH_MAX}+3
+	let II_WIDTH=${II_WIDTH}+${II_WIDTH_MAX}
+
+	place_window -right 1 ${II_WIDTH} ${field_cnt} -current 'footer "${NIS_TYPE_FOOTER}"' -fg $COMBO2_FG -bg $COMBO2_BG -title "${NIS_CONF_TITLE}"
+	myWID=$CURWIN
+
+	open_form -exit 'go_next'
+	myFID=$FID
+
+	add_field  -choice 'choose_nis_type "${NIS_TYPE}"' -exit 'do_nis_type "${NIS_TYPE}"' -entry 'msgnoerr $NIS_TYPE_MSG;footer "$NIS_TYPE_FOOTER"' -p "${NIS_TYPE_PROMPT}" -ilen 6 -ix ${II_FIELD_LOC} NIS_TYPE
+	add_field -exit 'valid_domain_name "${NIS_DOMAIN}"' -entry 'msgnoerr $NIS_DOMAIN_MSG;footer "$NIS_FORM_FOOTER"' -p "${NIS_DOMAIN_PROMPT}" -ilen 35 NIS_DOMAIN
+	add_field -exit 'do_server_name 0 "${NIS_SERVER[0]}"' -entry 'msgnoerr $NIS_SERVER_MSG;footer "$NIS_FORM_FOOTER"' -p "${NIS_SERVER_PROMPT_A}" -ilen 35 NIS_SERVER[0]
+	add_field -exit 'do_server_name 1 "${NIS_SERVER[1]}"' -entry 'msgnoerr $NIS_SERVER_MSG;footer "$NIS_FORM_FOOTER"' -p "${NIS_SERVER_PROMPT_B}" -ilen 35 NIS_SERVER[1]
+	add_field -exit 'do_server_name 2 "${NIS_SERVER[2]}"' -entry 'msgnoerr $NIS_SERVER_MSG;footer "$NIS_FORM_FOOTER"' -p "${NIS_SERVER_PROMPT_B}" -ilen 35 NIS_SERVER[2]
+
+	run_form $myFID
+}
+
+
+function do_nis_type
+{
+[ -n "$debug" ] && set -x
+	valid_nis_type "$1" || return $?
+	integer i j
+	
+	case $1 in
+		master)
+			[[ -z ${NIS_SERVER[0]} ]] &&
+				fld_change $myFID 2 "${save_NIS_SERVER[0]}"
+			fld_pchange $myFID 2 "$NIS_SERVER_SLAVE_PROMPT"
+			fld_gray $myFID 2 0
+
+			for i in 3 4
+			do
+			   (( j = i - 2 ))
+			   [[ -z ${NIS_SERVER[j]} ]] &&
+				fld_change $myFID $i "${save_NIS_SERVER[j]}"
+			   fld_pchange $myFID $i "$NIS_SERVER_SLAVE_OPT_PROMPT"
+			   fld_gray $myFID $i 0
+			done;;
+		slave)
+			[[ -z ${NIS_SERVER[0]} ]] &&
+				fld_change $myFID 2 "${save_NIS_SERVER[0]}"
+			fld_pchange $myFID 2 "$NIS_SERVER_MASTER_PROMPT"
+			fld_gray $myFID 2 0
+
+			for i in 3 4
+			do
+			   fld_pchange $myFID $i "$NIS_SERVER_UNUSED_PROMPT"
+			   fld_change $myFID $i ""
+			   fld_gray $myFID $i 1
+			done;;
+		client)
+			for i in 2 3 4
+			do
+			   (( j = i - 2 ))
+			   [[ -z ${NIS_SERVER[j]} ]] &&
+				fld_change $myFID $i "${save_NIS_SERVER[j]}"
+			   fld_pchange $myFID $i "$NIS_SERVER_PROMPT"
+			   fld_gray $myFID $i 0
+			done;;
+	esac
+	return 0
+}
+
+
+function do_server_name
+{
+[ -n "$debug" ] && set -x
+	valid_domain_name "$2" || {
+		valid_ip_addr || return $?
+	}
+
+	save_NIS_SERVER[$1]="$2"
+
+	return 0
+}
+
+function defer_nis_config
+{
+	ivar set NIS_TYPE "DEFER"
+	NIS_TYPE="DEFER"
+}
+
+function entry_get_parms
+{
+[ -n "$debug" ] && set -x
+	# Get the values for our variables out of the ifile.
+
+	NIS_TYPE=`ivar get NIS_TYPE`
+	[ "$NIS_TYPE" == "DEFER" ] && NIS_TYPE=""
+	NIS_DOMAIN=`ivar get NIS_DOMAIN`
+	NIS_SERVER[0]=`ivar get NIS_SERVER[0]`
+	NIS_SERVER[1]=`ivar get NIS_SERVER[1]`
+	NIS_SERVER[2]=`ivar get NIS_SERVER[2]`
+
+	save_NIS_SERVER[0]="${NIS_SERVER[0]}"
+	save_NIS_SERVER[1]="${NIS_SERVER[1]}"
+	save_NIS_SERVER[2]="${NIS_SERVER[2]}"
+
+	# If no type has been set yet, we assume the host is a client
+	[[ -z $NIS_TYPE ]] && NIS_TYPE=client
+
+	case $NIS_TYPE in
+		master)
+			NIS_SERVER_PROMPT_A="$NIS_SERVER_SLAVE_PROMPT"
+			NIS_SERVER_PROMPT_B="$NIS_SERVER_SLAVE_OPT_PROMPT";;
+		slave)
+			NIS_SERVER_PROMPT_A="$NIS_SERVER_MASTER_PROMPT"
+			NIS_SERVER_PROMPT_B="$NIS_SERVER_UNUSED_PROMPT";;
+		client)
+			NIS_SERVER_PROMPT_A="$NIS_SERVER_PROMPT"
+			NIS_SERVER_PROMPT_B="$NIS_SERVER_PROMPT";;
+	esac
+}
+
+entry_get_parms
+nis_net_config
+
+# ----------------------------------------------------
+# More generics
+# ----------------------------------------------------
+
+# process user input
+
+set_hotkey 1 get_help
+set_hotkey 3 noop
+set_hotkey 4 noop
+set_hotkey 5 noop
+set_hotkey 6 noop
+set_hotkey 7 noop
+set_hotkey 8 "defer_nis_config; go_next"
+set_hotkey 9 go_back
+input_handler
+
+#
+# Done
+#
+go_next
+

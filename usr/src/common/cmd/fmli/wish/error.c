@@ -1,0 +1,30 @@
+/*		copyright	"%c%" 	*/
+
+/*
+ * Copyright  (c) 1985 AT&T
+ *	All Rights Reserved
+ */
+#ident	"@(#)fmli:wish/error.c	1.2.4.3"
+
+#include	<stdio.h>
+#include	"wish.h"
+#include	"token.h"
+
+token
+error_stream(t)
+register token	t;
+{
+	if (t == TOK_LOGOUT || t == TOK_NOP)
+		return t;
+	flushinp();
+	switch (t) {
+	case TOK_BADCHAR:
+	default:
+#ifdef _DEBUG
+		_debug(stderr, "error: token = %d\n", t);
+#endif
+		beep();
+		break;
+	}
+	return TOK_NOP;
+}

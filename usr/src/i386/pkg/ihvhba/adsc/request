@@ -1,0 +1,14 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/adsc/request	1.1.2.1"
+
+# Check if HBA was previously installed via the base package. 
+# This could be the case if this is an update installation
+# of the HBA package and the original HBA was installed via
+# the installation boot floppy.  If it was, create a reverse
+# dependency on the base package so that this package may
+# not be removed from the system unless the base package is
+# already removed (unlikely).
+grep "/etc/conf/mdevice.d/$PKGINST.*base$" /var/sadm/install/contents 2>&1 >/dev/null
+if [ $? -eq 0 ]
+then
+	echo CLASSES=\"$CLASSES dep\" >$1
+fi

@@ -1,0 +1,192 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.import.sh	1.2 3/3/97 03:19:35 - cmd.vxvm:common/voladm/disk.import.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.import.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push ImportDiskGroup
+voladm_help_push disk.import.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:219 "Enable access to (import) a disk group"
+	ewritemsg -M vxvmshm:555 \
+"Use this operation to enable access to a disk group.  This can be
+  used as the final part of moving a disk group from one system to
+  another.  The first part of moving a disk group is to use the
+  \\\"Remove access to (deport) a disk group\\\" operation on the
+  original host.
+
+  A disk group can be imported from another host that failed without
+  first deporting the disk group.  Be sure that all disks in the disk
+  group are moved between hosts.
+
+  If two hosts share a SCSI bus, be very careful to ensure that the
+  other host really has failed or has deported the disk group.  If
+  two active hosts import a disk group at the same time, the disk
+  group will be corrupted and will become unusable."
+
+	while true
+	do
+		_riput=`egettxt "Select disk group to import" vxvmshm:362`
+		read_input "$_riput" "<group>,list" list
+		import=$input
+		case $import in
+		"")	ewritemsg -M vxvmshm:90 "A disk group name is required."
+			continue;;
+		list)	voladm_reonline_all
+			(vxdisk -s list; echo) |
+			while true
+			do
+				key=
+				value=
+				read key value || break
+				case $key in
+				Disk:)   daname=$value;;
+				flags:)	 flags=$value;;
+				dgname:) dgname=$value;;
+				dgid:)   dgid=$value;;
+				"")	 if not list_member imported $flags &&
+					    [ -n "$dgname" ] && [ -n "$dgid" ]
+					 then
+						dogi_slice_to_device $daname dev
+						echo "$dgname $dgid $dev"
+					 fi
+					 daname=; flags=; dgname=; dgid=;;
+				esac
+			done | sort | awk '
+			    {
+				if (dgname != "") {
+				    printf("\n");
+				}
+				if ($1 != dgname || $2 != dgid) {
+				    printf("\n  GROUP %s (id: %s)\n  DEVICES:",\
+					   $1, $2);
+				    dgname=$1; dgid=$2;
+				    ncol = 10;
+				}
+				if (ncol + length($3) + 1 > 76) {
+				    printf("\n          ");
+				    ncol = 10;
+				}
+				printf(" %s", $3);
+				ncol += length($3) + 1;
+			    }
+			END {
+				if (dgname == "") {
+				    printf("No disk groups are available for import");
+				} else {
+				    printf("\n\n");
+				}
+			    }
+			' | voladm_display
+			continue
+			;;
+		esac
+		break
+	done
+
+	# import the disk group in $import.  First, make sure that the
+	# disk group is not listed as in-use by another host.
+
+	voladm_system_hostid || quit 1
+	voladm_reonline_all
+	(vxdisk -s list; echo) > $tmpfile1
+	dalist=
+	devlist=
+	exec 3<&0 <$tmpfile1
+	while true
+	do
+		key=
+		value=
+		read key value || break
+		case $key in
+		Disk:)   daname=$value; flags=; dgname=; dgid=; hostid=;
+			 continue;;
+		flags:)	 flags=$value; continue;;
+		dgname:) dgname=$value; continue;;
+		dgid:)   dgid=$value; continue;;
+		hostid:) hostid=$value; continue;;
+		"")	 :;;
+		*)	 continue;;
+		esac
+
+		if [ -n "$daname" ] &&
+		   [ -n "$dgname" ] &&
+		   [ -n "$dgid" ] &&
+		   not list_member imported $flags &&
+		   [ "X$dgname" = "X$import" -o "X$dgid" = "X$import" ] &&
+		   [ -n "$hostid" -a "X$system_hostid" != "X$hostid" ]
+		then
+			dogi_slice_to_device $daname dev
+			append_list dalist $daname
+			devlist="$devlist$newline      $dev    host: $hostid"
+		fi
+		daname=
+	done
+	exec <&3 3<&-
+	if [ -n "$dalist" ]
+	then
+		( egettxt  \
+	 "  The following disk devices are listed as in-use by another host:" vxvmshm:34
+		  echo "$devlist" ) | voladm_display
+		ewritemsg -M vxvmshm:243 \
+"If you are certain that these devices are not in use, the disks
+  can be imported anyway.  If you share disks between any of the
+  machines listed, make sure either that those machines are down
+  or that those machines are not currently using the disk group."
+		voladm_yorn -M vxvmshm:244 "Import disk group anyway?" n
+		if [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:355 \
+			"Select a different disk group?" n || break
+			continue
+		fi
+		doit vxdisk clearimport $dalist 2> $tmpfile1
+		if [ $? -ne 0 ]
+		then
+			export tmpfile1; ewritemsg -M vxvmshm:269 \
+"Locks held by other hosts cannot be removed.
+  `cat $tmpfile1`"
+			voladm_yorn -M vxvmshm:355 \
+			"Select a different disk group?" n || break
+			continue
+		fi
+	fi
+
+	doit vxdg import "$import" 2> $tmpfile1
+	if [ $? -ne 0 ]
+	then
+		export tmpfile1; ewritemsg -M vxvmshm:245 \
+"Importing disk group import failed.
+  `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:355 \
+		"Select a different disk group?" n || break
+	else
+		export import; ewritemsg -M vxvmshm:439 \
+	 "The import of $import was successful."
+		voladm_yorn -M vxvmshm:360 \
+		"Select another disk group?" n || break
+	fi
+done
+
+quit 0

@@ -1,0 +1,589 @@
+#!/usr/bin/winxksh
+#ident	"@(#)rsk_inst.gen	15.1"
+
+typeset -x SEC_MEDIUM_TYPE=tape #Secondary medium type
+#Following lines  gets edited by prep.flop
+typeset -x LANG=XXX
+typeset -x LC_CTYPE=XXX
+typeset -x KEYBOARD=XXX
+typeset -x MEMSZ=XXX
+typeset -x SEC_MEDIUM="" #Secondary medium device node
+
+export SCRIPTS=/etc/inst/scripts
+export LANG=${LANG:-C}
+unset DRF_SUFFIX
+# set DRF_SUFFIX for the locale. DRF_SUFFIX is tacked onto TERM
+export DO_88591=false
+if [ "$LANG" = "C" -a -z "$KEYBOARD" ] || [ "$LANG" = "ja" ] ||
+        [ "$KEYBOARD" = "AX" ] || [ "$KEYBOARD" = "A01" ]
+then
+        DO_88591=false
+else
+	DO_88591=true
+	DRF_SUFFIX="-ie"
+fi
+
+export C_SCRIPTS=/etc/inst/locale/C/menus
+export LANGDEP_SCRIPTS=/etc/inst/locale/${LANG}/menus
+[ -d $LANGDEP_SCRIPTS ] || LANGDEP_SCRIPTS=$C_SCRIPTS
+export FPATH=$SCRIPTS:$LANGDEP_SCRIPTS
+export IDCMD=/etc/conf/bin
+typeset -lx SH_DEBUG=yes # set to null to turn off
+typeset -lx SH_VERBOSE=""  # set to null to turn off
+typeset -x RAMROOT=/tmp
+export DSK_GOOD="Bad"
+
+
+function Console_type 
+{
+	Color_Console 
+	[ -z "$DRF_SUFFIX" ] && { 
+		TERM=${TERM%-ie}
+        	set_term $TERM
+	}
+	call unlink /usr/sbin/adpt_type
+}
+
+function make_devs
+{
+	cpio -icdm </devs.cpio >/dev/null 2>&1
+	call unlink /devs.cpio
+	set -A CHAR_DISK_NODES -- `echo /dev/rdsk/c?b?t?d?s0`
+	(( b_index = 0 ))
+	for b_value in ${CHAR_DISK_NODES[*]}
+	do
+		b_base=${b_value##*/}
+		b_dir=${b_value%/rdsk/${b_base}}
+		BLOCK_DISK_NODES[b_index]=${b_dir}/dsk/${b_base}
+		(( b_index += 1 ))
+	done
+	export CHAR_DISK_NODES BLOCK_DISK_NODES
+}
+
+
+
+function rsk_rebooot
+{
+	wclose
+	msg
+	footer 2>/devnull  
+	display "$REBOOT_MSG"
+	call getkey
+	umountall > /dev/null 2>&1
+	wclose
+	call uadmin 2 1
+}
+
+
+
+function get_sec_medium
+{
+	msg
+	footer 2> /dev/null #clear the footer
+	display "$TAPE_PROMPT"
+	call getkey
+	wclose
+	while :
+	do
+		FOUND=false
+		for i in /dev/rmt/ctape?
+		do
+			check_devs -g ${i} && {
+				SEC_MEDIUM=$i
+				FOUND=true
+				break
+			}
+		done
+		$FOUND || {
+			display "$TAPE_OPEN_ERROR" -bg $RED -fg $WHITE
+			call getkey
+			wclose
+			continue
+		}
+		dd if=$SEC_MEDIUM of=/.extra.d/tape_hdr count=1
+		grep .extra.d/Rsk_Rec/fd_info_1 /.extra.d/tape_hdr >/dev/null && break
+		display -w "$TAPE_ERROR" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+	done
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$RETENSION_WAIT"
+	tapeop -t ${SEC_MEDIUM} # Retension the tape
+	tapeop -w ${SEC_MEDIUM} # Rewind the tape
+	tapeop -f 512 ${SEC_MEDIUM} # set the fixed block length
+	wclose
+	display "$DISK_INFO_READ_MSG"
+	cd /
+	cpio -icdu -I /dev/rmt/n${SEC_MEDIUM#/dev/rmt/c} '.extra.d/Rsk_Rec*' >/dev/null 2>&1 || {
+		wclose
+		display "$TAPE_READ_ERROR" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+		return 1
+	}
+	wclose
+	return 0
+}
+
+function next_tape_prompt
+{
+	wclose
+	footer 2> /dev/null #clear the footer
+	display "$NEXT_TAPE_PROMPT"
+	call getkey
+	wclose
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$RETENSION_WAIT"
+	tapeop -t ${SEC_MEDIUM} # Retension the tape
+	tapeop -w ${SEC_MEDIUM} # Rewind the tape
+	tapeop -f 512 ${SEC_MEDIUM} # Rewind the tape
+	wclose
+	display "$DSK_RST_MSG"
+}
+
+function disp_disk_set_err
+{
+	footer 2>/dev/null
+	wclose
+	display "$DSK_SETUP_ERR"
+	call getkey
+	wclose
+}
+
+function disp_disk_not_err
+{
+	footer 2>/dev/null
+	wclose
+	DSK_NOT=$1
+	o1=`eval echo "$DSK_NOT_MSG1"`
+	o2=`print "\n         $o1 $RSK_DSK_ERR"`
+	display "$o2"
+	call getkey
+	wclose
+}
+
+function disp_disk_size_err
+{
+	footer 2>/dev/null
+	wclose
+	DSK_NOT=$1
+	DSK_REQ_SIZE=$2
+	DSK_CUR_SIZE=$3
+	o1=`eval echo "$DSK_SIZE_MSG1"`
+	o2=`eval echo "$DSK_SIZE_MSG2"`
+	o3=`eval echo "$DSK_SIZE_MSG3"`
+	o4=`print "\n     $o1\n\n     $o2\n     $o3$RSK_DSK_ERR"`
+	display "$o4"
+	call getkey
+	wclose
+}
+
+function disp_disk_rst_err
+{
+	footer 2>/dev/null
+	wclose
+	display "$DSK_RST_ERR"
+	call getkey
+	wclose
+}
+
+# arg1 contains the filename containing the partition info
+# arg2 contains the output file generated
+
+function create_parts
+{
+	typeset junk heads cyls secs secsz
+	integer I=0 TOT_SO_FAR=0 DSK_SIZE ACTIVE
+	integer NUMPARTS CYL_SIZE tmp
+	integer PART_TYPE[4] PART_ACT[4] JNKT[4]
+	integer PART_BEG[4] PART_CYLS[4]
+	
+	read DEVICE_NODE NUMPARTS REQ_SIZE < $1
+	check_devs -g $DEVICE_NODE || return 201
+	{ read junk
+	  while  [ $I -ne $NUMPARTS ]
+	  do
+	  	I=I+1
+	  	read PART_TYPE[I] PART_ACT[I] PART_SIZE[I] 
+		JNKT[I]=${PART_SIZE[I]}
+	  done }  < $1
+
+	eval `fdisk -L $DEVICE_NODE </dev/null | grep NUMMB`
+	[ $REQ_SIZE -gt $NUMMB ] && return 202
+	partsize -d $DEVICE_NODE 2>/dev/null | {
+		read junk
+		read junk heads cyls secs secsz
+	} 
+	print "fdisk -L $DEVICE_NODE >/tmp/fdisk_out <<-END" > $2
+	print "d 4" >> $2
+	print "d 3" >> $2
+	print "d 2" >> $2
+	print "d 1" >> $2
+	if [ $NUMPARTS -eq 1 ] 
+	then
+		print "c 1 0 $cyls 1" >> $2
+		print "s" >> $2
+		print "END" >> $2
+		sh $2  #Create the partitions
+		return $?
+	fi
+	CYL_SIZE=$(getcylsize $secs $heads $secsz)
+	
+	I=1
+	while  [ $I -le $NUMPARTS ]
+	do
+		PART_BEG[I]=TOT_SO_FAR
+		[ ${PART_ACT[I]} -eq 1 ] && {
+			ACTIVE=I
+			break
+		}
+		PART_CYLS[I]=JNKT[I]*1000/CYL_SIZE
+		cur_sz=PART_CYLS[I]*CYL_SIZE/1000
+		integer t1=${PART_SIZE[I]%.*}
+		integer t2=${PART_SIZE[I]##*.} ZR=0
+
+		if [ $cur_sz -lt $t1 ]
+		then
+			PART_CYLS[I]=PART_CYLS[I]+1
+		elif [ $cur_sz -eq $t1 -a $t2 -gt $ZR ]
+		then
+			PART_CYLS[I]=PART_CYLS[I]+1
+		fi
+		TOT_SO_FAR=TOT_SO_FAR+PART_CYLS[I]
+		I=I+1
+	done
+	
+	I=NUMPARTS
+	TOT_SO_FAR=cyls
+	while  [ $I -ne $ACTIVE ]
+	do
+		PART_CYLS[I]=PART_SIZE[I]*1000/CYL_SIZE
+		cur_sz=PART_CYLS[I]*CYL_SIZE/1000
+		integer t1=${PART_SIZE[I]%.*}
+		integer t2=${PART_SIZE[I]##*.} ZR=0
+
+		if [ $cur_sz -lt $t1 ]
+		then
+			PART_CYLS[I]=PART_CYLS[I]+1
+		elif [ $cur_sz -eq $t1 -a $t2 -gt $ZR ]
+		then
+			PART_CYLS[I]=PART_CYLS[I]+1
+		fi
+		TOT_SO_FAR=TOT_SO_FAR-PART_CYLS[I]
+		PART_BEG[I]=TOT_SO_FAR
+		I=I-1
+	done
+	
+	if [ $ACTIVE -eq 1 ]	# first one is active
+	then
+		PART_CYLS[1]=PART_BEG[2]
+	elif [ $ACTIVE -eq $NUMPARTS ]  # Last one is active
+	then
+		PART_CYLS[NUMPARTS]=cyls-PART_BEG[I]
+	else
+		integer J=ACTIVE+1
+		PART_CYLS[ACTIVE]=PART_BEG[J]-PART_BEG[I]
+	fi
+
+	I=1
+	while  [ $I -le $NUMPARTS ]
+	do
+	   print -n "c ${PART_TYPE[I]} ${PART_BEG[I]} ${PART_CYLS[I]}" >> $2
+	   [ ${PART_ACT[I]} -eq 1 ] && print -n " 1" >> $2
+	   print >> $2
+	   I=I+1
+	done
+	print "s" >> $2
+	print "END" >> $2
+	sh $2  #Create the partitions
+	return $?
+}
+
+function do_restore
+{
+	display "$DSK_SETUP"
+	[ -f ${WRK_DIR}/disksetup ] || {
+			disp_disk_set_err
+			return 1
+	}
+	call symlink ${WRK_DIR}/disksetup /usr/sbin/disksetup
+	>/etc/mnttab      #There is no mnttab; disksetup complains about it
+
+	integer NUM=1
+	while [ -s ${WRK_DIR}/fd_info_$NUM ]
+	do
+	    create_parts ${WRK_DIR}/fd_info_$NUM ${WRK_DIR}/fd_create_$NUM
+	    integer ret=$?
+	    [ $ret -ne 0 ] && {
+		if [ $ret -eq 201 ]
+		then
+			disp_disk_not_err $NUM
+		elif [ $ret -eq 202 ]
+		then
+			disp_disk_size_err $NUM $REQ_SIZE $NUMMB
+		else 
+			disp_disk_set_err
+		fi
+		return 1
+	    }
+	    if [ $NUM -eq 1 ] 
+	    then
+		ARGMNT="-b ${WRK_DIR}/boot -IBs"
+	    else
+		ARGMNT="-Is"
+	    fi
+	    disksetup -e -m $MEMSZ -x /tmp/hdscrpts.sh -d ${WRK_DIR}/lay_out_$NUM $ARGMNT $DEVICE_NODE || {
+		disp_disk_set_err
+		return 1
+	    }
+	    rm -f ${WRK_DIR}/fd_create_$NUM
+	    NUM=NUM+1
+	done
+
+	while read line
+        do
+                case "$line" in
+                */mount*)
+                        line="mount${line#*mount}"
+                        ;;
+                *ufs/mkfs*\-o\ C,*)
+                        eval line=\"/etc/fs/ufs/mkfs -o L,${line#*C,}\"
+                        ;;
+                *sfs/mkfs*\-o\ C,*)
+                        eval line=\"/etc/fs/sfs/mkfs -o L,${line#*C,}\"
+                        ;;
+                *vxfs/mkfs*\-o\ C,*)
+                        eval line=\"/etc/fs/vxfs/mkfs -o L,${line#*C,}\"
+                        ;;
+                esac
+                print "$line"
+        done > /tmp/hdscrpts.tmp </tmp/hdscrpts.sh
+
+	while read line
+	do
+		[ -z "$line" ] && continue
+		print "$line || { disp_disk_set_err; return 1; }"
+	done < /tmp/hdscrpts.tmp >>/tmp/hdscrpts2.sh
+
+	call unlink /tmp/hdscrpts.tmp
+        . /tmp/hdscrpts2.sh
+
+	[ $? -ne 0 ] && return 1
+
+	rm -f  /tmp/vfstab /tmp/fdisk_out
+	rm -f /tmp/hdscrpts2.sh /tmp/hdscrpts.sh
+	add_disk_swap
+	wclose
+	display "$DSK_RST_MSG"
+	cd /mnt
+ 	( cpio -icmdu -M "" -G STDIO -I /dev/rmt/n${SEC_MEDIUM#/dev/rmt/c}  2>/dev/null 
+	     err=$?
+	     echo one one one
+	     echo Done Done Done
+	     echo $err) |&
+   	
+	while :
+	do
+	      read -p one two three
+	      [ "$one" = "Done" ] && {
+		   read -p err
+		   break
+	      }
+	      if [ "$two" = "of" ]
+	      then
+		   next_tape_prompt
+		   print -p
+	      fi
+	done
+	
+	if [ $err -ne 0 -a $err -ne 2 ] 
+	then
+		   cd /
+		   disp_disk_rst_err
+		   return 1
+	fi
+	[ -s /tmp/nws_sys_path ] && {
+		wait #for above asynchronous process to finish
+		( cpio -icmdu -M "" -G STDIO -I /dev/rmt/n${SEC_MEDIUM#/dev/rmt/c} 2>/tmp/err
+		     err=$?
+		     echo one one one
+		     echo Done Done Done
+		     echo $err) |&
+   	
+		while :
+		do
+		      read -p one two three
+		      [ "$one" = "Done" ] && {
+			   read -p err
+			   break
+		      }
+		      if [ "$two" = "of" ]
+		      then
+			   next_tape_prompt
+			   print -p
+		      fi
+		done
+		
+		if [ $err -ne 0 -a $err -ne 2 ] 
+		then
+			   cd /
+			   disp_disk_rst_err
+			   return 1
+		fi
+	}
+	cd /
+	rm -rf ${WRK_DIR} 
+	call unlink /usr/sbin/disksetup
+	chroot /mnt /etc/security/tools/priv_upd  >/dev/null 2>&1
+	chroot /mnt /sbin/initprivs >/dev/null 2>&1
+# Set system nodename to $NODE, including /etc/net/*/hosts
+# files if present
+	NODE=$(</tmp/nodename)
+	chroot /mnt /bin/setuname -n $NODE
+	for i in /mnt/etc/net/*/hosts
+	do
+		[ -f $i ] && echo $NODE\\t$NODE >$i
+	done
+# Set system serial number/activation key
+	SERNO=$(</tmp/serno)
+	/mnt/usr/bin/grep -v "^UW" /mnt/etc/config/licensekeys >/tmp/licensekeys
+	echo "$SERNO" >>/tmp/licensekeys
+	cp /tmp/licensekeys /mnt/etc/config/licensekeys
+# inet
+	[ -f /tmp/unixware.dat ] && {
+		cp /tmp/unixware.dat /mnt/unixware.dat
+		cp /tmp/S03RSK /mnt/etc/rc2.d/S03RSK
+	}
+	rm -rf /mnt/dev/X/*  #delete stale files; otherwise dtm will not come up
+	footer 2>/dev/null
+	wclose
+	display "$RESTORE_SUCCESS"
+	call getkey
+	wclose
+	return 0
+}
+
+function rsk_restore
+{
+	[ -s /tmp/diskswap.rem ] && /tmp/diskswap.rem 1>&2
+	WRK_DIR=/.extra.d/Rsk_Rec export WRK_DIR
+	get_sec_medium && do_restore
+	[ -s /tmp/nws_sys_path ] && {
+		cp /mnt/usr/lib/rsk/S01rsk_nws /mnt/etc/rc3.d/S01rsk_nws
+		cp /tmp/nws_sys_path /mnt/usr/lib/rsk/nws_sys_path
+	}
+	footer "$GENERIC_MENU_FOOTER"
+	msg "$RESTORE_PROMPT"
+}
+
+function do_stty
+{
+
+        INTR=$(stty -a)
+        INTR=${INTR#*intr = }
+        INTR=${INTR%%;*}
+        if [ "$INTR" = DEL ]
+        then
+                INTR='^?'
+        elif [ "$INTR" = '<undef>' ]
+        then
+                INTR='^@'
+	fi
+	stty intr '^@'
+        tab="   "
+        nl="
+"
+}
+
+function add_disk_swap
+{
+	[ -s /tmp/diskswap.rem ] && /tmp/diskswap.rem 1>&2
+	for swap_disk in 0 1
+	do
+		prtvtoc ${CHAR_DISK_NODES[swap_disk]} >/tmp/vtoc 2> /dev/null
+		grep SWAP /tmp/vtoc | IFS=':	 ' read a swap_slice b
+		[ -z "$swap_slice" ] || break
+	done
+	call unlink /tmp/vtoc
+	[ -n "$swap_slice" ] || return 
+	/usr/sbin/swap -a ${BLOCK_DISK_NODES[swap_disk]%s0}s${swap_slice} || return 
+	echo /usr/sbin/swap -d ${BLOCK_DISK_NODES[swap_disk]%s0}s${swap_slice} >/tmp/diskswap.rem
+	chmod 755 /tmp/diskswap.rem
+
+}
+function rsk_start
+{
+	display "$DRF_HARD_MODS_WAIT"
+	footer "$GENERIC_WAIT_FOOTER"
+	#following lines to load the IDE modules is temp and quick fix for q6
+	#as step2rc.gen in proto is changed
+	modreg 6 ide
+	sh_modadmin -l ide >/dev/null 2>&1
+	rm -f /etc/conf/mod.d/ide
+	while read module
+	do	
+		module=${module#*:*:} # delete the first two fields
+		module=${module%%:*}  # delete all but the first field
+		[ "$module" == "ide" ] && continue
+		modreg 6 $module
+		sh_modadmin -l $module >/dev/null 2>&1
+		rm -f /etc/conf/mod.d/$module
+	done < /etc/loadmods
+	make_devs
+	wclose $CURWIN
+	footer 2>/dev/null
+	[ -d /.extra.d ] || mkdir /.extra.d
+	sh_mount -F memfs -o swapmax=2000000,rootmode=01777 /memfs /.extra.d \
+		>/dev/null 2>&1
+	mkdir -p /.extra.d/etc/conf/mod.d
+	mkdir -p /.extra.d/etc/fs/ 2>/dev/null
+	(cd /.extra.d/;cpio -idc </mkfs.cpio >/dev/null 2>&1)
+	call unlink /mkfs.cpio
+	(cd /.extra.d/etc/fs
+	for i in *
+	do
+		call symlink /.extra.d/etc/fs/$i/mkfs /etc/fs/$i/mkfs
+		[ "$i" = "bfs" ] || call symlink /.extra.d/etc/fs/$i/labelit /etc/fs/$i/labelit
+	done )
+	[ ! -s /tmp/nodename ] && {
+		asknodename
+		call proc_loop
+		echo $NODE >/tmp/nodename
+	}
+}
+
+function access_sh
+{
+	sh_newvt 2
+	call ioctl 0 30213 1 #VT_ACTIVATE
+	return 0
+}
+#main
+
+exec 2>/tmp/stderr
+do_stty
+. $SCRIPTS/funcrc
+. $LANGDEP_SCRIPTS/txtstrings
+. $SCRIPTS/winrc
+#Must down load the fonts before calling scr_init
+$DO_88591 && /usr/bin/kb_remap -f 88591
+[ -z "$KEYBOARD" ] ||  /usr/bin/kb_remap -k $KEYBOARD vt00 vt01>/tmp/kb 2>&1
+Console_type
+
+case "$TERM" in
+  *386*mb)	#down load multi-byte console driver
+	  /usr/bin/kb_remap -l ja vt00 vt01
+	 ;;
+esac
+
+. $SCRIPTS/scr_init boot
+typeset -x RELATED_HELPS=rsk_help     # used in helpwin
+rsk_start
+
+rsk_restore
+call proc_loop
+wclose
+destroy_menu $MAIN_MENU
+
+rsk_rebooot
+exit

@@ -1,0 +1,157 @@
+#!/bin/sh
+#
+# load test suite for mail and messaging.
+# runs as root
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+		exit 1
+	fi
+}
+
+cleanup() \
+{
+	count=0
+	while [ $count -lt $USERCOUNT ]
+	do
+		rm -f /var/mail/$USERPREFIX$count
+		rm -f /var/mail/.$USERPREFIX$count.index
+		rm -f /tmp/$USERPREFIX$count
+		rm -f /tmp/$USERPREFIX$count.kill
+		count=`expr $count + 1`
+	done
+	$RCMD $SLAVE "/bin/rm -fr $SLAVEDIR"
+}
+
+# copy our stuff over to the other system.
+setup() \
+{
+	$RCMD $SLAVE "/bin/mkdir $SLAVEDIR"
+	cat mailgen | $RCMD $SLAVE "cat > $SLAVEDIR/mailgen"
+	cat mailread | $RCMD $SLAVE "cat > $SLAVEDIR/mailread"
+	cat users | $RCMD $SLAVE "cat > $SLAVEDIR/users"
+	cat load.cfg | $RCMD $SLAVE "cat > $SLAVEDIR/load.cfg"
+	$RCMD $SLAVE "chmod 755 $SLAVEDIR/mailgen $SLAVEDIR/mailread $SLAVEDIR/users"
+}
+
+load1() \
+{
+	setup
+	# on the remote system must start mailgen and mailreader programs.
+	# when the mailgen program has completed, wait for last message
+	# to appear in each remote user's mailbox, then kill off all mail
+	# reader programs and get statistics.
+
+	# start mailgen programs
+	MG=$SLAVEDIR/mailgen
+	$RCMD $SLAVE "$MG -delay $START_DELAY -users $GROUPCOUNT -robin -speed \
+		$SPEED_ALIAS -interval $INTERVAL_ALIAS -duration \
+		$DURATION -sequence $MSGS_START \
+		${ALIASPREFIX}@$MASTER" &
+	$RCMD $SLAVE "$MG -delay $START_DELAY -users $GROUPCOUNT -robin -speed \
+		$SPEED_ALIASP -interval $INTERVAL_ALIASP -duration \
+		$DURATION -sequence $MSGS_STARTP \
+		${ALIASPREFIX}P@$VIRTUAL" &
+	$RCMD $SLAVE "$MG -delay $START_DELAY -users $GROUPCOUNT -robin -speed \
+		$SPEED_ALIASF -interval $INTERVAL_ALIASF -duration \
+		$DURATION -sequence $MSGS_STARTF \
+		${ALIASPREFIX}F@$VIRTUAL" &
+
+	# start any killer programs if needed
+	count=0
+	while [ $count -lt $USERCOUNT ]
+	do
+		username=$USERPREFIX$count
+		if [ $count -lt $POPSTART ]
+		then
+			true
+
+		elif [ $count -lt $IMAPSTART ]
+		then
+			if [ "$KILL_INTERVAL" -ne "0" ]
+			then
+				$KILLER -interval $KILL_INTERVAL \
+					-delay $START_DELAY \
+					-duration $DURATION \
+					$username > /tmp/$username.kill &
+			fi
+		fi
+		count=`expr $count + 1`
+	done
+
+	# start mailreader programs
+	$RCMD $SLAVE "cd $SLAVEDIR; $SLAVEDIR/users"
+
+	wait
+
+	sleep 2
+	/usr/lib/sendmail -q
+	sleep 2
+
+	count=0
+	error=0
+	while [ $count -lt $USERCOUNT ]
+	do
+		username=$USERPREFIX$count
+		if [ $count -lt $POPSTART ]
+		then
+			mailread -local -count $MSGS_TOTAL $username \
+				> /tmp/$username
+		else
+			$RCMD $SLAVE "/bin/cat /tmp/$username" > /tmp/$username
+		fi
+		echo $username:
+		cat /tmp/$username
+		grep "OK - all messages received" /tmp/$username > /dev/null
+		if [ $? -ne 0 ]
+		then
+			error=1
+		fi
+		l /home/$username | grep core > /dev/null
+		if [ $? -eq 0 ]
+		then
+			echo ERROR: corefile found in /home/$username
+			error=1
+		fi
+		count=`expr $count + 1`
+	done
+
+	rm -f /tmp/out$$
+	passfail $error
+}
+
+# main Main main()
+# test wants to run as root user
+
+. ./load.cfg
+
+ cleanup
+TEST=""
+umask 0
+
+testlist load 1
+
+# cleanup
+exit 0

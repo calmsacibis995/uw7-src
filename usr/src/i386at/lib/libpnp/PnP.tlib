@@ -1,0 +1,215 @@
+#@package: isapnputils \
+        PnPemergencyUnlock PnPgetKey PnPaddDevice PnPremoveDevice \
+        PnPcreateDevice PnPaddIRQ  PnPaddDMA PnPaddIO PnPgetDeviceList \
+        PnPdumpDevices
+
+# Unlock the PnP entry in the res manager
+proc PnPemergencyUnlock {} {
+
+	global pnpmodname
+
+	set pnpkey [RMgetbrdkey $pnpmodname 0]
+
+	RMend_trans $pnpkey
+
+}
+
+
+# Return the key of the PnP entry in the res manager.
+# If there is no PnP entry, create one and return its key.
+proc PnPgetKey {} {
+	global pnpmodname
+
+	if { [catch { RMgetbrdkey $pnpmodname 0 } pnpkey] } {
+
+		set pnpkey [RMnewkey]
+		RMputvals_d $pnpkey "MODNAME" "PnP"
+		RMend_trans $pnpkey
+
+	}
+
+	return $pnpkey
+
+}
+
+
+
+# Add responsibility for a plug and play device to the PnP field.
+proc PnPaddDevice {modname unitno} {
+
+	set pnpkey [PnPgetKey]
+
+	RMbegin_trans $pnpkey rw
+
+	RMputvals_d $pnpkey "PNPMODNAME,s PNPUNIT,n" "$modname $unitno"
+
+	RMend_trans $pnpkey
+
+}
+
+
+
+# Remove responsibility for a plug and play device from the PnP field.
+proc PnPremoveDevice {modname unitno} {
+
+	set pnpkey [PnPgetKey]
+
+	RMbegin_trans $pnpkey rw
+
+	# (The below procedure should be generalized.  There needs to
+	# be a good way to remove the 'n'th value without deleting all
+	# the other values that happen to be under the same heading for
+	# a particular key.)
+
+	# Read the values into a list for easy manipulation
+	# Throw out the value that we are trying to delete
+	set vals {}
+
+	set n 0
+	while { [set val [ RMgetvals $pnpkey "PNPMODNAME,s PNPUNIT,n" $n ]]
+						!= "- -" } {
+		incr n
+		if { $val != "$modname $unitno" } {
+			lappend vals $val
+		}
+	}
+
+	# Delete the old values
+	RMdelvals $pnpkey "PNPMODNAME,s PNPUNIT,n"
+
+	# Write the new values into the resmgr
+	foreach val $vals {
+		RMputvals_d $pnpkey "PNPMODNAME,s PNPUNIT,n" $val
+	}
+
+	RMend_trans $pnpkey
+
+}
+
+
+
+# Create a new resmgr entry with the appropriate PnP information.
+# Return the res mgr key.
+proc PnPcreateDevice { modname unit vendor serno devnum } {
+
+	set rmkey [RMnewkey]
+
+	# $vendor is unsigned long, resmgr can only save signed long. Convert.
+	if {[expr $vendor-0x7fffffff]>0} {
+		set vendor_l [expr $vendor-0xffffffff]
+	} else {
+		set vendor_l $vendor
+	}
+	RMputvals_d $rmkey "MODNAME UNIT PNPVENDOR,n PNPSERNO,n PNPDEVNUM,n" "$modname $unit $vendor_l $serno $devnum"
+
+	RMend_trans $rmkey
+
+	return $rmkey
+
+}
+
+
+
+# Add an IRQ to a PnP device
+proc PnPaddIRQ { rmkey offset irq ipl itype } {
+
+	RMbegin_trans $rmkey
+
+	set pnptype [expr 16 + $offset]
+
+	RMputvals_d $rmkey "IRQ IPL ITYPE PNPTYPE,n PNPLIMIT,n" "$irq $ipl $itype $pnptype 0"
+
+	RMend_trans $rmkey
+
+}
+
+
+
+# Add a DMA to a PnP device
+proc PnPaddDMA { rmkey offset dma } {
+
+	RMbegin_trans $rmkey
+
+	set pnptype [expr 32 + $offset]
+
+	RMputvals_d $rmkey "DMAC PNPTYPE,n PNPLIMIT,n" "$dma $pnptype 0"
+
+	RMend_trans $rmkey
+
+}
+
+
+
+# Add an IO address to a PnP device
+proc PnPaddIO { rmkey offset iostart ioend } {
+
+	RMbegin_trans $rmkey
+
+	set pnptype [expr 48 + $offset]
+
+	RMputvals_d $rmkey "IOADDR PNPTYPE,n PNPLIMIT,n" "$iostart $ioend $pnptype 0"
+
+	RMend_trans $rmkey
+
+}
+
+
+# Insert code for PnPaddMEMADDR here.
+
+
+
+# Return a list of devices in the format "MODNAME UNIT"
+# for which the PnP driver is responsible.
+proc PnPgetDeviceList {} {
+
+	set pnpkey [PnPgetKey]
+
+	RMbegin_trans $pnpkey
+
+	set result [list]
+
+	set n 0
+
+	while {1} {
+
+		set info [RMgetvals $pnpkey "PNPMODNAME,s PNPUNIT,n" $n]
+
+		if { $info == "- -" } {
+			break
+		}
+
+		lappend result $info
+
+		set n [expr $n + 1]
+
+	}
+
+	RMend_trans $pnpkey
+
+	return $result;
+}
+
+
+# Print out all devices for which PnP is responsible
+proc PnPdumpDevices {} {
+
+	set devs [PnPgetDeviceList]
+
+	set n 0
+
+	while { [set dev [lindex $devs $n]] != "" } {
+
+		echo $n $dev
+
+		set n [expr $n + 1]
+
+	}
+
+}
+
+# Main
+
+load /usr/lib/libtclrm.so.1
+load /usr/lib/libpnp.so.1
+set pnpmodname PnP
+

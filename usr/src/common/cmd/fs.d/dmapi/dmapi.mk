@@ -1,0 +1,48 @@
+# @(#)src/uw/cmd/dmapi/dmapi.mk	3.1.9.1 11/28/97 14:32:05 - 
+#ident	"@(#)vxfs:src/uw/cmd/dmapi/dmapi.mk	3.1.9.1"
+#ident	"@(#)vxfs.cmds:common/cmd/fs.d/dmapi/dmapi.mk	1.1.1.1"
+#
+# Copyright (c) 1997 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+#
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+#
+#	       RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#	       VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+#
+
+# Make all the subdirectories and install
+
+include $(CMDRULES)
+
+LARGEFILES = -D_FILE_OFFSET_BITS=64
+CFLAGS = $(OPTCFLAG)
+
+DIRS =	libdmi
+
+#
+#  This is to build all the dmapi commands/libraries
+#
+
+.DEFAULT:
+	for i in $(DIRS);\
+	do\
+	    if [ -d $$i -a -f $$i/$$i.mk ]; \
+		then \
+		cd  $$i;\
+		$(MAKE) -f $$i.mk "LARGEFILES=$(LARGEFILES)" $(MAKEARGS) $@ ; \
+		cd .. ; \
+	    fi;\
+	done
+

@@ -1,0 +1,97 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.hot-on.sh	1.2 3/3/97 03:19:23 - cmd.vxvm:common/voladm/disk.hot-on.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.hot-on.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push MarkHotSpareDisk
+voladm_help_push disk.hot-on.help
+
+while true
+do
+	voladm_begin_screen \
+	-M vxvmshm:0 "Mark a disk as a spare for a disk group"
+
+	ewritemsg  -M vxvmshm:557 \
+"Use this operation to mark a disk as a spare for a disk group.
+  This operation takes, as input, a disk name. This is the same name
+  that you gave to the disk when you added the disk to the disk group."
+
+	voladm_get_disk_dmname -h off
+
+	set_flag=yes
+
+	vxprint -g "$dgname" -sa 2> $tmpfile2 | grep $dmname > /dev/null
+	if [ $? -eq 0 ]
+	then
+		export dmname; ewritemsg  -M vxvmshm:173 \
+"Disk $dmname has subdisks associated with it. Cannot set spare
+  flag for the disk."
+		set_flag=no
+	elif  [ -s $tmpfile2 ]
+	then
+		export tmpfile2; \
+		ewritemsg -M vxvmshm:512 "Unexpected error: `cat $tmpfile2`"
+		set_flag=no
+	fi
+
+	if [ "$set_flag" = "yes" ]
+	then
+		vxprint -g "$dgname" -a "$dmname" 2> $tmpfile2 | 
+			fgrep "spare=on" > /dev/null
+		if [ $? -eq 0 ]
+		then
+			export dmname dgname; \
+			ewritemsg  -M vxvmshm:174 \
+"Disk $dmname in $dgname already has the spare flag set."
+			set_flag=no
+		elif  [ -s $tmpfile2 ]
+		then
+			export tmpfile2; \
+			ewritemsg -M vxvmshm:512 \
+			"Unexpected error: `cat $tmpfile2`"
+			set_flag=no
+		fi
+	fi
+
+	if [ "$set_flag" = "yes" ]
+	then
+		doit vxedit -g "$dgname" set "spare=on" $dmname 2> $tmpfile2
+		if [ $? -eq 0 ]
+		then
+			export dmname dgname; \
+			ewritemsg -M vxvmshm:273 \
+"Marking of $dmname in $dgname as a spare disk is complete."
+        	else
+			export dmname dgname tmpfile2; \
+			ewritemsg -M vxvmshm:272 \
+"Marking of $dmname in $dgname as a spare disk failed.
+  `cat $tmpfile2`"
+		fi
+
+	fi
+
+	voladm_yorn -M vxvmshm:271 \
+	"Mark another disk as a spare?" n || break
+done
+
+quit 0

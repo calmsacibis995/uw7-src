@@ -1,0 +1,166 @@
+#!/usr/bin/ksh
+#ident	"@(#)pkgprep	15.1"
+pkgdir=$1
+shift
+
+. pkgmapfuncs
+test -n "$perm" || perm=true
+test -n "$remknod" || remknod=true
+for i
+do
+	cd $pkgdir/$i
+
+	# sets are not pkgprep'd
+	if [ -f setinfo ]
+	then
+		echo ========= Not Processing SIP $i
+		continue
+	fi
+
+	echo ============= Processing $i
+	if [ ! -d install ]
+	then
+		mkdir install
+	fi
+	rm -f install/moreinfo
+	rm -f install/*.action
+	rm -f install/*.cont
+	rm -f install/*.list
+	rm -f install/*.llink
+	rm -f install/*.slink
+	rm -f install/instfiles
+	unset ALLCLASSES
+	{
+		read line
+		set -- $line
+		parts=$2
+		while read line
+		do
+			eval ${line%%=*}=\"${line#*=}\"
+		done < pkginfo
+		CLASSES="$(grep ' [dfvbclsx] ' $pkgdir/$i/pkgmap | cut -f3 -d' ' | sort -u)"
+		ALLCLASSES="$CLASSES"
+		for class in $CLASSES
+		do
+			let PART$class=0
+			let ACT$class=0
+			case $class in
+			awk|sed|build)
+				cp $ROOT/$MACH/usr/sadm/install/scripts/i.$class install/i.$class
+				;;
+			*)
+				;;
+			esac
+			if [ -f install/i.$class ]
+			then
+				let ACT$class=1
+			fi
+		done
+		while read line
+		do
+			case $line in
+			*\$*)
+				usepath="reloc"
+				;;	
+			*)
+				usepath="root"
+				;;
+			esac
+			mapline "$line"
+			rest="${line#* * * * }"
+			if [ "$parts" = 1 ]
+			then
+				use=$usepath/$path
+			else
+				use=$usepath.$part/$path
+			fi
+
+			if (( PART$class < $part ))
+			then
+				let PART$class=part
+			fi
+
+			doinst=true
+
+			case "$type" in
+			d|x)
+				case "$mode$owner$group" in
+				\?\?\?)
+					doinst=false
+					;;
+				*)
+					if [ ! -d $use ]
+					then
+						mkdir -p $use
+					fi
+				esac
+				;;
+			c|b)
+				if $remknod || [ ! -a $use ]
+				then
+					rm -f $use
+					case "$major$minor" in
+					*([0-9]))
+						/etc/mknod $use $type $major $minor 2> /dev/null
+						if [ $? -ne 0 ]
+						then
+							set -e
+							mkdir -p ${use%%*([!/])}
+							/etc/mknod $use $type $major $minor
+							set +e
+						fi
+						;;
+					*)
+						doinst=false
+					esac
+				fi
+				;;
+			esac
+
+			if $doinst
+			then
+				case "$type" in
+				b|c|e|f|v|d|x)
+					if $perm
+					then
+						chall $mode $owner $group $use
+					fi
+					if (( ACT$class ))
+					then
+						case $type in
+						d|x)
+							;;
+						*)
+							echo "$use $path" >> install/$class$part.action
+							;;
+						esac
+					fi
+					if [ "$path" = / ]
+					then
+						echo .
+					else
+						echo "${path#/}"
+					fi >> install/$class.$part.list
+					echo "$path $type $class $rest $i" >> install/$class.cont
+					;;
+				s|l)
+					echo "$path $lpath" >> install/$class.${type}link
+					echo "$path=$lpath $type $class $i" >> install/$class.cont
+					;;
+				i)
+					if [ "$path" = pkginfo ]
+					then
+						echo "$path" >> install/instfiles
+					else
+						echo "install/$path" >> install/instfiles
+					fi
+				esac
+			fi
+		done
+	} < pkgmap
+	echo "ALLCLASSES=$ALLCLASSES" >> install/moreinfo
+	for class in $ALLCLASSES
+	do
+		eval echo PART$class=\$PART$class >> install/moreinfo
+	done
+done

@@ -1,0 +1,59 @@
+Strategy
+--------
+
+The automatic dlpi executions depends on the package TCP/IP.
+This is required because of the use of the Internet commands
+like rsh and rcp. The scheme works as follows:
+
+1. The script to be executed is "auto_dlpi" . It should be in the
+   directory $TETROOT/dlpi. It will start all the listeners
+   on all the nodes and also run the tests on the local machine
+   in the following order.
+2. The program get_params( residing in $TETROOT/dlpi ) will
+   get from the tetexec.cfg file of the local machine, the 
+   following paramaters :
+	$TETROOT
+	uwcert user name
+	No of nodes to test
+	Node names of the machines to test
+   and this will be stored in a temporary file.
+3. The script will then generate a .rhosts file to be put
+   in all the machines which are being tested.
+4. Check if `uname -n` is same as NODE0.
+5. Check if all the nodes specified for the test reside in the
+   /etc/hosts file of the local machine. Also check if there
+   is any clash of the node names.
+6. Check if we can do an rcp of the rhosts file to all the
+   remote machines. If we can , then our machine entry exists
+   in the remote machines' /etc/hosts.equiv or .rhosts file, so
+   we can proceed. If we cannot, then prompt the user to add the
+   extry and then continue.
+7. Some basic error checking is done by doing a "pwd" on the
+   remote machine. Then the presence of a dlpi directory is checked
+   on the remote machine. The script exits with failures if any of
+   the checks fail.
+8. The "tetexec.cfg" file and the "dlpi_profile" file is then copied to 
+   all the remote machines. ( The dlpi_profile file is a cut down
+   version of the .profile file )
+9. The lock file is then removed in the local as well as the remote 
+   machines.
+10.The script then fires a remote shell with listen for dlpi on all
+   the remote machines.
+11.The local test is then started.
+12.After the local test completes, the remote listeners are then
+   killed.
+
+
+How to compile
+--------------
+
+In this directory execute the command
+
+		make all
+
+There are only two executables made ( gethost and get_params )
+
+How to Package
+--------------
+
+Do the packaging from the parent directory. ( TET_ROOT/nd/dlpi )

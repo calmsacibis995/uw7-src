@@ -1,0 +1,59 @@
+#ident	"@(#)get_tools	15.1"
+
+function get_tools
+{
+	[ -f /tmp/ii.parms ] && . /tmp/ii.parms
+
+	typeset FAILED
+
+	cd /
+	case $SEC_MEDIUM_TYPE in
+	cdrom)
+		# Nothing to do.
+		;;
+	tape)
+		typeset FAILED=false
+		{
+			read_header > /dev/null || inst_error
+			/usr/bin/cpio -iduc -DZ $1 || FAILED=true
+		} < $SEC_MEDIUM
+		$FAILED && {
+			retension_tape || inst_error
+			{
+				read_header > /dev/null || inst_error
+				/usr/bin/cpio -iduc -DZ $1 || inst_error
+			} < $SEC_MEDIUM
+		}
+		;;
+	diskette)
+		#NY Diskette installation not yet implemented.
+		;;
+	tcp)
+		# Make sure that there's a locale for installation
+		[ -z "${LANG}" ] && LANG="C"
+
+		NETPATH=$SEC_MEDIUM_TYPE /usr/sbin/pkgcat -n $SEC_MEDIUM_TYPE -s \
+			${SERVER_INET_ADDR}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+			${SET_NAME}.package |
+			{
+				read_header > /dev/null || inst_error
+				/usr/bin/cpio -iduc -DZ $1 || inst_error
+			}
+		;;
+	spx)
+		# Make sure that there's a locale for installation
+		[ -z "${LANG}" ] && LANG="C"
+
+		NETPATH=$SEC_MEDIUM_TYPE LC_CTYPE="" /usr/sbin/pkgcat -n $SEC_MEDIUM_TYPE -s \
+			${SERVER_NAME}:/var/spool/dist/${REL_FULLNAME}/${LANG} \
+			${SET_NAME}.package |
+			{
+				read_header > /dev/null || inst_error
+				/usr/bin/cpio -iduc -DZ $1 || inst_error
+			}
+		;;
+	*)
+		print -u2 Internal error -- invalid secondary media type $SEC_MEDIUM_TYPE
+		;;
+	esac
+}

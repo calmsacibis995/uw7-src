@@ -1,0 +1,69 @@
+/*
+ *	@(#)gd5446pci.template	11.1	10/22/97	12:33:21
+ *	@(#) gd5446pci.template 60.2 97/01/21 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1991-1997.
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+VENDOR CIRRUS "Cirrus Logic"
+ MODEL  GD5446PCI "GD5446 PCI"
+  CLASS  GD5446VGA       ""
+   MODE   @WIDTH@x@HEIGHT@-@COLORS@-@VHZ@ "@WIDTH@x@HEIGHT@ @COLORS@-color @VHZ@Hz @EXTRA@"
+
+    MEMORY(@FRAMEBUFFER@, 0x400000); /* 4M necessary for even 1M boards */
+    PORT(0x80);		/* Reserved port - used for timing */
+    PORT(VGA);
+
+    DATA
+    {
+	XDRIVER     = "gd5446_@DEPTH@bpp";
+	VISUAL      = "PseudoColor";
+	DEPTH       = @DEPTH@;
+	PITCH       = @PITCH@;
+	PIXWIDTH    = @WIDTH@;
+	PIXHEIGHT   = @HEIGHT@;
+    }
+
+    PROCEDURE  SetGraphics
+    {
+	r0 = 0x12@MAXRES@;		/* AH AL */
+	r1 = 0x@BH@a4;		/* BH BL */
+	r2 = 0x@CH@00;    	/* CH CL */
+	int10(r0, 3);
+
+	r0 = 0x00@MODENUM@;
+	int10(r0, 1);
+
+	out(0x3c4, 0x7);	/* set index for SR7 */
+	in(r63, 0x3c5);		/* read SR7 */
+	or(r63, 0x10);		/* set PCI linear memory enable bit */
+	out(0x3c5, r63);	/* write back to SR7 */
+
+	out(0x3c4, 0x17);	/* set index for SR17 */
+	in(r63, 0x3c5);		/* read SR17 */
+	or(r63, 0x04);		/* enable mem mapped io */
+	or(r63, 0x40);		/* set regs to be fb + memsize - 256 */
+	out(0x3c5, r63);	/* write back to SR17 */
+
+	out(0x3ce, 0x6);	/* set index for GR6 */
+	in(r63, 0x3cf);		/* read GR6 */
+	or(r63, 0x04);		/* set GR6[3:2] to 0,1 */
+	and(r63, 0xf7);
+	out(0x3cf, r63);	/* write back to GR6 */
+    }
+
+    PROCEDURE SetText
+    {
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+    PROCEDURE InstalledMemory
+    {
+	r0 = 0x1200;
+	r1 = 0x0085;
+	int10(r0, 2);
+    }
+

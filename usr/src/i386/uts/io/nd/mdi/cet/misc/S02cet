@@ -1,0 +1,29 @@
+#ident	"@(#)kern-i386at:io/dlpi_cpq/cet/ether/cet.cf/S02cet	1.3"
+#ident	"$Header$"
+
+# 
+# Start/stop Netflex Network Interface Cards (NIC)s that are installed on
+# system.  The list of Netflex NICs that are installed on system are obtained
+# by openning all Netflex NIC Device Special Files (DFS)s.  A successfull open
+# indicates the existence of a NIC.
+#
+NICLIST=""
+DIR=/etc/inst/nd
+if test -s $DIR/dlpimdi
+then
+NICLIST="`awk -F: '/cet/ {print $2}' $DIR/dlpimdi | sed 's/cet//'`"
+fi
+
+# If no NICs can be opened, there's no need to proceed with startup.
+
+[ "$NICLIST" ] || exit 0
+
+CPQ_LIB=/etc/inst/nd/mdi/cet
+case $1 in
+start)
+	$CPQ_LIB/cet_start $CPQ_LIB $NICLIST
+	;;
+stop)
+	$CPQ_LIB/cet_stop $NICLIST
+	;;
+esac

@@ -1,0 +1,112 @@
+#ident	"@(#)fdisk_chk	15.1"
+
+function check_stand
+{
+	integer i disk=0
+	for i in 1 2 3 4
+	do
+		if [ "${PARTTYPE[disk*4+i]}" = "$UNIX" -a "${PARTSTATUS[disk*4+i]}" = "$Boot" ]
+		then
+			if (( ${PARTSTART[disk*4+i]}+${SLSIZE[10]:-0} > 1023 ))
+			then
+				return 0
+			fi
+			break
+		fi
+	done
+	return 1
+}
+
+function fdisk_chk
+{
+typeset disksargs 
+integer disk0size=0 disk1size=$MIN_SECDISK
+integer i up disk tot0_parts=0 nparts0=0 nparts1=0
+disksargs="$*"
+for disk in $disksargs
+do
+	for i in 1 2 3 4
+	do
+		if [ "${PARTTYPE[disk*4+i]}" = "$UNIX" ]
+		then
+			case $disk in
+			0)
+				let tot0_parts+=1
+				if [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ]
+				then
+					let nparts0+=1
+					disk0size="${PARTMB[disk*4+i]}"
+					up=$i
+				fi;;
+			1)
+				if [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ]
+				then
+					let nparts1+=1
+					disk1size="${PARTMB[disk*4+i]}"
+				fi;;
+			esac
+		elif [ ! "${PARTTYPE[disk*4+i]}" = "$unused" ]
+		then
+			case $disk in
+			0)
+				let tot0_parts+=1
+				[ "${PARTSTATUS[disk*4+i]}" = "$Boot" ] && let nparts0+=1;;
+			1)
+				[ "${PARTSTATUS[disk*4+i]}" = "$Boot" ] && let nparts1+=1;;
+			esac
+		fi
+	done
+done
+# do checks to see if UNIX partition there and it's large enough.
+set -- $disksargs
+while [ -n "$1" ]
+do
+	disk=$1
+	case $disk
+	in
+	0)
+		if (( nparts0 != 1 ))
+		then
+			footer "$DISK0WARN"
+			display -w "$DISK0warn" -bg $MAGENTA -fg $WHITE
+			return 1
+		elif [ "$disk0size" -lt "${MIN_HARDDISK}" ]
+		then
+			footer "$DISK0WARN"
+			display -w "$DISK0warn" -bg $MAGENTA -fg $WHITE
+			return 1
+		else
+			if check_stand
+			then
+				footer "$FOOTER_HIGHCYLS"
+				call sleep 3
+			fi
+			if [ "${PARTTYPE[disk*4+up]}${PARTSTART[disk*4+up]}${PARTEND[disk*4+up]}" != "${PARTORIG[disk*4+up]}" ]
+			then
+				UNIX_PARTITION[0]=CHG
+			fi
+		fi
+		if (( tot0_parts == 1 ))
+		then
+			BOOTSECTOR="$Yes"
+		else
+			BOOTSECTOR="$No"
+		fi
+		;;
+	1)
+		if (( nparts1 > 1 ))
+		then
+			footer "$DISK1WARN"
+			display -w "$DISK1warn" -bg $MAGENTA -fg $WHITE
+			return 1
+		elif [ "$disk1size" -lt "${MIN_SECDISK}" ]
+		then
+			footer "$DISK1WARN"
+			display -w "$DISK1warn" -bg $MAGENTA -fg $WHITE
+			return 0	#just a warning ...but let user continue.
+		fi;;
+	esac
+	shift 
+done
+return 0
+}

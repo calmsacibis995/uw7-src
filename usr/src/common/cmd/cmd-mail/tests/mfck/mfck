@@ -1,0 +1,1583 @@
+#!/bin/sh
+#ident "@(#)mfck	11.2"
+
+#
+# Automated test script for mfck program
+#
+# Attempts to achieve complete statement coverage of mfck.c
+#
+
+# utility routines
+
+savecount=0
+
+savecnt() \
+{
+	if [ -f mfck.cnt ]
+	then
+		mv mfck.cnt trace.$savecount
+		savecount=`expr $savecount + 1`
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -fr /tmp/out /tmp/out1 /tmp/out2
+	rm -fr /tmp/f1 /tmp/.f1.index /tmp/f2 /tmp/.f2.index
+}
+
+# first argument is folder type, second is source file, third is output file
+mkfolder() \
+{
+	if [ "$1" = "Sendmail" ]
+	then
+		sed -e "/^XXXX/d" < $2 > $3
+		return
+	fi
+	if [ "$1" = "MMDF" ]
+	then
+		sed -e 's/^XXXX//' < $2 > $3
+		return
+	fi
+	echo mkfolder unknown type.
+	exit 1
+}
+
+# make a 1000 message mailbox with good messages
+mbox1000g() \
+{
+	rm -fr $1
+	i=0
+	while [ $i -lt 1000 ]
+	do
+		cat << DONE >> $1
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+		i=`expr $i + 1`
+	done
+}
+
+test_1() \
+{
+	cleanup
+
+	$pgm > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+Usage for mfck (Mail Folder Check):
+mfck -c Sendmail/MMDF folders...
+   convert mail folders from one format to another
+mfck [-y | -n] folders...
+   check and repair damaged mail folders
+   -y answer yes to all repair prompts
+   -n answer no to all repair prompts
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_2() \
+{
+	cleanup
+	mkfolder MMDF f/f1 /tmp/f1
+
+	$pgm -n /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+1 messages detected.
+0 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_3() \
+{
+	cleanup
+	mkfolder Sendmail f/f1 /tmp/f1
+
+	$pgm -n /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Sendmail Folder Detected.
+1 messages detected.
+0 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_4() \
+{
+	cleanup
+	mkfolder MMDF f/f2 /tmp/f1
+
+	$pgm -n /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 8: Missing end of header, insert it? [yes]: no
+line 10: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 12: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 13: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 15: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 16: Unexpected Ctrl-A delimiter, remove it? [yes]: no
+line 18: Ctrl-A delimiter missing, restore it? [yes]: no
+line 18: Missing/Bad Content-Length header, fix? [yes]: no
+line 25: Missing/Bad Content-Length header, fix? [yes]: no
+2 messages detected.
+10 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_5() \
+{
+	cleanup
+	mkfolder MMDF f/f2 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 10: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 12: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 13: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 15: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 16: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 18: Ctrl-A delimiter missing, restore it? [yes]: yes
+line 18: Missing/Bad Content-Length header, fix? [yes]: yes
+line 25: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+2 messages detected.
+9 errors were found.
+9 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+X-header: this one has a continuation line.
+	continuation stuff.
+Content-Length: 86
+
+From kurth Fri Apr 25 12:26:06 PDT 1997
+body.
+From kurth Fri Apr 25 12:26:06 PDT 1997
+XXXX
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message 2
+Content-Length: 7
+
+body2.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_6() \
+{
+	cleanup
+	mkfolder MMDF f/f3 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Missing/Bad Content-Length header, fix? [yes]: yes
+line 8: Missing Ctrl-A line, insert it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_7() \
+{
+	cleanup
+	mkfolder MMDF f/f4 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 9: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_8() \
+{
+	cleanup
+	mkfolder MMDF f/f5 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 9: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 10: Missing/Bad Content-Length header, fix? [yes]: yes
+line 10: Missing Ctrl-A line, insert it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+4 errors were found.
+4 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 46
+
+body.
+From kurth Fri Apr 25 12:26:06 PDT 1997
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_9() \
+{
+	cleanup
+	mkfolder MMDF f/f6 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 8: Unexpected Ctrl-A delimiter, remove it? [yes]: yes
+line 10: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 40
+
+From kurth Fri Apr 25 12:26:06 PDT 1997
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_10() \
+{
+	cleanup
+	mkfolder MMDF f/f7 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+2 messages detected.
+0 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 7
+
+body1.
+XXXX
+XXXX
+From kurth Fri Apr 25 13:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message 2
+Content-Length: 7
+
+body2.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_11() \
+{
+	cleanup
+	mkfolder MMDF f/f8 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 9: Start of message (From) without Ctrl-A delimiters.  Fix? [yes]: yes
+Commit Changes? [yes]: yes
+2 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 7
+
+body1.
+XXXX
+XXXX
+From kurth Fri Apr 25 13:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message 2
+Content-Length: 7
+
+body2.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_12() \
+{
+	cleanup
+	mkfolder Sendmail f/f9 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Sendmail Folder Detected.
+line 6: Unpadded extra From line in header, pad it? [yes]: yes
+line 16: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+2 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message 1
+>From kurth Fri Apr 25 12:26:06 PDT 1997
+Content-Length: 47
+
+From kurth Fri Apr 25 12:26:06 PDT 1997
+body1.
+From kurth Fri Apr 25 13:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message 2
+Content-Length: 7
+
+body2.
+DONE
+	mkfolder Sendmail /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_13() \
+{
+	cleanup
+	mkfolder MMDF f/f10 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Unexpected Ctrl-A delimiter at beginning of folder, remove it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_14() \
+{
+	cleanup
+	touch /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Sendmail Folder Detected.
+0 messages detected.
+0 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_15() \
+{
+	cleanup
+	mkfolder MMDF f/f11 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: yes
+line 4: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+Subject: repaired message (mfck)
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_16() \
+{
+	cleanup
+	mkfolder MMDF f/f12 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: yes
+line 4: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From: kurth
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	sed -e "/From unknown/d" < /tmp/f1 > /tmp/f2
+	mkfolder MMDF /tmp/out /tmp/f1
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_17() \
+{
+	cleanup
+	mkfolder MMDF f/f13 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: yes
+line 3: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+XXXX
+From unknown Fri Apr 25 12:26:06 PDT 1997
+Subject: repaired message (mfck)
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	sed -e "/From unknown/d" < /tmp/out1 > /tmp/out
+	sed -e "/From unknown/d" < /tmp/f1 > /tmp/f2
+	mkfolder MMDF /tmp/out /tmp/f1
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_18() \
+{
+	cleanup
+	mkfolder MMDF f/f14 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: yes
+line 2: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+XXXX
+From unknown Fri Apr 25 12:26:06 PDT 1997
+Subject: repaired message (mfck)
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	sed -e "/From unknown/d" < /tmp/out1 > /tmp/out
+	sed -e "/From unknown/d" < /tmp/f1 > /tmp/f2
+	mkfolder MMDF /tmp/out /tmp/f1
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_19() \
+{
+	cleanup
+	echo XXXX > /tmp/out
+	mkfolder MMDF /tmp/out /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/f2
+DONE
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_20() \
+{
+	cleanup
+	mkfolder MMDF f/f11 /tmp/f1
+
+	$pgm -n /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 1: Start of first message garbled, fix it? [yes]: no
+line 4: Missing/Bad Content-Length header, fix? [yes]: no
+1 messages detected.
+2 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_21() \
+{
+	cleanup
+	mkfolder MMDF f/f21 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 7: Missing end of header, insert it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_22() \
+{
+	cleanup
+	mkfolder MMDF f/f22 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 7: Missing end of header, insert it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 0
+
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_23() \
+{
+	cleanup
+	mkfolder MMDF f/f23 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 5: Missing end of header, insert it? [yes]: yes
+line 5: Missing Ctrl-A line, insert it? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 0
+
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_24() \
+{
+	cleanup
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Unable to open /tmp/f1
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_25() \
+{
+	cleanup
+	mkfolder MMDF f/f23 /tmp/f1
+
+	yes | $pgm /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 5: Missing end of header, insert it? [yes]: line 5: Missing Ctrl-A line, insert it? [yes]: Commit Changes? [yes]: 1 messages detected.
+2 errors were found.
+2 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 0
+
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_26() \
+{
+	cleanup
+	mkfolder MMDF f/f23 /tmp/f1
+
+	yes no | $pgm /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 5: Missing end of header, insert it? [yes]: line 5: Missing Ctrl-A line, insert it? [yes]: 1 messages detected.
+2 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	passfail $?
+}
+
+test_27() \
+{
+	cleanup
+	mkfolder MMDF f/f27 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 13: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+X-header: this one has a continuation line.
+	continuation line 1.
+	continuation line2.
+    continuation line 3. blah blah blah blah blah.
+    Last continuation line.
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+test_28() \
+{
+	cleanup
+	mkfolder MMDF f/f28 /tmp/f1
+
+	$pgm -y /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+line 9: Missing/Bad Content-Length header, fix? [yes]: yes
+Commit Changes? [yes]: yes
+1 messages detected.
+1 errors were found.
+1 fixes were made.
+DONE
+	diff /tmp/out2 /tmp/out1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out
+XXXX
+From kurth Fri Apr 25 12:26:06 PDT 1997
+>From kurth Fri Apr 25 12:26:06 PDT 1997
+From: kurth
+To: kurth
+Subject: Test Message
+Content-Length: 6
+
+body.
+XXXX
+DONE
+	mkfolder MMDF /tmp/out /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+conv_1() \
+{
+	cleanup
+
+	$pgm -c > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+Usage for mfck (Mail Folder Check):
+mfck -c Sendmail/MMDF folders...
+   convert mail folders from one format to another
+mfck [-y | -n] folders...
+   check and repair damaged mail folders
+   -y answer yes to all repair prompts
+   -n answer no to all repair prompts
+DONE
+	diff /tmp/out1 /tmp/out2
+	passfail $?
+}
+
+conv_2() \
+{
+	cleanup
+	mkfolder MMDF f/conv /tmp/f1
+
+	$pgm -c Sendmail /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+Convert to Sendmail format.
+Conversion successful.
+DONE
+	diff /tmp/out1 /tmp/out2
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	mkfolder Sendmail f/conv /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+conv_3() \
+{
+	cleanup
+	mkfolder Sendmail f/conv /tmp/f1
+
+	$pgm -c MMDF /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Sendmail Folder Detected.
+Convert to MMDF format.
+Conversion successful.
+DONE
+	diff /tmp/out1 /tmp/out2
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	mkfolder MMDF f/conv /tmp/f2
+	diff /tmp/f1 /tmp/f2
+	passfail $?
+}
+
+conv_4() \
+{
+	cleanup
+	mkfolder MMDF f/f1 /tmp/f1
+
+	$pgm -c MMDF /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+Convert to MMDF format.
+No conversion necessary.
+DONE
+	diff /tmp/out1 /tmp/out2
+	passfail $?
+}
+
+conv_5() \
+{
+	cleanup
+	mkfolder Sendmail f/f1 /tmp/f1
+
+	$pgm -c Sendmail /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Sendmail Folder Detected.
+Convert to Sendmail format.
+No conversion necessary.
+DONE
+	diff /tmp/out1 /tmp/out2
+	passfail $?
+}
+
+conv_6() \
+{
+	cleanup
+
+	$pgm -c Sendmail /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+Unable to open /tmp/f1
+DONE
+	diff /tmp/out1 /tmp/out2
+	passfail $?
+}
+
+load_1() \
+{
+	cleanup
+	mbox1000g /tmp/f2
+	mkfolder MMDF /tmp/f2 /tmp/f1
+
+	$pgm -n /tmp/f1 > /tmp/out 2>&1
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/out2
+	cat << DONE > /tmp/out1
+
+/tmp/f1:
+MMDF Folder Detected.
+1000 messages detected.
+0 errors were found.
+0 fixes were made.
+DONE
+	diff /tmp/out1 /tmp/out2
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+TEST=""
+
+pgm=/usr/bin/mfck
+
+ cleanup
+
+test="1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28"
+conv="1 2 3 4 5 6"
+load="1"
+
+#testlist conv_ 3
+#exit 0
+
+testlist test_ $test
+testlist conv_ $conv
+testlist load_ $load
+ cleanup

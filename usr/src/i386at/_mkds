@@ -1,0 +1,378 @@
+#!/usr/bin/ksh
+#ident	"@(#):mkds	16.2	97/12/04"	
+
+#Input:		A directory that is the output of pkgmk for one set
+#		and all its member packages.
+
+#Output:	A package datastream.
+
+#Note:		This command must be run by root because it makes device
+#		special files and because it calls "ulimit unlimited"
+#               LOCALE "jfegs" was added 10/2/96 - Wanghwa Lin
+echo "START `basename $0` `date`"
+
+USAGE="USAGE:\n`basename $0` -s set1[,set2,set3,...] -l locale [ -v ] [ -D dir ] [ -i dir ] [ -o dir ] [ -I Idir ] [ -f file ] [ -G getpkginfo script ] [-S file]\n
+\t-F: Force complete processing, default is incremental.\n
+\t-s: setname(s) to process\n 
+\t       (Sets have to be in the same order as the can table.)\n
+\t-l: locale to process.\n
+\t-v: verbose output.\n
+\t-i: The input package directory (\$ROOT/\$SPOOL).\n
+\t-o: The output package directory (\$ROOT/pkg/stage).\n
+\t-I: The output images directory (\$ROOT/pkg/image).\n
+\t-f: The output file (\$ROOT/pkg/image/<setname>.image.<locale>).\n
+\t-G: The getpkginfo file (\$ROOT/usr/src/\$WORK/build/tools/getpkginfo).\n"
+
+bad=0
+for i in ROOT WORK SPOOL PARALLEL PROTO
+do
+if eval [ -z \"\${$i}\" ]
+then
+echo "$i" is not set.
+bad=1
+fi
+done
+[ $bad -eq 1 ] && exit 1
+
+# defaults ( may be separate filesystems )
+INDIR=$ROOT/$SPOOL
+OUTDIR=$ROOT/pkg/stage
+IDIR=$ROOT/pkg/image
+GETPKGINFO=$ROOT/usr/src/$WORK/build/tools/getpkginfo
+
+unset OUTFILE
+Flag=0
+verbose=0
+
+while getopts vFI:l:i:o:f:s:t:G: c
+do
+	case $c in
+	I)	IDIR=$OPTARG
+		;;
+	i)	INDIR=$OPTARG
+		;;
+	o)	OUTDIR=$OPTARG
+		;;
+	f)	OUTFILE=$OPTARG
+		;;
+	s)	SET=$OPTARG
+		;;
+	F)	Flag=1
+		;;
+	v)	verbose=1
+		;;
+	l)	LOCALE=$OPTARG
+		;;
+	G)	GETPKGINFO=$OPTARG
+		;;
+	\?)	echo $USAGE >&2
+		exit 1
+		;;
+	*)	echo Internal error during getopts. >&2
+		exit 1
+		;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+OIFS=$IFS
+IFS=","
+SET="$(echo $SET)"
+IFS=$OIFS
+
+[ -f /tmp/superset.$$ ] && rm -rf /tmp/superset.$$
+
+if [ -n "$SET" ]
+then
+	for myset in $SET
+	do
+		case $myset in
+			UnixWare)
+			;;
+			BaseWeb)
+			;;
+			doc)
+			;;
+			arcserve)
+			;;
+			winsrvcs)
+			;;
+			*)
+			echo $myset -- Unsupported SET. >&2
+			exit 1
+		esac
+		[ "$myset" != "UnixWare" ] && \
+			echo "$myset	1" >> /tmp/superset.$$
+		cat $INDIR/$myset/setinfo >> /tmp/superset.$$
+	done
+	SETINFO=/tmp/superset.$$
+	set -- $SET
+	SET="$1"
+else
+	echo ERROR -- -s not used.
+	echo $USAGE
+	exit 1
+fi
+
+if [ $LOCALE ]
+then
+	case $LOCALE in
+		C|de|es|fr|it|ja|efigs|jfegs)
+			;;
+		*)
+			echo $LOCALE -- Unsupported locale. >&2
+		exit 1
+	esac
+else
+	echo ERROR -- -l not used.
+	exit 1
+fi
+
+
+[ -d $INDIR ] || {
+	echo ERROR -- $INDIR: No such directory. >&2
+	exit 1
+}
+[ -d $OUTDIR ] || {
+	mkdir -p $OUTDIR > /dev/null 2>&1
+	[ $? -eq 0 ] || {
+		echo ERROR -- Cannot create directory $OUTDIR >&2
+		exit 4
+	}
+}
+
+if [ "X$INDIR" = "X$OUTDIR" ]
+then
+	echo "Error same arg to -i and -o" >&2
+	exit 1
+fi
+
+if [ $OUTFILE ]
+then
+	:
+else
+	set -- $SET
+	OUTFILE=${IDIR}/$1.image.$LOCALE	# the default
+fi
+
+# truncate OUTFILE
+> $OUTFILE 2>/dev/null || {
+	echo ERROR -- Cannot create $OUTFILE >&2
+	exit 1
+}
+
+
+ksh $ROOT/usr/src/$WORK/setpkglocale $INDIR $LOCALE
+if [ $? != 0 ]
+then
+	echo "ERROR --setpkglocale failed, exit code=$?" >&2
+	exit 1
+fi
+
+[ -f "$SETINFO" ] || {
+	echo ERROR -- cannot find $SETINFO. >&2
+	exit 1
+}
+
+# set PKGLIST to pkgs sorted by descreasing number of parts
+
+pkgcount=$(grep -c ^[a-zA-Z] "$SETINFO")
+let pkgcount=pkgcount+1 # for the sip itself
+
+PKGLIST="$(grep ^[a-zA-Z] $SETINFO | cut -f1,2 | sort -rn +1 | cut -f1)"
+
+NOSORT_PKGLIST="$(grep ^[a-zA-Z] $SETINFO | cut -f1)"
+
+unset problem
+for i in $SET $PKGLIST
+do
+	[ -f $INDIR/$i/pkgmap ] || {
+		echo ERROR -- Cannot find sip/member package: $i >&2
+		problem=true
+	}
+done
+[ $problem ] && exit 1
+
+ulimit unlimited 2>/dev/null || {
+	echo ERROR -- This script must be run as root. >&2
+	exit 1
+}
+
+# Begin the main processing.
+PATH=$PROTO/ds_tools:$PATH
+export PATH
+
+SPLIT=${ROOT}/usr/src/${WORK}/build/tools/hsplit
+export SPLIT
+
+. ${GETPKGINFO}
+
+has_locale()
+{
+        x=`GREP "^$1	" | cut -f5`
+        if [ "X$x" = "Xyes" ]
+	then
+                return 0
+        else
+                return 1
+        fi      
+}
+
+docount=0
+unset TO_DO
+if [ $Flag -eq 1 ]	# do all pkgs if -F used
+then
+	TO_DO="$SET $PKGLIST"
+	let docount=docount+pkgcount
+else
+	for i in $SET $PKGLIST
+	do
+		if has_locale $i
+		then
+			CHK_IMG=$IDIR/${i}_${LOCALE}.IMAGE
+			CHK_IND=$INDIR/locale/$LOCALE/$i/pkgmap
+		else
+			CHK_IMG=${IDIR}/${i}.IMAGE
+			CHK_IND=$INDIR/$i/pkgmap
+		fi
+
+		# DO, if image doesn't exist or pkgmap is newer than image
+		if [ ! -f $CHK_IMG -o $CHK_IND -nt $CHK_IMG ]
+		then
+			TO_DO="$TO_DO $i"
+			let docount=docount+1
+		fi
+	done
+fi
+
+[ -z "$TO_DO" ] || {
+	echo "=== Removing out of date pkg dirs."
+	cd $OUTDIR
+	[ $verbose -eq 1 ] && echo "Removing $TO_DO"
+	rm -rf $TO_DO
+	echo "=== Done Removing out of date pkg dirs."
+
+	setxpand -s $INDIR -d $OUTDIR $TO_DO
+}
+
+
+# archive pkgname output
+archive() {
+	PKG=$1
+	PKG_IMAGE=$2
+	rm -f $PKG_IMAGE
+	if [ ! -d $OUTDIR/$PKG/root.1 -a ! -d $OUTDIR/$PKG/reloc -a ! -d $OUTDIR/$PKG/reloc.1 ]
+	then
+		echo === `date`: Archiving $PKG/root
+		dscpio $OUTDIR $PKG/root >> $PKG_IMAGE || exit 1
+	elif [ -d $OUTDIR/$PKG/root.1 ]
+	then
+		j=1
+		while [ -d "$OUTDIR/$PKG/root.$j" ]
+		do
+			echo === `date`: Archiving $PKG/root.$j
+			dscpio $OUTDIR $PKG/root.$j >> $PKG_IMAGE || exit 1
+			let j=j+1
+		done
+	fi
+	if [ -d $OUTDIR/$PKG/reloc ]
+	then
+		echo === `date`: Archiving $PKG/reloc
+		dscpio $OUTDIR $PKG/reloc >> $PKG_IMAGE || exit 1
+	elif [ -d $OUTDIR/$PKG/reloc.1 ]
+	then
+		j=1
+		while [ -d "$OUTDIR/$PKG/reloc.$j" ]
+		do
+			echo === `date`: Archiving $PKG/reloc.$j
+			dscpio $OUTDIR $PKG/reloc.$j >> $PKG_IMAGE || exit 1
+			let j=j+1
+		done
+	let j=j-1
+	while [ -d "$OUTDIR/$PKG/root.$j" ]
+	do
+		echo === `date`: Archiving $PKG/root.$j
+		dscpio $OUTDIR $PKG/root.$j >> $PKG_IMAGE || exit 1
+		let j=j+1
+	done
+	fi
+
+}
+
+[ -z "$TO_DO" ] || {
+
+	TMPFILE=/tmp/to_do.$$
+	rm -f $TMPFILE
+	for i in $TO_DO
+	do
+		echo $i >> $TMPFILE
+	done
+
+	LIST=/tmp/list.$$
+	cat $TMPFILE | $SPLIT $PARALLEL $LIST
+	rm -f $TMPFILE
+
+	# FYI, pkgprep ignores sips
+	echo === `date`: Preparing packages.
+        for i in ${LIST}.*
+        do
+                num=`echo $i | sed -e 's/^.*\.//'`
+		pkgprep $OUTDIR `cat ${LIST}.${num}` &
+        done
+        wait
+
+	for i in ${LIST}.*
+	do
+                num=`echo $i | sed -e 's/^.*\.//'`
+		for j in `cat ${LIST}.${num}`
+		do
+			if has_locale $j
+			then
+				IMAGE=${IDIR}/${j}_$LOCALE.IMAGE
+			else
+				IMAGE=${IDIR}/${j}.IMAGE
+			fi
+			archive $j $IMAGE
+		done &
+	done
+	wait
+	rm -f ${LIST}.*
+}
+
+# WORKDIR is where we'll put the pkgmap/pkginfo/setinfo files that we
+# extract from the images in $IDIR using cpio -ZD. Yes I know that
+# these 3 files are most likely in $OUTDIR, but we're trying to facilitate
+# the scenario where some developer has the iamges only and his/her
+# own single pkg. Now he/she can recut the $OUTFILE without $INDIR or
+# $OUTDIR.
+
+WORKDIR=$ROOT/$SPOOL/prep
+rm -rf $WORKDIR
+[ -d $WORKDIR ] || mkdir -p $WORKDIR
+
+echo === `date`: Setting up for datastream image
+dssetup $WORKDIR $IDIR $GETPKGINFO $SET $NOSORT_PKGLIST || exit 1
+echo === `date`: Writing the datastream header into $OUTFILE.
+dshead $WORKDIR $SET $NOSORT_PKGLIST > $OUTFILE || exit 1
+echo === `date`: Writing pkgmap files into $OUTFILE.
+dsmaps $WORKDIR $SET $NOSORT_PKGLIST >> $OUTFILE || exit 1
+
+echo === `date`: Writing the main datastream image into $OUTFILE.
+[ $verbose = 1 ] && echo "Creating $OUTFILE"
+for i in $SET $NOSORT_PKGLIST
+do
+	echo === Adding $i to $OUTFILE
+	if has_locale $i
+	then
+		IMAGE=${IDIR}/${i}_$LOCALE.IMAGE
+	else
+		IMAGE=${IDIR}/${i}.IMAGE
+	fi
+	[ $verbose -eq 1 ] && echo "Concatenating $IMAGE"
+	cat $IMAGE >> $OUTFILE
+done
+echo === `date`: $0 is done.
+
+echo "ENDED `basename $0` `date`"
+rm -f /tmp/superset.$$
+exit 0

@@ -1,0 +1,114 @@
+#!/usr/bin/sh
+#ident	"@(#)udk-uwcompat:i386/pkg/UW2compat/postremove	1.10"
+
+# UDK postremove script
+
+FAILURE=1	# fatal error
+
+EXITRC=0
+EXIT_REBOOT=10
+
+. $PTFVARS
+
+PKGMSG={$PKGINST}.pkg
+
+# restore files saved during pkgadd
+
+REBUILD=0
+
+if [ -f $SAVEDIR/etc/conf/pack.d/net/Driver_atup.o -o \
+	-f $SAVEDIR/etc/conf/pack.d/net/Driver_mp.o ]
+then
+	REBUILD=1
+fi
+
+
+cd $SAVEDIR
+find . ! -type d -print |cpio -pdum / 2>/dev/null
+[ $? -eq 0 ] || {
+	message -d `pfmt -s error -g ${PGKMSG}:6 "%s: could not restore files\n" ${PKGINST} 2>&1`
+	exit $FAILURE
+}
+
+
+# update the contents database w/ restored file info...
+# 1st, installf the files w/ our $PKGINST (we are, after all, (re)installing
+#	them) ...
+# then, since our $PKGINST is being removed, removef them
+#
+# all this because the pkg'g tools don't have any concept of software
+#	maintenance and associated backup/restore needs...
+
+# fix up links broken by the install of UW2compat
+
+[ -f /usr/lib/libc.so.1 -a -f /usr/lib/libdl.so.1 ] && {
+	ln -f /usr/lib/libc.so.1 /usr/lib/libdl.so.1
+	removef ${PKGINST} /usr/lib/libdl.so.1 >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libdl.so.1=/usr/lib/libc.so.1 l > /dev/null 2>&1
+}
+
+if [ -f /usr/lib/libcrypt_d.so -a -f /usr/lib/libcrypt.so ]
+then
+	ln -f /usr/lib/libcrypt_d.so /usr/lib/libcrypt.so
+	removef ${PKGINST} /usr/lib/libcrypt.so >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcrypt.so=/usr/lib/libcrypt_d.so l > /dev/null 2>&1
+elif [ -f /usr/lib/libcrypt_i.so -a -f /usr/lib/libcrypt.so ]
+then
+	ln -f /usr/lib/libcrypt_i.so /usr/lib/libcrypt.so
+	removef ${PKGINST} /usr/lib/libcrypt.so >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcrypt.so=/usr/lib/libcrypt_i.so l > /dev/null 2>&1
+fi
+
+
+if [ -f /usr/lib/libnsl.so.1 -a -f /usr/lib/libnsl_d.so ]
+then
+	ln -f /usr/lib/libnsl_d.so /usr/lib/libnsl.so.1
+	removef ${PKGINST} /usr/lib/libnsl.so.1 >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libnsl.so.1=/usr/lib/libnsl_d.so l > /dev/null 2>&1
+elif [ -f /usr/lib/libnsl.so.1 -a -f /usr/lib/libnsl_i.so ]
+then
+	ln -f /usr/lib/libnsl_i.so /usr/lib/libnsl.so.1
+	removef ${PKGINST} /usr/lib/libnsl.so.1 >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libnsl.so.1=/usr/lib/libnsl_i.so l > /dev/null 2>&1
+fi
+
+[ -f /usr/lib/libsocket.so.1 -a -f /usr/lib/libsocket.so ] && {
+	ln -f /usr/lib/libsocket.so /usr/lib/libsocket.so.1
+	removef ${PKGINST} /usr/lib/libsocket.so.1 >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libsocket.so.1=/usr/lib/libsocket.so l > /dev/null 2>&1
+	[ -f /usr/lib/libsocket.so.2 ] && {
+		ln -f /usr/lib/libsocket.so /usr/lib/libsocket.so.2
+		removef ${PKGINST} /usr/lib/libsocket.so.2 >/dev/null 2>&1
+		installf ${PKGINST} /usr/lib/libsocket.so.2=/usr/lib/libsocket.so l > /dev/null 2>&1
+	}
+}
+[ -n "${SAVEFILES}" ] && {
+	ls -d ${SAVEFILES} 2>/dev/null | /usr/bin/sed -e '\?/usr/lib/libcrypt.so.1?d' 2>/dev/null | installf ${PKGINST} -
+	installf -f ${PKGINST}
+	ls -d ${SAVEFILES} 2>/dev/null | /usr/bin/sed -e '\?/usr/lib/libcrypt.so.1?d' 2>/dev/null | removef ${PKGINST} - >/dev/null 2>&1
+	removef -f ${PKGINST}
+}
+
+
+# any ${NEWFILES} installed should be deleted by pkgrm, but some
+# other stuff may be needed here...
+
+# if $FIXPRIVS is set to YES and /etc/security/tools/priv_upd is present,
+# then run it...
+
+[ "$FIXPRIVS" = "YES" ] && {
+	FIXPRIVS=/etc/security/tools/priv_upd
+	[ -x $FIXPRIVS ] && $FIXPRIVS
+}
+
+if [ $REBUILD = "1" ]
+then
+	/etc/conf/bin/idbuild
+	if [ $? -ne 0 ]
+	then
+		exit $FAILURE
+	else
+		exit $EXIT_REBOOT
+	fi
+fi
+exit $EXITRC

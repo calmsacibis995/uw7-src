@@ -1,0 +1,263 @@
+#ident	"@(#)postinstall	1.2"
+
+ETCLP=/etc/lp
+USRSBIN=/usr/sbin
+LPADMIN=${USRSBIN}/lpadmin
+LPFILTER=${USRSBIN}/lpfilter
+LPSCHED=${USRLIB}/lp/lpsched
+LPSHUT=${USRSBIN}/lpshut
+ACCEPT=${USRSBIN}/accept
+REJECT=${USRSBIN}/reject
+LPSTAT=${USRBIN}/lpstat
+DUMPOLP=${USRSBIN}/dumpolp
+ENABLE=${USRBIN}/enable
+DISABLE=${USRBIN}/disable
+TMP=/tmp/lp.err
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+##########
+#
+# Patch the main menu file to use the correct FML object
+##########
+
+OAMBASE=${OAMBASE:-/var/sadm/sysadm}
+INTFBASE=${INTFBASE:-${OAMBASE}/menu}
+
+##########
+##
+## Set up the LP print service configuration.
+##
+##########
+
+##########
+#
+# Get rid of any old startup/shutdown scripts.
+##########
+rm -f /etc/rc.d/lp /etc/shutdown.d/lp 2>/dev/null
+
+
+##########
+#
+# ``Compile'' the filter table entries. This is a tad
+# complicated, because we want to preserve the original
+# filter.table and filter.table.i entries.
+#
+# Note: We do this whether or not we are installing any particular
+# sub-package (e.g. PostScript), so that it gets done in one place.
+# The OAM installation process won't install a class not listed
+# in the $CLASSES variable, so we won't be compiling anything
+# we shouldn't.
+##########
+
+FILTERTABLE=${ETCLP}/filter.table
+FILTERTABLE_I=${ETCLP}/filter.table.i  #Factory-installed
+FDTMP=${ETCLP}/fd
+FILTERTABLE_TMP=${FDTMP}/filter.table
+
+if ls ${FDTMP}/*.fd > /tmp/FDLIST 2>/dev/null
+then
+	#####
+	#
+	# The regular filter table:
+	#####
+	while read fd
+	do
+		filter=`expr "${fd}" : '.*/\([^/]*\)\.fd$'`
+		${LPFILTER} -f ${filter} -F ${fd} 2>>${TMP}
+	done < /tmp/FDLIST
+	#####
+	#
+	# The ``factory installed'' filter table:
+	#####
+	mv ${FILTERTABLE} ${FILTERTABLE_TMP}
+	mv ${FILTERTABLE_I} ${FILTERTABLE} 2>/dev/null
+
+	while read fd
+	do
+		filter=`expr "${fd}" : '.*/\([^/]*\)\.fd$'`
+		${LPFILTER} -f ${filter} -F ${fd} 2>>${TMP}
+	done < /tmp/FDLIST
+
+	mv ${FILTERTABLE} ${FILTERTABLE_I}
+	mv ${FILTERTABLE_TMP} ${FILTERTABLE}
+
+	removef ${PKGINST} - < /tmp/FDLIST > /dev/null 2>&1
+	rm -f ${FDTMP}/*.fd
+fi
+removef ${PKGINST} ${FDTMP} >/dev/null
+rm -rf ${FDTMP} /tmp/FDLIST
+
+##########
+#
+# We no longer need the program that dumps old LP Spooler
+# status files. It was added in this installation procedure
+# only so we could use it to convert from old to new.
+##########
+removef ${PKGINST} ${DUMPOLP} >/dev/null
+rm -f ${DUMPOLP}
+
+
+# download command expects to find Type 1 PostScript fonts for 
+# downloading in the directory /usr/share/lib/hostfontdir and 
+# mapping of fontnames to filenames in a file named map
+
+> /usr/share/lib/hostfontdir/map
+chmod 755 /usr/share/lib/hostfontdir/map
+chown lp /usr/share/lib/hostfontdir/map
+chgrp lp /usr/share/lib/hostfontdir/map
+installf ${PKGINST} /usr/share/lib/hostfontdir/map v 0755 lp lp
+
+
+##########
+#
+# Complete the installation database
+##########
+removef  -f ${PKGINST} > /dev/null 2>&1
+installf -f ${PKGINST} > /dev/null 2>&1
+
+
+#
+#The following defines the administrative roles for the TFM database.
+#
+#
+#
+while read cmd roles
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |            # delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+       echo $cmd $roles >> /tmp/rolelist
+       continue
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						pfmt -s warn -g ${PKGMSG}:52 " %s privilege specified to be shut off for %s,\n         but it is NOT in its set of privileges.\n" $i $cmd 2>&1
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role 2>> ${TMP}
+        else
+            adminrole -a $base:$cmd:$privs $role 2>> ${TMP}
+        fi
+        shift
+    done
+done <<! 2>&1 
+/usr/bin/lpstat		OP	SOP	SSO
+/usr/sbin/lpfilter	SOP	SSO
+/usr/sbin/lpforms	SOP	SSO
+/usr/sbin/accept	OP	SOP	SSO
+/usr/sbin/reject	SOP	SSO
+/usr/sbin/lpmove	SOP	SSO
+/usr/sbin/lpusers	SOP	SSO
+!
+
+[ "$PKGINSTALL_TYPE" != NEWINSTALL ] || exit 0
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && set -x
+
+[ "$AUTOMERGE" = NULL ] || {
+
+	#	If AUTOMERGE=Yes, ${SCRIPTS}/pkgmrgconf will 
+	#	merge the config files listed in $UPGRADE_STORE/${PKGINST}.sav.
+	#	If merge failed, it informs user which files the merge failed.
+
+	#	If AUTOMERGE=No, ${SCRIPTS}/pkgmrgconf will 
+	#	inform user where there old config files live and that
+	#	the system will use new versions of the config. files
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	${SCRIPTS}/pkgmrgconf "${PKGINST}" "$AUTOMERGE" "$NAME"
+
+	[ "$UPDEBUG" = YES ] && goany
+}
+
+# cleanup patch files from /var/sadm/install/contents and rm them
+
+${SCRIPTS}/up_cleanup "${PKGINST}"
+
+############# End   UPGRADE AND OVERLAY #######################
+
+exit 0

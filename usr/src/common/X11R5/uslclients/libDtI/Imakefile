@@ -1,0 +1,118 @@
+/**/#ident	"@(#)libDtI:Imakefile	1.34.1.9"
+
+#if Release5
+#define DoNormalLib	NormalLibDtI
+#define DoSharedLib	SharedLibDtI
+#define DoDebugLib	DebugLibDtI
+#define DoProfileLib	ProfileLibDtI
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+#endif
+
+#define IncludeNonGuiPart(srclist,hdrlist,dstdir)		@@\
+includes::							@@\
+	@(set -x; for i in srclist hdrlist; do \		@@\
+		$(RM) $$i; \					@@\
+		$(LN) dstdir/$$i .; \				@@\
+	done)							@@\
+								@@\
+								@@\
+clean::								@@\
+	$(RM) srclist hdrlist
+	
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(LIBSRC)/Dt
+   INSTALLFLAGS = $(INSTINCFLAGS)
+        LIBNAME = DtI
+          SHLIB = DtI
+            LIB = lib$(LIBNAME).so
+         MALLOC =
+  EXTRA_DEFINES = -UDONT_USE_DT_FUNCS -DUSE_REGCOMP
+#if !SystemV4
+         MALLOC = malloc.o
+#endif
+        MDtILoc = $(TOP)/uslclients/libMDtI
+
+           GUI_SRCS = \ 
+                  FIconBox.c \
+                  HyperText.c \
+                  HyperText0.c \
+                  container.c \
+                  drawicon.c \
+                  dtutil.c \
+                  objutil.c \
+                  sizeicon.c \
+		  xy.c
+
+           NONGUI_SRCS =\ 
+		dayone.c\
+		devtab.c\
+		extern.c\
+		fileclass.c\
+		iconmask.c\
+		misc.c\
+		mountdev.c\
+		p_cache.c\
+		propEH.c
+
+           NONGUI_HDRS =\ 
+		DtStubI.h\
+		DesktopP.h\
+		WidePosDef.h\
+		dayone.h\
+		default.icon\
+		mapfile.h
+
+SRCS = $(GUI_SRCS) $(NONGUI_SRCS)
+
+GUI_OBJS = $(GUI_SRCS:.c=.o)
+NONGUI_OBJS = $(NONGUI_SRCS:.c=.o)
+OBJS = $(GUI_OBJS) $(NONGUI_OBJS)
+
+#if Release5
+LibraryObjectRule()
+
+	/* Define targets to build and install shared library */
+#if DoSharedLib
+#  if DoNormalLib
+SharedLibraryTarget($(LIBNAME),$(SODTIREV),$(SHAREDOBJS),shared,..)
+#    if UslLocalityTuning
+FurSharedLibraryTarget($(LIBNAME),$(SODTIREV),$(SHAREDOBJS),shared,..)
+#    endif
+#  else		/* !DoNormalLib */
+SharedLibraryTarget($(LIBNAME),$(SODTIREV),$(OBJS),.,.)
+#    if UslLocalityTuning
+FurSharedLibraryTarget($(LIBNAME),$(SODTIREV),$(OBJS),.,.)
+#    endif
+#  endif	/* DoNormalLib */
+InstallSharedLibrary($(LIBNAME),$(SODTIREV),$(USRLIBDIR))
+#  if UslLocalityTuning
+InstallFurLibrary($(LIBNAME),$(SODTIREV),$(USRLIBDIR))
+#  endif
+#endif		/* DoSharedLib */
+
+	/* Define targets to build and install normal library */
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+	/* Define targets to build and install profiled library */
+#if DoProfileLib
+ProfiledLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME)_p,$(USRLIBDIR))
+#endif
+
+#else /* Release5 */
+
+all:: libDtI.so
+
+SharedLibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(OBJS),,)
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+IncludeNonGuiPart($(NONGUI_SRCS),$(NONGUI_HDRS),$(MDtILoc))
+
+LintLibraryTarget(DtI,$(SRCS))
+
+DependTarget()

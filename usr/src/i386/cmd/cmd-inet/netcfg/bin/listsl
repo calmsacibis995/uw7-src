@@ -1,0 +1,185 @@
+#!/bin/vtcl
+#ident	"@(#)listsl	1.3"
+#
+# Copyrighted as an unpublished work.
+# (c) Copyright 1987-1995 Legent Corporation
+# All rights reserved.
+#
+#      SCCS IDENTIFICATION
+#       @(#) ccs 25.5 94/05/04
+#
+#       Copyright (C) 1988-1994 The Santa Cruz Operation, Inc.
+#               All Rights Reserved.
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+set type reconf
+
+proc cb_default {cbs} {
+	global list root type
+
+	set item [join [VtDrawnListGetSelectedItem $list -byRecordList]]
+	set link_type [lindex $item 4]
+	set key [lindex [lindex $item 3] 2]
+
+	set fd [open "/usr/lib/netcfg/tmp/slip_list" w]
+
+	puts $fd LINK_TYPE=$link_type
+	puts $fd KEY=$key
+	puts $fd ACTION=$type
+
+	close $fd
+
+	VtDestroyDialog $root
+	exit 0
+}
+
+proc cb_ok {cbs} {
+	global list type
+
+	set item [VtDrawnListGetSelectedItem $list -byRecordList]
+	if { "$item" != "" } {
+		set temp [join $item]
+		set link_type [lindex $temp 4]
+		set key [lindex [lindex $temp 3] 2]
+
+		set fd [open "/usr/lib/netcfg/tmp/slip_list" w]
+
+		puts $fd LINK_TYPE=$link_type
+		puts $fd KEY=$key
+		puts $fd ACTION=$type
+
+		close $fd
+	} else {
+		if { "$type" == "add" } {
+			set fd [open "/usr/lib/netcfg/bin/slip_list" w]
+
+			puts $fd ACTION=$type
+
+			close $fd
+		}
+	}
+
+
+	VtDestroyDialog $list
+	VtClose
+	exit 0
+}
+
+proc cb_cancel {cbs} {
+	global list
+
+	VtDestroyDialog $list
+	VtClose
+	exit 2
+}
+
+proc cb_set {newtype cbs} {
+	global type
+
+	set type $newtype
+}
+
+set root [VtOpen "SLIP_List"]
+
+set form [VtFormDialog $root.f -ok -okCallback cb_ok -cancel \
+	-cancelCallback cb_cancel -help \
+	-title "Currently Configured SLIP Links\n"\
+	-CHARM_leftOffset 4]
+
+set list [VtDrawnList $form.list -defaultCallback cb_default \
+	-CHARM_columns 75 -columns 55 -MOTIF_horizontalScrollBar TRUE\
+	-selection SINGLE -topSide NONE -bottomSide NONE -rows 14 ]
+
+VtLabel $form.l -topSide FORM -above $list -label "\nPlease choose a link:\n"
+
+set radio [VtRadioBox $form.radio -horizontal -topSide $list -below $list \
+	-bottomSide FORM]
+
+VtToggleButton $radio.remove -callback {cb_set remove} -label "Remove"
+VtToggleButton $radio.reconf -callback {cb_set reconf} \
+	-label "Modify" -set true
+VtToggleButton $radio.add -callback {cb_set add} \
+	-label "Add"
+
+if { [file exists /etc/inet/slip.start] } {
+	set slfd [open /etc/inet/slip.start r]
+} else {
+	VtDestroyDialog $root
+	exit 1
+}
+
+set match 0
+
+while { [ gets $slfd line ] != -1 } {
+	if { [string index $line 0] == "#" } {
+		continue
+	}
+	if { [string index $line 0] == "\n" } {
+		continue
+	}
+	if { [string index $line 0] == "" } {
+		continue
+	}
+	if { [string match *slattach*-d*& $line] } {
+		set match 1
+		regsub {.*[ 	]+([^ 	]*)&$} $line {\1} temp
+		if { [string match {[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*} $temp] } {
+			regsub {.*[ 	]+([^ 	]*)[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+&$} $line {\1} dev
+		} else {
+			regsub {.*[ 	]+([^ 	]*)[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[0-9]+&} $line {\1} dev
+		}
+		set field_list { "SLIP Link" }
+		lappend field_list "UUCP = $dev"
+		lappend field_list "STATIC"
+		VtDrawnListAddItem $list \
+			-formatList { {STRING 22 3} {STRING 57 3} {DATA} } \
+			-fieldList $field_list
+	} else {
+		if { [string match *slattach*& $line] } {
+			set match 1
+			regsub {.*[ 	]+([^ 	]*)&$} $line {\1} temp
+			if { [string match {[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*} $temp] } {
+				regsub {.*[ 	]+([^ 	]*)[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+&$} $line {\1} dev
+			} else {
+				regsub {.*[ 	]+([^ 	]*)[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[^ 	]+[ 	]+[0-9]+&} $line {\1} dev
+			}
+			set field_list { "SLIP Link" }
+			lappend field_list "Device = $dev"
+			lappend field_list "STATIC"
+			VtDrawnListAddItem $list \
+				-formatList { {STRING 22 3} {STRING 57 3} {DATA} } \
+				-fieldList $field_list
+		}
+	}
+}
+
+close $slfd
+
+set slfd [open /etc/passwd r]
+
+while { [ gets $slfd line ] != -1 } {
+	if { [string match *SLIP* $line] } {
+		set match 1
+		regsub {^([^:]*):.*$} $line {\1} login
+		set field_list { 0 1 "Incoming Link" }
+		lappend field_list "Login = $login"
+		lappend field_list "INC"
+		VtDrawnListAddItem $list \
+			-formatList { {STRING 22 3} {STRING 57 3} {DATA} } \
+			-fieldList $field_list
+	}
+}
+
+close $slfd
+
+if { $match == 1 } {
+	VtDrawnListSelectItem $list -position 1
+}
+
+VtShow $form
+VtMainLoop

@@ -1,0 +1,112 @@
+#ident	"@(#)pkg.osmp:ifiles/osmp_wininit	1.1"
+
+#!/usr/bin/winxksh
+[[ ! -t 0 ]] && [[ -c /dev/tty ]] && {
+        : need redirect stdin, it is not a tty
+        exec </dev/tty
+}
+[[ ! -t 1 ]] && [[ -c /dev/tty ]] && {
+        exec >/dev/tty
+}
+ROOT=${ROOT:-/}
+LANG=${LANG:-C}
+LOCALE=${LOCALE:-C}
+TERM=${TERM:-AT386}
+DCUDIR=${DCUDIR:-${ROOT}/etc/dcu.d}
+OSMPLOCALEDIR=/etc/inst/locale/${LOCALE}/menus/osmp
+defaultOSMPLOCALEDIR=${ROOT}/etc/inst/locale/C/menus/osmp
+DCUSCRIPTS=${DCUDIR}/scripts export DCUSCRIPTS
+defaultDCUHELP=${DCUDIR}/locale/C/help export defaultDCUHELP
+FPATH=:${defaultOSMPLOCALEDIR}:${DCUDIR}/scripts:${DCUDIR}/menus/${LANG}:${DCUSCRIPTS}:${DCUMENUS}:${DCUHELP}:$FPATH
+PATH=/sbin:/usr/sbin:/usr/bin:/etc:/usr/ccs/bin:$PATH export PATH
+
+# stty functions
+
+#
+# Set Necessary variables and structures
+#
+STTYS=0
+STTYA=0
+STTYX=0
+struct termios_data c_iflag:short c_oflag:short c_cflag:short c_lflag:short c_line:char c_cc:'char [19]'
+struct termiosx_data x_hflag:short x_cflag:short x_rflag:'short [5]' x_sflag:short
+
+#
+# mysetcolor - this script will reset the color of the screen back to
+# 		what it should be after running winxksh
+#
+function mysetcolor
+{
+	if [ $1 = "-n" ]
+	then
+		cdecl string_t fmt1='!\\\033[=%d%s!'
+		cdecl string_t cmd_ch1='!F!'
+		cdecl string_t cmd_ch2='!G!'
+
+		ccall altprintf "@string_t:"!\\\033[0m!""
+		ccall ioctl 0 24832 0
+		ccall altprintf "@string_t:"!\\\033[=0E!""
+		ccall altprintf fmt1 7 cmd_ch1
+		ccall altprintf fmt1 0 cmd_ch2
+		ccall altprintf "@string_t:"!\\\033[0m!""
+		ccall altprintf "@string_t:"!\\\033[J!""
+	fi
+}
+
+#
+# myclear - winxksh equivalent of "tput clear"
+#
+function myclear
+{
+	ccall altprintf "@string_t:"!\\\033[2J\\\033[H!""
+}
+
+#
+# getstty - get the current stty settings to use to reset the screen at end
+#
+function getstty
+{
+	cdecl termios_data cbs={}
+	cdecl termios_data cba={}
+	cdecl termiosx_data cbx={}
+
+	ccall ioctl 0 21517 cbs
+	retd=$_RETD
+	cprint -v STTYS cbs
+	ccall ioctl 0 21505 cba
+	retd=$_RETD
+	cprint -v STTYA cba
+	ccall ioctl 0 22529 cbx
+	retd=$_RETD
+	cprint -v STTYX cbx
+}
+
+#
+# setstty - reset the screen (uses variables from getstty function)
+#
+function setstty
+{
+	cdecl termios_data cbs="$STTYS"
+	cdecl termios_data cba="$STTYA"
+	cdecl termiosx_data cbx="$STTYX"
+	ccall ioctl 0 21518 cbs
+	retd=$_RETD
+	ccall ioctl 0 21506 cba
+	retd=$_RETD
+	ccall ioctl 0 22530 cbx
+	retd=$_RETD
+}
+
+[ -r ${OSMPLOCALEDIR}/txtstrings ] &&
+        . ${OSMPLOCALEDIR}/txtstrings || {
+        #have to use C locale, we have no choice. Used in help
+        OSMPLOCALEDIR=${defaultOSMPLOCALEDIR}
+        . ${defaultOSMPLOCALEDIR}/txtstrings
+}
+
+. ${DCUDIR}/menus/choose
+. ${DCUSCRIPTS}/winrc
+. ${DCUSCRIPTS}/scr_init
+
+getstty
+

@@ -1,0 +1,45 @@
+#ident	"@(#)kern-i386at:kernel.cf/Init	1.33.13.1"
+#ident	"$Header$"
+fr::sysinit:/sbin/fixroot >/dev/sysmsg 2>&1
+swp1::sysinit:/sbin/swap -a /dev/swap >/dev/sysmsg 2>&1
+cr::sysinit:/sbin/ckroot >/dev/sysmsg 2>&1
+mi::sysinit:/sbin/sh -c '[ -x /sbin/macinit ] && /sbin/macinit' >/dev/sysmsg 2>&1
+mm::sysinit:/etc/conf/bin/idmodreg -c `/etc/conf/bin/idkname -c` >/dev/null 2>&1
+ap::sysinit:/sbin/autopush -f /etc/ap/chan.ap
+ak::sysinit:/sbin/wsinit >/etc/wsinit.err 2>&1
+ls::sysinit:/sbin/loadfont >/dev/console 2>&1
+cm1::sysinit:/sbin/ckmount /stand >/dev/console 2>&1
+dcun::sysinit:/sbin/dcu -N >/dev/console 2>&1
+pdi1::sysinit:/etc/scsi/pdiunits -a >/dev/console 2>&1
+ldmd::sysinit:/etc/conf/bin/idmodload >/dev/console 2>&1
+pdi2::sysinit:/etc/scsi/pdiunits -o >/dev/console 2>&1
+ac::sysinit:/sbin/aconf1_sinit >/dev/console 2>&1
+bu::sysinit:/etc/conf/bin/idrebuild reboot </dev/console >/dev/console 2>&1
+me::sysinit:/etc/conf/bin/idmkenv >/dev/console 2>&1
+nd::sysinit:/etc/conf/bin/idmknodd -r `/etc/conf/bin/idkname -c` >/dev/console 2>&1
+pdi4::sysinit:/etc/scsi/pdi_timeout -b >/dev/console 2>&1
+cm2::sysinit:/sbin/ckmount /var >/dev/console 2>&1
+swp2::sysinit:/sbin/swap -c >/dev/console 2>&1
+bchk::sysinit:/sbin/bcheckrc </dev/console >/dev/console 2>&1
+xdc::sysinit:/sbin/sh -c 'if [ -x /etc/rc.d/es_setup ] ; then /etc/rc.d/es_setup ; fi' >/dev/console 2>&1
+ia::sysinit:/sbin/creatiadb </dev/console >/dev/console 2>&1
+metr::sysinit:/sbin/sh -c '[ -x /sbin/metreg ] && /sbin/metreg' >/dev/console 2>&1 
+pmd0::sysinit:/etc/ifor_pmd -k >/dev/console 2>&1
+pmd::sysinit:/etc/ifor_pmd < /dev/null > /var/adm/pmd.log 2>&1
+is:2:initdefault:
+onl:1234:wait:/sbin/psradm -n -a
+bd:56:wait:/etc/conf/bin/idrebuild </dev/console >/dev/console 2>&1
+r0:0:wait:/sbin/rc0 off >/dev/console 2>&1 </dev/console
+r1:1:wait:/sbin/rc1 >/dev/console 2>&1 </dev/console
+r2:23:wait:/sbin/rc2 >/dev/console 2>&1 </dev/console
+r3:3:wait:/sbin/rc3  >/dev/console 2>&1 </dev/console
+r5:5:wait:/sbin/rc0 firm >/dev/console 2>&1 </dev/console
+r6:6:wait:/sbin/rc0 reboot >/dev/console 2>&1 </dev/console
+sd:0:wait:/sbin/uadmin 2 0 >/dev/console 2>&1 </dev/console
+fw:5:wait:/sbin/uadmin 2 2 >/dev/console 2>&1 </dev/console
+rb:6:wait:/sbin/uadmin 2 1 >/dev/console 2>&1 </dev/console
+li:23:wait:/usr/bin/ln /dev/systty /dev/syscon >/dev/null 2>&1
+sc:234:respawn:/usr/lib/saf/sac -t 300
+co:12345:respawn:/usr/lib/saf/ttymon -g -p "Console Login: " -d /dev/console -l console
+d2:23:wait:/sbin/dinit >/dev/console 2>&1 </dev/console
+co:12345:once:/etc/mpchan > /dev/console 2>&1

@@ -1,0 +1,375 @@
+#!/sbin/sh 
+#ident "@(#)cans	15.3	98/01/07"
+#
+. /isl/ui_modules/cans.rc
+. /etc/inst/locale/${LANG}/menus/sets.txtstrings
+. /isl/can_ifile
+
+#--------------------------------------------------------
+
+function can_2_pkg_ids
+{
+[ -n "$debug" ] && set -x
+	typeset pkg_list
+	integer i=0
+
+	while (( i < num_sets ))
+	do
+		for s in ${set_svc_nums[i]}
+		do
+			pkg_list="$pkg_list ${svc_pkg_nums[s]}"
+		done
+		(( i += 1 ))
+	done
+
+	tpkg_ids=
+	for p in $pkg_list
+	do
+		[[ " ${can_pkg_nums[can_id]} "  = *" $p "* ]] &&
+				tpkg_ids="$tpkg_ids $p"
+	done
+
+	for p in $req_pkg_nums; do
+		[[ " $tpkg_ids " != *" $p "* ]] && tpkg_ids="$tpkg_ids $p"
+	done
+	set_localized_pkgs $tpkg_ids
+	tpkg_ids="$LOCALIZED_LIST"
+}
+
+function lic_2_pkg_ids
+{
+[ -n "$debug" ] && set -x
+	typeset pkg_list
+	integer i=0
+	tpkg_ids=
+
+	if [[ $license_num != none ]]; then
+		while (( i < num_sets ))
+		do
+			for s in ${set_svc_nums[i]}
+			do
+				pkg_list="$pkg_list ${svc_pkg_nums[s]}"
+			done
+			(( i += 1 ))
+		done
+		for p in $pkg_list
+		do
+			[[ " ${lic_pkg_nums[license_num]} "  = *" $p "* ]] &&
+					tpkg_ids="$tpkg_ids $p"
+		done
+	fi
+
+	for p in $req_pkg_nums; do
+		[[ " $tpkg_ids " != *" $p "* ]] && tpkg_ids="$tpkg_ids $p"
+	done
+	set_localized_pkgs $tpkg_ids
+	tpkg_ids="$LOCALIZED_LIST"
+}
+
+function get_can
+{
+[ -n "$debug" ] && set -x
+	integer i num 
+	#
+	# Create the description window
+	#
+#	old_desc_window=$desc_window
+#	place_window 76 7 -above 0
+#	desc_window=$CURWIN
+
+	# Lookup current selection
+	typeset current=0 n=1
+	
+	if [ "$can_id" = "license" ]
+	then
+		current=0
+	elif [ "$can_id" = "custom" ]
+	then
+		(( current = ${#can_code[*]} + 1 ))
+	else
+		(( current = can_id + 1 ))
+	fi
+
+	#
+	# Create the menu
+	#
+	open_menu -x 3 -y 1 -exit "false"
+	can_menu=$MID
+
+	# For each can, sum the sizes of its packages to compute the
+	# percent of available disk space the can will consume.
+	# Also, set width to the longest can_label so %'s can be aligned.
+	width=${#CAN_CUSTOM}
+	num=0
+	save_pkg_ids="$tpkg_ids"
+	save_can_id="$can_id"
+	i=0
+	while (( i < ${#can_code[*]} ))
+	do
+		(( num += 1 ))
+		can_id=$i
+		can_2_pkg_ids
+
+		largest_pkg[$i]=0
+		p=0
+		for x in $tpkg_ids ; do
+			[[ -n ${pkg_size[x]} ]] && {
+				(( p += ${pkg_size[x]} ))
+				(( ${pkg_size[x]} > largest_pkg[i] )) && \
+					(( largest_pkg[i]=${pkg_size[x]} ))
+			}
+		done
+		(( p /= 2 ))
+		(( largest_pkg[i] /= 2 ))
+		#percent_format $p 0
+		#pct[i]="$percent"
+		(( remainder = p % 1000 ))
+		remainder=`call altprintf "%02d" $remainder`
+		(( pct[i] = p / 1000 ))
+		pct[$i]=`call altprintf "%4d" ${pct[i]}`
+		pct[$i]="${pct[i]}.$remainder"
+
+		(( width < ${#can_label[i]} )) && width=${#can_label[i]}
+		(( i +=  1 ))
+	done
+
+	can_id=license
+	lic_2_pkg_ids
+	largest_lic_pkg=0
+	p=0
+	for x in $tpkg_ids ; do
+		[[ -n ${pkg_size[x]} ]] && {
+			(( p += ${pkg_size[x]} ))
+			(( ${pkg_size[x]} > largest_lic_pkg )) && \
+				(( largest_lic_pkg = ${pkg_size[x]} ))
+		}
+	done
+	(( p /= 2 ))
+	(( largest_lic_pkg /= 2 ))
+	(( remainder = p % 1000 ))
+	remainder=`call altprintf "%02d" $remainder`
+	(( licpct = p / 1000 ))
+	licpct=`call altprintf "%4d" $licpct`
+	licpct="${licpct}.$remainder"
+
+	can_id="$save_can_id"
+	tpkg_ids="$save_pkg_ids"
+	pkg_list=	
+	i=0
+	largest_cust_pkg=0
+	p=0
+	for x in ${pkg_ids[*]} ; do
+		[[ -n ${pkg_size[x]} ]] && {
+			(( p += ${pkg_size[x]} ))
+			(( largest_cust_pkg < ${pkg_size[x]} )) && \
+				(( largest_cust_pkg = ${pkg_size[x]} ))
+		}
+	done
+	(( p /= 2 ))
+	(( largest_cust_pkg /= 2 ))
+	(( remainder = p % 1000 ))
+	remainder=`call altprintf "%02d" $remainder`
+	(( cust_size = p / 1000 ))
+	cust_size=`call altprintf "%4d" $cust_size`
+	cust_size="${cust_size}.$remainder"
+		
+	s="${CAN_LICENSE}"
+	(( p = ${#s} - 2 ))
+	while (( ( p += 1 ) <= width )) ; do
+		s=$s" "
+	done
+
+	add_menu_item "$s ${licpct} MB" \
+		-entry "describe_license" \
+		-select "return_menu"
+
+	# Now create menu, using labels and percentages.
+	i=0
+	while (( i < ${#can_code[*]} ))
+	do
+		# Append spaces to labels to make percentages visually line up.
+		s="${can_label[i]}"
+		(( p = ${#s} - 2 ))
+		while (( ( p += 1 ) <= width )) ; do
+			s=$s" "
+		done
+		
+		add_menu_item "$s ${pct[i]} MB" \
+			-entry "describe_can $i" \
+			-select "return_menu"
+		(( i += 1 ))
+	done
+	
+	s="${CAN_CUSTOM}"
+	(( p = ${#s} - 2 ))
+	while (( ( p += 1 ) <= width )) ; do
+		s=$s" "
+	done
+	add_menu_item "$s ${cust_size} MB" \
+		-entry "describe_custom" \
+		-select "return_menu"
+	#
+	# Create the window for it
+	#
+	(( num += 4 ))		# JTB: was 2
+	(( width += 19 ))
+
+	place_window $width $num -title "$TITLE_CAN_SEL" -below 1 -above 10 \
+		-current 'msg "$MSG_CAN_SEL"; footer "$FOOT_CAN_SEL" '
+	menu_window=$CURWIN
+	set_hotkey 9 "save_exit PREV"
+	set_hotkey 1 "ivar set help_topic cans; ii_exit HELP"
+	run_menu $can_menu $current
+}
+
+function return_menu
+{
+[ -n "$debug" ] && set -x
+
+	can_id="$new_can_id"	
+	exitdirection=OPTIONS
+	if [ "$new_can_id" != "custom" ] 
+	then
+		exitdirection=NEXT
+		integer i=0
+	
+		while (( i < num_sets ))
+		do
+			eval ${set_code[i]}_PKGS=\"\"
+			eval ${set_code[i]}_PKG_NUMS=\"\"
+			eval ivar set \"${set_code[i]}_PKGS\" \"\"
+			eval ivar set \"${set_code[i]}_PKG_NUMS\" \"\"
+			pkg_ids[$i]=""
+			(( i += 1 ))
+		done	
+	
+		msg "$PKG_SET"
+		if [ "$can_id" = "license" ]
+		then
+			lic_2_pkg_ids
+		else
+			can_2_pkg_ids
+		fi
+
+		# Set current_set to something to keep set_INSTPKGS pacified
+		current_set=-1
+		set_INSTPKGS $tpkg_ids		
+		msg ""
+	fi
+	wclose $menu_window
+	return 0
+}
+
+function describe_can
+{
+[ -n "$debug" ] && set -x
+	new_can_id=$1
+	selected_size=${pct[$1]%%.*}
+	(( selected_size += largest_pkg[$1]/1000 ))
+	wclear $desc_window
+	wgotoxy $desc_window 1 1
+
+	eval d="\${can_desc_$LANG[$1]}"
+	[ -z "$d" ] && d="${can_desc[$1]}"
+	wprintf $desc_window "$d"
+}
+
+function describe_license
+{
+[ -n "$debug" ] && set -x
+	new_can_id="license"
+	selected_size=${licpct%%.*}
+	(( selected_size += largest_lic_pkg/1000 ))
+	wclear $desc_window
+	wgotoxy $desc_window 1 0
+	eval "wprintf $desc_window \"$CANS_LICENSE\""
+}
+
+function describe_custom
+{
+[ -n "$debug" ] && set -x
+	new_can_id="custom"
+	selected_size=${cust_size%%.*}
+	(( selected_size += largest_cust_pkg/1000 ))
+	wclear $desc_window
+	wgotoxy $desc_window 1 0
+	wprintf $desc_window "$CANS_CUSTOM"
+}
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic cans	# Just in case $1 == HELP
+	ivar set can_id "$new_can_id"
+	ivar set selected_size $selected_size	# Should be an svar
+
+# Quick and dirty fix for making ISL work ;-)
+# - RD, 09/24/97
+	penguin=`ivar get UnixWare_PKGS`
+	ivar set INSTPKGS "$penguin"
+# End fix
+	ii_exit $1
+}
+
+# JTB: temporarary block
+set_list=
+n=-1
+while (( ( n += 1 ) < num_sets )) ; do
+	set_list="$set_list ${set_code[n]}"
+done
+
+ivar set INSTSETS "$set_list"
+
+# JTB block end
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+set -x
+
+typeset -L2 remainder
+
+product_id=`ivar get product_id`
+# When brand is working this will be the license ID for the system
+# Till then use "Enterprise System"
+[ -z "$product_id" ] && product_id=132
+
+i=0
+license_num=
+while (( i < ${#lic_code[*]} ))
+do
+	if [ "${lic_id[i]}" = "$product_id" ]
+	then
+		(( license_num=i ))	
+		break
+	fi
+	(( i += 1 ))
+done
+[ -z "$license_num" ] && license_num=none
+	
+# Default to a license defined can
+can_id=`ivar get can_id`
+[ -z "$can_id" ] && {
+	can_id=license
+	lic_2_pkg_ids
+	current_set=-1
+	set_INSTPKGS $tpkg_ids
+}
+
+i=0
+while (( i < num_sets ))
+do
+	pkg_ids[$i]=`ivar get pkg_ids[$i]`
+	(( i += 1 ))
+done
+
+save_can_id=$can_id
+place_window 76 7 -above 0
+desc_window=$CURWIN
+
+get_can
+input_handler
+
+save_exit $exitdirection

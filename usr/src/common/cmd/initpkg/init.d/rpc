@@ -1,0 +1,79 @@
+#ident	"@(#)rpc	1.2"
+
+if [ ! -d /usr/bin ]
+then			# /usr not mounted
+	exit
+fi
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/rpc { start | stop }"
+
+mldmode > /dev/null 2>&1
+if [ "$?" = "0" ]
+then			# Enhanced Security running
+	exit
+fi
+
+case "$1" in
+'start')
+	if [ -x /usr/sbin/rpcbind ]
+	then
+		/sbin/sh /etc/init.d/rpc rpcstart&
+	fi
+	;;
+'rpcstart')
+		/usr/sbin/rpcbind
+	
+		if [ -x /usr/lib/netsvc/rwall/rpc.rwalld ]
+		then
+			/usr/lib/netsvc/rwall/rpc.rwalld
+		fi
+		if [ -x /usr/lib/netsvc/rusers/rpc.rusersd ]
+		then
+			/usr/lib/netsvc/rusers/rpc.rusersd
+		fi
+		if [ -x /usr/lib/netsvc/spray/rpc.sprayd ]
+		then
+			/usr/lib/netsvc/spray/rpc.sprayd
+		fi
+
+#		uncomment for secure RPC
+
+#		if [ -x /usr/sbin/keyserv ]
+#		then
+#			/usr/sbin/keyserv
+#		fi
+
+		;;
+'stop')
+	if [ -z "$_AUTOKILL" ]	
+	then
+		kill -9 `/usr/bin/ps -e | /usr/bin/sed -n \
+	                -e'/ rpc\.spra$/s/[^0-9 \t].*//p' \
+	                -e'/ rpc\.ruse$/s/[^0-9 \t].*//p' \
+	                -e'/ rpc\.rwal$/s/[^0-9 \t].*//p' \
+	                -e'/ rpcbind$/s/[^0-9 \t].*//p'` 2>/dev/null
+	#	uncomment for secure RPC
+	#	kill -9 `/usr/bin/ps -e | /usr/bin/sed -n \
+	#		-e'/ keyserv$/s/[^0-9 \t].*//p'` 2>/dev/null
+	fi
+
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	;;
+esac

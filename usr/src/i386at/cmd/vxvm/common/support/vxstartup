@@ -1,0 +1,144 @@
+#!/usr/bin/ksh -
+# @(#)cmd.vxvm:common/support/vxstartup.sh	1.2 3/3/97 03:17:28 - cmd.vxvm:common/support/vxstartup.sh
+#ident	"@(#)cmd.vxvm:common/support/vxstartup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+exec 3>&1
+
+prog="${0##*/}"
+vold_opts=
+req=
+diag=
+k_flag=
+while getopts :x:R:D:m:sk c; do
+	case $c in
+	x)	vold_opts="$vold_opts -x $OPTARG";;
+	R)	vold_opts="$vold_opts -R $OPTARG"; req="-R $OPTARG";;
+	D)	vold_opts="$vold_opts -D $OPTARG"; diag="-R $OPTARG";;
+	m)	vold_opts="$vold_opts -m $OPTARG";;
+	s)	vold_opts="$vold_opts -x stub";;
+	k)	k_flag=true;;
+	?)	cat <<! >&2
+`prog="$prog" VOLD="$VOLD" egettxt "\
+Usage: $prog [-id] [[-x debug-opt] ... ] [disk ...]
+
+Options:
+  -x debug-opt	Pass this debug-option on to $VOLD.  Any number of -x
+		options can be specified.
+  -s		Start $VOLD in stub mode (don't talk to the kernel).
+  -k		Kill an existing $VOLD, unconditionally.
+" vxvmshm:522`
+!
+		exit 1
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+askyorn() {
+	if [ "$1" = "-M" ]
+	then
+		_ask_cat="$2"
+		_ask_def="$3"
+		_ask_yon="$4"
+		shift 4
+		_ask_msg="`./egettxt \"$_ask_def\" \"$_ask_cat\" \"$@\"`"
+	else
+		_ask_msg="$1"
+		_ask_yon="$2"
+	fi
+	echo
+	while :; do
+#		read ans?"$1 (y/n)? [$2]"
+		read ans?"$_ask_msg (y/n)? [$_ask_yon]"
+		if [ -z "$ans" ]; then
+			ans=$2
+		fi
+		case $ans in
+		y*)	return 0;;
+		n*)	return 1;;
+		esac
+		egettxt "Please enter y or n." vxvmshm:308
+	done
+}
+
+quit() {
+	prog="$prog" egettxt \
+	"\nFatal errors prevent $prog from continuing.\nStop." vxvmshm:610
+	exit 1
+}
+
+doit() {
+	echo ! "$@" >&3
+	"$@" 3>&-
+}
+
+not() {
+	if "$@"; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+n=$(vxiod | sed 's/ .*//')
+if [ "X$n" = X0 ]
+then
+	doit vxiod set 2
+fi
+
+x=$(doit vxdctl $diag mode)
+if [ $? -ne 0 ]; then
+	VOLD=$VOLD egettxt "vxdctl could not determine $VOLD's status.\nStart anyway." vxvmshm:644
+else
+	case $x in
+	"mode: enabled")
+	    if [ ! -z "$k_flag" ]
+	    then
+		VOLD=$VOLD egettxt "$VOLD appears to be running and enabled.  Kill:" vxvmshm:53
+	    elif not (export VOLD; askyorn -M vxvmshm:52 "$VOLD appears to be running and enabled.  Kill" n)
+	    then
+		egettxt "Stop." vxvmshm:370
+		exit 1
+	    fi
+	    echo
+	    doit vxdctl $diag stop || quit
+	    ;;
+
+	"mode: disabled" | "0:mode: booted")
+	    VOLD=$VOLD egettxt "$VOLD appears to be running in disabled mode.  Kill:" vxvmshm:54
+	    echo
+	    doit vxdctl $diag stop || quit
+	    ;;
+
+	"mode: not-running")
+	    :;;
+
+	*)  egettxt "vxdctl mode returned an unexpected status.\nStart anyway." vxvmshm:645
+	    ;;
+	esac
+fi
+
+VOLD=$VOLD egettxt "\nStart $VOLD:\n" vxvmshm:616
+doit $VOLD $vold_opts 2> /dev/sysmsg || quit
+
+VOLD=$VOLD egettxt "\nStartup of $VOLD was successful." vxvmshm:617
+exit 0

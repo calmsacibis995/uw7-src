@@ -1,0 +1,109 @@
+#ident	"@(#)preremove	1.2"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+FAILURE=1	# fatal error
+
+REBUILD=0
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:51 " The Installable Driver feature has been removed. The %s cannot be removed." ${NAME} 2>&1`
+
+#
+# determine that ID/TP tools are available
+#
+if [ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+			     -o ! -x ${CONFBIN}/idcheck ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+#
+# remove modules installed by the nfs package
+#
+for MODULE in nfss nfs klm
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RES="$?"
+	if [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		if [ "${MODULE}" = "nfs" ]
+		then
+			# NFS cannot be completely removed. A stub
+			# must remain configured for nfssys()
+			mkdir /tmp/nfs$$ 2> /dev/null
+			cp ${CONFDIR}/pack.d/nfs/stubs.c /tmp/nfs$$/stubs.c
+			cp ${CONFDIR}/mdevice.d/nfs /tmp/nfs$$/nfs.m
+		fi
+		${CONFBIN}/idinstall -P ${PKGINST} -d${OPTS} ${MODULE}
+		if [ "${MODULE}" = "nfs" ]
+		then
+			if [ ! -d ${CONFDIR}/pack.d/nfs ]
+			then
+				mkdir ${CONFDIR}/pack.d/nfs
+				chmod 0755 ${CONFDIR}/pack.d/nfs
+				chgrp sys  ${CONFDIR}/pack.d/nfs
+				chown root ${CONFDIR}/pack.d/nfs
+			fi
+			cp /tmp/nfs$$/nfs.m ${CONFDIR}/mdevice.d/nfs
+			cp /tmp/nfs$$/stubs.c ${CONFDIR}/pack.d/nfs/stubs.c
+
+			chmod 0644 ${CONFDIR}/mdevice.d/nfs ${CONFDIR}/pack.d/nfs/stubs.c
+			chgrp sys  ${CONFDIR}/mdevice.d/nfs ${CONFDIR}/pack.d/nfs/stubs.c
+			chown root ${CONFDIR}/mdevice.d/nfs ${CONFDIR}/pack.d/nfs/stubs.c
+			rm -rf /tmp/nfs$$
+		fi
+		REBUILD=1
+	fi
+done
+
+#
+# remove nfs from /etc/dfs/fstypes
+#
+/usr/bin/egrep -v '^nfs' /etc/dfs/fstypes > /tmp/fstypes.$$
+cp /tmp/fstypes.$$ /etc/dfs/fstypes
+rm /tmp/fstypes.$$
+
+#
+# remove nfs commands from TFM database for role NET
+#
+#adminrole -r biod,mountd,automount,nfsd,exportfs,lockd  NET
+#adminrole -r statd,bootparamd,pcnfsd,showmount,nfsstat  NET 
+
+#
+# eliminate reference to class file from installation
+#
+/usr/bin/ed /usr/X/lib/classdb/dtadmin > /dev/null 2>&1 <<EOT
+g/INCLUDE nfs.cdb;/d
+w
+q
+EOT
+
+if [ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+	
+	${CONFBIN}/idbuild
+	if [ "$?" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+fi

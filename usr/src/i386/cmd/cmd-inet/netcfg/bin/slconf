@@ -1,0 +1,318 @@
+#!/bin/sh
+#ident	"@(#)slconf	1.2"
+#
+# Copyrighted as an unpublished work.
+# (c) Copyright 1987-1995 Legent Corporation
+# All rights reserved.
+#
+#      SCCS IDENTIFICATION
+#       @(#) slconf 25.3 95/03/09 
+#
+#       Copyright (C) 1988-1995 The Santa Cruz Operation, Inc.
+#               All Rights Reserved.
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+
+OK=0
+FAIL=1
+RESTART=2
+CANCEL=3
+INVALID=4
+
+remove() {
+	LINK_TYPE=$1
+	KEY=$2
+
+	if [ "$LINK_TYPE" = "INC" ]
+	then
+		LINE="/^$KEY/"
+		ed -s /etc/passwd <<-EOF > /dev/null 2>&1
+			$LINE
+			.d
+			w
+			q
+			EOF
+	elif [ "$LINK_TYPE" = "STATIC" ]
+	then
+		LINE="/slattach[ 	]*.*`echo $KEY | sed -e 's;/;\\\/;g'`/"
+		grep "slattach[ 	]*.*$KEY" /etc/inet/slip.start \
+			| grep [\\]$ > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			ed -s /etc/inet/slip.start <<-EOF > /dev/null 2>&1
+				$LINE
+				.,/[^\\]$/d
+				w
+				q
+				EOF
+		else
+			ed -s /etc/inet/slip.start <<-EOF > /dev/null 2>&1
+				$LINE
+				.d
+				w
+				q
+				EOF
+		fi
+	fi
+}
+
+reconf() {
+	LINK_TYPE=$1
+	KEY=$2
+
+	#
+	# Now bring up a configuration screen that is relevant to the type of
+	# link we are configuring.
+	#
+	ncfgprompter /usr/lib/netcfg/bin/slip.BE $LINK_TYPE $KEY RECONF \
+		> ${TMPDIR}/slip.conf
+	case $? in
+		0)
+			;;
+		1)
+			echo "Error in /usr/lib/netcfg/bin/slip.BE"
+			rm -f ${TMPDIR}/slip.conf
+			exit $FAIL
+			;;
+		3)
+			#
+			# User selected cancel.
+			#
+			rm -f ${TMPDIR}/slip.conf
+			continue
+			;;
+		*)
+			echo "Error in /usr/lib/netcfg/bin/slip.BE"
+			rm -f ${TMPDIR}/slip.conf
+			exit $FAIL
+			;;
+	esac
+	. ${TMPDIR}/slip.conf
+	rm -f ${TMPDIR}/slip.conf
+
+	if [ "$LINK_TYPE" = "INC" ]
+	then
+		#
+		# Remove the original entry in /etc/passwd.
+		#
+		LINE="/^$KEY/"
+		ed -s /etc/passwd <<-EOF > /dev/null 2>&1
+			$LINE
+			.d
+			w
+			q
+			EOF
+		#
+		# Create the new entry
+		#
+		/usr/lib/netcfg/bin/addslipuser $SLIP_LOGIN $SLIP_SHELL
+	elif [ "$LINK_TYPE" = "STATIC" ]
+	then
+		#
+		# Create an entry in /etc/init.d/inetinit based on the
+		# information given.
+		#
+		# Remove the original entry.
+		#
+		LINE="/slattach[ 	]*.*`echo $KEY | sed -e 's;/;\\\/;g'`/"
+		grep "slattach[ 	]*.*$KEY" /etc/inet/slip.start | \
+			grep [\\]$ > /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			ed -s /etc/inet/slip.start <<-EOF > /dev/null 2>&1
+				$LINE
+				.,/[^\\]$/d
+				w
+				q
+				EOF
+		else
+			ed -s /etc/inet/slip.start <<-EOF > /dev/null 2>&1
+				$LINE
+				.d
+				w
+				q
+				EOF
+		fi
+
+		SLATTACH="/usr/sbin/slattach"
+
+		if [ "$SLIP_ARP" = "On" ]
+		then
+			SLATTACH="$SLATTACH +a"
+		fi
+
+		if [ "$SLIP_COMP" = "On" ]
+		then
+			SLATTACH="$SLATTACH +c"
+		else
+			if [ "$SLIP_AUTO_COMP" = "On" ]
+			then
+				SLATTACH="$SLATTACH +e"
+			fi
+		fi
+
+		if [ "$SLIP_FLOW" = "On" ]
+		then
+			SLATTACH="$SLATTACH +f"
+		fi
+
+		if [ "$SLIP_ICMP" = "On" ]
+		then
+			SLATTACH="$SLATTACH +i"
+		fi
+
+		if [ "$SLIP_MTU" ]
+		then
+			SLATTACH="$SLATTACH -m $SLIP_MTU"
+		fi
+
+		if [ "$SLIP_VERB" = "On" ]
+		then
+			SLATTACH="$SLATTACH +v"
+		fi
+
+		if [ "$SLIP_UUCP_NAME" ]
+		then
+			SLATTACH="$SLATTACH -d $SLIP_UUCP_NAME $SLIP_HOST_IP $SLIP_DEST_IP $SLIP_NM"
+		else
+			SLATTACH="$SLATTACH $SLIP_TTY $SLIP_HOST_IP $SLIP_DEST_IP $SLIP_NM"
+		fi
+
+		if [ "$SLIP_BAUD" ]
+		then
+			SLATTACH="$SLATTACH $SLIP_BAUD&"
+		else
+			SLATTACH="$SLATTACH&"
+		fi
+
+		cat "$SLATTACH" >> /etc/inet/slip.start
+
+		if [ "$GATEWAY" = "Yes" ]
+		then
+			/usr/sbin/inconfig -f /etc/inet/inet.dfl ipforwarding 1
+			/usr/sbin/inconfig -f /etc/inet/inet.dfl ipsendredirects 1
+		elif [ "$GATEWAY" = "No" ]
+		then
+			/usr/sbin/inconfig -f /etc/inet/inet.dfl ipforwarding 0
+			/usr/sbin/inconfig -f /etc/inet/inet.dfl ipsendredirects 0
+		fi
+
+		#
+		# If we've got a host name and IP address pair put it in
+		# /etc/inet/hosts if it's not already there.
+		#
+		if [ "$SLIP_LOCAL_NAME" -a "$SLIP_HOST_IP" ]
+		then
+			check_hosts $SLIP_HOST_IP $SLIP_LOCAL_NAME
+		fi
+
+		if [ "$SLIP_DEST_NAME" -a "$SLIP_DEST_IP" ]
+		then
+			check_hosts $SLIP_DEST_IP $SLIP_DEST_NAME
+		fi
+	fi
+}
+
+check_hosts() {
+	_IP=$1
+	_HOST=$2
+
+	if [ ! -f /etc/inet/hosts ]
+	then
+		return
+	fi
+
+	if egrep -i "^$_IP[ 	]+$_HOST$" /etc/inet/hosts > /dev/null 2>&1 || \
+	   egrep -i "^$_IP[ 	]+$_HOST[ 	]" /etc/inet/hosts > /dev/null 2>&1
+	then
+		: done
+	else
+		if [ "$_HOST" ]
+		then
+			echo "$_IP\t$_HOST" >> /etc/inet/hosts
+		fi
+	fi
+}
+
+#
+# main Main MAIN
+#
+
+TMPDIR=/usr/lib/netcfg/tmp
+
+CONT=Yes
+while [ "$CONT" = "Yes" ]
+do
+	if [ -s /etc/inet/slip.start ]
+	then
+		#
+		# Select the type of link we want to configure.
+		#
+
+		/usr/lib/netcfg/bin/listsl
+		result=$?
+
+		if [ $result -eq $CANCEL ]
+		then
+			#
+			# User selected CANCEL in the prompter.
+			#
+			if [ -f ${TMPDIR}/slip_list ]
+			then
+				rm -f ${TMPDIR}/slip_list
+			fi
+			exit $CANCEL
+		fi
+
+		if [ $result -eq 1 ]
+		then
+			echo "$0: Error in /usr/lib/netcfg/bin/listsl\n" >&2
+			if [ -f ${TMPDIR}/slip_list ]
+			then
+				rm -f ${TMPDIR}/slip_list
+			fi
+			exit $FAIL
+		fi
+		. ${TMPDIR}/slip_list
+		rm -f ${TMPDIR}/slip_list
+
+		if [ "$ACTION" = "remove" ]
+		then
+			remove $LINK_TYPE $KEY
+		elif [ "$ACTION" = "reconf" ]
+		then
+			reconf $LINK_TYPE $KEY
+		else
+			/usr/lib/netcfg/bin/addsl
+			result=$?
+
+			if [ $result -ne $OK ]
+			then
+				exit $result
+			fi
+		fi
+	else
+		/usr/lib/netcfg/bin/addsl
+		result=$?
+
+		if [ $result -ne $OK ]
+		then
+			exit $result
+		fi
+	fi
+	#
+	# Ask if the user wants to continue configuring more links.
+	#
+	/usr/lib/netcfg/bin/yesno
+	result=$?
+
+	if [ $result -eq 1 ]
+	then
+		exit $OK
+	fi
+done

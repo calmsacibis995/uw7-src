@@ -1,0 +1,135 @@
+  Information for ARK Logic Chipset Users
+  Harm Hanemaayer (hhanemaa@cs.ruu.nl)
+  26 June 1995
+
+  1.  Supported chipsets
+
+  The "ark" driver in the SVGA server is for ARK Logic graphics
+  chipsets.  The following chipsets are supported:
+
+     ARK1000PV (ark1000pv)
+        Chipset with 32-bit DRAM interface, supports fast DRAM timing,
+        for VESA and PCI bus. Has powerful "coprocessor" for graphics
+        acceleration which is not yet used in the current driver.  The
+        max supported resolution/refresh depends on the RAMDAC used on
+        the card; expect 256 colors up to 80 or 110 MHz dot clock.
+
+     ARK1000VL (ark1000vl)
+        Older chip, VLB only. More or less compatible with ARK1000PV.
+
+     ARK2000PV (ark2000pv)
+        64-bit version of the ARK1000PV. Note that a ARK2000PV equipped
+        with 1Mb of DRAM is about equivalent to the same card with an
+        ARK1000PV chip; 2Mb is required for 64-bit operation. Again the
+        RAMDAC used on the card determines the max supported dot clocks.
+        The current driver is however limited to 80 MHz at 256 colors.
+
+  The chipset may not be detected automatically. In this case use a line
+  like Chipset "ark1000pv" in the Device section of the XF86Config file.
+
+  2.  Supported RAMDACs
+
+  If no RAMDAC is specified, a standard RAMDAC supporting 256 colors up
+  to 80 MHz dot clock frequency is assumed. The following RAMDAC types
+  can be specified in the Device section of the XF86Config file (e.g.
+  Ramdac "att20c490"):
+
+     att20c490
+        Industry-standard 8-bit RAMDAC. The RAMDAC used on the basic
+        Hercules Stingray Pro is compatible. 16bpp color depth is
+        supported up to 40 or 55 MHz, depending on the DAC speed rating.
+        This is the only RAMDAC that has been tested with the current
+        driver.
+
+     att20c498
+        Industry-standard 16-bit RAMDAC. The RAMDAC used on the Hercules
+        Stingray Pro/V and the Stingray 64/V is compatible. 16bpp is
+        supported up to 80 MHz dot clock frequency.
+
+     zoomdac
+        This is the actual DAC used by the Hercules Stingray Pro/V and
+        64/V.  It is treated mostly as an ATT20C498, but with dot clock
+        limits set correctly (16bpp up to 55 MHz with ARK1000PV, up to
+        at least 110 MHz with ARK2000PV).
+
+     stg1700
+        Completely untested.
+
+  The Dacspeed keyword can be used to indicate the speed rating of the
+  RAMDAC, but it must be used with care.
+
+  To run XF86_SVGA at 16 bpp, pass options to the X server as follows:
+  startx -- -bpp 16               5-6-5 RGB ('64K color', XGA)
+  startx -- -bpp 16 -weight 555   5-5-5 RGB ('Hicolor')
+
+
+
+  3.  Basic configuration
+
+  It is recommended that you generate an XF86Config file using the
+  `xf86config' program, which should produce a working high-resolution
+  8bpp configuration, although the modelines might need reshuffling for
+  optimal screen refresh. You may want to include mode timings in the
+  Monitor section that better fit your monitor (e.g 1152x900 modes).
+
+  In order to prevent stress on your monitor, it is recommended that you
+  turn off your monitor during clock probing (X -probeonly), which also
+  happens if you start the server with no Clocks line present in the
+  Device section of the XF86Config. The following Clocks line can be
+  used for the Hercules Stingray Pro using an ARK Logic clock generator
+  (so there's no need to probe clocks for this card, just insert the
+  following line in the Device section of the XF86Config file):
+
+      Clocks 25.175 28.3 40 70 50 75 36 44.9
+      Clocks 0 118 80 31.5 110 65 72 95
+
+  The higher frequencies have not been tested, there might be a mismatch
+  in the 60-80 MHz range.
+
+  If are having driver-related problems that are not addressed by this
+  document, you can try contacting the XFree86 team (the current driver
+  maintainer can be reached at hhanemaa@cs.ruu.nl), or post in the
+  Usenet newsgroup "comp.windows.x.i386unix".
+
+  Generated from XFree86: xc/programs/Xserver/hw/xfree86/doc/sgml/ark.sgml,v 3.1 1995/07/07 15:40:20 dawes Exp $
+
+
+
+
+  $XConsortium: README.ark /main/2 1995/11/12 19:48:53 kaleb $
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$XFree86: xc/programs/Xserver/hw/xfree86/doc/README.ark,v 3.3 1995/07/24 06:52:51 dawes Exp $

@@ -1,0 +1,90 @@
+#!/bin/ksh
+#ident	"@(#)putpnameinhost	1.3"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  enter name from $1 and $2 into /etc/hosts
+#  $2 is full domain name, $1 is ip-address
+#
+
+INSERTAT=20
+
+if [ ! -f "$HOSTTABLE" ]
+then
+	echo "ERROR: $HOSTTABLE doesn't exist."
+	exit 1
+elif [ ! -w "$HOSTTABLE" ]
+then
+		echo "No write permission on file $HOSTTABLE"
+		exit 1
+fi
+
+if [ -n "$2" ]
+then
+	TCPNAME=$2
+else
+	echo "No terminal parameter supplied in call to $0"
+	exit 1
+fi
+
+
+if [ -n "$1" ]
+then
+	IPADDR=$1
+else
+	echo "No IP address supplied in call to $0"
+	exit 1
+fi
+
+
+SHORTNAME=`echo $TCPNAME | awk -F. '{print $1}'`
+
+if [ "$SHORTNAME" = "$TCPNAME" ]
+then
+  echo "$IPADDR  $SHORTNAME" > "$TMP/XTLINE"
+else
+  echo "$IPADDR  $TCPNAME $SHORTNAME" > "$TMP/XTLINE"
+fi
+
+if [ $? -ne 0 ]
+then
+	exit 2
+fi
+
+COUNT=`wc -l $HOSTTABLE | awk '{print $1}'`
+
+if [ $COUNT -lt $INSERTAT ]
+then
+	HOSTLINE=`cat $TMP/XTLINE`
+	cat -- "$HOSTTABLE" "$TMP/XTLINE" > "$TMP/HOSTTABLE"
+	cp -- "$TMP/HOSTTABLE" "$HOSTTABLE"
+	rm -- "$TMP/HOSTTABLE"
+else
+	echo "${INSERTAT}a\\" > "$TMP/params"
+	cat -- "$TMP/XTLINE" >> "$TMP/params"
+	sed -f -- "$TMP/params" "$HOSTTABLE" > "$TMP/HOSTTABLE"
+	cp -- "$TMP/HOSTTABLE" "$HOSTTABLE"
+	rm -- "$TMP/HOSTTABLE"
+	rm -- "$TMP/params"
+fi
+
+rm -- "$TMP/XTLINE" > /dev/null 2>&1
+
+if [ $? -ne 0 ]
+then
+	exit 2
+fi
+
+exit 0

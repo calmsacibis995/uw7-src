@@ -1,0 +1,84 @@
+/**/#ident	"@(#)dtadmin:floppy/Imakefile	1.12.2.22"
+/**/#copyright	"%c%"
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+         SRCS1 = \
+		devmenu.c\
+		medwindow.c\
+		misc.c\
+		format.c\
+		backup.c\
+		restore.c\
+		MediaMgr.c
+
+         OBJS1 = \
+		devmenu.o\
+		medwindow.o\
+		misc.o\
+		backup.o\
+		restore.o\
+		format.o\
+		MediaMgr.o
+
+
+         SRCS2 = RemoteFilt.c
+
+         OBJS2 = RemoteFilt.o
+
+         PROG1 = MediaMgr
+
+         PROG2 = RemoteFilt
+
+         HDRS1 = \
+		media.h\
+		media_msgs.h
+
+         OBJS  = $(OBJS1) $(OBJS2)
+         SRCS  = $(SRCS1) $(SRCS2)
+         HDRS  = $(HDRS1) $(HDRS2)
+         PROGS = $(PROG1) $(PROG2)
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+    GIZMOLIBSRC = $(LIBSRC)/Gizmo
+    MEMUTLIBSRC = $(LIBSRC)/Memutil
+      DTILIBSRC = $(DTCLIENTSLIB)
+     DTAMLIBSRC = ../dtamlib
+         DTILIB = $(DTILIBSRC)/libDtI.so
+          DTLIB = $(DTLIBSRC)/libDt.so
+       GIZMOLIB = $(GIZMOLIBSRC)/libGizmo.so
+       MEMUTLIB = $(MEMUTLIBSRC)/libmemut.so
+        DTAMLIB = $(DTAMLIBSRC)/libdtam.a
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTILIBSRC) -I$(GIZMOLIBSRC) -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = $(DTAMLIB) $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientLibs
+        DEPLIBS = $(DTAMLIB) $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientDepLibs
+
+  SYS_LIBRARIES = -lgen -lm
+
+CC = LD_RUN_PATH=/usr/lib/X11 $(PFX)cc
+
+all:: $(PROGS)
+
+NormalProgramTarget($(PROG1),$(OBJS1),$(DEPLIBS),$(LOCAL_LIBRARIES),$(SYS_LIBRARIES))
+NormalProgramTarget($(PROG2),$(OBJS2),,,)
+
+InstallProgram($(PROG1),$(BINDIR))
+InstallProgram($(PROG2),$(DTADMDIR))
+
+InstallNamedProg(dtindex,dtindex,$(DTADMDIR))
+InstallNamedProg(dtbackup.sh,dtbackup.sh,$(DTADMDIR))
+InstallNamedProg(fmount,fmount,$(DTADMDIR))
+InstallNamedProg(fumount,fumount,$(DTADMDIR))
+InstallMultiple(dtamcheckdev,$(DTADMDIR))
+
+InstallNonExecFile(FsTable,$(DESKTOPDIR)/MediaMgr)
+
+InstallDesktopClient($(BINDIR)/MediaMgr,$(DESKTOPDIR)/Admin_Tools/Backup-Restore)
+
+InstallMsgCatalog(dtmedia)
+
+DependTarget()
+
+LintTarget()

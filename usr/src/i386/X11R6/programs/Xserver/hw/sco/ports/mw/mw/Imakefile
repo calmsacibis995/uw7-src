@@ -1,0 +1,145 @@
+#
+#	@(#)Imakefile	12.2	2/9/98	14:35:16
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1998.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+#
+#	SCO MODIFICATION HISTORY
+#
+#	S002	Tue Apr  2 14:20:13 PST 1996	hiramc@sco.COM
+#	- rework to compile properly on UW 2.1 and make DLL
+#	S001	Mon Aug 17 14:29:11 PDT 1992	hiramc@sco.COM
+#		Add mwFillSp.c, mwGetSp.c, mwteblt8.c mwSetSp.c
+#
+#
+
+#include <Server.tmpl>
+
+.SUFFIXES: .asm
+
+SRCS = iarc.c iline.c ipoly.c irect.c iutil.c \
+	mwwindow.c mwvscrn.c izero.c mwbitblt.c \
+	mwdebugs.c mwega.c mwfonts.c mwgc.c mwimage.c \
+	mwpixmap.c mwcursor.c mwdata.c mwclip.c \
+	mwscreen.c mwswitch.c mwutil.c mwabort.c mwstubs.c mwuio.c \
+	font01.asm meta01.asm mwutil01.asm mwxlat.asm mwFillSp.c \
+	mwGetSp.c mwteblt8.c mwSetSp.c
+
+
+#
+#	COBJS go into making up the .a library here for a static server link
+#		These are also compiled -Kpic and sent to ../shared
+#		for the DLL libXDriver.so creation
+#
+
+COBJS = iarc.o iline.o ipoly.o irect.o iutil.o \
+	mwwindow.o mwvscrn.o izero.o mwbitblt.o \
+	mwdebugs.o mwega.o mwfonts.o mwgc.o mwimage.o \
+	mwpixmap.o mwcursor.o mwdata.o mwclip.o \
+	mwscreen.o mwutil.o mwabort.o mwuio.o \
+	mwFillSp.o  mwGetSp.o mwSetSp.o
+#
+#	MASMOBJS are C objects that are always linked with the core
+#		server, dynamic or static. (because they have externals
+#			required by the masm asm objects)
+#
+MASMOBJS = ../masmobjs/mwstubs.o
+
+#
+#	AOBJS are masm assembled objects that are sent to ../masmobjs
+#		and symbolic links are made from here to there so
+#		the make dependency will see them properly.
+#		Even though they exist here as symbolic links, they
+#		are not linked into the .a produced here.  They are
+#		always linked into the core X server, dynamic or
+#		static.
+#
+AOBJS = font01.o meta01.o mwutil01.o mwxlat.o
+
+STD_DEFINES = ServerDefines -DPSZ=8
+CDEBUGFLAGS = ServerCDebugFlags
+#CDEBUGFLAGS = -g
+
+/*
+ *	INCLUDES = -I. -I$(SERVERSRC)/ddx -I$(SERVERSRC)/ddx/cfb \
+ *		-I$(SERVERSRC)/ddx/mfb -I$(SERVERSRC)/ddx/mi \
+ *		-I$(SERVERSRC)/include -I$(INCLUDESRC) \
+ *		-I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx/ports/gen \
+ *		-I$(FONTSRC)/include -I../include
+ */
+
+   INCLUDES = -I. -I../include -I.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mfb -I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+  ASM_INCLUDES = -I. -I../include -I../graphics -I../ishape
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(mwmw,$(COBJS))
+ProfiledLibraryTarget(mwmw,$(COBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(mwmw,$(COBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+ProfiledLibraryTarget(mwmw,$(COBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+.c.o:
+	LibObjCompile(../shared,-O -Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef SCP_PRODUCT
+SharedAsmObjectRule(../masmobjs, )
+#else
+
+all::
+
+#endif
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget(mwmw,$(COBJS))
+#endif
+LintLibraryTarget(mwmw,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+#ifndef	SCP_PRODUCT
+all::	$(AOBJS) $(MASMOBJS)
+#endif
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+
+#ifndef	SCP_PRODUCT
+../masmobjs/mwstubs.o:	mwstubs.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O mwstubs.c
+	$(MV) mwstubs.o ../masmobjs/$@
+#endif
+
+DependTargetSCP(mwdata.c)
+

@@ -1,0 +1,87 @@
+#!/usr/bin/nawk  -f vres
+#ident "@(#)usltools/vres	1.1"
+# vres - calculate summary reports - version for vsx4
+#
+# Copyright 1991 UNIX System Laboratories Europe, Ltd (USLE)
+# 
+# Permission to use, copy, modify, and distribute this software 
+# for any purpose and without fee is hereby granted, provided
+# that the above copyright notice appear in all copies and that both that
+# copyright notice and this permission notice appear in supporting
+# documentation, and that the name of USLE not be used in 
+# advertising or publicity pertaining to distribution of the software 
+# without specific, written prior permission.  USLE make 
+# no representations about the suitability of this software for any purpose.  
+# It is provided "as is" without express or implied warranty.
+#
+# USLE DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, 
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO 
+# EVENT SHALL USLE BE LIABLE FOR ANY SPECIAL, INDIRECT OR 
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF 
+# USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR 
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR 
+# PERFORMANCE OF THIS SOFTWARE.
+#
+# Modified: Yule R. Kingston, Wipro Infotech Ltd., May 27,1994;
+
+BEGIN {printf("Summary Results: \n") }
+
+  $1 ~ "^0"   { printf("Start time: %s\t", $2); }
+
+  $1 ~ "^900" { split($1, dat, "|");
+		printf("End time: %s\n", dat[2]);
+	      }
+
+  $1 ~ "^220" {if ($3 == 0) passed++ 
+		else if ($3 == 1) failed++
+		else if ($3 == 2) unresolved++
+		else if ($3 == 3) notinuse++
+		else if ($3 == 4) unsuported++
+		else if ($3 == 5) untested++
+		else if ($3 == 6) uninitiated++
+		else if ($3 == 7) noresult++
+		else if ($3 == 32) fatal++
+		else {printf("Unknown result code: %d\n",$3);unknown++}
+	    total++
+	}
+
+  $1 ~ "^50" { tetfail++ }
+
+  $1 ~ "^510" { tetfail++}
+
+  $1 ~ "PASS" { passed++;total++;}
+
+  $1 ~ "FAIL" { failed++;total++;}
+
+  $1 ~ "UNRESOLVED" { unresolved++;total++;}
+
+  $1 ~ "UNINITIATED" { uninitiated++;total++;}
+
+  $1 ~ "NORESULT" { noresult++;total++;}
+
+  $1 ~ "FATAL" { fatal++;total++;}
+END {
+pass=passed+warning+fip+unsuported+notinuse+untested;
+fail=failed+unresolved+uninitiated+noresult+fatal;
+printf("Total tests Executed: %d\tPASS = %d\tFAIL = %d\n\n",total,pass,fail);
+printf("Breakup of Results:\n");
+printf("PASS Breakup:\n");
+printf("Number Passed     : %d\n",passed);
+printf("Number Warnings   : %d\n",warning);
+printf("Number Unsupported: %d\n",unsuported);
+printf("Number Not In Use : %d\n",notinuse);
+printf("Number Untested   : %d\n",untested);
+
+printf("\nFAILURE Breakup:\n");
+printf("Number Failed     : %d\n",failed);
+printf("Number Unresolved : %d\n",unresolved);
+printf("Number Uninitiated: %d\n",uninitiated);
+printf("Number NoResult   : %d\n",noresult);
+printf("Number Fatal      : %d\n",fatal);
+
+if (unknown > 0)
+  printf("\n*WARNING* unknown result code encountered\n");
+if (tetfail > 0)
+  printf("\n*WARNING* TET failure result code encountered\n");
+printf
+}

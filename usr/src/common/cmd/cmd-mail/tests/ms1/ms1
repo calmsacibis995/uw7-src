@@ -1,0 +1,8101 @@
+#!/bin/sh
+#
+# test suite for SCO Message Store version 1.
+# tests directly (internal API)
+# see test suite document for documentation (ms1.plan).
+#
+
+# utility routines
+
+savecount=0
+
+savecnt() \
+{
+	if [ -f ms1tb.cnt ]
+	then
+		mv ms1tb.cnt trace.$savecount
+		savecount=`expr $savecount + 1`
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -f $INBOX $INBOXX
+	rm -f $INBOX1 $INBOX1X
+	rm -fr /tmp/mbox1 /tmp/.mbox1.index /tmp/pindex1 /tmp/pindex2
+	rm -fr /tmp/mbox2 /tmp/.mbox2.index
+	rm -fr $HOME/.mailbox $HOME/.mailbox.index /tmp/ms1.out /tmp/ms1.out2
+	rm -fr /tmp/message /tmp/filldisk /tmp/ms1.f /tmp/killproc /tmp/d1
+	echo > /etc/default/mail
+	rm -f $HOME/.maildef
+	rm -f ./mbox1 ./.mbox1.index
+}
+
+# compare two pindex (ascii) files ignoring validity if -n flag present
+cmpindex() \
+{
+	if [ $1 = "-n" ]
+	then
+		shift
+		sed -e "/^mrc_validity=/d" < $1 > $1.cmp
+		sed -e "/^mrc_validity=/d" < $2 > $2.cmp
+		diff $1.cmp $2.cmp
+		ret=$?
+		rm -f $1.cmp $2.cmp
+		return $ret
+	fi
+	diff $1 $2
+	ret=$?
+	return $ret
+}
+
+# generate pindex for valid sendmail mailbox of zero length
+szpindex() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=0
+mrc_validity=3270f592
+mrc_uid_next=1
+mrc_msgs=0
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency=""
+DONE
+}
+
+bigmessage() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: large message
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+
+This is a test message.
+DONE
+	i=0
+	while [ "$i" -lt "100" ]
+	do
+		i=`expr $i + 1`
+		echo 01234567890123456789012345678901234567890123456789 >> $1
+	done
+}
+
+# binary message, contains all possible characters including null
+binarymsg1() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+	# append binary data to message file.
+	ms1tb u_bindata $1 n
+}
+
+# binary message 1 after it gets simple delivered into an MMDF format folder.
+mbmsg1a() \
+{
+	cat > $1 << DONE_B1
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 281
+
+This is a test message.
+DONE_B1
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+	cat >> $1 << DONE_B2
+
+DONE_B2
+}
+
+# binary message 1 after it gets simple delivered into a Sendmail format folder.
+sbmsg1a() \
+{
+	cat > $1 << DONE_B1
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 281
+
+This is a test message.
+DONE_B1
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+}
+
+# binary message, contains all possible characters including null
+binarymsg2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+	# 100 7-bit printable characters for end of file data
+	cat >> $1 << DONE
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+DONE
+}
+
+# binary message without the from line,
+# contains all possible characters including null
+binarymsg2p() \
+{
+	cat > $1 << DONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+	# 100 7-bit printable characters for end of file data
+	cat >> $1 << DONE
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+DONE
+}
+
+# binary message 2 after rebuild, MMDF format folder.
+mbmsg2a() \
+{
+	cat > $1 << DONE_B1
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+DONE_B1
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+	cat >> $1 << DONE
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+
+DONE
+}
+
+# binary message 2 after rebuild, Sendmail format folder.
+sbmsg2a() \
+{
+	cat > $1 << DONE_SB1
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+DONE_SB1
+	# append binary data to message file.
+	ms1tb u_bindata $1 y
+	cat >> $1 << DONE
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+DONE
+}
+
+# binarymsg2 after delivery, MMDF
+mbpindex2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=665
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="01234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+
+"
+prc0_start=5
+prc0_size=655
+prc0_hdrstart=48
+prc0_hdrlines=11
+prc0_bodystart=256
+prc0_bodylines=6
+prc0_uid=1
+prc0_stat_start=204
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# binarymsg2 after delivery, Sendmail
+sbpindex2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=655
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="5678901234567890
+1234567890123456789012345678901234567890
+1234567890123456789012345678901234567890
+"
+prc0_start=0
+prc0_size=655
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=6
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# message1 with content length
+message1() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+Status:  sdf
+X-Status : sdfls
+X-SCO-PAD	: junkola
+X-SCO-UID	: 	17
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Content-Length: 123456
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+DONE
+}
+
+# message1 after delivery, sendmail
+smsg1a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+DONE
+}
+
+# message1 twice, second time simple delivery, sendmail (no UID)
+smsg1ar() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+DONE
+}
+
+# message1 after delivery, MMDF
+mmsg1a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: RO
+X-Status: DFAT
+X-SCO-PAD: 
+X-SCO-UID: 1
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+DONE
+}
+
+# message1 after simple delivery, MMDF
+mmsg1ar() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: RO
+X-Status: DFAT
+X-SCO-PAD: 
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+DONE
+}
+
+# message1 after delivery, sendmail
+spmsg1a() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=367
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="XXXXX
+X-SCO-UID: 1
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+"
+prc0_start=0
+prc0_size=367
+prc0_hdrstart=43
+prc0_hdrlines=13
+prc0_bodystart=307
+prc0_bodylines=2
+prc0_uid=1
+prc0_stat_start=236
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# message1 after delivery, MMDF
+mpmsg1a() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=376
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="
+X-SCO-UID: 1
+Content-Length: 60
+
+This is a test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+"
+prc0_start=5
+prc0_size=366
+prc0_hdrstart=48
+prc0_hdrlines=13
+prc0_bodystart=311
+prc0_bodylines=2
+prc0_uid=1
+prc0_stat_start=240
+prc0_status=RODFAT
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+message2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+DONE
+}
+
+message3() \
+{
+	cat > $1 << DONE
+From tester3 Thu Oct 17 12:18:44 1996 $ZONE
+From: tester3
+Subject: test3
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+Status:  sdf
+X-Status : sdfls
+X-SCO-PAD	: junkola
+X-SCO-UID	: 	17
+X-Mailer: scoms1 Tester
+
+This is a test3 message.
+DONE
+}
+
+# valid sendmail mail box
+smbox1() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box that contains header parser stress data
+smbox1s() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+x-status    :    
+x-sco-pad    :         sldfsldf
+x-sco-uid	:	Notice the lack of a valid uid string
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box after rebuild operation
+smbox1a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# sendmail mail box without old flag on second message
+smbox1ao() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box after delete msg1 before garbage collect.
+smbox1ad1() \
+{
+	cat > $1 << DONE
+From deleted Thu Aug  1 10:20:30 1996
+From: deleted
+Subject: deleted
+
+Xate: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: D
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box after delete msg2 before garbage collect.
+smbox1ad2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From deleted Thu Aug  1 10:20:30 1996
+From: deleted
+Subject: deleted
+
+Xri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: D
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box after delete msg1 after garbage collect.
+smbox1ae1() \
+{
+	cat > $1 << DONE
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# valid sendmail mail box after delete msg2 after garbage collect.
+smbox1ae2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+DONE
+}
+
+# generate pindex for smbox1
+spindex1() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=624
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=275
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=275
+prc1_size=349
+prc1_hdrstart=312
+prc1_hdrlines=12
+prc1_bodystart=557
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=505
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1 without old flags
+spindex1o() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=624
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="X-SCO-PAD: XXXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=275
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=275
+prc1_size=349
+prc1_hdrstart=312
+prc1_hdrlines=12
+prc1_bodystart=557
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=505
+prc1_status=
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1ad1
+spindex1d1() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=624
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=275
+prc0_size=349
+prc0_hdrstart=312
+prc0_hdrlines=12
+prc0_bodystart=557
+prc0_bodylines=2
+prc0_uid=2
+prc0_stat_start=505
+prc0_status=O
+prc0_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1ad2
+spindex1d2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=624
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=275
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1ae2
+spindex1e1() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=349
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=349
+prc0_hdrstart=37
+prc0_hdrlines=12
+prc0_bodystart=282
+prc0_bodylines=2
+prc0_uid=2
+prc0_stat_start=230
+prc0_status=O
+prc0_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1ae2
+spindex1e2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=275
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+"
+prc0_start=0
+prc0_size=275
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# fetch test expected results get header of message 1 mbox1
+smbox1h1() \
+{
+	cat > $1 << DONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+DONE
+}
+
+# fetch test expected results get header and body
+smbox1hb1() \
+{
+	cat > $1 << DONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+}
+
+# valid sendmail mail box, evil message, just a From line
+smbox2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+DONE
+}
+
+# smbox2 after rebuild
+smbox2a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+DONE
+}
+
+# smbox2 after delivery
+smbox2ad() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+Content-Length: 0
+
+DONE
+}
+
+spindex2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=95
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="From tester Thu Oct 17 12:17:42 1996 $ZONE
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+"
+prc0_start=0
+prc0_size=95
+prc0_hdrstart=43
+prc0_hdrlines=5
+prc0_bodystart=95
+prc0_bodylines=0
+prc0_uid=1
+prc0_stat_start=43
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+spindex2d() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=113
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="u Oct 17 12:17:42 1996 $ZONE
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+Content-Length: 0
+
+"
+prc0_start=0
+prc0_size=113
+prc0_hdrstart=43
+prc0_hdrlines=6
+prc0_bodystart=113
+prc0_bodylines=0
+prc0_uid=1
+prc0_stat_start=43
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# header and body fetch results from mbox2
+smbox2h1() \
+{
+	cat > $1 << DONE
+
+DONE
+}
+
+# header fetch test message with null body but valid header
+smbox3() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+DONE
+}
+
+# header fetch test message with null body but valid header after rebuild
+smbox3a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 0
+
+DONE
+}
+
+# index for mbox3
+spindex3() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=269
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency=" 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 0
+
+"
+prc0_start=0
+prc0_size=269
+prc0_hdrstart=43
+prc0_hdrlines=12
+prc0_bodystart=269
+prc0_bodylines=0
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# test remote from line recognition
+smbox4() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 remote from sco.sco.com
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+}
+
+# mbox4 after rebuild operation
+smbox4a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 remote from sco.sco.com
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+DONE
+}
+
+# mbox4 when delivered
+smbox4ad() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 24
+
+This is a test message.
+DONE
+}
+
+# index for mbox4
+spindex4() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=293
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+"
+prc0_start=0
+prc0_size=293
+prc0_hdrstart=61
+prc0_hdrlines=11
+prc0_bodystart=269
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=217
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# index for mbox4 when delivered
+spindex4d() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=294
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="ter
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+Content-Length: 24
+
+This is a test message.
+"
+prc0_start=0
+prc0_size=294
+prc0_hdrstart=43
+prc0_hdrlines=12
+prc0_bodystart=270
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# test fake deleted From header
+smbox5() \
+{
+	cat > $1 << DONE
+From deleted Thu Aug  1 10:20:30 1995
+From: deleted
+Subject: deleted
+
+This is a not really deleted test message.
+DONE
+}
+
+# mbox4 after rebuild operation
+smbox5a() \
+{
+	cat > $1 << DONE
+From deleted Thu Aug  1 10:20:30 1995
+From: deleted
+Subject: deleted
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a not really deleted test message.
+DONE
+}
+
+# index for mbox5
+spindex5() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=164
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="ted
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a not really deleted test message.
+"
+prc0_start=0
+prc0_size=164
+prc0_hdrstart=38
+prc0_hdrlines=7
+prc0_bodystart=121
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=69
+prc0_status=O
+prc0_date="08/01/1995 10:20:30 $ZONE"
+DONE
+}
+
+# test really deleted From header, same as box5 but with an additional msg
+smbox6() \
+{
+	cat > $1 << DONE
+From deleted Thu Aug  1 10:20:30 1995
+From: deleted
+Subject: deleted
+
+This is a not really deleted test message.
+From deleted Thu Aug  1 10:20:30 1996
+From: deleted
+Subject: deleted
+
+This is a really deleted test message.
+DONE
+}
+
+# valid sendmail mail box after rebuild operation,
+# second to last char changed to 'X'
+smbox7a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 199X
+DONE
+}
+
+# generate pindex for smbox7
+spindex7() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=624
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 199X
+"
+prc0_start=0
+prc0_size=275
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=275
+prc1_size=349
+prc1_hdrstart=312
+prc1_hdrlines=12
+prc1_bodystart=557
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=505
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# extended validity check, mbox1 with long second message to push out
+# consistency string past our little tests modifications.
+smbox8() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message start in different place
+smbox8b() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message..
+From tester Fri Oct 18 08:15:25 1996
+From: teste
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message Status in different place
+smbox8c() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message X-Status moved
+smbox8d() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message X-SCO-PAD moved
+smbox8e() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message X-SCO-PAD shortened
+smbox8f() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# extended validity check, mbox1 with second message UID wrong value
+smbox8g() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+this is a long line to push out the consistency string to it does
+not include our header which we modify during the tests.
+DONE
+}
+
+# index for smbox8b to verify folder is preserved.
+spindex8b() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=741
+mrc_validity=32aee5f9
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="ush out the consistency string to it does
+not include our header which we modify during the tests.
+"
+prc0_start=0
+prc0_size=270
+prc0_hdrstart=37
+prc0_hdrlines=11
+prc0_bodystart=245
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=193
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 -0800"
+prc1_start=270
+prc1_size=471
+prc1_hdrstart=307
+prc1_hdrlines=12
+prc1_bodystart=551
+prc1_bodylines=4
+prc1_uid=2
+prc1_stat_start=499
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 -0800"
+DONE
+}
+
+# mbox1 with a third message at the end.
+smbox9() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+>From bogus Fri Oct 18 08:17:25 1996
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:16:25 1996
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# mbox1 with a third message at the end after delete before expunge.
+smbox9ad2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From deleted Thu Aug  1 10:20:30 1996
+From: deleted
+Subject: deleted
+
+Xri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: D
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:17:25 1996
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:16:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# mbox1 with a third message at the end after delete after expunge.
+smbox9ae2() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:16:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# generate pindex for smbox1
+spindex9d2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=969
+mrc_validity=3270f592
+mrc_uid_next=4
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=269
+prc0_hdrstart=37
+prc0_hdrlines=11
+prc0_bodystart=245
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=193
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=618
+prc1_size=351
+prc1_hdrstart=656
+prc1_hdrlines=12
+prc1_bodystart=902
+prc1_bodylines=2
+prc1_uid=3
+prc1_stat_start=850
+prc1_status=O
+prc1_date="10/18/1996 08:17:25 $ZONE"
+DONE
+}
+
+# generate pindex for smbox1
+spindex9e2() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=620
+mrc_validity=3270f592
+mrc_uid_next=4
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=269
+prc0_hdrstart=37
+prc0_hdrlines=11
+prc0_bodystart=245
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=193
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=269
+prc1_size=351
+prc1_hdrstart=307
+prc1_hdrlines=12
+prc1_bodystart=553
+prc1_bodylines=2
+prc1_uid=3
+prc1_stat_start=501
+prc1_status=O
+prc1_date="10/18/1996 08:17:25 $ZONE"
+DONE
+}
+
+# generate pindex for Check5
+spindexc() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=531
+mrc_validity=32924491
+mrc_uid_next=18
+mrc_msgs=2
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="ailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 17
+
+This is a test3 message.
+"
+prc0_start=0
+prc0_size=251
+prc0_hdrstart=43
+prc0_hdrlines=11
+prc0_bodystart=251
+prc0_bodylines=0
+prc0_uid=1
+prc0_stat_start=199
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=251
+prc1_size=280
+prc1_hdrstart=295
+prc1_hdrlines=11
+prc1_bodystart=506
+prc1_bodylines=1
+prc1_uid=17
+prc1_stat_start=453
+prc1_status=
+prc1_date="10/17/1996 12:18:44 $ZONE"
+DONE
+}
+
+# mbox9 With content-length check added for Cont1 test
+smbox10() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 24
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:17:25 1996
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# mbox10 after rebuild
+smbox10a() \
+{
+	cat > $1 << DONE
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+Content-Length: 24
+
+This is a test message.
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:17:25 1996
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+DONE
+}
+
+# generate pindex for smbox10a
+spindex10() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=950
+mrc_validity=32924491
+mrc_uid_next=4
+mrc_msgs=3
+mrc_mmdf=0
+mrc_status=0x0
+mrc_consistency="X-SCO-UID: 3
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+"
+prc0_start=0
+prc0_size=288
+prc0_hdrstart=37
+prc0_hdrlines=12
+prc0_bodystart=264
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=193
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=288
+prc1_size=330
+prc1_hdrstart=325
+prc1_hdrlines=12
+prc1_bodystart=552
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=481
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+prc2_start=618
+prc2_size=332
+prc2_hdrstart=656
+prc2_hdrlines=12
+prc2_bodystart=884
+prc2_bodylines=2
+prc2_uid=3
+prc2_stat_start=813
+prc2_status=O
+prc2_date="10/18/1996 08:17:25 $ZONE"
+DONE
+}
+
+# invalid sendmail mail box, no From line
+sbbox1() \
+{
+	cat > $1 << DONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+}
+
+# invalid sendmail mail box, bad date
+sbbox2() \
+{
+	cat > $1 << DONE
+From tester bad date
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+DONE
+}
+
+# generate pindex for valid MMDF mailbox of zero length
+mzpindex() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=0
+mrc_validity=3270f592
+mrc_uid_next=1
+mrc_msgs=0
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency=""
+DONE
+}
+
+# valid MMDF mailbox
+mmbox1() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox that will be converted to sendmail
+mmbox1s() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox after rebuild
+mmbox1a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox after rebuild, without old flags set
+mmbox1ao() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# generate pindex for mbox1
+mpindex1() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=642
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="CO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+"
+prc0_start=5
+prc0_size=275
+prc0_hdrstart=48
+prc0_hdrlines=11
+prc0_bodystart=256
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=204
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=290
+prc1_size=347
+prc1_hdrstart=327
+prc1_hdrlines=12
+prc1_bodystart=571
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=519
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# generate pindex for mbox1 with no old flags
+mpindex1o() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=642
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="O-PAD: XXXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+"
+prc0_start=5
+prc0_size=275
+prc0_hdrstart=48
+prc0_hdrlines=11
+prc0_bodystart=256
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=204
+prc0_status=
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=290
+prc1_size=347
+prc1_hdrstart=327
+prc1_hdrlines=12
+prc1_bodystart=571
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=519
+prc1_status=
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# valid MMDF mailbox, evil message, just a From line
+mmbox2() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+
+DONE
+}
+
+mmbox2a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+
+DONE
+}
+
+# generate pindex for mbox2
+mpindex2() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=99
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="
+From tester Thu Oct 17 12:17:42 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+
+"
+prc0_start=5
+prc0_size=89
+prc0_hdrstart=42
+prc0_hdrlines=5
+prc0_bodystart=94
+prc0_bodylines=0
+prc0_uid=1
+prc0_stat_start=42
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+DONE
+}
+
+# generate pindex for mbox3
+mpindex3() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=644
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="O-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+
+"
+prc0_start=5
+prc0_size=275
+prc0_hdrstart=48
+prc0_hdrlines=11
+prc0_bodystart=256
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=204
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=290
+prc1_size=349
+prc1_hdrstart=327
+prc1_hdrlines=12
+prc1_bodystart=572
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=520
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# valid MMDF mailbox, contains expected results after convertion from sendmail
+mmbox3a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996 $ZONE
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox (mbox1) with really deleted message at end
+mmbox4() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+
+From deleted Thu Aug  1 10:20:30 1996
+From: deleted
+Subject: deleted
+
+This is a really deleted test message.
+
+DONE
+}
+
+# valid MMDF mailbox (mbox1) with really deleted message at end
+mmbox4a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# generate pindex for mbox4
+mpindex4() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=636
+mrc_validity=3270f592
+mrc_uid_next=3
+mrc_msgs=2
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="CO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+"
+prc0_start=5
+prc0_size=269
+prc0_hdrstart=42
+prc0_hdrlines=11
+prc0_bodystart=250
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=198
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=284
+prc1_size=347
+prc1_hdrstart=321
+prc1_hdrlines=12
+prc1_bodystart=565
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=513
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+DONE
+}
+
+# valid MMDF mailbox, mbox1 with one appended message
+mmbox5() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox before rebuild, third message missing status here
+# for rebuild testing.
+mmbox5b() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+
+From tester Fri Oct 18 09:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 09:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 09:15:25 1996
+
+This is a third test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+DONE
+}
+
+# valid MMDF mailbox after rebuild
+mmbox5a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+
+From tester Fri Oct 18 09:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 09:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 09:15:25 1996
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is a third test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+DONE
+}
+
+# generate pindex for mbox5
+mpindex5() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=993
+mrc_validity=3270f592
+mrc_uid_next=4
+mrc_msgs=3
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="CO-PAD: XXXXX
+X-SCO-UID: 3
+
+This is a third test message.
+From bogus Fri Oct 18 09:15:25 1996
+
+"
+prc0_start=5
+prc0_size=269
+prc0_hdrstart=42
+prc0_hdrlines=11
+prc0_bodystart=250
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=198
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=284
+prc1_size=347
+prc1_hdrstart=321
+prc1_hdrlines=12
+prc1_bodystart=565
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=513
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+prc2_start=641
+prc2_size=347
+prc2_hdrstart=678
+prc2_hdrlines=12
+prc2_bodystart=922
+prc2_bodylines=2
+prc2_uid=3
+prc2_stat_start=870
+prc2_status=O
+prc2_date="10/18/1996 09:15:25 $ZONE"
+DONE
+}
+
+# valid MMDF mailbox with no From line
+mmbox6() \
+{
+	cat > $1 << DONE
+
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 $ZONE
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+DONE
+}
+
+# valid MMDF mailbox with no From line after rebuild
+mmbox6a() \
+{
+	cat > $1 << DONE
+
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 $ZONE
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+DONE
+}
+
+# generate pindex for mbox6
+mpindex6() \
+{
+
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=236
+mrc_validity=3270f592
+mrc_uid_next=2
+mrc_msgs=1
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="er: scoms1 Tester
+Status: 
+X-Status: 
+X-SCO-PAD: XXXXXX
+X-SCO-UID: 1
+
+This is a test message.
+
+"
+prc0_start=5
+prc0_size=226
+prc0_hdrstart=5
+prc0_hdrlines=11
+prc0_bodystart=207
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=155
+prc0_status=
+prc0_date="10/17/1996 12:15:59 $ZONE"
+DONE
+}
+
+# content-length check added for Cont1 test
+mmbox7() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 24
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:17:25 1996
+
+
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# mbox7 after rebuild
+mmbox7a() \
+{
+	cat > $1 << DONE
+
+From tester Thu Oct 17 12:17:42 1996
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 1
+Content-Length: 24
+
+This is a test message.
+
+
+From tester Fri Oct 18 08:15:25 1996
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 2
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:17:25 1996
+
+
+From tester2 Fri Oct 18 08:17:25 1996
+From: tester2
+Subject: test
+Date: Fri, 18 Oct 1996 08:15:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+Status: O
+X-Status: 
+X-SCO-PAD: XXXXX
+X-SCO-UID: 3
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+DONE
+}
+
+# generate pindex for smbox7a
+mpindex7() \
+{
+	cat > $1 << DONE
+mrc_magic="UNIX Message Store 1.0a"
+mrc_fsize=980
+mrc_validity=32924491
+mrc_uid_next=4
+mrc_msgs=3
+mrc_mmdf=1
+mrc_status=0x0
+mrc_consistency="-UID: 3
+Content-Length: 66
+
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+
+"
+prc0_start=5
+prc0_size=288
+prc0_hdrstart=42
+prc0_hdrlines=12
+prc0_bodystart=269
+prc0_bodylines=1
+prc0_uid=1
+prc0_stat_start=198
+prc0_status=O
+prc0_date="10/17/1996 12:17:42 $ZONE"
+prc1_start=303
+prc1_size=330
+prc1_hdrstart=340
+prc1_hdrlines=12
+prc1_bodystart=567
+prc1_bodylines=2
+prc1_uid=2
+prc1_stat_start=496
+prc1_status=O
+prc1_date="10/18/1996 08:15:25 $ZONE"
+prc2_start=643
+prc2_size=332
+prc2_hdrstart=681
+prc2_hdrlines=12
+prc2_bodystart=909
+prc2_bodylines=2
+prc2_uid=3
+prc2_stat_start=838
+prc2_status=O
+prc2_date="10/18/1996 08:17:25 $ZONE"
+DONE
+}
+
+# invalid MMDF mailbox, no From line
+mbbox1() \
+{
+	cat > $1 << DONE
+
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+DONE
+}
+
+# invalid MMDF mailbox, bad date
+mbbox2() \
+{
+	cat > $1 << DONE
+
+From tester bad date
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+DONE
+}
+
+# compiled in defaults for /etc/default/mail
+icfg1() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT=MMDF
+MS1_INBOX_DIR=$MAILSPOOL
+MS1_INBOX_NAME=
+MS1_FSYNC=FALSE
+MS1_EXTENDED_CHECKS=FALSE
+MS1_EXPUNGE_THRESHOLD=100
+MS1_FOLDERS_INCORE=FALSE
+MS1_FILE_LOCKING=FALSE
+MS1_LOCK_TIMEOUT=10
+MS1_UMASK=077
+DONE
+}
+
+# configuration 2 input
+icfg2i() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT=Sendmail
+MS1_INBOX_DIR=
+MS1_INBOX_NAME=.mailbox
+MS1_FSYNC=TRUE
+MS1_EXTENDED_CHECKS=TRUE
+MS1_EXPUNGE_THRESHOLD=80
+MS1_FOLDERS_INCORE=TRUE
+MS1_FILE_LOCKING=TRUE
+MS1_LOCK_TIMEOUT=60
+MS1_UMASK=07
+DONE
+}
+
+# configuration 2 input that stresses parser
+icfg2s() \
+{
+cat << DONE > $1
+#
+MS1_FOLDER_FORMAT = Sendmail
+
+MS1_INBOX_DIR    =	    
+MS1_INBOX_NAME	 =       .mailbox
+MS1_FSYNC	=	TRUE
+#
+MS1_EXTENDED_CHECKS=TRUE
+MS1_EXPUNGE_THRESHOLD	 =	     	80
+MS1_FOLDERS_INCORE         =TRUE
+MS1_FILE_LOCKING = TRUE
+MS1_LOCK_TIMEOUT	 =60
+MS1_UMASK	=      07  
+#
+#
+DONE
+}
+
+# configuration 2 output
+icfg2() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT=Sendmail
+MS1_INBOX_DIR=
+MS1_INBOX_NAME=.mailbox
+MS1_FSYNC=TRUE
+MS1_EXTENDED_CHECKS=TRUE
+MS1_EXPUNGE_THRESHOLD=80
+MS1_FOLDERS_INCORE=TRUE
+MS1_FILE_LOCKING=TRUE
+MS1_LOCK_TIMEOUT=60
+MS1_UMASK=07
+DONE
+}
+
+# configuration 3 input
+icfg3i() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT=MMDF
+MS1_INBOX_DIR=$MAILSPOOL
+MS1_INBOX_NAME=
+MS1_FSYNC=FALSE
+MS1_EXTENDED_CHECKS=FALSE
+MS1_EXPUNGE_THRESHOLD=60
+MS1_FOLDERS_INCORE=FALSE
+MS1_FILE_LOCKING=FALSE
+MS1_LOCK_TIMEOUT=100
+MS1_UMASK=0
+DONE
+}
+
+# configuration 3 output
+icfg3() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT=MMDF
+MS1_INBOX_DIR=$MAILSPOOL
+MS1_INBOX_NAME=
+MS1_FSYNC=FALSE
+MS1_EXTENDED_CHECKS=FALSE
+MS1_EXPUNGE_THRESHOLD=60
+MS1_FOLDERS_INCORE=FALSE
+MS1_FILE_LOCKING=FALSE
+MS1_LOCK_TIMEOUT=100
+MS1_UMASK=0
+DONE
+}
+
+# same as icfg1 but with quotes on the strings
+icfg1q() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT="MMDF"
+MS1_INBOX_DIR="$MAILSPOOL"
+MS1_INBOX_NAME=""
+MS1_FSYNC="FALSE"
+MS1_EXTENDED_CHECKS="FALSE"
+MS1_EXPUNGE_THRESHOLD="100"
+MS1_FOLDERS_INCORE="FALSE"
+MS1_FILE_LOCKING="FALSE"
+MS1_LOCK_TIMEOUT="10"
+MS1_UMASK="077"
+DONE
+}
+
+icfg2q() \
+{
+cat << DONE > $1
+MS1_FOLDER_FORMAT="Sendmail"
+MS1_INBOX_DIR=""
+MS1_INBOX_NAME=".mailbox"
+MS1_FSYNC="TRUE"
+MS1_EXTENDED_CHECKS="TRUE"
+MS1_EXPUNGE_THRESHOLD="80"
+MS1_FOLDERS_INCORE="TRUE"
+MS1_FILE_LOCKING="TRUE"
+MS1_LOCK_TIMEOUT="60"
+MS1_UMASK="07"
+DONE
+}
+
+# valid tests
+
+Valid1() \
+{
+	cleanup
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid2() \
+{
+	cleanup
+	mmbox1 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid2_1() \
+{
+	cleanup
+	for i in \
+	"From user Wed Dec  2 05:53 1992" \
+	"From user Wed Dec  2 05:53:22 1992" \
+	"From user Wed Dec  2 05:53 PST 1992" \
+	"From user Wed Dec  2 05:53:22 PST 1992" \
+	"From user Wed Dec  2 05:53 $ZONE 1992" \
+	"From user Wed Dec  2 05:53:22 $ZONE 1992" \
+	"From user Wed Dec  2 05:53 1992 PST" \
+	"From user Wed Dec  2 05:53:22 1992 PST" \
+	"From user Wed Dec  2 05:53 1992 $ZONE" \
+	"From user Wed Dec  2 05:53:22 1992 $ZONE" \
+	"From user Wed Dec  2 05:53 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53:22 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53 PST 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53:22 PST 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53 $ZONE 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53:22 $ZONE 1992 remote from abcd" \
+	"From user Wed Dec  2 05:53 1992 PST remote from abcd" \
+	"From user Wed Dec  2 05:53:22 1992 PST remote from abcd" \
+	"From user Wed Dec  2 05:53 1992 $ZONE remote from abcd" \
+	"From user Wed Dec  2 05:53:22 1992 $ZONE remote from abcd"
+	do
+		echo "$i" > /tmp/mbox1
+		ms1tb scomsc1_valid y /tmp/mbox1
+		ret=$?
+		savecnt
+		if [ $ret -ne "0" ]
+		then
+			echo "From line not valid:"
+			cat /tmp/mbox1
+			passfail $ret
+			return
+		fi
+		ms1tb sendmail_parse_from y "$i" > /tmp/ms1.out
+		ret=$?
+		savecnt
+		if [ $ret -ne "0" ]
+		then
+			cat /tmp/ms1.out
+			passfail $ret
+			return
+		fi
+		if grep 22 /tmp/mbox1 > /dev/null
+		then
+			cat << VALID2_1 > /tmp/ms1.out2
+date=Wed Dec  2 05:53:22 1992 $ZONE
+sender=user
+rest=rest
+
+VALID2_1
+		else
+			cat << VALID2_1_1 > /tmp/ms1.out2
+date=Wed Dec  2 05:53:00 1992 $ZONE
+sender=user
+rest=rest
+
+VALID2_1_1
+		fi
+		diff /tmp/ms1.out /tmp/ms1.out2
+		ret=$?
+		if [ $ret -ne "0" ]
+		then
+			passfail $ret
+			return
+		fi
+	done
+	passfail 0
+}
+
+Valid3() \
+{
+	cleanup
+	sbbox1 /tmp/mbox1
+	ms1tb scomsc1_valid n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid4() \
+{
+	cleanup
+	sbbox2 /tmp/mbox1
+	ms1tb scomsc1_valid n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid5() \
+{
+	cleanup
+	mbbox1 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid6() \
+{
+	cleanup
+	mbbox2 /tmp/mbox1
+	ms1tb scomsc1_valid n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid7() \
+{
+	cleanup
+	ms1tb scomsc1_valid n INBOX
+	passfail $?
+	savecnt
+}
+
+Valid7_1() \
+{
+	cleanup
+	smbox1 $INBOX
+	ms1tb scomsc1_valid y INBOX
+	passfail $?
+	savecnt
+}
+
+Valid8() \
+{
+	cleanup
+	ms1tb scomsc1_valid n /tmp/does_not_exist
+	passfail $?
+	savecnt
+}
+
+Valid9() \
+{
+	cleanup
+	smbox1 /tmp/mbox1
+	ln -s /tmp/mbox1 /tmp/mbox2
+	ms1tb scomsc1_valid n /tmp/mbox2
+	passfail $?
+	savecnt
+}
+
+Valid10() \
+{
+	cleanup
+	mkdir /tmp/mbox1
+	ms1tb scomsc1_valid n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid11() \
+{
+	cleanup
+	smbox1 /tmp/mbox1
+	ln /tmp/mbox1 /tmp/mbox2
+	ms1tb scomsc1_valid n /tmp/mbox2
+	passfail $?
+	savecnt
+}
+
+Valid12() \
+{
+	cleanup
+	smbox2 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid13() \
+{
+	cleanup
+	mmbox2 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Valid14() \
+{
+	cleanup
+	smbox4 /tmp/mbox1
+	ms1tb scomsc1_valid y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Open1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open1_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1ao /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1o /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# provoke rebuild via mod time, vfy data is still good
+	sleep 2
+	mmbox1ao /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1ao /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1o /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	mmbox1s /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox3a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex3 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	passfail $?
+}
+
+Open4_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo 'INBOX=$MAILSPOOL/$USER' >> /etc/default/mail
+	smbox1 $INBOX
+	ms1tb \
+		scomsc1_open y y y $INBOX ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1a /tmp/mbox2
+	diff $INBOX /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open4_2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	echo 'INBOX=${HOME}/.mailbox' >> /etc/default/mail
+	mmbox1 $HOME/.mailbox
+	ms1tb \
+		scomsc1_open y y y $HOME/.mailbox ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff $HOME/.mailbox /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $HOME/.mailbox.index $HOME/.mailbox
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open5() \
+{
+	cleanup
+	ms1tb scomsc1_open y y y INBOX ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Open6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> $INBOX
+	ms1tb \
+		scomsc1_open y y y $INBOX ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s $INBOX ]
+	passfail $?
+}
+
+Open8() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex1 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open8_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	> /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mzpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex1 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open9() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox4 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox4a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex4 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open11() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	chmod 400 /tmp/mbox1
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_RD \
+		scomsc1_close
+	passfail $?
+	savecnt
+}
+
+Open12() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	chmod 400 /tmp/.mbox1.index
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_RD \
+		scomsc1_close
+	passfail $?
+	savecnt
+}
+
+Open13() \
+{
+	cleanup
+	smbox1 /tmp/mbox1
+	ln /tmp/mbox1 /tmp/mbox2
+	ms1tb scomsc1_open n n y /tmp/mbox2 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open14() \
+{
+	cleanup
+	smbox1 /tmp/mbox1
+	ln -s /tmp/mbox1 /tmp/mbox2
+	ms1tb scomsc1_open n n y /tmp/mbox2 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open15() \
+{
+	cleanup
+	mkdir /tmp/mbox1
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open16() \
+{
+	cleanup
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open17() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	rm -f /tmp/.mbox1.index
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	passfail $?
+	savecnt
+}
+
+Open18() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	# make a folder not set old flags
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		u_sleep 2
+	savecnt
+	smbox1ao /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1o /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# previous code verifies old flag is really gone.
+	# now stick it back, scomsc1_close is the routine that writes old flags
+	sleep 2
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_getflags y 2 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	. /tmp/ms1.out
+	if [ "$status" -ne "" ]
+	then
+		cat /tmp/ms1.out
+		passfail 1
+	fi
+	# now on disk copy should have 'O' flag set everywhere.
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	smbox2a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex2 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	mmbox2a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex2 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1s /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox6 /tmp/mbox1
+	ms1tb scomsc1_open y y n /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox6a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex6 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open18_7() \
+{
+	cleanup
+	mkdir /tmp/d1
+	chmod 777 /tmp/d1
+	smbox1 /tmp/d1/mbox1
+	chmod 666 /tmp/d1/mbox1
+	chgrp bin /tmp/d1/mbox1
+	chown bin /tmp/d1/mbox1
+	ms1tb scomsc1_open y y n /tmp/d1/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0666 /tmp/d1/mbox1 /tmp/d1/.mbox1.index
+	passfail $?
+}
+
+Open18_8() \
+{
+	cleanup
+	mkdir /tmp/d1
+	chmod 777 /tmp/d1
+	smbox1 /tmp/d1/mbox1
+	chmod 664 /tmp/d1/mbox1
+	chgrp bin /tmp/d1/mbox1
+	chown bin /tmp/d1/mbox1
+	ms1tb scomsc1_open n y n /tmp/d1/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	if [ -f /tmp/d1/.mbox1.index ]
+	then
+		echo .mbox1.index present
+		passfail 1
+		return
+	fi
+	ms1tb u_permcheck 0664 /tmp/d1/mbox1 /tmp/d1/mbox1
+	passfail $?
+}
+
+Open19() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	savecnt
+	ms1tb u_isetdel /tmp/.mbox1.index
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox2a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex2 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open20() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox5 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox5a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex5 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open20_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox6 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox5a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex5 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open20_2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox4 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox4a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex4 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open21() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox5a /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox5a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex5 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open22() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_mchangelast /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox7a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex7 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open23() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	sleep 2
+	mmbox1a /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open24() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open24_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	rm /tmp/.mbox1.index
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open24_2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox5b /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox5a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex5 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open24_3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8b /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8b /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex8b /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	passfail $?
+}
+
+Open24_4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	binarymsg2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mbmsg2a /tmp/mbox2
+	cmp /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mbpindex2 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open24_5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	binarymsg2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	sbmsg2a /tmp/mbox2
+	cmp /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	sbpindex2 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Open25() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8b /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open26() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8c /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open27() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8d /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open28() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8e /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open29() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8f /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open30() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=FALSE" >> /etc/default/mail
+	smbox8 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox8g /tmp/mbox1
+	ms1tb u_msetutime /tmp/mbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Open31() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -f /tmp/.mbox1.index ]
+	passfail $?
+}
+
+Open32() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -f /tmp/.mbox1.index ]
+	passfail $?
+}
+
+Open33() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	# make non overwriteable index file
+	mmbox1 /tmp/.mbox1.index
+	ms1tb scomsc1_open n y n /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y y n /tmp/mbox1 ACCESS_RD
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	passfail $?
+}
+
+Open34() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y n /tmp/mbox1 ACCESS_RD
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetch y 1 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 \
+		scomsc1_fetch y 2 0 \
+		scomsc1_fetchsender y 2 \
+		scomsc1_fetch y 2 1 \
+		scomsc1_fetchdate y 2 \
+		scomsc1_fetchuid y 2 > /tmp/ms1.out
+	savecnt
+	cat << Open34DONE > /tmp/ms1.out2
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+tester
+This is a test message.
+Thu Oct 17 12:17:42 1996 $ZONE
+1
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+From bogus Fri Oct 18 08:15:25 1996
+
+tester
+This is another test message.
+From bogus Fri Oct 18 08:15:25 1996
+Fri Oct 18 08:15:25 1996 $ZONE
+2
+Open34DONE
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Open35() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y n /tmp/mbox1 ACCESS_RD
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetch y 1 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 \
+		scomsc1_fetch y 2 0 \
+		scomsc1_fetchsender y 2 \
+		scomsc1_fetch y 2 1 \
+		scomsc1_fetchdate y 2 \
+		scomsc1_fetchuid y 2 > /tmp/ms1.out
+	savecnt
+	cat << Open35DONE > /tmp/ms1.out2
+From: tester
+Subject: test
+Date: Thu, 17 Oct 1996 12:15:59 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+tester
+This is a test message.
+Thu Oct 17 12:17:42 1996 $ZONE
+1
+From: tester
+Subject: test
+Date: Fri, 18 Oct 1996 08:14:22 -0700 (PDT)
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+>From bogus Fri Oct 18 08:15:25 1996
+
+tester
+This is another test message.
+>From bogus Fri Oct 18 08:15:25 1996
+Fri Oct 18 08:15:25 1996 $ZONE
+2
+Open35DONE
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Cont1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox10 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox10a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex10 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Cont2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox7 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmbox7a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex7 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+FetchM1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox1h1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox1h1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox3 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetch y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox1h1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetch y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox2h1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetch y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox1hb1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetch y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	smbox1hb1 /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchM7() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		u_mchangeindex /tmp/mbox1 204 Q \
+		scomsc1_fetch n 1 0 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	cat /tmp/ms1.out
+	passfail $?
+}
+
+FetchM8() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	binarymsg2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetch y 1 0 \
+		scomsc1_fetch y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	binarymsg2p /tmp/ms1.out2
+	cmp /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchS1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchsize y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "157" > /tmp/ms1.out2
+	echo "24" >> /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchS2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchsize y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "157" > /tmp/ms1.out2
+	echo "24" >> /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchS3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox3 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchsize y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "157" > /tmp/ms1.out2
+	echo "0" >> /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchS4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox2 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchsize y 1 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "1" > /tmp/ms1.out2
+	echo "0" >> /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchE1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "tester" > /tmp/ms1.out2
+	echo "Thu Oct 17 12:17:42 1996 $ZONE" >> /tmp/ms1.out2
+	echo "1" >> /tmp/ms1.out2
+
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchE2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	echo "tester" > /tmp/ms1.out2
+	echo "Thu Oct 17 12:17:42 1996 $ZONE" >> /tmp/ms1.out2
+	echo "1" >> /tmp/ms1.out2
+
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+FetchE3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	for i in "sender" \
+		"Sender Jake <sender>" \
+		"sender (Sender Jake)" \
+		"\"Sender Jake\" <sender>"
+	do
+		rm -f /tmp/mbox1 /tmp/.mbox1.index
+		cat << FETCHE3 > /tmp/mbox1
+
+Subject: test
+From: $i
+Date: Thu, 17 Oct 1996 12:15:59 $ZONE
+Content-Type: text/plain; charset=us-ascii
+MIME-Version: 1.0
+X-Mailer: scoms1 Tester
+
+This is a test message.
+
+FETCHE3
+		ms1tb \
+			scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+			scomsc1_fetchsender y 1 \
+			scomsc1_fetchdate y 1 \
+			scomsc1_fetchuid y 1 > /tmp/ms1.out
+		ret=$?
+		savecnt
+		if [ "$ret" != "0" ]
+		then
+			cat /tmp/ms1.out
+			passfail $ret
+			return
+		fi
+		echo "sender" > /tmp/ms1.out2
+		echo "Thu Oct 17 12:15:59 1996 $ZONE" >> /tmp/ms1.out2
+		echo "1" >> /tmp/ms1.out2
+	
+		diff /tmp/ms1.out /tmp/ms1.out2
+		ret=$?
+		if [ "$ret" != "0" ]
+		then
+			passfail $ret
+			return
+		fi
+	done
+	passfail 0
+}
+
+Flags1thru5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	smbox3 /tmp/mbox1
+	# avoid closing as that sets the old flags
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# now set all flags one at a time in order: ORDFAT
+	for i in "" O RO ROD RODF RODFA RODFAT
+	do
+		ms1tb \
+			scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+			scomsc1_setflags y 1 R \
+			scomsc1_setflags y 1 "$i"
+		ret=$?
+		savecnt
+		if [ "$ret" != "0" ]
+		then
+			cat /tmp/ms1.out
+			passfail $ret
+			return
+		fi
+		if [ "$i" != "" -a "$i" != "O" ]
+		then
+			# get the flags via API and vfy they are correct
+			ms1tb \
+				scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+				scomsc1_getflags y 1 > /tmp/ms1.out
+			savecnt
+			. /tmp/ms1.out
+			if [ "$status" != "$i" ]
+			then
+				echo Want=$i
+				cat /tmp/ms1.out
+				passfail 1
+				return
+			fi
+		fi
+		# check index flag contents VIA test pgm
+		ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+		grep prc0_status < /tmp/pindex2 > /tmp/ms1.out
+		. /tmp/ms1.out
+		if [ "$prc0_status" != "$i" ]
+		then
+			echo Want=$i
+			cat /tmp/ms1.out
+			passfail 1
+			return
+		fi
+		# check folder flag contents for accuracy
+		echo $i > /tmp/ms1.out
+
+		echo -n "Status: " > /tmp/ms1.f
+		grep "R" /tmp/ms1.out > /dev/null && echo -n "R" >> /tmp/ms1.f
+		grep "O" /tmp/ms1.out > /dev/null && echo -n "O" >> /tmp/ms1.f
+		echo "" >> /tmp/ms1.f
+
+		echo -n "X-Status: " >> /tmp/ms1.f
+		grep "D" /tmp/ms1.out > /dev/null && echo -n "D" >> /tmp/ms1.f
+		grep "F" /tmp/ms1.out > /dev/null && echo -n "F" >> /tmp/ms1.f
+		grep "A" /tmp/ms1.out > /dev/null && echo -n "A" >> /tmp/ms1.f
+		grep "T" /tmp/ms1.out > /dev/null && echo -n "T" >> /tmp/ms1.f
+		echo "" >> /tmp/ms1.f
+
+		grep Status /tmp/mbox1 > /tmp/ms1.out
+		diff /tmp/ms1.out /tmp/ms1.f
+		ret=$?
+		if [ "$ret" != "0" ]
+		then
+			cat /tmp/ms1.out
+			passfail $ret
+			return
+		fi
+		if [ "$i" != "" -a "$i" != "O" ]
+		then
+			# now check flags survive a rebuild
+			rm /tmp/.mbox1.index
+			ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+			ret=$?
+			savecnt
+			if [ "$ret" != "0" ]
+			then
+				passfail $ret
+				return
+			fi
+			# check index flag contents VIA test pgm
+			ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+			grep prc0_status < /tmp/pindex2 > /tmp/ms1.out
+			. /tmp/ms1.out
+			if [ "$prc0_status" != "$i" ]
+			then
+				echo Want=$i
+				cat /tmp/ms1.out
+				passfail 1
+				return
+			fi
+			# check folder contents
+			grep Status /tmp/mbox1 > /tmp/ms1.out
+			diff /tmp/ms1.out /tmp/ms1.f
+			ret=$?
+			if [ "$ret" != "0" ]
+			then
+				cat /tmp/ms1.out
+				passfail $ret
+				return
+			fi
+		fi
+	done
+	passfail 0
+}
+
+Flags6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	echo "MS1_EXTENDED_CHECKS=TRUE" >> /etc/default/mail
+	smbox3 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		u_mchangeindex /tmp/mbox1 204 Q \
+		scomsc1_setflags n 1 R > /tmp/ms1.out
+	passfail $?
+	savecnt
+	cat /tmp/ms1.out
+}
+
+Delete1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=20" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_setflags y 2 D \
+		scomsc1_expunge y \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1ad2 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1d2 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# now provoke a garbage collection
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=80" >> /etc/default/mail
+	sleep 2
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1ae2 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1e2 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Delete2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=20" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_setflags y 1 D \
+		scomsc1_expunge y \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1ad1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1d1 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# now provoke a garbage collection
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=80" >> /etc/default/mail
+	sleep 2
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1ae1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1e1 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Delete3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=20" >> /etc/default/mail
+	smbox9 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_setflags y 2 D \
+		scomsc1_expunge y \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox9ad2 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex9d2 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# now provoke a garbage collection
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_EXPUNGE_THRESHOLD=80" >> /etc/default/mail
+	sleep 2
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox9ae2 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex9e2 /tmp/pindex1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y INBOX /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver1_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> $INBOX
+	chmod 600 $INBOX
+	ms1tb scomsc1_open y y y $INBOX ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y n INBOX /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y INBOX /tmp/message "RODFAT"
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver2_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	> $INBOX
+	chmod 600 $INBOX
+	ms1tb scomsc1_open y y y $INBOX ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y n INBOX /tmp/message "RODFAT"
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/message
+	> /tmp/mbox1
+	chmod 600 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_deliver y n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox3 /tmp/message
+	> /tmp/mbox1
+	chmod 600 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_deliver y n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox3a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex3 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox2 /tmp/message
+	> /tmp/mbox1
+	chmod 600 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_deliver y n /tmp/mbox1 /tmp/message "O"
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox2ad /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex2d /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	smbox1 /tmp/mbox1
+	bigmessage /tmp/message
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close \
+		u_filldisk /tmp/filldisk \
+		scomsc1_deliver n n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	rm -f /tmp/filldisk
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver7() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	message1 /tmp/message
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close \
+		scomsc1_deliver y n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver7_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver8() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	> /tmp/mbox1
+	message1 /tmp/message
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_close \
+		scomsc1_deliver y n /tmp/mbox1 /tmp/message "RODFAT"
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver8_1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	> /tmp/mbox1
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y /tmp/mbox1 /tmp/message "RODFAT"
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mmsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpmsg1a /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver9() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	chmod 600 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox4 /tmp/message
+	ms1tb scomsc1_deliver y n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smbox4ad /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindex4d /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	passfail $?
+}
+
+Deliver10() \
+{
+	cleanup
+	binarymsg1 /tmp/message
+	ms1tb scomsc1_deliver y y INBOX /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mbmsg1a /tmp/mbox1
+	cmp $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver11() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	binarymsg1 /tmp/message
+	ms1tb scomsc1_deliver y y INBOX /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	sbmsg1a /tmp/mbox1
+	cmp $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver12() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_UMASK=0" >> /etc/default/mail
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y INBOX /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox1
+	diff $INBOX /tmp/mbox1
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Deliver13() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_UMASK=07" >> /etc/default/mail
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y y /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0660 /tmp/mbox1 /tmp/.mbox1.index
+	passfail $?
+}
+
+Deliver14() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/.mbox1.index
+	smsg1a /tmp/mbox1
+	chmod 600 /tmp/mbox1
+	message1 /tmp/message
+	ms1tb scomsc1_deliver y n /tmp/mbox1 /tmp/message ""
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	smsg1ar /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 /tmp/mbox1 /tmp/mbox1
+	passfail $?
+}
+
+Check1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y y /tmp/mbox1 ACCESS_SE \
+		scomsc1_check y \
+		scomsc1_close > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	. /tmp/ms1.out
+	if [ "$MSGS" != "2" ]
+	then
+		echo "Check msgs wrong"
+		passfail 1
+		return
+	fi
+	mmbox1a /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	mpindex1 /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	grep mrc_validity= /tmp/pindex2 > /tmp/ms1.out2
+	. /tmp/ms1.out2
+	if [ "$VALIDITY" != "$mrc_validity" ]
+	then
+		echo "Validity not match $VALIDITY $mrc_validity"
+		passfail 1
+		return
+	fi
+	passfail 0
+}
+
+Check2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message2 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	message1 /tmp/message
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		scomsc1_deliver y n /tmp/mbox1 /tmp/message "" \
+		scomsc1_check y \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchlines y 1 0 \
+		scomsc1_fetchsize y 1 1 \
+		scomsc1_fetchlines y 1 1 \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 \
+		scomsc1_fetchsize y 2 0 \
+		scomsc1_fetchlines y 2 0 \
+		scomsc1_fetchsize y 2 1 \
+		scomsc1_fetchlines y 2 1 \
+		scomsc1_fetchsender y 2 \
+		scomsc1_fetchdate y 2 \
+		scomsc1_fetchuid y 2 \
+		> /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	sed -e "/^VALIDITY=/d" < /tmp/ms1.out > /tmp/ms1.out2
+	cat << DONE > /tmp/ms1.out
+MSGS=2
+157
+7
+0
+0
+tester
+Thu Oct 17 12:17:42 1996 $ZONE
+1
+194
+8
+60
+2
+tester
+Thu Oct 17 12:17:42 1996 $ZONE
+2
+DONE
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Check3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=MMDF" > /etc/default/mail
+	mmbox1 /tmp/mbox1
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_check y \
+		scomsc1_close > /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	. /tmp/ms1.out
+	if [ "$MSGS" != "2" ]
+	then
+		echo "Check msgs wrong"
+		passfail 1
+		return
+	fi
+	mmbox1 /tmp/mbox2
+	diff /tmp/mbox1 /tmp/mbox2
+	passfail $?
+}
+
+Check4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message2 /tmp/mbox1
+	message1 /tmp/message
+	ms1tb \
+		scomsc1_open y y n /tmp/mbox1 ACCESS_RD \
+		scomsc1_deliver y n /tmp/mbox1 /tmp/message "" \
+		scomsc1_check y \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchlines y 1 0 \
+		scomsc1_fetchsize y 1 1 \
+		scomsc1_fetchlines y 1 1 \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 \
+		scomsc1_fetchsize y 2 0 \
+		scomsc1_fetchlines y 2 0 \
+		scomsc1_fetchsize y 2 1 \
+		scomsc1_fetchlines y 2 1 \
+		scomsc1_fetchsender y 2 \
+		scomsc1_fetchdate y 2 \
+		scomsc1_fetchuid y 2 \
+		> /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	sed -e "/^VALIDITY=/d" < /tmp/ms1.out > /tmp/ms1.out2
+	cat << DONE > /tmp/ms1.out
+MSGS=2
+157
+7
+0
+0
+tester
+Thu Oct 17 12:17:42 1996 $ZONE
+1
+251
+12
+60
+2
+tester
+Thu Oct 17 12:17:42 1996 $ZONE
+2
+DONE
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Check5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message2 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	message3 /tmp/message
+	ms1tb \
+		scomsc1_open y n y /tmp/mbox1 ACCESS_SE \
+		u_append /tmp/mbox1 /tmp/message \
+		scomsc1_check y \
+		scomsc1_fetchsize y 1 0 \
+		scomsc1_fetchlines y 1 0 \
+		scomsc1_fetchsize y 1 1 \
+		scomsc1_fetchlines y 1 1 \
+		scomsc1_fetchsender y 1 \
+		scomsc1_fetchdate y 1 \
+		scomsc1_fetchuid y 1 \
+		scomsc1_fetchsize y 2 0 \
+		scomsc1_fetchlines y 2 0 \
+		scomsc1_fetchsize y 2 1 \
+		scomsc1_fetchlines y 2 1 \
+		scomsc1_fetchsender y 2 \
+		scomsc1_fetchdate y 2 \
+		scomsc1_fetchuid y 2 \
+		> /tmp/ms1.out
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		cat /tmp/ms1.out
+		passfail $ret
+		return
+	fi
+	sed -e "/^VALIDITY=/d" < /tmp/ms1.out > /tmp/ms1.out2
+	cat << DONE > /tmp/ms1.out
+MSGS=2
+157
+7
+0
+0
+tester
+Thu Oct 17 12:17:42 1996 $ZONE
+1
+159
+7
+25
+1
+tester3
+Thu Oct 17 12:18:44 1996 $ZONE
+17
+DONE
+	diff /tmp/ms1.out /tmp/ms1.out2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	spindexc /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# make sure rebuild does not happen.
+	ms1tb scomsc1_open y n n /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+}
+
+Create1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 /tmp/mbox1 /tmp/.mbox1.index
+	passfail $?
+}
+
+Create2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	ms1tb scomsc1_create n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Create3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/.mbox1.index
+	ms1tb scomsc1_create n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Create4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	rm -f /tmp/mbox1
+	ms1tb scomsc1_create y /tmp/mbox1
+	passfail $?
+}
+
+Create5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb scomsc1_create y INBOX
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+	cleanup
+}
+
+Create6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1/
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ -d /tmp/mbox1 ]
+	passfail $?
+}
+
+Create7() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_UMASK=0" >> /etc/default/mail
+	ms1tb scomsc1_create y INBOX
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOX
+	passfail $?
+}
+
+Create8() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_UMASK=07" >> /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ "$ret" != "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0660 /tmp/mbox1 /tmp/mbox1
+	passfail $?
+}
+
+Remove1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_remove y /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Remove2() \
+{
+	cleanup
+	ms1tb scomsc1_remove n /tmp/mbox1
+	passfail $?
+	savecnt
+}
+
+Remove3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_SE /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_remove n /tmp/mbox1
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Remove4() \
+{
+	cleanup
+	ms1tb scomsc1_create y INBOX
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_remove y INBOX
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -f $INBOX ]
+	passfail $?
+}
+
+Remove5() \
+{
+	cleanup
+	mkdir /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_remove y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -d /tmp/mbox1 ]
+	passfail $?
+}
+
+Rename1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb \
+		scomsc1_create y /tmp/mbox2 \
+		scomsc1_rename y /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		echo e1
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 /tmp/.mbox1.index /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 /tmp/mbox1 /tmp/.mbox1.index
+	passfail $?
+}
+
+Rename2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/mbox1
+	ms1tb \
+		scomsc1_create y /tmp/mbox2 \
+		scomsc1_rename n /tmp/mbox1 /tmp/mbox2
+	passfail $?
+	savecnt
+}
+
+Rename3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/.mbox1.index
+	ms1tb \
+		scomsc1_create y /tmp/mbox2 \
+		scomsc1_rename n /tmp/mbox1 /tmp/mbox2
+	passfail $?
+	savecnt
+}
+
+Rename4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	message1 /tmp/.mbox1.index
+	ms1tb scomsc1_create y /tmp/mbox2
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	rm -f /tmp/mbox1
+	ms1tb scomsc1_rename n /tmp/mbox1 /tmp/mbox2
+	passfail $?
+	savecnt
+}
+
+Rename5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_SE /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_rename n /tmp/mbox2 /tmp/mbox1
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Rename6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb \
+		scomsc1_create y $INBOX1 \
+		scomsc1_rename y INBOX $INBOX1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n y INBOX ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOXX $INBOX
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX $INBOXX
+	passfail $?
+}
+
+Rename7() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb \
+		scomsc1_create y INBOX \
+		scomsc1_rename y $INBOX1 INBOX
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n y $INBOX1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 $INBOX1X $INBOX1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 $INBOX1 $INBOX1X
+	passfail $?
+}
+
+Rename8() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	mkdir /tmp/mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_rename y /tmp/mbox2 /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	if [ -d /tmp/mbox1 ]
+	then
+		passfail 1
+		return
+	fi
+	[ -d /tmp/mbox2 ]
+	passfail $?
+}
+
+# this implementation depends upon the current directory being
+# on a different filesystem than /tmp (since /tmp is a separate filesystem
+# this should be ok).
+Rename9() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb \
+		scomsc1_create y /tmp/mbox1 \
+		scomsc1_rename y ./mbox1 /tmp/mbox1
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n n ./mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	szpindex /tmp/pindex1
+	ms1tb u_iunpack /tmp/pindex2 ./.mbox1.index ./mbox1
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	cmpindex -n /tmp/pindex1 /tmp/pindex2
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ ! -s ./mbox1 ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 ./mbox1 ./.mbox1.index
+	passfail $?
+}
+
+Rename10() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	ms1tb scomsc1_create y /tmp/mbox2
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	rm -f /tmp/.mbox2.index
+	ms1tb scomsc1_rename y /tmp/mbox1 /tmp/mbox2
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	[ -f /tmp/.mbox1.index ]
+	ret=$?
+	if [ $ret -ne "0" ]
+	then
+		echo Index file not exist after rename.
+		passfail $ret
+		return
+	fi
+	[ -s /tmp/mbox1 ]
+	ret=$?
+	if [ $ret -eq "0" ]
+	then
+		echo Index file has non-zero length.
+		passfail $ret
+		return
+	fi
+	ms1tb u_permcheck 0600 /tmp/mbox1 /tmp/mbox1
+	passfail $?
+}
+
+Init1() \
+{
+	cleanup
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg1 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init2() \
+{
+	cleanup
+	icfg2i > /etc/default/mail
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg2 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init3() \
+{
+	cleanup
+	icfg2i > /etc/default/mail
+	icfg3i > $HOME/.maildef
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg3 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init4() \
+{
+	cleanup
+	icfg2i > /etc/default/mail
+	icfg3i > $HOME/.maildef
+	ms1tb \
+		u_init 0 0 \
+		u_rm $HOME/.maildef \
+		u_init 1 1 \
+		> /tmp/ms1.out
+	savecnt
+	icfg2 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init5() \
+{
+	cleanup
+	icfg2s > /etc/default/mail
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg2 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init6() \
+{
+	cleanup
+	icfg1q > /etc/default/mail
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg1 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Init7() \
+{
+	cleanup
+	icfg2q > /etc/default/mail
+	ms1tb u_init 0 1 > /tmp/ms1.out
+	savecnt
+	icfg2 > /tmp/ms1.out2
+	diff /tmp/ms1.out /tmp/ms1.out2
+	passfail $?
+}
+
+Lock1() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_SE /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_SE
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock2() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_SE /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_AP
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock3() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_SE /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_RD /tmp/ms1.out
+	savecnt
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_RD
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+	sh /tmp/ms1.out
+}
+
+Lock4() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 'ACCESS_SE|ACCESS_RDX' /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_RD
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock5() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_RDX /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open y n y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		sh /tmp/killproc
+		return
+	fi
+	ms1tb scomsc1_open n n y /tmp/mbox1 'ACCESS_SE|ACCESS_RDX'
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock6() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 'ACCESS_SE|ACCESS_BOTH' /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# ACCESS_RD uses ACCESS_BOTH internally to read index, should fail
+	ms1tb scomsc1_open n n y /tmp/mbox1 ACCESS_RD
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock7() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=1" >> /etc/default/mail
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_REBUILD /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	# with rebuild lock, all other locks should fail
+	for i in ACCESS_SE ACCESS_AP ACCESS_RDX ACCESS_BOTH ACCESS_RD
+	do
+		ms1tb scomsc1_open n n y /tmp/mbox1 $i
+		ret=$?
+		savecnt
+		if [ $ret -ne "0" ]
+		then
+			passfail $ret
+			return
+		fi
+	done
+	passfail 0
+	sh /tmp/killproc
+}
+
+Lock8() \
+{
+	cleanup
+	echo "MS1_LOCK_TIMEOUT=2" > /etc/default/mail
+	message1 /tmp/message
+	smbox1 /tmp/mbox1
+	ms1tb scomsc1_open y y y /tmp/mbox1 ACCESS_SE
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_AP /tmp/killproc
+	ret=$?
+	savecnt
+	if [ $ret -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open n n n /tmp/mbox1 ACCESS_AP
+	passfail $?
+	savecnt
+	sh /tmp/killproc
+}
+
+Lock9() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	> /tmp/mbox1
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_RD /tmp/killproc
+	if [ $? -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open n n n /tmp/mbox1 'ACCESS_SE|ACCESS_RDX'
+	if [ $? -ne 0 ]
+	then
+		sh /tmp/killproc
+		passfail 1
+		return
+	fi	
+	sh /tmp/killproc
+	passfail 0
+	return
+}
+
+Lock10() \
+{
+	cleanup
+	echo "MS1_FOLDER_FORMAT=Sendmail" > /etc/default/mail
+	echo "MS1_LOCK_TIMEOUT=2" >> /etc/default/mail
+	> /tmp/mbox1
+	ms1tb u_lockfolder /tmp/mbox1 ACCESS_RDX /tmp/killproc
+	if [ $? -ne "0" ]
+	then
+		passfail $ret
+		return
+	fi
+	ms1tb scomsc1_open n n n /tmp/mbox1 ACCESS_RD
+	if [ $? -ne 0 ]
+	then
+		sh /tmp/killproc
+		passfail 1
+		return
+	fi	
+	sh /tmp/killproc
+	passfail 0
+	return
+}
+
+# main Main main()
+# test wants to run as a normal user
+# /etc/default/mail must be writable by this user
+# wants to run on a different filesystem than /tmp.
+# depends on $USER and $HOME being set in the environment
+
+[ "$1" = "OSR5" ] && OSR5=TRUE
+
+if [ "$OSR5" = "TRUE" ]
+then
+	echo "OSR5 Mode"
+	if [ ! -d /usr/spool/mail ]
+	then
+		echo /usr/spool/mail not there try UnixWare mode.
+		exit
+	fi
+	MAILSPOOL=/usr/spool/mail
+else
+	echo "UnixWare Mode"
+	if [ ! -d /var/mail ]
+	then
+		echo /var/mail not there try OSR5 mode.
+		exit
+	fi
+	MAILSPOOL=/var/mail
+fi
+
+if [ "$USER" = "" ]
+then
+	echo \$USER not set.
+	exit
+fi
+
+if [ "$HOME" = "" ]
+then
+	echo \$HOME not set.
+	exit
+fi
+
+INBOX=$MAILSPOOL/$USER
+INBOXX=$MAILSPOOL/.$USER.index
+INBOX1=$MAILSPOOL/${USER}1
+INBOX1X=$MAILSPOOL/.${USER}1.index
+ZONE=`ms1tb u_timezone`
+
+ cleanup
+TEST=""
+umask 0
+
+tests_valid="1 2 2_1 3 4 5 6 7 7_1 8 9 10 11 12 13 14"
+tests_open="1 1_1 2 3 4 4_1 4_2 5 6 8 8_1 9 11 12 13 14 15 16 17 18 18_1 18_2 18_3 18_4 18_5 18_6 18_7 18_8"
+tests_rebuild="19 20 20_1 20_2 21 22 23 24 24_1 24_2 24_3 24_4 24_5"
+tests_ext="25 26 27 28 29 30"
+tests_rdonly="31 32 33 34 35"
+tests_cont="1 2"
+tests_fetch="M1 M2 M3 M4 M5 M6 M7 M8 S1 S2 S3 S4 E1 E2 E3"
+tests_flags="1thru5 6"
+tests_delete="1 2 3"
+tests_deliver="1 1_1 2 2_1 3 4 5 6 7 7_1 8 8_1 9 10 11 12 13 14"
+tests_check="1 2 3 4 5"
+tests_create="1 2 3 4 5 6 7 8"
+tests_remove="1 2 3 4 5"
+tests_rename="1 2 3 4 5 6 7 8 9 10"
+tests_init="1 2 3 4 5 6 7"
+tests_lock="1 2 3 4 5 6 7 8 9 10"
+
+#testlist Rename 10
+#testlist Rename $tests_rename
+#exit 0
+
+testlist Valid $tests_valid
+testlist Open $tests_open
+testlist Open $tests_rebuild
+testlist Open $tests_ext
+testlist Open $tests_rdonly
+testlist Cont $tests_cont
+testlist Fetch $tests_fetch
+testlist Flags $tests_flags
+testlist Delete $tests_delete
+testlist Deliver $tests_deliver
+testlist Check $tests_check
+testlist Create $tests_create
+testlist Remove $tests_remove
+testlist Rename $tests_rename
+testlist Init $tests_init
+testlist Lock $tests_lock
+
+ cleanup

@@ -1,0 +1,130 @@
+#ident "@(#)stripscript	11.1
+# no /bin/tcl here as the cross environment one is used always
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#===============================================================================
+
+set opt_c ""
+set tmpfile /tmp/strip[pid]
+set infile ""
+
+proc \
+usage {} \
+{
+	echo "usage: stripscript \[-c copyright\] file"
+	echo "    This script removes blank lines and lines beginning with #."
+	echo "    The first line must begin with '#!'."
+	echo "    An optional copyright notice is appended after the first line."
+	exit 1
+}
+
+proc \
+strip {} \
+{
+	global opt_c infile tmpfile
+
+	if {[catch {open $infile r} ifd] != 0} {
+		echo "stripscript: unable to open $infile"
+		exit 1
+	}
+	if {[catch {open $tmpfile w} ofd] != 0} {
+		echo "stripscript: unable to create $tmpfile"
+		exit 1
+	}
+	# get first line
+	set ret [gets $ifd line]
+	if {$ret == -1} {
+		echo "stripscript: empty script: $infile"
+		exit 1
+	}
+	set test [csubstr $line 0 2]
+	if {"$test" != "#!"} {
+		echo "stripscript: script not begin with #!: $infile"
+		exit 1
+	}
+	puts $ofd "$line"
+	# add copyright if needed
+	if {"$opt_c" != ""} {
+		if {[catch {open $opt_c r} cfd] != 0} {
+			echo "stripscript: unable to open copyright file: $opt_c"
+			exit 1
+		}
+		while {[gets $cfd line] != -1} {
+			puts $ofd "$line"
+		}
+		close $cfd
+	}
+
+	# now do rest of file
+	while {[gets $ifd line] != -1} {
+		set tline [string trim $line]
+		# strip blank lines
+		if {"$tline" == ""} {
+			continue
+		}
+		# strip comment lines
+		if {"[cindex $line 0]" == "#"} {
+			continue
+		}
+		# keep this line
+		puts $ofd "$line"
+	}
+	close $ifd
+	close $ofd
+}
+
+proc \
+copyback {} \
+{
+	global opt_c infile tmpfile
+
+	if {[catch {open $tmpfile r} ifd] != 0} {
+		echo "stripscript: unable to open $tmpfile"
+		exit 1
+	}
+	if {[catch {open $infile w} ofd] != 0} {
+		echo "stripscript: unable to overwrite $infile"
+		exit 1
+	}
+	while {[gets $ifd line] != -1} {
+		puts $ofd $line
+	}
+	close $ifd
+	close $ofd
+	unlink $tmpfile
+}
+
+proc \
+main {} \
+{
+	global opt_c argv infile
+
+	if {"[lindex $argv 0]" == "-c"} {
+		set opt_c [lindex $argv 1]
+		lvarpop argv
+		lvarpop argv
+	}
+
+	set infile [lindex $argv 0]
+
+	if {"$infile" == ""} {
+		usage
+	}
+
+	# read from file into tmp file
+	strip
+	copyback
+	exit 0
+}
+
+main

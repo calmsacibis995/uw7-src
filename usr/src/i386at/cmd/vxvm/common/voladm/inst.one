@@ -1,0 +1,147 @@
+#!/usr/bin/sh --
+# @(#)cmd.vxvm:common/voladm/inst.one.sh	1.2 3/3/97 03:22:49 - cmd.vxvm:common/voladm/inst.one.sh
+#ident	"@(#)cmd.vxvm:common/voladm/inst.one.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOL_SCRIPTS_LIB:-/usr/lib/vxvm/lib}/vxcommon
+
+bail()
+{
+	if not [ -f $reconfigfile ]; then
+		rm -f $pcapfile $pcaplist $pnewfile $pnewlist
+	fi
+	quit 101
+}
+
+cntrl=$2
+disknum=1
+defname=
+set_OS_variables
+set_rootdisk
+
+[ -d $STATEDIR ] || volmkdirs
+
+voladm_help_push yorn.help
+voladm_help_push inst.one.help
+
+exec < $RDIR/$cntrl
+
+first_disk=no
+while read disk; do
+	export disk
+	if [ "X$disk" = "X${rootdisk}" ] ; then
+		continue
+	fi
+	voladm_menu_push $disk
+	voladm_menu <<-!
+	Installation options for disk $disk
+	1 cap vxvmshm:259 Install as a pre-existing disk. (encapsulate)
+	2 new vxvmshm:258 Install as a new disk. (discards data on disk!)
+	3 nul vxvmshm:266 Leave this disk alone.
+
+	!
+	voladm_menu_pop
+	case $VOLADM_MENU_SELECT in
+	new)
+
+		if voladm_disk_in_use $disk ; then
+			ewritemsg -M vxvmshm:299\
+		"Partition(s) for disk $disk are in use. Disk cannot be initialized."
+			voladm_continue
+			continue
+		fi
+
+		if not voladm_yorn -M vxvmshm:123 "Are you sure (destroys data on $disk)" n; then
+			continue
+		fi
+		defname=`vxnewdmname rootdg`
+		voladm_help_push inst.dmname.help
+		_riput=`disk="$disk" egettxt "Enter disk name for $disk" vxvmshm:227`
+		while (true) ; do
+			read_input "$_riput" "<name>" $defname
+			input_len=`strlen $input`
+			if [ `expr $input_len \> 10` = 1 ] ; then
+				ewritemsg -M vxvmshm:398\
+		"The disk name is too long. Please re-enter."
+				continue
+			fi
+			break
+		done
+		dmname=$input
+		if voladm_yorn -M vxvmshm:300 \
+			"Perform surface analysis (highly recommended)" y
+		then
+			sa_opt=-y
+		else
+			sa_opt=-n
+		fi
+		voladm_help_pop
+		echo "$disk $sa_opt" >> $pnewlist
+		touch $pnewfile
+		[ -d $DISKDIR/$disk ] || mkdir -p $DISKDIR/$disk
+		echo $dmname > $DISKDIR/${disk}/dmname
+		[ "X$defname" = "X$dmname" ] &&
+			disknum=`expr $disknum + 1`
+		first_disk=yes
+		;;
+
+	cap)
+		
+		voladm_help_push inst.dmname.help
+		defname=`vxnewdmname rootdg`
+		_riput=`disk="$disk" egettxt "Enter disk name for $disk" vxvmshm:227`
+		while (true) ; do
+			read_input "$_riput" "<name>" $defname
+			input_len=`strlen $input`
+			if [ `expr $input_len \> 10` = 1 ] ; then
+				ewritemsg -M vxvmshm:398\
+		"The disk name is too long. Please re-enter."
+				continue
+			fi
+			break
+		done
+		voladm_help_pop
+		if not vxencap -N ${input}=${disk}; then
+			disk="$disk" ewritemsg -M vxvmshm:400 \
+"The encapsulation of $disk failed.  You can continue with any
+  other disks on the system, or you can cancel the installation
+  now."
+			voladm_yorn -M vxvmshm:130 "Cancel installation" n && bail
+		else
+			[ "X$defname" = "X$input" ] &&
+				 disknum=`expr $disknum + 1`
+			echo
+			voladm_continue
+			first_disk=yes
+		fi
+		;;
+
+	nul)	;;
+	*)	ewritemsg -M vxvmshm:515 "Unrecognized command."
+		voladm_continue ;;
+	esac
+done
+voladm_help_pop
+
+if [ $first_disk = yes ]; then
+	[ -s $pnewlist ] && xcmd touch $pnewfile
+fi
+#quit 100

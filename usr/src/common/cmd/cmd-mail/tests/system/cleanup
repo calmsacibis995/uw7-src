@@ -1,0 +1,53 @@
+#!/bin/sh
+#
+# script to cleanup the environment after the load test.
+
+# we delete all the test users.
+# we remove the /var/internet/ip files.
+# we remove the multihome channel via mailadmin.
+
+cleanupuser() \
+{
+	username=$USERPREFIX$1
+
+	deluser $username No /home/$username
+	rm -fr /home/$username
+}
+
+dousers() \
+{
+        user=0
+        while [ $user -lt $USERCOUNT ]
+        do
+                echo do $USERPREFIX$user
+                cleanupuser $user
+                user=`expr $user + 1`
+        done
+}
+
+doaliases() \
+{
+	echo Deleting aliases
+
+	aliascount=`expr $USERCOUNT / $ALIASIZE`
+
+	alias=0
+	while [ $alias -lt $aliascount ]
+	do
+		aliasname=$ALIASPREFIX$alias
+		echo do $aliasname
+		/etc/mail/admin/aliases -f /etc/mail/aliases -d $aliasname
+		alias=`expr $alias + 1`
+	done
+}
+
+main() \
+{
+	dousers
+	doaliases
+	rm -fr /var/internet/ip
+	rm -f /etc/security/ia/ageduid
+}
+
+. ./load.cfg
+main

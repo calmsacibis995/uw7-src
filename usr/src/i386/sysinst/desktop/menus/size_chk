@@ -1,0 +1,386 @@
+#ident  "@(#)size_chk	15.1    98/03/04"
+
+# Disk slice 1 = root, 3 = usr, 4 = var
+
+# inputs:
+#	variable (( pkg )): 	0, not-installed; 1, installed
+#	file /tmp/pkgs:		list of all pkgs
+# output:
+#	required[1,3,4]
+#
+function chk_selected_pkg_size
+{
+# These size arrays are generated with the help of
+# sysinst/desktop/buildscripts/sizer.sh.  See the comments in that file.
+# The pseudo-package "dtext_icon" needs to be added manually.
+
+BASEdoc[1]=0    BASEdoc[3]=47   BASEdoc[4]=0
+TEDbase[1]=20   TEDbase[3]=0    TEDbase[4]=0
+TEDdocs[1]=7    TEDdocs[3]=0    TEDdocs[4]=0
+TEDhelp[1]=11   TEDhelp[3]=0    TEDhelp[4]=0
+TEDlogin[1]=3   TEDlogin[3]=0   TEDlogin[4]=0
+TEDman[1]=2     TEDman[3]=0     TEDman[4]=0
+acl[1]=1        acl[3]=1        acl[4]=0
+acp[1]=4        acp[3]=10       acp[4]=0
+atm[1]=0        atm[3]=2        atm[4]=0
+audio[1]=0      audio[3]=1      audio[4]=0
+audit[1]=1      audit[3]=1      audit[4]=0
+base[1]=12      base[3]=19      base[4]=0
+basex[1]=0      basex[3]=2      basex[4]=0
+bsdcompat[1]=1  bsdcompat[3]=3  bsdcompat[4]=0
+ccs[1]=0        ccs[3]=8        ccs[4]=0
+cmds[1]=1       cmds[3]=5       cmds[4]=0
+compaq[1]=1     compaq[3]=1     compaq[4]=0
+dele[1]=1       dele[3]=5       dele[4]=0
+dfs[1]=0        dfs[3]=1        dfs[4]=0
+dtext_icon[1]=0 dtext_icon[3]=1 dtext_icon[4]=0
+esle[1]=1       esle[3]=6       esle[4]=0
+expect[1]=0     expect[3]=1     expect[4]=0
+frle[1]=1       frle[3]=5       frle[4]=0
+inet[1]=1       inet[3]=3       inet[4]=0
+jale[1]=1       jale[3]=7       jale[4]=3
+kdb[1]=1        kdb[3]=1        kdb[4]=0
+lp[1]=0 lp[3]=1 lp[4]=0
+ls[1]=1 ls[3]=3 ls[4]=1
+mtfrun[1]=0     mtfrun[3]=4     mtfrun[4]=0
+netbios[1]=1    netbios[3]=1    netbios[4]=0
+netmgt[1]=1     netmgt[3]=1     netmgt[4]=0
+nfs[1]=1        nfs[3]=1        nfs[4]=0
+nics[1]=3       nics[3]=1       nics[4]=0
+nis[1]=0        nis[3]=1        nis[4]=1
+nshttpd[1]=0    nshttpd[3]=29   nshttpd[4]=0
+nsnav[1]=0      nsnav[3]=6      nsnav[4]=0
+nsu[1]=1        nsu[3]=2        nsu[4]=0
+nuc[1]=1        nuc[3]=3        nuc[4]=0
+nwnet[1]=1      nwnet[3]=1      nwnet[4]=0
+nwsup[1]=0      nwsup[3]=0      nwsup[4]=4
+osmp[1]=3       osmp[3]=1       osmp[4]=0
+rpc[1]=1        rpc[3]=1        rpc[4]=0
+scoadmin[1]=1   scoadmin[3]=10  scoadmin[4]=0
+scohelp[1]=1    scohelp[3]=1    scohelp[4]=1
+server[1]=0     server[3]=1     server[4]=0
+tclrun[1]=0     tclrun[3]=1     tclrun[4]=0
+terminf[1]=1    terminf[3]=0    terminf[4]=0
+vtclrun[1]=0    vtclrun[3]=2    vtclrun[4]=0
+vxva[1]=2       vxva[3]=0       vxva[4]=0
+vxvm[1]=4       vxvm[3]=1       vxvm[4]=0
+xclients[1]=0   xclients[3]=2   xclients[4]=0
+xcontrib[1]=0   xcontrib[3]=1   xcontrib[4]=0
+xdrivers[1]=0   xdrivers[3]=4   xdrivers[4]=0
+xfonts[1]=0     xfonts[3]=12    xfonts[4]=0
+xserver[1]=0    xserver[3]=11   xserver[4]=0
+
+# The variable "size" (declared below) is intentionally declared to be a
+# "regular" variable as opposed to an integer.  If "size" were declared to be
+# an integer, then [ -z "$size" ] (used below) would not return anything
+# useful.
+
+typeset size pkg
+integer i
+
+typeset pkgnamelist
+
+for pkg in $ALLPKGS dtext_icon
+do
+	if (( pkg ))
+	then
+		pkgnamelist="$pkgnamelist $pkg"
+
+		for i in 1 3 4
+		do
+			eval size=\${$pkg[i]}
+			[ -z "$size" ] && {
+				# If this condition is true, it means that someone forgot to add
+				# the size array definition (above) for this package.
+				faultvt "$0: Internal Error: $pkg has no size information."
+				halt
+			}
+			(( required[i] += size ))
+		done
+	fi
+done
+
+print "total pkg list=[$pkgnamelist]" >>/tmp/size_chk.log
+}
+
+function size_chk
+{
+	typeset avail required i
+
+#- overhead compensation - varies by FS, UFS is 15% which seems the worst, but
+#- then again UFS and vxfs are better at fragments than s5, so ...
+	for i in 1 3 4
+	do
+		[ "${SLTYPE[i]}" != "$off" ] && (( avail[i] = SLSIZE[i]*85/100 ))
+		let required[i]=0
+	done
+	print "avail:   [1]=${avail[1]}MB\t[3]=${avail[3]}MB\t[4]=${avail[4]}MB"\
+		>>/tmp/size_chk.log
+
+	chk_selected_pkg_size
+
+# this section is added to expand diskspace requirement for datastream
+# when UWdocs etc packages are selected
+	if [ "$NOND" != "no" ]
+	then
+		if (( UWdocs ))
+		then
+			(( required[1]+=45 ))
+			(( required[4]+=5 ))
+		else
+			[ "$LANG" = C ] || [ -z "$LANG" ] || {
+				(( ${LANG}UWdocs )) && {
+					(( required[1]+=45 ))
+					(( required[4]+=5 ))
+				}
+			}
+		fi
+	fi
+
+	print "required:[1]=${required[1]}MB\t[3]=${required[3]}MB\t[4]=${required[4]}MB"\
+		>>/tmp/size_chk.log
+	for i in 1 3 4
+	do
+		if [ "${SLTYPE[i]}" != "$off" ]
+		then
+			(( avail[i] -= required[i] ))
+		else
+			(( avail[1] -= required[i] ))
+		fi
+	done
+
+	print "remained:[1]=${avail[1]}MB\t[3]=${avail[3]}MB\t[4]=${avail[4]}MB"\
+		>>/tmp/size_chk.log
+# If any filesystem has negative space available, warn the user
+# how much extra space they need to allocate to it.
+	for i in 1 3 4
+	do
+		[ "${SLTYPE[i]}" != "$off" ] && (( avail[i] < 0 )) && {
+			FS_BIG=${SLNAME[i]}
+# Need to increase the amount of space we tell the user they
+# need to add to compensate for the amount for filesystem overhead.
+# It's not just 15% extra because that comes up 1-2 MB short.
+			(( FS_LACKS = -avail[i]*115/100+2 ))
+			#
+			# if size_chk() is called by nond_space_check()
+			# we don't use this display screen, rather we use a
+			# nond specific screen specified in nond_space_check()
+			[ "$disp_flag" = "NOND_INIT_STATE" ] || \
+			eval display -w "\"$SPACE_ERR\"" -bg $ERROR_BG -fg $ERROR_FG
+			return 1
+		}
+	done
+	return 0
+}
+
+
+# called by function free_space_estimation below
+#
+function chk_installed_pkg_size
+{
+# begin of uw2.0 pkg sizes
+ASdocs_uw20[1]=0	ASdocs_uw20[3]=57	ASdocs_uw20[4]=0
+PEdocs_uw20[1]=0	PEdocs_uw20[3]=51	PEdocs_uw20[4]=0
+acl_uw20[1]=1		acl_uw20[3]=1		acl_uw20[4]=0
+acp_uw20[1]=1		acp_uw20[3]=2		acp_uw20[4]=0
+atm_uw20[1]=0		atm_uw20[3]=2		atm_uw20[4]=0
+audit_uw20[1]=1		audit_uw20[3]=1		audit_uw20[4]=0
+base_uw20[1]=11		base_uw20[3]=19		base_uw20[4]=0
+bkrs_uw20[1]=2		bkrs_uw20[3]=2		bkrs_uw20[4]=0
+bsdcompat_uw20[1]=1	bsdcompat_uw20[3]=3	bsdcompat_uw20[4]=0
+ccs_uw20[1]=0		ccs_uw20[3]=14		ccs_uw20[4]=0
+cmds_uw20[1]=1		cmds_uw20[3]=5		cmds_uw20[4]=0
+deASdocs_uw20[1]=0	deASdocs_uw20[3]=22	deASdocs_uw20[4]=0
+dePEdocs_uw20[1]=0	dePEdocs_uw20[3]=22	dePEdocs_uw20[4]=0
+dele_uw20[1]=1		dele_uw20[3]=5		dele_uw20[4]=0
+demerge_uw20[1]=1	demerge_uw20[3]=7	demerge_uw20[4]=0
+desktop_uw20[1]=1	desktop_uw20[3]=9	desktop_uw20[4]=0
+dfs_uw20[1]=0		dfs_uw20[3]=1		dfs_uw20[4]=0
+display_uw20[1]=0	display_uw20[3]=3	display_uw20[4]=0
+dtclients_uw20[1]=0	dtclients_uw20[3]=1	dtclients_uw20[4]=0
+dtext_icon_uw20[1]=0	dtext_icon_uw20[3]=1	dtext_icon_uw20[4]=0
+dtxt_uw20[1]=0		dtxt_uw20[3]=6		dtxt_uw20[4]=0
+dtxtfonts_uw20[1]=0	dtxtfonts_uw20[3]=4	dtxtfonts_uw20[4]=0
+dynatext_uw20[1]=0	dynatext_uw20[3]=5	dynatext_uw20[4]=0
+esASdocs_uw20[1]=0	esASdocs_uw20[3]=21	esASdocs_uw20[4]=0
+esPEdocs_uw20[1]=0	esPEdocs_uw20[3]=21	esPEdocs_uw20[4]=0
+esle_uw20[1]=1		esle_uw20[3]=5		esle_uw20[4]=0
+esmerge_uw20[1]=1	esmerge_uw20[3]=7	esmerge_uw20[4]=0
+frASdocs_uw20[1]=0	frASdocs_uw20[3]=21	frASdocs_uw20[4]=0
+frPEdocs_uw20[1]=0	frPEdocs_uw20[3]=21	frPEdocs_uw20[4]=0
+frle_uw20[1]=1		frle_uw20[3]=5		frle_uw20[4]=0
+frmerge_uw20[1]=1	frmerge_uw20[3]=7	frmerge_uw20[4]=0
+inet_uw20[1]=1		inet_uw20[3]=3		inet_uw20[4]=0
+itASdocs_uw20[1]=0	itASdocs_uw20[3]=20	itASdocs_uw20[4]=0
+itPEdocs_uw20[1]=0	itPEdocs_uw20[3]=20	itPEdocs_uw20[4]=0
+itle_uw20[1]=1		itle_uw20[3]=6		itle_uw20[4]=0
+itmerge_uw20[1]=1	itmerge_uw20[3]=7	itmerge_uw20[4]=0
+jaASdocs_uw20[1]=0	jaASdocs_uw20[3]=71	jaASdocs_uw20[4]=0
+jaPEdocs_uw20[1]=0	jaPEdocs_uw20[3]=43	jaPEdocs_uw20[4]=0
+jale_uw20[1]=1		jale_uw20[3]=12		jale_uw20[4]=0
+jamerge_uw20[1]=1	jamerge_uw20[3]=7	jamerge_uw20[4]=0
+jadicopft_uw20[1]=0	jadicopft_uw20[3]=22	jadicopft_uw20[4]=0
+lp_uw20[1]=0		lp_uw20[3]=1		lp_uw20[4]=0
+ls_uw20[1]=1		ls_uw20[3]=3		ls_uw20[4]=1
+manpages_uw20[1]=0	manpages_uw20[3]=12	manpages_uw20[4]=0
+merge_uw20[1]=1		merge_uw20[3]=7		merge_uw20[4]=0
+netmgt_uw20[1]=1	netmgt_uw20[3]=1	netmgt_uw20[4]=0
+nfs_uw20[1]=1		nfs_uw20[3]=1		nfs_uw20[4]=0
+nics_uw20[1]=2		nics_uw20[3]=1		nics_uw20[4]=0
+nis_uw20[1]=0		nis_uw20[3]=1		nis_uw20[4]=1
+nsu_uw20[1]=1		nsu_uw20[3]=2		nsu_uw20[4]=0
+nuc_uw20[1]=1		nuc_uw20[3]=2		nuc_uw20[4]=0
+nwnet_uw20[1]=1		nwnet_uw20[3]=1		nwnet_uw20[4]=0
+nwsup_uw20[1]=0		nwsup_uw20[3]=0		nwsup_uw20[4]=4
+oam_uw20[1]=0		oam_uw20[3]=3		oam_uw20[4]=0
+osmp_uw20[1]=3		osmp_uw20[3]=1		osmp_uw20[4]=0
+platform_uw20[1]=1	platform_uw20[3]=1	platform_uw20[4]=0
+rpc_uw20[1]=1		rpc_uw20[3]=1		rpc_uw20[4]=0
+server_uw20[1]=0	server_uw20[3]=1	server_uw20[4]=0
+terminf_uw20[1]=1	terminf_uw20[3]=0	terminf_uw20[4]=0
+
+ALLPKGS_uw20="ASdocs PEdocs acl acp atm audit base bkrs bsdcompat ccs cmds deASdocs dePEdocs dele demerge desktop dfs display dtclients dtext_icon dtxt dtxtfonts dynatext esASdocs esPEdocs esle esmerge frASdocs frPEdocs frle frmerge inet itASdocs itPEdocs itle itmerge jaASdocs jaPEdocs jale jamerge jadicopft lp ls manpages merge netmgt nfs nics nis nsu nuc nwnet nwsup oam osmp platform rpc server terminf"
+
+# end of uw2.0 pkg sizes
+
+# begin of uw1.1 pkg sizes
+acp_uw11[1]=1		acp_uw11[3]=2		acp_uw11[4]=0
+atm_uw11[1]=0		atm_uw11[3]=1		atm_uw11[4]=0
+base_uw11[1]=6		base_uw11[3]=11		base_uw11[4]=0
+bkrs_uw11[1]=2		bkrs_uw11[3]=2		bkrs_uw11[4]=0
+bsdcompat_uw11[1]=0	bsdcompat_uw11[3]=3	bsdcompat_uw11[4]=0
+cmds_uw11[1]=1		cmds_uw11[3]=4		cmds_uw11[4]=0
+desktop_uw11[1]=0	desktop_uw11[3]=7	desktop_uw11[4]=0
+dtclients_uw11[1]=0	dtclients_uw11[3]=1	dtclients_uw11[4]=0
+dtnet_uw11[1]=0		dtnet_uw11[3]=1		dtnet_uw11[4]=0
+dtxt_uw11[1]=0		dtxt_uw11[3]=3		dtxt_uw11[4]=0
+els_uw11[1]=0		els_uw11[3]=1		els_uw11[4]=2
+eth_uw11[1]=1		eth_uw11[3]=1		eth_uw11[4]=0
+flib_uw11[1]=0		flib_uw11[3]=2		flib_uw11[4]=0
+lp_uw11[1]=0		lp_uw11[3]=1		lp_uw11[4]=0
+merge_uw11[1]=1		merge_uw11[3]=5		merge_uw11[4]=0
+mrun_uw11[1]=0		mrun_uw11[3]=2		mrun_uw11[4]=0
+nsu_uw11[1]=1		nsu_uw11[3]=2		nsu_uw11[4]=0
+nuc_uw11[1]=1		nuc_uw11[3]=2		nuc_uw11[4]=0
+oam_uw11[1]=0		oam_uw11[3]=3		oam_uw11[4]=0
+terminf_uw11[1]=1	terminf_uw11[3]=0	terminf_uw11[4]=0
+inet_uw11[1]=1       	inet_uw11[3]=5       	inet_uw11[4]=0
+dfs_uw11[1]=0        	dfs_uw11[3]=1        	dfs_uw11[4]=0
+rpc_uw11[1]=1        	rpc_uw11[3]=1        	rpc_uw11[4]=0
+nfs_uw11[1]=1        	nfs_uw11[3]=1        	nfs_uw11[4]=0
+dtclients_uw11[1]=0	dtclients_uw11[3]=1	dtclients_uw11[4]=0
+
+tok_uw11[1]=1        tok_uw11[3]=1        tok_uw11[4]=0
+bns_uw11[1]=1        bns_uw11[3]=1        bns_uw11[4]=0
+edebug_uw11[1]=0     edebug_uw11[3]=2     edebug_uw11[4]=0
+cmdref_uw11[1]=0     cmdref_uw11[3]=7     cmdref_uw11[4]=0
+ddiprog_uw11[1]=0    ddiprog_uw11[3]=1    ddiprog_uw11[4]=0
+ddiref_uw11[1]=0     ddiref_uw11[3]=2     ddiref_uw11[4]=0
+fileref_uw11[1]=0    fileref_uw11[3]=4    fileref_uw11[4]=0
+guiprog_uw11[1]=0    guiprog_uw11[3]=3    guiprog_uw11[4]=0
+inetref_uw11[1]=0    inetref_uw11[3]=1    inetref_uw11[4]=0
+motifref_uw11[1]=0   motifref_uw11[3]=3   motifref_uw11[4]=0
+netpg_uw11[1]=0      netpg_uw11[3]=1      netpg_uw11[4]=0
+nfsadmin_uw11[1]=0   nfsadmin_uw11[3]=1   nfsadmin_uw11[4]=0
+nwapiref_uw11[1]=0   nwapiref_uw11[3]=1   nwapiref_uw11[4]=0
+nwcprog_uw11[1]=0    nwcprog_uw11[3]=1    nwcprog_uw11[4]=0
+nwxfrpg_uw11[1]=0    nwxfrpg_uw11[3]=1    nwxfrpg_uw11[4]=0
+osapiref_uw11[1]=0   osapiref_uw11[3]=4   osapiref_uw11[4]=0
+pdiguide_uw11[1]=0   pdiguide_uw11[3]=1   pdiguide_uw11[4]=0
+progstdc_uw11[1]=0   progstdc_uw11[3]=3   progstdc_uw11[4]=0
+sdtpg_uw11[1]=0      sdtpg_uw11[3]=2      sdtpg_uw11[4]=0
+sysadmin_uw11[1]=0   sysadmin_uw11[3]=1   sysadmin_uw11[4]=0
+syscalls_uw11[1]=0   syscalls_uw11[3]=2   syscalls_uw11[4]=0
+tcpadmin_uw11[1]=0   tcpadmin_uw11[3]=1   tcpadmin_uw11[4]=0
+wdwingref_uw11[1]=0  wdwingref_uw11[3]=5  wdwingref_uw11[4]=0
+xmpg_uw11[1]=0       xmpg_uw11[3]=3       xmpg_uw11[4]=0
+xmstypg_uw11[1]=0    xmstypg_uw11[3]=2    xmstypg_uw11[4]=0
+xscrnpg_uw11[1]=0    xscrnpg_uw11[3]=1    xscrnpg_uw11[4]=0
+
+ALLPKGS_uw11="acp atm base bkrs bsdcompat cmds desktop dtclients dtnet dtxt els eth tok bns flib lp merge mrun nsu nuc oam supplmnt terminf inet dfs rpc nfs edebug flib license cmdref ddiprog ddiref fileref guiprog inetref motifref netpg nfsadmin nwapiref nwcprog nwxfrpg osapiref pdiguide progstdc sdtpg strpg sysadmin syscalls tcpadmin wdwingref xmpg xmstypg xscrnpg "
+
+# end of uw1.1 pkg sizes
+
+# The variable "size" (declared below) is intentionally declared to be a
+# "regular" variable as opposed to an integer.  If "size" were declared to be
+# an integer, then [ -z "$size" ] (used below) would not return anything
+# useful.
+
+	typeset size pkg name_suffix ALLPKGS_uw
+	integer i
+
+	if [ "$PKGINSTALL_TYPE" = "UPGRADE" ]
+	then
+		name_suffix="_uw11"
+		ALLPKGS_uw=$ALLPKGS_uw11
+	elif [ "$PKGINSTALL_TYPE" = "UPGRADE2" ]
+	then
+		name_suffix="_uw20"
+		ALLPKGS_uw=$ALLPKGS_uw20
+	fi
+
+	for pkg in $ALLPKGS_uw
+	do
+		if grep "^$pkg\$" /tmp/pkgs >/dev/null 2>&1
+		then
+			pkgname=$pkg$name_suffix
+			for i in 1 3 4
+			do
+				eval size=\${$pkgname[i]}
+				(( sum[i] += size ))
+			done
+		fi
+	done
+}
+
+# the free space equals to the sum of 
+#	the current free space and
+# 	the install packages' occupied space
+# The inputs are:
+#	fress[1,3,4] containing free space in /, /usr, /var
+#	in OVERLAY case,
+#		(( pkg )) where pkg in $ALLPKGS
+#		this means that this function can only be called af. pkginit()
+#		and nond_pkg_mapping
+#	in other cases,
+#		/tmp/pkgs containing a list of installed packages on the system
+# The result is 
+#	the setting in SLSIZE[1,3,4]
+function free_space_estimation
+{
+	typeset sum required sum_tmp free_ds
+
+	for i in 1 3 4
+	do
+		let sum[i]=0
+		let required[i]=0
+	done
+
+	if [ $PKGINSTALL_TYPE = "OVERLAY" ]
+	then
+		chk_selected_pkg_size
+		for i in 1 3 4
+		do
+			let sum[i]=required[i]
+		done
+	print "required:[1]=${required[1]}MB\t[3]=${required[3]}MB\t[4]=${required[4]}MB, OVERLAY case"\
+		>>/tmp/size_chk.log
+	else
+		chk_installed_pkg_size
+	fi
+	for i in 1 3 4
+	do
+		# We need to compensate the 85% reduction of ds in size_chk
+		if [ -z "${frees[i]}" ]
+		then
+			eval sum_tmp=${SLSIZE[1]}
+			(( sum_tmp += sum[i]*100/85 ))
+			SLSIZE[1]=${sum_tmp}
+		else
+			eval free_ds=${frees[i]%%\.*}
+			(( sum_tmp= free_ds + sum[i]*100/85 ))
+			SLSIZE[i]=${sum_tmp}
+		fi
+	done
+}
+

@@ -1,0 +1,171 @@
+#!/usr/bin/sh
+#	%c%
+#
+#	@(#)network.model	1.2
+#
+#	Lp interface script for remote UNIX network printing.
+#	This script may be used on TCP/IP networks, and also
+#	UUCP, MICNET and XENIX-Net networks.
+#
+#	There are two steps needed to set up network printing:
+#
+#	1) System Files Setup:
+#	This script scans the file /usr/spool/lp/remote for lines of
+#	the following format:
+#
+#	local_printer:	  remexec_cmd	  lp_cmd 
+#
+#	Where 
+#	<local_printer>: the name by which the printer is called locally.
+#	<remexec_cmd>  : command which would perform remote execution
+#			 of <lp_cmd> on the remote machine.
+#	<lp_cmd>       : how lp(C) should be invoked on the remote machine.
+#
+#	For TCP/IP networks in which the remote machine understands the 
+#	TCP/IP rcmd(TC) protocol, rlpcmd is recommended to be used as 
+#	<remexec_cmd>.   For example:
+#
+#   fred:   /usr/spool/lp/bin/rlpcmd flintstone	 /usr/bin/lp -dbarney
+#	
+#	With rlpcmd, a .rhosts(SFF) file is then needed in the remote 
+#	machine's /usr/spool/lp directory with the following line:
+#		local_printer	lp
+#
+#	Other possible <remexec_cmds> are uux(C) for UUCP and remote(C) 
+#	for other serial communications. 
+#
+#	2) Local Printer Configuration
+#	The printer on the local machine should be configured as any 
+#	other printer would be except for:
+#	   	-it's device should be /dev/null
+#	   	-it's interface script should be this one
+#			    (/usr/spool/lp/model/network)
+#
+#	Note that the System V spooler is assumed used on the remote 
+#	machine.  In particular: 
+#	(1)  All options (-o...) passed to this script can be
+#		forwarded on by appending them to <lp_cmd>.
+#	(2)  The option -ob will cause the remote machine to
+#		suppress generating all banner pages.
+#
+#	Note that the IMAGEN laser printers generate their banner pages
+#	using a different technique and that a special version of this
+#	script is required.
+#
+
+#Set up some global variables.
+: ${SPOOLDIR:=/usr/spool/lp}
+: ${LOCALPATH:=${SPOOLDIR}/bin}
+
+#Set up the default filter.
+if [  -x "${LOCALPATH}/lp.cat" ]
+then
+	LPCAT="${LOCALPATH}/lp.cat 0"
+else
+	LPCAT="cat"
+fi
+
+#If we are not using a filter, use the default one.
+if [ -z "${FILTER}" ]
+then
+	FILTER="${LPCAT}"
+fi
+
+if [ -x "${LOCALPATH}/drain.output" ]
+then
+	DRAIN="${LOCALPATH}/drain.output 1"
+else
+	DRAIN=
+fi
+
+PATH=/bin:/usr/bin
+mapping=/usr/spool/lp/remote
+
+# get arguments
+printer=`basename $0`
+request=$1
+name=$2
+title=$3
+copies=$4
+options=$5
+shift; shift; shift; shift; shift
+files=$*
+
+# set up options to pass to the remote printer spooler (as options for it)
+banner=yes
+
+if [ -z "${BANNERS}" ]
+then
+	nhead=1
+else
+	nhead=${BANNERS}
+fi
+
+lpflags=
+for i in $options; do
+	case $i in
+	b|nobanner)	banner=no ;;
+	*)	lpflags="$lpflags -o$i" ;;
+	esac
+done
+
+# map local printer name to machine and printer on that machine
+[ -r $mapping ] || exit 2
+set -- `grep -e "^$printer:" $mapping` || exit 3
+shift
+network=$*
+
+# border around the banner
+x="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+(
+	[ "$banner" = yes ] && {
+		# get the local system id
+		if test -r /etc/systemid; then
+			sysid=`sed 1q /etc/systemid`
+		else
+			sysid=`uname -n`
+		fi
+
+		# user = fifth field of /etc/passwd
+		user=`sed -n "s/^$name:.*:.*:.*:\(.*\):.*:.*$/\1/p" /etc/passwd`
+
+		# print the banner $nhead times
+		while	[ "$nhead" -gt 0 ]
+		do
+			echo "$x\n"
+			banner "$name"
+			echo "$x\n"
+			[ "$user" ] && echo "User: $user\n"
+			echo "Request id: $request\n"
+			echo "Printer: $printer\n"
+			date
+			echo "\nMachine: $sysid\n"
+			[ "$title" ] && banner $title
+			nhead=`expr $nhead - 1`
+			echo "\f"
+		done
+	}
+
+	# send the file(s) to the standard out $copies times
+	FF=no
+	while	[ "$copies" -gt 0 ]
+	do
+		for file in $files
+		do
+			if [ "$FF" = "no" ]		# M000 begin
+			then
+				FF=yes
+			else
+				echo "\f"
+			fi				# M000 end
+			0<${file} eval ${FILTER} 2>&1
+		done
+		copies=`expr $copies - 1`
+	done
+	echo "\033E\c"
+) | $network -s -ob $lpflags
+
+#Draining characters might be necessary
+${DRAIN}
+

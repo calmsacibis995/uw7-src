@@ -1,0 +1,106 @@
+#!/bin/ksh
+#ident	"@(#)onlyoneaddr	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+rm -f -- "$TMP/ONEADDR"
+touch -- "$TMP/ONEADDR"
+
+if [ $# -eq 2 ]
+then
+  if [ "$1" = "$2" ]
+  then
+    echo $2 > "$TMP/ONEADDR"
+    exit 0
+  fi
+  while [ 0 ]
+  do
+    echo "Confirm address $2 for $1? (y/n/q default=y) $NL"
+    read -r RESP
+    if [ "$RESP" = "q" ]
+    then
+      exit 1
+    fi
+    if [ "$RESP" = "n" ]
+    then
+      exit 0
+    fi
+    if [ "$RESP" = "?" ]
+    then
+      echo "\nEnter 'y' to confirm this address."
+      echo "\nEnter 'n' to return the prompt at which you entered the name.\n"
+      $QUITHELP
+    fi
+    if [ -z "$RESP" -o "$RESP" = "y" ]
+    then
+      echo $2 > "$TMP/ONEADDR"
+      exit 0
+    fi
+  done
+fi
+
+echo "\nThe following addresses were found for $1:"
+shift
+echo "\n\t$NL"
+COUNT=0
+for i in $*
+do
+  if [ $COUNT -eq 4 ]
+  then
+	echo ""
+	echo "\t$NL"
+	COUNT=0
+  fi
+  echo  "$i  $NL"
+  COUNT=`expr $COUNT + 1`	# Aren't we ksh here?
+done
+echo ""
+
+while [ 0 ]
+do
+  echo "\nOnly 1 address is allowed.  Enter address to use (optional): $NL"
+  read -r ADDR
+  if [ "$ADDR" = 'q' ]
+  then
+    exit 1
+  fi
+  if [ -z "$ADDR" ]
+  then
+    exit 0
+  fi
+  if [ "$ADDR" = '?' ]
+  then
+    echo "\nEnter the IP address you wish to use.  "
+    echo "\nPress \"return\" to return to the prompt at which you entered the name.\n"
+    $QUITHELP
+    continue
+  fi
+  if [ -n "$ADDR" ]
+  then
+    for i in $* 
+    do
+      if [ "$ADDR" = "$i" ]
+      then
+	echo $ADDR > "$TMP/ONEADDR"
+	exit 0
+      fi
+    done
+    echo "\n$ADDR does not match any of the choices.\n"
+    echo "Press \"return\" to return to the prompt at which you entered the name."
+    echo ""
+    $QUITHELP
+  fi
+done

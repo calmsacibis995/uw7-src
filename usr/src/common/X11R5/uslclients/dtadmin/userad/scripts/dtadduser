@@ -1,0 +1,508 @@
+#!/usr/bin/sh
+
+#ident	"@(#)dtadmin:userad/scripts/dtadduser	1.12.2.71"
+#	Copyright (c) 1990, 1991, 1992, 1993 Novell, Inc. All Rights Reserved.
+#	Copyright (c) 1993 Novell, Inc. All Rights Reserved.
+#	  All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF Novell Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+
+Prefix=UX:`/usr/bin/basename $0`
+
+XDIR=${XWINHOME:-/usr/X}
+
+. $XDIR/adm/dtuser.msgs
+
+DESK=$XDIR/desktop
+Toolbox=.	# where to install toolboxes; relative to $LOGINDIR
+DotWastebasket=.wastebasket
+HelpDesk=$Toolbox/Help_Desk
+FolderMap=$Toolbox/Folder_Map
+Wastebasket=$Toolbox/Wastebasket
+Shutdown=$Toolbox/Shutdown
+InBox=UUCP_Inbox
+Mailbox=Mailbox
+Node=.node
+UPGRADEVERSION=.UpgradeVer`uname -v`
+RemoteLogin=Remote_Login
+D1=Applications
+D2=Disks-etc
+D3=Admin_Tools
+D4=Preferences
+D5=Games
+D6=netware
+
+if [ -d $DESK/netware ]
+then
+    FOLDERS="$D1 $D2 $D3 $D4 $D5 $D6"
+else
+    FOLDERS="$D1 $D2 $D3 $D4 $D5"
+fi
+
+#Basic locale resources
+BASICLOCALE="*basicLocale:\t"
+DISPLAYLANG="*displayLang:\t"
+INPUTLANG="*inputLang:\t"
+NUMERIC="*numeric:\t"
+TIMEFORMAT="*timeFormat:\t"
+XNLLANGUAGE="*xnlLanguage:\t"
+SETLANG="LANG="
+
+ADMFILES=".olsetup .olinitrc"
+XGUI=MOTIF
+REMOTE=""
+
+if   [ -f $XDIR/adm/pre_adduser ]
+then
+	. $XDIR/adm/pre_adduser
+fi
+
+if [ $# -gt 0 ]
+then	if [ "$1" = "-m" ]
+	then XGUI=MOTIF; shift
+	fi
+fi
+if [ $# -gt 0 ]
+then	if [ "$1" = "-r" ]
+	then REMOTE=$2; shift 2
+	fi
+fi
+if [ $# -eq 0 ]
+then	USER=$LOGNAME
+else	USER=$1
+fi
+
+VALIDATE=0
+NISUSER=0
+# First check if user is a NIS user.
+PLUSPASS=`/usr/bin/grep "^+$USER:" /etc/passwd 2>/dev/null`
+if [ "$?" = 0 ]
+then
+NISUSER=1
+NISPASS=`/usr/bin/ypmatch $USER passwd 2>/dev/null`
+      if [ "$?" != 0 ]
+      then
+      MSG=`$GETTXT $TXT_NoNisInfo`
+      printf "\n\t$MSG\n" >& 2
+      exit 1
+      fi
+PASS=`echo $NISPASS | /usr/bin/cut -d: -f1,4,6,7 2>/dev/null`
+else
+PASS=`/usr/bin/grep "^$USER:" /etc/passwd | /usr/bin/cut -d: -f1,4,6,7 2>/dev/null`
+fi
+for ENTRY in $PASS
+do
+	FIRST=`echo $ENTRY | /usr/bin/cut -d: -f1`
+       # Strip "+" from NIS entries
+        TEST=`echo $FIRST | /usr/bin/sed -e "s/^+//"`
+	if [ "$USER" = "$TEST" ]
+	then
+		VALIDATE=1
+		GROUP=`echo $ENTRY | /usr/bin/cut -d: -f2`
+		LOGINDIR=`echo $ENTRY | /usr/bin/cut -d: -f3`
+		LOGINSHELL=`echo $ENTRY | /usr/bin/cut -d: -f4`
+		break
+	fi
+done
+
+if [ "$NISUSER" = "1" ]
+then
+   LOCALHOME=`echo $PLUSPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+   if [ -n "$LOCALHOME" ]
+   then
+   LOGINDIR=$LOCALHOME
+   fi
+   LOCALSHELL=`echo $PLUSPASS | /usr/bin/cut -d: -f7 2>/dev/null`
+   if [ -n "$LOCALSHELL" ]
+   then
+   LOGINSHELL=$LOCALSHELL
+   fi
+fi
+
+
+if [ "$VALIDATE" = "0" ]
+then
+        MSG=`$GETTXT $TXT_BadLoginId`
+        printf "\n\t$MSG\n" $Prefix >& 2
+	exit 1
+fi
+if [ "$LOGINDIR" = "" ]
+then
+        MSG=`$GETTXT $TXT_MissingHome`
+        printf "\n\t$MSG\n" $Prefix $USER >& 2
+	exit 2
+fi
+if [ ! -r $LOGINDIR -o ! -w $LOGINDIR -o ! -x $LOGINDIR ]
+then
+        MSG=`$GETTXT $TXT_AccessHome`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 3
+fi
+
+# If the /usr/X/desktop/LoginMgr/Users/user_id file exists, then the user
+# is a desktop user already.  We need to remove all the permission and
+# restore them later based on the file for the suituations like upgrading
+# or file corruptions.
+
+IS_OWNER=0
+
+if [ -f $DESK/LoginMgr/Users/$USER ]
+then
+	grep "^owner$" $DESK/LoginMgr/Users/$USER > /dev/null
+	if [ $? = 0 ]
+	then
+		IS_OWNER=1
+		$XDIR/adm/make-owner - $USER 2>/dev/null
+	fi
+	OIFS=$IFS
+	IFS="
+"
+	for aline in `cat $DESK/LoginMgr/PrivTable`
+	do
+		PRIVLINE=`echo $aline | /usr/bin/cut -f2 -d"	"`
+		NIFS=$IFS
+		IFS=","	
+		for ENTRY in $PRIVLINE
+		do
+			COMMAND=`echo $ENTRY | /usr/bin/cut -f1 -d":"`
+			/usr/bin/adminuser -r $COMMAND $USER 2>/dev/null
+		done
+		IFS=$NIFS
+	done 
+	IFS=$OIFS
+fi
+
+cd $XDIR/adm
+/usr/bin/cp $ADMFILES $LOGINDIR
+if [ $? != 0 ]
+then
+        MSG=`$GETTXT $TXT_AccessAdm`
+        printf "\n\t$MSG\n" $Prefix $XDIR >& 2
+	exit 5
+fi
+
+cd $LOGINDIR
+
+if $XDIR/adm/dtsetlogin $LOGINDIR $LOGINSHELL $GROUP $USER
+then
+	: #ok, do nothing
+else
+	exit $?
+fi
+
+if [ -f /etc/default/mouse -a ! -f $LOGINDIR/.Xdefaults ]
+then
+
+# Copy the default Xdefaults file in, it will contain the cde resources 
+# that should be set.
+
+	/usr/bin/cp $XDIR/adm/.Xdefaults $LOGINDIR/.Xdefaults
+
+        MOUSEBUTTONS=`/usr/bin/grep MOUSEBUTTONS /etc/default/mouse | /usr/bin/cut -f2 -d'='`
+	if [ $MOUSEBUTTONS -gt 0 ] 2> /dev/null
+	then
+	        echo "*numMouseBtns: $MOUSEBUTTONS" >> $LOGINDIR/.Xdefaults
+        	/usr/bin/chown $USER  $LOGINDIR/.Xdefaults
+        	/usr/bin/chgrp $GROUP $LOGINDIR/.Xdefaults
+        	/usr/bin/chmod 644    $LOGINDIR/.Xdefaults
+	fi
+
+else if [ ! -f $LOGINDIR/.Xdefaults ]
+        then
+	     /usr/bin/cp $XDIR/adm/.Xdefaults $LOGINDIR/.Xdefaults
+        fi      
+fi
+
+
+if [ "$REMOTE" != "" ]
+then
+	$XDIR/adm/olsetvar REMOTE $REMOTE $USER
+fi
+
+#
+#	set up template files for standard user
+#
+if [ ! -d $Toolbox ]
+then
+	/usr/bin/mkdir $Toolbox 
+	# chown, chgrp, chmod later
+fi
+
+if [ ! -d $Toolbox/$DotWastebasket ]
+then
+	/usr/bin/mkdir  $Toolbox/$DotWastebasket
+        # chown, chgrp, chmod later
+fi
+
+cd $LOGINDIR
+/usr/bin/ln -s $DESK/Help_Desk     $HelpDesk 2>/dev/null
+/usr/bin/ln -s $DESK/Folder_Map    $FolderMap 2>/dev/null
+/usr/bin/ln -s $DESK/dtwastebasket $Wastebasket 2>/dev/null
+/usr/bin/ln -s $DESK/Shutdown	   $Shutdown 2>/dev/null
+/usr/bin/chgrp -h $GROUP $HelpDesk $FolderMap $Wastebasket $Shutdown
+/usr/bin/chown -h $USER  $HelpDesk $FolderMap $Wastebasket $Shutdown
+
+if [ ! -d /var/spool/uucppublic/receive ]
+then
+	/usr/bin/mkdir -p   /var/spool/uucppublic/receive
+	/usr/bin/chmod 1777 /var/spool/uucppublic /var/spool/uucppublic/receive
+	/usr/bin/chgrp uucp /var/spool/uucppublic /var/spool/uucppublic/receive
+	/usr/bin/chown uucp /var/spool/uucppublic /var/spool/uucppublic/receive
+fi
+if [ ! -d /var/spool/uucppublic/receive/$USER ]
+then
+	/usr/bin/mkdir       /var/spool/uucppublic/receive/$USER
+	/usr/bin/chmod 1775  /var/spool/uucppublic/receive/$USER
+	/usr/bin/chgrp uucp  /var/spool/uucppublic/receive/$USER
+	/usr/bin/chown $USER /var/spool/uucppublic/receive/$USER
+fi
+
+if [ ! -d $D3 ]
+then 
+	/usr/bin/mkdir $D3
+	/usr/bin/chmod 755    $D3
+	/usr/bin/chown $USER  $D3
+	/usr/bin/chgrp $GROUP $D3
+fi
+
+if [ ! -d $LOGINDIR/$Mailbox ]
+then
+	/usr/bin/mkdir $LOGINDIR/$Mailbox
+	/usr/bin/chmod 750    $LOGINDIR/$Mailbox
+	/usr/bin/chgrp $GROUP $LOGINDIR/$Mailbox
+	/usr/bin/chown $USER  $LOGINDIR/$Mailbox
+fi
+
+/usr/bin/ln -s /var/spool/uucppublic/receive/$USER $Mailbox/$InBox 2>/dev/null
+/usr/bin/ln -s $XDIR/bin/dtmail $Mailbox/Mail 2>/dev/null
+/usr/bin/chgrp -h $GROUP  $Mailbox/$InBox $Mailbox/Mail
+/usr/bin/chown -h $USER   $Mailbox/$InBox $Mailbox/Mail
+
+if [ ! -f $LOGINDIR/$UPGRADEVERSION ]
+then
+	> $LOGINDIR/$UPGRADEVERSION
+	/usr/bin/chmod 644    $LOGINDIR/$UPGRADEVERSION
+	/usr/bin/chgrp $GROUP $LOGINDIR/$UPGRADEVERSION
+	/usr/bin/chown $USER  $LOGINDIR/$UPGRADEVERSION
+fi
+
+/usr/bin/cp $DESK/.dtfclass .
+/usr/bin/chmod 644    .dtfclass $ADMFILES
+/usr/bin/chgrp $GROUP .dtfclass $ADMFILES
+/usr/bin/chown $USER  .dtfclass $ADMFILES
+cd $DESK
+if [ -f .init_dtinfo ]
+then
+	FILES=".init_dtinfo $FOLDERS"
+else
+	FILES=$FOLDERS
+fi
+/usr/bin/find $FILES -print | /usr/bin/cpio -pd $LOGINDIR/$Toolbox > /dev/null 2>&1
+if [ "$Toolbox" != "." ]
+then
+	/usr/bin/chmod 755    $LOGINDIR/$Toolbox 2>/dev/null
+	/usr/bin/chgrp $GROUP $LOGINDIR/$Toolbox 2>/dev/null
+	/usr/bin/chown $USER  $LOGINDIR/$Toolbox 2>/dev/null
+fi
+cd $LOGINDIR/$Toolbox
+/usr/bin/chown -Rh $USER  $FILES   $DotWastebasket 2>/dev/null
+/usr/bin/chgrp -Rh $GROUP $FILES   $DotWastebasket 2>/dev/null
+/usr/bin/chmod 755        $FOLDERS $DotWastebasket 2>/dev/null
+
+for D in . $FOLDERS Admin_Tools/Networking
+do
+	if [ -f $D/.init_dtinfo ]
+	then
+		/usr/bin/mv     $D/.init_dtinfo  $D/.dtinfo
+		/usr/bin/chmod  644    $D/.dtinfo
+		/usr/bin/chgrp  $GROUP $D/.dtinfo
+		/usr/bin/chown  $USER  $D/.dtinfo
+	fi
+done
+
+if [ ! -d $LOGINDIR/$Node ]
+then
+        /usr/bin/mkdir $LOGINDIR/$Node
+        /usr/bin/chmod 755    $LOGINDIR/$Node
+        /usr/bin/chgrp $GROUP $LOGINDIR/$Node
+        /usr/bin/chown $USER  $LOGINDIR/$Node
+fi
+
+/usr/bin/cp $DESK/$Node/$RemoteLogin $LOGINDIR/$Node 2>/dev/null
+/usr/bin/chmod 744    $LOGINDIR/$Node/$RemoteLogin
+/usr/bin/chgrp $GROUP $LOGINDIR/$Node/$RemoteLogin
+/usr/bin/chown $USER  $LOGINDIR/$Node/$RemoteLogin
+/usr/bin/ln -s $LOGINDIR/$Node/$RemoteLogin     $LOGINDIR/$Toolbox/$D1/$RemoteLogin 2>/dev/null
+
+#	create default privileges
+/usr/bin/grep $USER /usr/lib/cron/cron.allow > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo $USER >> /usr/lib/cron/cron.allow
+fi
+
+/usr/bin/adminuser $USER > /dev/null 2>&1
+if [ $? != 0 ]
+then	/usr/bin/adminuser -n $USER 2>/dev/null
+	if [ $? != 0 ]
+	then	
+                MSG=`$GETTXT $TXT_AdminuserFailed`
+                printf "\n\t$MSG\n" $Prefix >& 2
+		exit 6
+	fi
+fi
+if [ ! -d $DESK/LoginMgr/Users ]
+then
+	/usr/bin/mkdir $DESK/LoginMgr/Users
+fi
+
+if [ -f $DESK/LoginMgr/Users/$USER ]
+then
+	# Now we need to restore the permission specified in the file
+	OIFS=$IFS
+	while read PERM
+	do
+		label=`echo $PERM | /usr/bin/cut -f3 -d":"`
+		IFS="	"
+		set X `/usr/bin/grep "$label" $DESK/LoginMgr/PrivTable`
+		IFS=$OIFS
+		if [ "$3" != "" ]
+		then
+			/usr/bin/adminuser -a $3 $USER 2>/dev/null
+		fi
+	done < $DESK/LoginMgr/Users/$USER
+	if [ $IS_OWNER = 1 ]
+	then
+		# put back the "owner" line 
+		ed $DESK/LoginMgr/Users/$USER << ! >/dev/null 2>&1
+0a
+owner
+.
+w
+q
+!
+	$XDIR/adm/make-owner -r $USER 2>/dev/null
+	fi
+else
+	# add the default permission 
+	saveIFS="$IFS"
+	for DEFAULT in fmount rmount rdialup
+	do
+		IFS="	"  # inter-field separator = tab
+		set X `/usr/bin/grep "$DEFAULT:/" $DESK/LoginMgr/PrivTable`
+		IFS="$saveIFS"
+		if [ "$3" != "" ]
+		then
+			/usr/bin/adminuser -a $3 $USER 2>/dev/null
+			if [ $? = 0 ]
+			then	echo $2 >> $DESK/LoginMgr/Users/$USER
+			fi
+		fi
+	done
+fi
+chmod 444 $DESK/LoginMgr/Users/$USER
+
+#Check if the user has a DayOne file
+if [ -f $DESK/LoginMgr/DayOne/$USER ]
+then
+        read LOCALE < $DESK/LoginMgr/DayOne/$USER 2>/dev/null
+fi
+
+#Check if a dayone locale is set for the user
+#If no dayone locale then find the default.
+if [ -z "$LOCALE" ]
+then
+        LNG=`/usr/bin/defadm locale LANG 2>/dev/null`
+        if [ "$?" != 0 ]
+        then LANG=C
+        else eval $LNG
+        fi
+        LOCALE=$LANG
+        #Save dayone locale
+        echo $LOCALE > $DESK/LoginMgr/DayOne/$USER 2>/dev/null
+        
+        #Set the locale resources in user's .Xdefaults file
+        if [ -f $LOGINDIR/.Xdefaults ]
+        then
+        echo $BASICLOCALE$LOCALE >> $LOGINDIR/.Xdefaults
+        echo $DISPLAYLANG$LOCALE >> $LOGINDIR/.Xdefaults
+        echo $INPUTLANG$LOCALE >> $LOGINDIR/.Xdefaults
+        echo $NUMERIC$LOCALE >> $LOGINDIR/.Xdefaults
+        echo $TIMEFORMAT$LOCALE >> $LOGINDIR/.Xdefaults
+        echo $XNLLANGUAGE$LOCALE >> $LOGINDIR/.Xdefaults
+        fi
+
+        #Set the LANG variable in the user's .profile file.
+        if [ -f $LOGINDIR/.profile ]
+        then
+        echo "$SETLANG$LOCALE export LANG	#!@ Do not edit this line !@" > /tmp/$USER$$
+        /usr/bin/cat /tmp/$USER$$ $LOGINDIR/.profile > /tmp/$USER$$.1
+        /usr/bin/mv /tmp/$USER$$.1 $LOGINDIR/.profile
+        /sbin/rm -f /tmp/$USER$$ 2>/dev/null
+       	/usr/bin/chown $USER  $LOGINDIR/.profile
+       	/usr/bin/chgrp $GROUP $LOGINDIR/.profile
+       	/usr/bin/chmod 644    $LOGINDIR/.profile
+        fi
+
+        #Set the LANG variable in the user's .login file.
+        if [ -f $LOGINDIR/.login ]
+        then
+        echo "setenv LANG $LOCALE	#!@ Do not edit this line !@" > /tmp/$USER$$
+        /usr/bin/cat /tmp/$USER$$ $LOGINDIR/.login > /tmp/$USER$$.1
+        /usr/bin/mv /tmp/$USER$$.1 $LOGINDIR/.login
+        /sbin/rm -f /tmp/$USER$$ 2>/dev/null
+       	/usr/bin/chown $USER  $LOGINDIR/.login
+       	/usr/bin/chgrp $GROUP $LOGINDIR/.login
+       	/usr/bin/chmod 644    $LOGINDIR/.login
+        fi
+       
+fi
+
+        #Check if dayone catalog for locale is installed.
+        #If catalog is not installed, set dayone locale to C.
+        if [ ! -f /usr/lib/locale/$LOCALE/LC_MESSAGES/dayone ]
+        then
+            LOCALE=C
+            echo $LOCALE > $DESK/LoginMgr/DayOne/$USER 2>/dev/null
+        fi
+
+if [ "$LOCALE" != "C" ]
+then
+      cd $LOGINDIR/$Toolbox
+      while read Dir File Index
+      do
+#	Special Processing for unlimited number of CD-ROMs
+	if [ $File = "CD-ROM" ]
+	then
+            LFile=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:$Index "$File"`
+            if [ "$File" != "$LFile" ] 
+            then
+	        for CDNAME in `/usr/bin/ls $Dir/$File*`
+	        do
+#		    CDNAME is of the form ./Disks-etc/CD-ROM_#, cut off
+#		    the number so we can reappend it to a translated 
+#		    version of CD-ROM
+		    CDNUM=`echo $CDNAME | cut -c20-`
+                    /usr/bin/mv $LOGINDIR/$CDNAME $LOGINDIR/$Dir/"$LFile"_$CDNUM 2>/dev/null
+	        done
+	    fi
+        elif [ -s $Dir/$File -o -f $Dir/$File -o -h $Dir/$File ]
+        then
+            LFile=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:$Index "$File"`
+            if [ "$File" != "$LFile" ] 
+            then
+             /usr/bin/mv $LOGINDIR/$Dir/$File $LOGINDIR/$Dir/$LFile 2>/dev/null
+            fi
+        fi
+      done < $XDIR/adm/day1addmap
+fi
+
+if [ -f $XDIR/adm/post_adduser ]
+then
+	. $XDIR/adm/post_adduser
+else
+	exit 0
+fi

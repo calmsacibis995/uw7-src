@@ -1,0 +1,58 @@
+#ident	"@(#)debugger:catalog.d/i386/DEPEND	1.15"
+
+MOBJECTS = \
+	$(DEBUGINC)/$(CPU)/print.h \
+	$(DEBUGINC)/$(CPU)/Unbundle.h \
+	$(DEBUGINC)/$(CPU)/Msgtypes.h \
+	$(LIBINT)/$(CPU)/Msgtypes.C \
+	$(LIBINT)/$(CPU)/Mtable.c \
+	$(LIBINT)/$(CPU)/print.C \
+	$(LIBINT)/$(CPU)/Sigtable.h \
+	$(LIBINT)/$(CPU)/Unbundle.C \
+	$(LIBINT)/$(CPU)/Mformat.h \
+	Mcatalog
+
+GMOBJECTS = \
+	$(GUI)/$(CPU)/gui_msg.h \
+	$(GUI)/$(CPU)/GMtable.c \
+	GMcatalog
+
+GLOBJECTS = \
+	$(GUI)/$(CPU)/gui_label.h \
+	$(GUI)/$(CPU)/GLabel.C \
+	GLcatalog
+
+HOBJECTS = $(LIBCMD)/$(CPU)/Help_msg.c \
+	$(LIBCMD)/$(CPU)/Help_thr.c \
+	$(LIBCMD)/$(CPU)/Help_ptrace.c
+
+HELPFILES = \
+	$(COMMON)/debug.hlp \
+	$(COMMON)/debug.defs
+
+OBJECTS = $(MOBJECTS) $(GMOBJECTS) $(HOBJECTS) $(GLOBJECTS)
+
+$(MOBJECTS):	$(COMMON)/Msg.awk $(COMMON)/Msg.awk.in \
+		$(DEBUGINC)/common/Signature.h ../../cond.awk
+	cat ../../cond.awk $(DEBUGINC)/common/Signature.h $(COMMON)/Msg.awk.in | $(AWK) -f $(COMMON)/Msg.awk
+	mv print.C Sigtable.h Unbundle.C Mtable.c Mformat.h Msgtypes.C $(LIBINT)/$(CPU)
+	mv print.h Unbundle.h Msgtypes.h $(DEBUGINC)/$(CPU)
+
+$(HOBJECTS):	$(COMMON)/cli.help $(COMMON)/cli.help.thr \
+		$(COMMON)/Help.awk $(COMMON)/cli.help.pt
+	$(AWK) -f $(COMMON)/Help.awk $(COMMON)/cli.help >Help_msg.c
+	$(AWK) -f $(COMMON)/Help.awk $(COMMON)/cli.help.thr >Help_thr.c
+	$(AWK) -f $(COMMON)/Help.awk $(COMMON)/cli.help.pt >Help_ptrace.c
+	mv Help_msg.c $(LIBCMD)/$(CPU)
+	mv Help_thr.c $(LIBCMD)/$(CPU)
+	mv Help_ptrace.c $(LIBCMD)/$(CPU)
+
+$(GMOBJECTS):	$(COMMON)/GMsg.awk $(COMMON)/GMsg.awk.in ../../cond.awk
+	$(AWK) -f $(COMMON)/GMsg.awk ../../cond.awk $(COMMON)/GMsg.awk.in
+	mv gui_msg.h GMtable.c $(GUI)/$(CPU)
+
+$(GLOBJECTS):	$(COMMON)/GLab.awk $(COMMON)/GLab.awk.in ../../cond.awk
+	$(AWK) -f $(COMMON)/GLab.awk ../../cond.awk $(COMMON)/GLab.awk.in
+	mv gui_label.h GLabel.C $(GUI)/$(CPU)
+
+.MUTEX:	$(MOBJECTS) $(GMOBJECTS) $(HOBJECTS) $(GLOBJECTS)

@@ -1,0 +1,1124 @@
+################################################################################
+# disk.rc	functions used by modules: 
+#			check_preserve,  whole_disk,  partition,  &  slices
+################################################################################
+#ident "@(#)disk.rc	15.5	98/01/22"
+
+# NOTES on fdinit and fsinit:
+#
+# Call hierarchy:
+#     fdinit             # sets [] DISK_SIZE, DISK_NUMCYL, DISK_DEVS, PARTxxx
+#         read_geometry     # sets [] DISKCYLS, DISK_CYLSIZE
+#         chk_disksanity    # displays error msg if fdsize_chk returns error
+#             fdsize_chk        # checks USABLE_SIZE[n]+=PARTLENGTH[m] too big
+#             reset_geometry        # called if fdsize_chk returned error
+#             one_unix_partition    # called if fdsize_chk returned error
+#                 unused_partition      # sets PARTxxx[n] to "unused" status
+#         one_unix_partition    # called if fdisk saw no Unix partitions
+#     fsinit                # sets [] SLxxx from disk.ele
+#         fdsize_chk        # checks USABLE_SIZE[n]+=PARTLENGTH[m] too big
+#         get_max_fs        # looks up MAXSIZE in /etc/default/$SLTYPE[x]
+#     
+#
+# fsinit
+#    calls fdsize_chk to reset the USABLE_SIZE[] vars.
+#    uses USABLE_SIZE[] vars to compute available space.
+#    uses available space to adjust SLSIZE[] vars.
+# So, whenever PARTLENGTH[] vars have changed, fsinit must be called to
+# re-adjust the SLSIZE[] vars.
+#
+# So when must fdinit and fsinit be called?
+#     check_preserve    calls fdinit and fsinit only once.
+#     whole_disk        if visited_partition and now wants to use whole disk
+#                           calls fdinit
+#                           calls fsinit.
+#     partition         if visited_slices and now rearranges partitions
+#                           calls fsinit.
+#     change_slices     if user chooses default slices
+#                           calls fsinit (to undo any actions on slices screen).
+#     slices            doesn't call either.
+# 
+################################################################################
+# Function descriptions:
+# 
+##########
+# function save_partitions
+# 	called by modules: check_preserve partition whole_disk
+# 	calls ivar set
+# 
+##########
+# function reset_geometry
+# 	called by chk_disksanity
+# 	runs sbin/disksetup to clear the pdinfo structure on the unix partition
+# 
+##########
+# function fdsize_chk
+# 	called by chk_disksanity, fsinit
+# 	for each not-'unused' partition, returns 1 if
+# 		PARTLENGTH is 0 or sum exceeds DISK_NUMCYL
+# 		PARTSTART/END > DISK_NUMCYL
+# 		PARTEND overlaps PARTSTART of next partition
+# 	USABLE_SIZE set to sum of PARTLENGTH * DISK_CYLSIZE / 1000
+# 		( #cyls * cylsize == bytes, but bytes / 1000 is not megabytes )
+# 
+##########
+# function chk_disksanity
+# 	called by fdinit
+# 	displays err msg and returns 2 if
+# 		DISK_SIZE[disk] or DISK_NUMCYL[disk] is unset or negative
+# 	calls fdsize_chk $disk; on error (return value 1)
+# 		displays error msg BADDISK_INFO[x]
+# 		if DO_REBOOT = YES	invokes halt
+# 		if DO_REBOOT = NO	calls reset_geometry $disk
+# 					invokes halt
+# 		if DO_REBOOT = MAYBE	sets DISK${disk}_WAS_INSANE=YES
+# 					calls one_unix_partition $disk
+# 
+##########
+# function baddisk_choice
+# 	displays choice list (BADDISK_OPT[] vars)
+# 		BADDISK_CHOOSE[x]
+# 		1	Use entire disk for Unix
+# 		2,3	Reset disk geometry and shut down system (BADDISK_RESET)
+# 
+##########
+# function baddisk_exit
+# 	called as exit function from baddisk_choice
+# 	sets DO_REBOOT according to chosen BADDISK_OPT
+# 
+##########
+# function unused_partition
+# 	called by one_unix_partition
+# 	sets PARTxxx vars for disk $1, partition $2 to unused status
+# 
+##########
+# function one_unix_partition
+# 	called by chk_disksanity with $disk
+# 	called by fdinit with 0
+# 	creates single unix partition for disk $1
+# 	sets PARTxxx vars for disk $1 to be a bootable unix partition
+# 	sets UNIX_PARTITION/_SIZE for disk $1
+# 	sets partitions 2,3,4 to unused status by calling unused_partition
+# 	sets BOOTSECTOR=yes
+# 
+##########
+# function read_geometry
+# 	called by fdinit
+# 	runs partsize -d ${CHAR_DISK_NODES[disk]} to set
+# 		#heads, #cyls, #sectors, sector_size
+# 	sets DISKCYLS[$1] = #cyls
+# 	runs getcylsize #sectors #heads sector_size to set
+# 		DISK_CYLSIZE[$1]
+# 	sets HD${disk}OPT=" "
+# 
+##########
+# function get_max_fs
+# 	called by fsinit
+# 	called by check_fssize ('slices' module)
+# 	looks up MAXSIZE value in /etc/default/${SLTYPE[x]
+# 
+##########
+# function fsinit
+# 	called by 'check_preserve' module
+# 	calls fdsize_chk for each disk 
+# 		if fdsize_chk returns error, sets all UNIX_PARTITION[disk] to NO
+# 	sets SLTYPE to off for VTOC_SLICES
+# 		VTOC_SLICES="1 2 3 4 6 8 10 11 12 13 14 15 16 17" (globals.sh)
+# 	inits SLSIZE, SLTYPE, SLMIN, SLFS, SLNAME ... vars from /etc/disk.ele
+# 	adjusts SLSIZE[2] (swap) to USABLE_SIZE and memfs
+# 	sets available to USABLE_SIZE minus the hard requirements of
+# 		/stand (slice 10), /dev/swap (2), ALTS TABLE (8),
+# 		and /dev/volprivate (15)
+# 	adjusts SLSIZE for slices with WFLAG==W in /etc/disk.ele:
+# 		1	/
+# 		3	/usr
+# 		4	/home
+# 		11	/var
+# 		12	/home2
+# 		13	/tmp
+# 		16	/var/tmp
+# 		Tries to init W slices with same fraction of available
+# 		to present reasonable defaults on screen.
+# 		Calls get_max_fs to ensure that fraction does not exceed
+# 		the MAX_FS_SIZE for the each slice type.
+# 		What does a value of W for WFLAG mean?
+# 	sets FSTOT[dsk] as sum of SLSIZE[]s whose SLDISK[]s == $dsk
+# 	creates /tmp/fsinit_done as a flag indicating fsinit has run.
+# 
+##########
+# function fdinit
+# 	called by module check_preserve
+# 	for each disk
+# 		calls read_geometry
+# 		runs fdisk -L ${CHAR_DISK_NODES[disk]} to
+# 			set DISK_SIZE[disk] and DISK_NUMCYL[disk]
+# 			set PARTxxx[disk*4+i]
+# 			if 
+# 	tallies NDISKS
+# 
+##########
+# function check_stand
+# 	returns 0 (fail) if Boot slice extends beyond cylinder 1023
+
+################################################################################
+################################################################################
+
+# These vars are used by load_disk_info and save_disk_info.
+# They are the "ifile"s for disk information.
+# We do not store/retrieve disk info ivar variables using the main ifile
+# because ivar set was too slow.
+#
+DISK_INFO_FILE=/isl/disk.info
+PART_INFO=/isl/partition.info
+SLICE_INFO=/isl/slice.info
+
+################################################################# load_disk_info
+function load_disk_info
+{
+	[ -n "$debug" ] && set -x
+
+	NDISKS=`ivar get num_disk_nodes`
+	[[ -z "$NDISKS" || $NDISKS < 1 ]] && {
+		# JAY 
+		# Unrecoverable error.  DCU failed to set NDISKS.
+		echo JAY NDISKS=$NDISKS, error popup.
+		#halt
+	}
+	#
+	#NDISKS=1	# Gemini restricted to 1 disk
+	# JAY, Did UW allow the use to visit the "partition" screen 
+	# for each physical disk?
+
+	i=0
+	while (( i < NDISKS ))
+	do
+		CHAR_DISK_NODES[$i]=`ivar get CHAR_DISK_NODES[$i]`
+		(( i += 1 ))
+	done
+
+	[[ ! ( -f $DISK_INFO_FILE && -f $PART_INFO && -f $SLICE_INFO ) ]] && {
+		fdinit
+		save_disk_info
+	}
+
+	. $DISK_INFO_FILE
+	. $PART_INFO
+	. $SLICE_INFO
+
+	# Remember initial values of crucial partition values.
+	# They are used to check for changes in store_part_info.
+	for i in 1 2 3 4
+	do
+		_PARTSTATUS[$i]="${PARTSTATUS[$i]}"
+		_PARTTYPE[$i]="${PARTTYPE[$i]}"
+		_PARTLENGTH[$i]="${PARTLENGTH[$i]}"
+	done
+}
+
+
+################################################################ store_disk_info
+function store_disk_info
+{
+	[ -n "$debug" ] && set -x
+	echo NDISKS="$NDISKS"					> $DISK_INFO_FILE
+	echo ALTS1="$ALTS1"					>>$DISK_INFO_FILE
+	echo BOOTSECTOR="$BOOTSECTOR"				>>$DISK_INFO_FILE
+	i=-1
+	while (( (i+=1) < NDISKS ))
+	do
+		echo "HDOPT[$i]=\"${HDOPT[$i]}\""		>>$DISK_INFO_FILE
+		echo "RESETGEOM[$i]=\"${RESETGEOM[$i]}\""	>>$DISK_INFO_FILE
+		echo "USABLE_SIZE[$i]=\"${USABLE_SIZE[$i]}\""	>>$DISK_INFO_FILE
+		echo "FSTOT[$i]=\"${USABLE_SIZE[$i]}\""		>>$DISK_INFO_FILE
+		echo "DISK_SIZE[$i]=\"${DISK_SIZE[$i]}\""	>>$DISK_INFO_FILE
+		echo "DISKCYLS[$i]=\"${DISKCYLS[$i]}\""		>>$DISK_INFO_FILE
+		echo "DISK_NUMCYL[$i]=\"${DISK_NUMCYL[$i]}\""	>>$DISK_INFO_FILE
+		echo "DISK_CYLSIZE[$i]=\"${DISK_CYLSIZE[$i]}\""	>>$DISK_INFO_FILE
+		echo "UNIX_PARTITION[$i]=\"${UNIX_PARTITION[$i]}\""	>>$DISK_INFO_FILE
+		echo "UNIX_PARTITION_SIZE[$i]=\"${UNIX_PARTITION_SIZE[$i]}\""	>>$DISK_INFO_FILE
+	done
+}
+
+################################################################ store_part_info
+function store_part_info
+{
+	[ -n "$debug" ] && set -x
+	#ivar set partitions_done true
+	changed=0
+	integer disk=0
+	> $PART_INFO
+	while (( disk < NDISKS ))
+	do
+		for i in 1 2 3 4
+		do
+			echo "PARTSTATUS[$(( disk*4+i ))]=\"${PARTSTATUS[disk*4+i]}\""	>>$PART_INFO
+			echo "PARTTYPE[$(( disk*4+i ))]=\"${PARTTYPE[disk*4+i]}\""		>>$PART_INFO
+			echo "PARTPCT[$(( disk*4+i ))]=\"${PARTPCT[disk*4+i]}\""		>>$PART_INFO
+			echo "PARTMB[$(( disk*4+i ))]=\"${PARTMB[disk*4+i]}\""		>>$PART_INFO
+			echo "PARTSTART[$(( disk*4+i ))]=\"${PARTSTART[disk*4+i]}\""	>>$PART_INFO
+			echo "PARTEND[$(( disk*4+i ))]=\"${PARTEND[disk*4+i]}\""		>>$PART_INFO
+			echo "PARTLENGTH[$(( disk*4+i ))]=\"${PARTLENGTH[disk*4+i]}\""	>>$PART_INFO
+			echo "PARTORIG[$(( disk*4+i ))]=\"${PARTORIG[disk*4+i]}\""		>>$PART_INFO
+
+		if (( disk == 0 ))
+		then
+			[[ ${PARTSTATUS[$(( disk*4+i ))]} != ${_PARTSTATUS[disk*4+i]} ]] && changed=1
+			[[ ${PARTTYPE[$(( disk*4+i ))]}   != ${_PARTTYPE[disk*4+i]}   ]] && changed=1
+			[[ ${PARTLENGTH[$(( disk*4+i ))]} != ${_PARTLENGTH[disk*4+i]} ]] && changed=1
+		fi
+		done
+		(( disk += 1 ))
+	done
+	# if user changes partition info, reset slice info
+	(( changed )) && fsinit
+}
+
+############################################################### store_slice_info
+function store_slice_info
+{
+	[ -n "$debug" ] && set -x
+	> $SLICE_INFO
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
+	do
+		#echo "SLNAME[$i]=\"${SLNAME[$i]}\""		>>$SLICE_INFO
+		echo "SLMIN[$i]=\"${SLMIN[$i]}\""		>>$SLICE_INFO
+		echo "SLSIZE[$i]=\"${SLSIZE[$i]}\""		>>$SLICE_INFO
+		echo "_SLSIZE[$i]=\"${_SLSIZE[$i]}\""		>>$SLICE_INFO
+		echo "SLTYPE[$i]=\"${SLTYPE[$i]}\""		>>$SLICE_INFO
+		echo "_SLTYPE[$i]=\"${_SLTYPE[$i]}\""		>>$SLICE_INFO
+		echo "SLBLKSIZE[$i]=\"${SLBLKSIZE[$i]}\""	>>$SLICE_INFO
+		echo "SLDISK[$i]=\"${SLDISK[$i]}\""		>>$SLICE_INFO
+		echo "_SLDISK[$i]=\"${_SLDISK[$i]}\""		>>$SLICE_INFO
+		echo "SLDISK2[$i]=\"${SLDISK2[$i]}\""		>>$SLICE_INFO
+		echo "SLFS[$i]=\"${SLFS[$i]}\""			>>$SLICE_INFO
+		echo "SLINODES[$i]=\"${SLINODES[$i]}\""		>>$SLICE_INFO
+	done
+}
+
+################################################################# save_disk_info
+function save_disk_info
+{
+    [ -n "$debug" ] && set -x
+
+	store_disk_info
+	store_part_info
+	store_slice_info
+
+    # If an exit code was passed, exit with that code
+    [ -n "$1" ] && ii_exit $1
+}
+
+################################################################ save_partitions
+# JAY DELETE
+function save_partitions
+{
+[ -n "$debug" ] && set -x
+
+	place_window 70 3 -title "$Saving."
+        progress_wid=$CURWIN
+        gauge_start 32
+        msg "$PleaseWait."
+
+	ivar set NOND "$preserve"
+
+	ivar set USABLE_SIZE[0] "${USABLE_SIZE[0]}"
+	ivar set FSTOT[0] "${USABLE_SIZE[0]}"
+	ivar set FSTOT[1] "${USABLE_SIZE[1]}"
+	ivar set FSTOT[2] "${USABLE_SIZE[2]}"
+	ivar set DISK_SIZE[0] "${DISK_SIZE[0]}"
+	ivar set DISKCYLS[0] "${DISKCYLS[0]}"
+	ivar set DISK_NUMCYL[0] "${DISK_NUMCYL[0]}"
+	ivar set DISK_CYLSIZE[0] "${DISK_CYLSIZE[0]}"
+	gauge_add
+	for i in 1 2 3 4
+	do
+		ivar set PARTSTATUS[$i] "${PARTSTATUS[$i]}"
+		ivar set PARTTYPE[$i]   "${PARTTYPE[$i]}"
+		ivar set PARTPCT[$i]    "${PARTPCT[$i]}"
+		ivar set PARTMB[$i]     "${PARTMB[$i]}"
+		ivar set PARTSTART[$i]  "${PARTSTART[$i]}"
+		ivar set PARTEND[$i]    "${PARTEND[$i]}"
+		ivar set PARTLENGTH[$i] "${PARTLENGTH[$i]}"
+		ivar set PARTORIG[$i]   "${PARTORIG[$i]}"
+		gauge_add
+	done
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
+	do
+		#ivar set SLNAME[$i]	"${SLNAME[$i]}"
+		ivar set SLMIN[$i]	"${SLMIN[$i]}"
+		ivar set SLSIZE[$i]	"${SLSIZE[$i]}"
+		ivar set _SLSIZE[$i]	"${_SLSIZE[$i]}"
+		ivar set SLTYPE[$i]	"${SLTYPE[$i]}"
+		ivar set _SLTYPE[$i]	"${_SLTYPE[$i]}"
+		ivar set SLBLKSIZE[$i]	"${SLBLKSIZE[$i]}"
+		ivar set SLDISK[$i]	"${SLDISK[$i]}"
+		ivar set _SLDISK[$i]	"${_SLDISK[$i]}"
+		ivar set SLDISK2[$i]	"${SLDISK2[$i]}"
+		ivar set SLFS[$i]	"${SLFS[$i]}"
+		ivar set SLINODES[$i]	"${SLINODES[$i]}"
+		gauge_add
+	done
+	ivar set partitions_done true
+	gauge_add
+	ivar set NDISKS "$NDISKS"
+	gauge_add
+	call sleep 2
+	wclose $progress_wid
+	msg
+	ii_exit $1
+}
+
+
+################################################################# reset_geometry
+function reset_geometry
+{
+#	reset_geometry(disk)
+#		called to clear the pdinfo structure on the unix partition
+[ -n "$debug" ] && set -x
+
+	typeset _G disk=$1
+	typeset root_dir=/.extra.d
+	# JAY ...
+	#
+	SEC_MEDIUM_TYPE=`ivar get SEC_MEDIUM_TYPE`
+	SEC_MEDIUM=`ivar get SEC_MEDIUM`
+	SERVER_NAME=`ivar get SERVER_NAME`
+	SERVER_INET_ADDR=`ivar get SERVER_INET_ADDR`
+	SET_NAME="UnixWare"	
+	#
+	# ... copied the following line from scripts/partition_sys.
+	#
+	[ "$SEC_MEDIUM_TYPE" = "cdrom" ] && root_dir=/cd-rom/.extra.d
+	#
+	# Maybe the check_media UI module should create a sym link
+	# from /.extra.d to /cd-rom/.extra.d (if the media is CDROM).
+	# The real question is: why is CDROM a special case, but not tape?
+
+	footer "$BADDISK_FOOTER"
+	[ -s "$root_dir/usr/sbin/disksetup" ] || get_tools '*disksetup'
+	$root_dir/usr/sbin/disksetup -w ${CHAR_DISK_NODES[disk]}
+	footer "$GENERIC_WAIT_FOOTER"
+}
+
+##################################################################### fdsize_chk
+function fdsize_chk
+{
+[ -n "$debug" ] && set -x
+	integer i=0 sum=0 
+	integer disk=$1
+	let USABLE_SIZE[disk]=0
+	for i in 1 2 3 4
+	do
+		if [ ! "${PARTTYPE[disk*4+$i]}" = "$unused" ]
+		then
+			if [ -n "${PARTLENGTH[disk*4+$i]}" ]
+			then
+				if (( PARTLENGTH[disk*4+$i] == 0 ))
+				then
+					eval errmsg "$FD_ERR_UNDEF"
+					return 1
+				fi
+				let sum=sum+PARTLENGTH[disk*4+$i]
+				if (( sum > "${DISK_NUMCYL[disk]}" ))
+				then
+					errmsg "$FD_ERR_OVER_100"
+					return 1
+				fi
+				if (( PARTSTART[disk*4+$i] > DISK_NUMCYL[disk] )) || (( PARTEND[disk*4+$i] > DISK_NUMCYL[disk] ))
+				then
+					eval errmsg "$FD_ERR_ADDR_TOOBIG"
+					return 1
+				fi
+				if [ "${PARTTYPE[disk*4+$i]}" = "$UNIX" ]
+				then
+					if [ "${PARTSTATUS[disk*4+$i]}" = "$Boot" ]
+					then
+						let USABLE_SIZE[disk]=\(${PARTLENGTH[disk*4+$i]}\)*${DISK_CYLSIZE[disk]}/1024
+					fi
+				fi
+				integer prevslc=${i}-1
+				while (( prevslc > 0 ))
+				do
+					if [ ! "${PARTTYPE[disk*4+prevslc]}" = "$unused" ]
+					then
+						if (( PARTSTART[disk*4+$i] <= PARTEND[disk*4+prevslc] ))
+						then
+							errmsg "$FD_ERR_BAD_ADDRS"
+							return 1
+						else
+							break
+						fi
+					fi
+					let prevslc=prevslc-1
+				done
+			else
+				eval errmsg "\"$FD_ERR_UNDEF\""
+				return 1
+			fi
+		fi
+	done
+	return 0
+}
+
+################################################################# chk_disksanity
+function chk_disksanity
+{
+# chk_disksanity ( which_disk )
+[ -n "$debug" ] && set -x
+	typeset _t disk=$1
+	integer errtn=0
+
+	[ -z "${DISK_SIZE[disk]}" -o "${DISK_SIZE[disk]}" -lt 0 ] && errtn=2
+	[ -z "${DISK_NUMCYL[disk]}" -o "${DISK_NUMCYL[disk]}" -lt 0 ] && errtn=2
+	[ $errtn = 0 ] && {
+		fdsize_chk $disk 
+		errtn=$?
+	}
+	case $errtn in
+	1)
+		eval display "\"${BADDISK_INFO[1]}\"" -below 4 -bg $ERROR_BG -fg $ERROR_FG
+		_t=$CURWIN
+		baddisk_choice 1
+		input_handler
+		wclose $_t
+		if [ "$DO_REBOOT" = MAYBE ]
+		then
+			eval display "\"${BADDISK_INFO[2]}\"" -below 4 -bg $ERROR_BG -fg $ERROR_FG
+			_t=$CURWIN
+			baddisk_choice 2
+			input_handler
+			wclose $_t
+			if [ "$DO_REBOOT" = NO ]
+			then
+				reset_geometry $disk
+			fi
+			halt
+		elif [ "$DO_REBOOT" = YES ]
+		then
+			halt
+		else
+			eval DISK${disk}_WAS_INSANE=YES
+			one_unix_partition $disk
+		fi
+		;;
+	2)
+		footer "$FOOTER_FAILED_DISK"
+		eval display -w "\"$FAILED_DISK\"" -below 4 -bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		halt
+		;;
+	esac
+}
+
+################################################################# baddisk_choice
+function baddisk_choice
+{
+[ -n "$debug" ] && set -x
+   typeset reason=$1
+   typeset baddiskopt
+
+   typeset OIFS="$IFS"
+   IFS="$nl"
+   set -A BADDISK_OPT ${BADDISK_CHOOSE[reason]}
+   IFS="$OIFS"
+   baddiskopt=$BADDISK_OPT
+   CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+   CHOOSE_TITLE="$PARTS_CHOOSE_TITLE"
+   choose -f -e -exit baddisk_exit -winparms "-above 8 -fg $COMBO2_FG -bg $COMBO2_BG" "$baddiskopt" "${BADDISK_OPT[@]}"
+}
+
+################################################################### baddisk_exit
+function baddisk_exit
+{
+[ -n "$debug" ] && set -x
+   case $CHOICE in
+   ${BADDISK_OPT[0]})
+      DO_REBOOT=NO
+      ;;
+   ${BADDISK_OPT[1]})
+      DO_REBOOT=YES
+      ;;
+   ${BADDISK_OPT[2]})
+      DO_REBOOT=MAYBE
+      ;;
+   esac
+}
+
+
+############################################################### unused_partition
+function unused_partition
+{
+[ -n "$debug" ] && set -x
+	integer disk=$1 partition=$2
+
+	PARTSTATUS[disk*4+partition]=
+	PARTTYPE[disk*4+partition]="$unused"
+	PARTPCT[disk*4+partition]=0
+	PARTMB[disk*4+partition]=
+	PARTSTART[disk*4+partition]=
+	PARTEND[disk*4+partition]=
+	PARTLENGTH[disk*4+partition]=
+}
+
+
+############################################################# one_unix_partition
+function one_unix_partition
+{
+# create single unix partition for disk $1
+[ -n "$debug" ] && set -x
+	integer i disk=$1
+	PARTSTATUS[disk*4+1]="$Boot"
+	PARTTYPE[disk*4+1]=$UNIX
+	PARTPCT[disk*4+1]=100
+	PARTMB[disk*4+1]=${DISK_SIZE[disk]}
+	PARTSTART[disk*4+1]=0
+	let "PARTEND[disk*4+1]=DISK_NUMCYL[disk]-1"
+	PARTLENGTH[disk*4+1]=${DISK_NUMCYL[disk]}
+	UNIX_PARTITION[disk]=YES
+	UNIX_PARTITION_SIZE[disk]=${PARTMB[disk*4+1]}
+
+	for i in 2 3 4
+	do
+		unused_partition $disk $i
+	done
+	BOOTSECTOR="$Yes"
+}
+
+################################################################## read_geometry
+function read_geometry
+{
+[ -n "$debug" ] && set -x
+	integer disk=$1
+	typeset junk heads cyls secs secsz
+
+	partsize -d ${CHAR_DISK_NODES[disk]} 2>/dev/null | {
+		read junk
+		read junk heads cyls secs secsz
+	} || return 0
+	DISK_CYLSIZE[disk]=$(getcylsize $secs $heads $secsz)
+	DISKCYLS[disk]=$cyls
+	eval HD${disk}OPT=" "
+	return 1
+}
+
+
+##################################################################### get_max_fs
+function get_max_fs
+# Arg 1 is the name of a file system type
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset default_max=2047 fs=$1 OIFS="$IFS" variable value
+
+	[ -s /etc/default/$fs ] || {
+		print $default_max
+		return
+	}
+	IFS='='
+	while read variable value
+	do
+		[ "$variable" = "MAXSIZE" ] && {
+                        # NOTE: The MAXSIZE now stands for number of blocks.
+                        #
+                        # It would be nice just to calculate the value, but the
+                        # ksh stores integers as signed 32-bit longs.  So we
+                        # look for 2^31 (1T) and 2^32 (2T) as special cases.
+                        # All other answers we calculate.
+
+			case $value in
+			2147483648)
+				print 1048576
+				;;
+			4294967296)
+				print 2097152
+				;;
+			*)
+				print $(( value / 2048 ))
+				;;
+			esac
+			IFS="$OIFS"
+			return
+		}
+	done < /etc/default/$fs
+	print $default_max
+	IFS="$OIFS"
+	return
+}
+
+
+######################################################################### fsinit
+function fsinit
+{
+[ -n "$debug" ] && set -x
+	[ -n "$SH_VERBOSE" ] && set -x
+	[ "${UNIX_PARTITION[0]}" != YES ] && return
+	#autoload fdinit	# JAY needed?  sets fdinit to an undefined function
+	typeset W_slices
+	integer d=0 i=-1 W_total=0 available=0 memfstot
+	integer dsk=0 disk SL roundmem MAX_FS_SIZE
+	TOTAL_USABLE_SIZE=0	# JAY TOTAL_USABLE_SIZE not used?
+	while (( (i=i+1) < NDISKS ))
+	do
+		if fdsize_chk $i
+		then
+			let TOTAL_USABLE_SIZE+=USABLE_SIZE[$i]
+		else
+			UNIX_PARTITION[$i]=NO
+			(( i == 0 )) && return
+		fi
+	done
+	#let 'roundmem=((1048575+MEMSIZE)/1048576)'
+
+	MEMSIZEMB=`ivar get MEMSIZEMB`
+	let 'roundmem=MEMSIZEMB'
+
+	# JAY, /SYS ??  what's that?  are we like redbox?
+	# SILENT_INSTALL uses slice 5 for /SYS. For redbox, 
+	# it must be initialized to "off".
+	for SL in $VTOC_SLICES 5
+	do
+		SLTYPE[$SL]="$off"
+	done
+	OLDIFS=$IFS
+	typeset IFS="${tab}"
+	while read line
+	do
+xxx="$line"
+		case "$line" in
+		\#*) 
+			;;
+		*)
+			set -- $line
+yyy="$line"
+			SL=$6
+			if [ "$3" != R ]
+			then
+				SLSIZE[$SL]=
+				_SLSIZE[$SL]=0
+				let SLMIN[$SL]=$9
+				#eval SLNAME[$SL]=\"\$$2\"
+				SLFS[$SL]="$1"
+				SLTYPE[$SL]="$off"
+				_SLTYPE[$SL]="$off"
+			else
+				if [ "$SL" = 8 -a "$5" = Yes ]
+				then
+					if (( NDISKS == 1 ))
+					then
+						SLFS[17]=""
+						continue
+					else
+						d=1
+						SL=17
+					fi
+				fi
+				let SLMIN[$SL]=$9
+				#eval SLNAME[$SL]=\"\$$2\"
+				SLFS[$SL]="$1"
+				case "${10}" in
+				*memfs*)
+					SLTYPE[$SL]=memfs
+					_SLTYPE[$SL]=memfs
+					SLSIZE[$SL]=${7%M}
+					_SLSIZE[$SL]=${7%M}
+					let "memfstot+=${7%M}"
+					;;
+				*slice*)
+					SLTYPE[$SL]="$slice"
+					_SLTYPE[$SL]="$slice"
+					case ${7##*[0-9]} in
+					m)
+						let SLSIZE[$SL]=${7%m}*roundmem-4
+						let _SLSIZE[$SL]=${7%m}*roundmem-4
+						;;
+					K)
+						let SLSIZE[$SL]=${7}
+						let _SLSIZE[$SL]=${7}
+						;;
+					D)
+						(( (SLSIZE[$SL]=USABLE_SIZE[$d]*${7%D}/100) == 0 )) && SLSIZE[$SL]=1
+						let "_SLSIZE[$SL]=${SLSIZE[$SL]}"
+						;;
+					M)
+						let SLSIZE[$SL]=${7%%M}
+						let _SLSIZE[$SL]=${7%%M}
+						;;
+					esac
+					if [ "$SL" = 17 -a "$5" = Yes ]
+					then
+						ALTS1=${7%D}
+						SLTYPE[$SL]="$off"
+						SLSIZE[$SL]=
+					fi
+					;;
+						
+				*)
+					SLTYPE[$SL]=${10%%,*}
+					_SLTYPE[$SL]=${10%%,*}
+					case "$8" in
+					W)
+						SLSIZE[$SL]=$7
+						_SLSIZE[$SL]=$7
+						let W_total+=$7
+						W_slices="$W_slices $SL"
+						;;
+					*)
+						SLSIZE[$SL]=${7%M}
+						_SLSIZE[$SL]=${7%M};;
+					esac
+					case "${SLTYPE[$SL]}" in
+					bfs)
+						SLBLKSIZE[$SL]=512
+						SLINODES[$SL]="$No"
+						;;
+					s5)
+						SLBLKSIZE[$SL]=1024
+						SLINODES[$SL]="$Yes"
+						;;
+					ufs)
+						SLBLKSIZE[$SL]=4096
+						SLINODES[$SL]="$Yes"
+						;;
+					vxfs)
+						SLBLKSIZE[$SL]=1024
+						SLINODES[$SL]="$Yes"
+						;;
+					*)
+						SLBLKSIZE[$SL]=4096
+						;;
+					esac
+					;;
+				esac
+			fi
+
+			SLDISK[$SL]=1
+			_SLDISK[$SL]=1
+
+			if [ "$5" = Yes ] && (( NDISKS > 1 ))
+			then
+				let SLDISK2[$SL]=1
+				(( $SL == 17 )) && {
+					SLDISK[$SL]=2
+					_SLDISK[$SL]=2
+					SLDISK2[$SL]=0
+				}
+				
+			else
+				let SLDISK2[$SL]=0
+			fi
+			;;
+		esac
+	done < /etc/disk.ele
+#	(( $memfstot >= 8 )) && let memfstot-=8	# memfs total must be < 8 (!)
+	IFS=$OLDIFS
+
+	# Assert that the swap slice (#2) be at least 16% (why 16&?)
+	# of the sum size of partitions used for Unix,
+	# and at least 12 cyls (why 12?).
+#	let  'i=USABLE_SIZE[0]*16/100'	 # USABLE_SIZE is megabytes
+#	[ "$i" -lt "${SLSIZE[2]}" ] && let "SLSIZE[2]=i"
+#	[ "${SLSIZE[2]}" -lt 12 ] && let "SLSIZE[2]=12"
+
+#	let SLSIZE[2]+=memfstot	# increment swap size by memfs total
+
+	if (( roundmem < 32 ))
+	then
+		SLTYPE[13]="off"
+		SLTYPE[16]="off"
+		(( memfstot -= SLSIZE[13] ))
+		(( memfstot -= SLSIZE[16] ))
+		SLSIZE[13]=""
+		SLSIZE[16]=""
+	fi
+
+	get_swap_default
+	let SLSIZE[2]=SWAP_DFL
+	get_dump_min
+	let SLMIN[6]=DUMP_MIN
+
+	# available space is the USABLE_SIZE minus the hard requirements of
+	# /stand (slice 10), /dev/swap (2), ALTS TABLE (8),
+	# and /dev/volprivate (15)
+	let 'available=USABLE_SIZE[0]-SLSIZE[10]-SLSIZE[2]-SLSIZE[8]-SLSIZE[15]'
+	for SL in $W_slices
+	do
+		MAX_FS_SIZE=$(get_max_fs ${SLTYPE[SL]})
+		(( SLSIZE[SL] = SLSIZE[SL] * available / W_total ))
+		(( SLSIZE[SL] > MAX_FS_SIZE )) && (( SLSIZE[SL] = MAX_FS_SIZE ))
+	done
+	while (( (dsk=dsk+1) <= NDISKS ))
+	do
+		disk=dsk-1
+		FSTOT[dsk]=0
+		for SL in $VTOC_SLICES 5
+		do
+			if [ "${SLTYPE[SL]}" != "$off" -a "${SLTYPE[SL]}" != "memfs" ]
+			then
+				if [ "${SLDISK[SL]}" = "$dsk" ]
+				then
+					let FSTOT[dsk]+=SLSIZE[SL]
+				fi
+			fi
+		done
+	done
+	> /tmp/fsinit_done
+}
+
+
+################################################################### get_dump_min
+function get_dump_min
+{
+#	let 'roundmem=((1048575+MEMSIZE)/1048576)'
+	let DUMP_MIN='(roundmem+256)/4'
+	(( roundmem <= 256 )) && let DUMP_MIN='roundmem/2'
+	(( roundmem <= 32 )) && let DUMP_MIN=16
+}
+
+
+############################################################### get_swap_default
+function get_swap_default
+{
+#	let 'roundmem=((1048575+MEMSIZE)/1048576)'
+	let SWAP_DFL='memfstot-((3*roundmem)/20)'
+	(( SWAP_DFL < 0 )) && let SWAP_DFL=0
+	let SWAP_DFL+=17
+	(( roundmem <= 32 )) &&
+		let SWAP_DFL+=roundmem
+	(( roundmem > 32 )) && (( roundmem <= 64 )) &&
+		let SWAP_DFL+='(9*roundmem+32)/10'
+	(( roundmem > 64 )) && (( roundmem <= 128 )) &&
+		let SWAP_DFL+='(7*roundmem+160)/10'
+	(( roundmem > 128 )) && (( roundmem <= 256 )) &&
+		let SWAP_DFL+='(5*roundmem+416)/10'
+	(( roundmem > 256 )) &&
+		let SWAP_DFL+='(3*roundmem+928)/10'
+}
+
+function fdinit_a_disk {
+	integer i
+	typeset disk=$1
+	typeset OIFS="$IFS"
+
+	read_geometry $disk
+	eval "$(fdisk -L ${CHAR_DISK_NODES[disk]} </dev/null)"
+	DISK_SIZE[disk]="${NUMMB%.*}"
+	DISK_NUMCYL[disk]=$NUMCYL
+	have_defined_partitions[disk]=NO
+	for i in 1 2 3 4
+	do
+		typeset IFS="$tab"
+		eval set -- \$PART${i}
+		if [ -z "$3" ]
+		then
+			PARTSTATUS[disk*4+i]=
+			PARTTYPE[disk*4+i]="$unused"
+			PARTPCT[disk*4+i]=0
+			PARTMB[disk*4+i]=
+			PARTSTART[disk*4+i]=
+			PARTEND[disk*4+i]=
+			PARTLENGTH[disk*4+i]=
+		else
+			have_defined_partitions[disk]=YES
+			PARTTYPE[disk*4+i]="$3"
+			PARTSTART[disk*4+i]=$4
+			PARTEND[disk*4+i]=$5
+			PARTLENGTH[disk*4+i]=$6
+			let "PARTMB[disk*4+i]=${6}*DISK_CYLSIZE[disk]/1024"
+			PARTPCT[disk*4+i]="$7"
+			if [ "$2" = "$Active" ]
+			then
+				PARTSTATUS[disk*4+i]="$Boot"
+				if [ "$3" = "$UNIX" ]
+				then
+					UNIX_PARTITION[disk]=YES
+					UNIX_PARTITION_SIZE[disk]=${PARTMB[disk*4+i]}
+				fi
+			else
+				PARTSTATUS[disk*4+i]="$NonBoot"
+			fi
+		fi
+		PARTORIG[disk*4+i]="${PARTTYPE[disk*4+i]}${PARTSTART[disk*4+i]}${PARTEND[disk*4+i]}"
+	done
+	IFS="$OIFS"
+	chk_disksanity $disk
+}
+
+######################################################################### fdinit
+function fdinit
+{
+[ -n "$debug" ] && set -x
+	[ -n "$SH_VERBOSE" ] && set -x
+	integer dsk=0 disk=0
+	typeset i 
+	have_defined_partitions[0]=NO
+	NDISKS=0		# used by module slices
+	HDOPT[0]="-n"		# get/set in disk_ops, these replace DISKCHK[]
+	HDOPT[1]="-n"
+	BOOTSECTOR="$Yes"	# get/set in disk_ops
+	RESETGEOM[0]="$No"	# get/set in disk_ops
+	RESETGEOM[1]="$No"
+	disks=${#CHAR_DISK_NODES[@]}
+	[ -n "$1" ] && disks=$1
+	while (( (dsk=dsk+1) <= $disks ))
+	do
+		disk=dsk-1
+		let NDISKS+=1
+		fdinit_a_disk $disk
+	done
+	if [ "${have_defined_partitions[0]}" = NO ]
+	then
+		one_unix_partition 0
+	fi
+}
+
+
+#################################################################### check_stand
+function check_stand
+{
+   integer i disk=0
+   for i in 1 2 3 4
+   do
+      if [ "${PARTTYPE[disk*4+i]}" = "$UNIX" -a "${PARTSTATUS[disk*4+i]}" = "$Bo
+ot" ]
+      then
+         if (( ${PARTSTART[disk*4+i]}+${SLSIZE[10]:-0} > 1023 ))
+         then
+            return 0
+         fi
+         break
+      fi
+   done
+   return 1
+}
+
+function fdisk_chk
+{
+[ -n "$debug" ] && set -x
+typeset disksargs
+integer disk0size=0 disk1size=$MIN_SECDISK
+integer i disk up tot0_parts=0 nparts0=0 nparts1=0
+disksargs="$*"
+
+for disk in $disksargs
+do
+        for i in 1 2 3 4
+        do
+                if [ "${PARTTYPE[disk*4+i]}" = "$UNIX" ]
+                then
+			UNIX_PARTITION[$disk]=YES
+                        case $disk in
+                        0)
+                                let tot0_parts+=1
+                                if [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ]
+                                then
+                                        let nparts0+=1
+                                        disk0size="${PARTMB[disk*4+i]}"
+                                        up=$i
+                                fi;;
+                        1)
+                                if [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ]
+                                then
+                                        let nparts1+=1
+                                        disk1size="${PARTMB[disk*4+i]}"
+                                fi;;
+                        esac
+                elif [ ! "${PARTTYPE[disk*4+i]}" = "$unused" ]
+                then
+                        case $disk in
+                        0)
+                                let tot0_parts+=1
+                                [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ] && let nparts0+=1;;
+                        1)
+                                [ "${PARTSTATUS[disk*4+i]}" = "$Boot" ] && let nparts1+=1;;
+                        esac
+                fi
+        done
+done
+# do checks to see if UNIX partition there and it's large enough.
+# set -- $disksargs
+# integer part_type=PARTFLD[disk*4+1]
+#while [ -n "$1" ]
+for disk in $disksargs
+do
+        #disk=$1
+        case $disk
+        in
+        0)
+                if (( nparts0 != 1 ))
+                then
+                        footer "$DISK0WARN"
+                        display -w "$DISK0warn" \
+			        -bg $ERROR_BG \
+		   	        -fg $ERROR_FG \
+				-border_fg $ERROR_FG \
+				-title "Disk 1"
+                        return 1
+                elif [ "$disk0size" -lt "${MIN_HARDDISK}" ]
+                then
+                        footer "$DISK0WARN"
+                        display -w "$DISK0warn" \
+				-bg $ERROR_BG \
+				-fg $ERROR_FG \
+				-border_fg $ERROR_FG \
+				-title "Disk 1"
+                        return 1
+                else
+                        if check_stand
+                        then
+                                footer "$FOOTER_HIGHCYLS"
+                                call sleep 3
+                        fi
+                fi
+#                if (( tot0_parts == 1 ))
+#                then
+                        BOOTSECTOR="$Yes"
+#                else
+#                        BOOTSECTOR="$No"
+#                fi
+                ;;
+        1)
+                if (( nparts1 > 1 ))
+                then
+                        footer "$DISK0WARN"
+			msg
+                        display -w "$DISK1warn" \
+				-bg $ERROR_BG \
+				-fg $ERROR_FG \
+				-border_fg $ERROR_FG \
+				-title "Disk 2"
+                        return 1
+                elif [ "$disk1size" -lt "${MIN_SECDISK}" ]
+                then
+                        footer "$DISK0WARN"
+			msg
+                        display -w "$DISK1warn" \
+				-bg $ERROR_BG \
+				-fg $ERROR_FG \
+				-border_fg $ERROR_FG \
+				-title "Disk 2"
+                        return 0        #just a warning ...but let user continue
+.
+                fi;;
+        esac
+        #shift
+done
+
+# Check if a Pre-Dos 5.0 partition has been defined and if so
+# make sure it is <= 32 Mb - Ranjit Deshpande 06/18/97
+# 
+
+for disk in $disksargs		# If the disk is specified as a parameter
+do
+	if [ "${PARTTYPE[disk*4+1]}" = "$PRE5DOS" ] && (( PARTMB[disk*4+1] > 32 ))
+	then
+		footer "$DISK0WARN"
+		display -w "$PRE5DOSwarn" \
+			-bg $ERROR_BG \
+			-fg $ERROR_FG \
+			-border_fg $ERROR_FG \
+			-title "Disk $((disk+1))"	
+		return 1
+	fi
+done
+return 0
+}
+

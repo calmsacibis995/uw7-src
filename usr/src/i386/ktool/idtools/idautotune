@@ -1,0 +1,125 @@
+#!/sbin/sh
+#ident	"@(#)ktool:i386/ktool/idtools/idautotune	1.4"
+#ident	"$Header:"
+#
+
+umask 022
+
+LABEL=UX:idautotune
+CATALOG=uxidtools
+
+if [ "${ROOT}" != "/" ]
+then
+	ROOT=${ROOT}${MACH:+"/$MACH"}
+fi
+P_IDREADAUTO=/etc/conf/bin/${PFX}idreadauto
+IDREADAUTO=$ROOT/$P_IDREADAUTO
+[ -x $IDREADAUTO -o ! -x $TOOLS/$P_IDREADAUTO ] || IDREADAUTO=$TOOLS/$P_IDREADAUTO
+
+new_mtune()
+{
+	(echo "* Lines ending in \"%%INS%%\" are from mtune.d/*\t%%INS%%"
+	echo "* and constructed automatically.\t\t\t%%INS%%"
+	echo "* DO NOT edit manually.\t\t\t\t%%INS%%"
+	sed '/./s/$/	%%INS%%/' $CONF/mtune.d/*
+	if [ -f $MTUNE ]
+	then
+		egrep -v '^$|%%INS%%$|%%AUTO%%$' $MTUNE
+	fi) > $NMTUNE
+	cp $NMTUNE $MTUNE
+	if [ "$ROOT" = "/" ]
+	then
+		chlvl SYS_PRIVATE $MTUNE 2>/dev/null
+	fi
+}
+
+calc_val()
+{
+	name=$1
+	type=$2
+	dmalimit=$3
+	grep "^$name[ 	]*$type" autotune | sort +3n > $CURVE 
+	N=`wc -l $CURVE`
+	$IDREADAUTO $N $dmalimit
+	if [ $? -ne 0 ]
+	then
+		exit 1
+	fi
+}
+
+CONF=$ROOT/etc/conf 
+MTUNE=$CONF/cf.d/mtune
+NMTUNE=$CONF/cf.d/mtune.new
+STUNE=$CONF/cf.d/stune
+
+new_mtune
+
+if [ ! -d $CONF/autotune.d ]
+then
+	exit
+fi
+
+CURVE=/tmp/idat.$$
+cd $CONF/autotune.d
+cat * | egrep -v "^#|^\*" > $CONF/cf.d/autotune
+
+if  [ ! -s $CONF/cf.d/autotune ]
+then
+	exit
+fi
+
+cd $CONF/cf.d
+
+A=`cat autotune | awk '{print $1}' | sort -u`
+
+echo "* Autotune parameters ------------------- %%AUTO%%" >> $MTUNE
+
+maxdmapage=`grep MAXDMAPAGE $STUNE | awk '{print $2}'`
+if [ X$maxdmapage -eq X ]
+then
+	maxdmapage=`grep MAXDMAPAGE $MTUNE | awk '{print $2}'`
+fi
+
+dmalimit=`eval expr "$maxdmapage \/ 256"`  # 256 pages in a megabyte
+
+for NAME in $A
+do
+
+	DEF=`calc_val $NAME DEF $dmalimit`
+
+	if [ $? -ne 0 ]
+	then
+		exit 1
+	fi
+
+	MIN=`calc_val $NAME MIN $dmalimit`
+
+	if [ $? -ne 0 ]
+	then
+		exit 1
+	fi
+
+	MAX=`calc_val $NAME MAX $dmalimit`
+
+	if [ $? -ne 0 ]
+	then
+		exit 1
+	fi
+
+	rm $CURVE
+
+	if [ $DEF -lt $MIN ]
+	then
+		DEF=$MIN
+		pfmt -l $LABEL -s warn -g $CATALOG:205 "autotune file specified %s default smaller than min\ndefault will be set to minimum\n" "$NAME"
+	fi
+
+	if [ $DEF -gt $MAX ]
+	then
+		DEF=$MAX
+		pfmt -l $LABEL -s warn -g $CATALOG:206 "autotune file specified %s default larger than max\ndefault will be set to maximum\n" "$NAME"
+	fi
+
+	echo "$NAME\t$DEF\t$MIN\t$MAX\t%%AUTO%%" >> $MTUNE
+done
+

@@ -1,0 +1,122 @@
+#!/bin/sh
+#
+# script to save and restore the Eiger mail files
+#
+# saver save - should be run before make local-install
+# saver restore - should be run after make local-remove
+#
+# this will allow the eiger mail system to be preserved
+#
+# the other (and main) purpose of this script is to
+# preserve knowledge of where all of the eiger mail pieces are.
+
+usage() \
+{
+	echo "usage: saver save/restore"
+	exit 0
+}
+
+saveproc() \
+{
+	if [ -d /old ]
+	then
+		echo /old exists, save aborted.
+		exit
+	fi
+	echo saving UnixWare mail files in /old...
+	mkdir /old
+	cd /old
+
+	mkdir etc usr
+	mv /etc/mail etc/mail
+
+	mkdir usr/bin
+	mv /usr/bin/extcompose usr/bin
+	mv /usr/bin/mail usr/bin
+	mv /usr/bin/mailalias usr/bin
+	mv /usr/bin/mailcheck usr/bin
+	mv /usr/bin/mailproc usr/bin
+	mv /usr/bin/mailto usr/bin
+	mv /usr/bin/mailx usr/bin
+	mv /usr/bin/metamail usr/bin
+	mv /usr/bin/mimencode usr/bin
+	mv /usr/bin/rmail usr/bin
+	mv /usr/bin/splitmail usr/bin
+
+	mkdir usr/include
+	mv /usr/include/maillock.h usr/include
+
+	mkdir -p usr/X/bin
+	mv /usr/X/bin/dtmail usr/X/bin
+
+	mkdir usr/lib
+	mv /usr/lib/libmail.so usr/lib
+	mv /usr/lib/mail usr/lib
+	mv /usr/lib/mailx usr/lib
+
+	mkdir var
+	mv /var/mail var
+}
+
+restoreproc() \
+{
+	if [ ! -d /old ]
+	then
+		echo /old does not exist, restore aborted
+		exit
+	fi
+	echo restoring UnixWare mail files from /old...
+	cd /old
+
+	mv etc/mail /etc/mail
+
+	mv usr/bin/extcompose /usr/bin
+	mv usr/bin/mail /usr/bin
+	mv usr/bin/mailalias /usr/bin
+	mv usr/bin/mailcheck /usr/bin
+	mv usr/bin/mailproc /usr/bin
+	mv usr/bin/mailto /usr/bin
+	mv usr/bin/mailx /usr/bin
+	mv usr/bin/metamail /usr/bin
+	mv usr/bin/mimencode /usr/bin
+	mv usr/bin/rmail /usr/bin
+	mv usr/bin/splitmail /usr/bin
+
+	mv usr/include/maillock.h /usr/include
+
+	mv usr/X/bin/dtmail /usr/X/bin
+
+	mv usr/lib/libmail.so /usr/lib
+	mv usr/lib/mail /usr/lib
+	mv usr/lib/mailx /usr/lib
+
+	mv var/mail /var
+
+	cd /
+	rm -fr /old
+}
+
+if [ "$1" = "" ]
+then
+	usage
+fi
+
+if [ `id -u` != "0" ]
+then
+	echo Need to be root to do this.
+	exit
+fi
+
+if [ "$1" = "save" ]
+then
+	saveproc
+	exit
+fi
+
+if [ "$1" = "restore" ]
+then
+	restoreproc
+	exit
+fi
+
+usage

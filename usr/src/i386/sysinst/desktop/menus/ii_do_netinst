@@ -1,0 +1,1446 @@
+#ident	"@(#)ii_do_netinst	15.1	98/03/04"
+exec 2>>/tmp/ii_look
+
+#II_VERBOSE=true
+#II_DEBUG=true
+
+# save the CHOOSE_TITLE string because it may be reset
+typeset II_CHOICE=${CHOOSE_TITLE}
+typeset CONFIG_DIR=${IIROOT}/config
+typeset OLD_CONFIG_FILE
+
+integer BRDCNT=0	# count of boards
+integer IHVNIC_USE=0
+integer LOAD_ODICORE=0
+integer LOAD_ETHTSM=0 LOAD_TOKTSM=0 LOAD_FDDITSM=0
+integer KEY_ADDED=0
+
+# add MDI variable to distinguish MDI vs ODI/DLPI
+integer ISMDI=0
+integer ISDLPI=0
+integer ISODI=0
+integer LOAD_MDICORE=0
+
+#
+#  Clean up before exiting
+#
+function netinst_clean
+{
+	echo "========== In netinst_clean ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	footer ""
+	msg ""
+	[ -d ${IIROOT}/etc/conf/sdevice.d ] && rm ${IIROOT}/etc/conf/sdevice.d/*
+	rm ${IIROOT}/etc/conf/mod.d/*
+	rm ${IIROOT}/etc/conf/bin/*
+	rm ${IIROOT}/usr/sbin/mknod
+	[ "${SEC_MEDIUM_TYPE}" = "tcp" ] && rm ${IIROOT}/usr/sbin/bootp
+	rm /etc/inst/scripts/ii_do_netinst
+	rm /etc/inst/scripts/ii_hw_config
+	rm /etc/inst/scripts/ii_hw_select
+	rm /etc/inst/scripts/ii_net_config
+	rm /etc/inst/scripts/ii_spx_config
+	rm /tmp/floppy_map
+	
+	#
+	#  If we're not here because of an error, just leave.  Don't
+	#  close connections.
+	#
+	if [ "$1" = "ERROR" ]
+	then
+
+		#
+		#  Make sure that we can start again
+		#
+		[ -f ${IIROOT}/usr/sbin/slink ] && {
+			${IIROOT}/usr/sbin/ifconfig -a down > /dev/null 2>&1
+			${IIROOT}/usr/sbin/slink -uv -c /etc/strcf > /dev/null 2>&1
+		}
+		sh_umount ${MNTROOT} >/dev/null 2>&1
+	fi
+} # end of netinst_clean
+
+function ii_frame
+{
+	echo "========== In ii_frame ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	CHOOSE_TITLE="$II_FRAME_TITLE"
+	CHOOSE_FOOTER="$GENERIC_FOOTER"
+	choose -f -e -exit "footer ''" -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "${spxFrame[1]}" "${spxFrame[@]}"
+	return 0
+}
+
+function ii_goback
+{
+	echo "========== In ii_goback ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	CHOOSE_FOOTER="$GENERIC_FOOTER"
+	CHOOSE_TITLE="$1"
+	choose -f -e -exit ii_goback_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$2" "$2" "$3"
+	return 0
+}
+
+function ii_goback_exit
+{
+	echo "========== In ii_goback_exit ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	IIPASS=0
+	[ "${CHOICE}" = "${II_GOBACK_NO}" ] && IIPASS=1
+	msg
+	footer
+	return 0
+}
+
+function ii_multi_card
+{
+	echo "========== In ii_multi_card ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	wclose ${CURWIN}
+
+	typeset pkey pbus pbusnum pslot
+	typeset -L32 pname
+
+	display "${II_MULTI_CARD2}${II_SELECT_EXPLAIN3}" -below 8
+	DISWIN=${CURWIN}
+
+	open_radio -entry 'footer "${GENERIC_FOOTER}"' -fg $COMBO2_FG -bg $COMBO2_BG
+        typeset IIRID=$RID
+
+	pname=${NAME}
+	iinum=0
+	while read pkey pbus pbusnum pslot
+	do
+		TXT="$pname (${pbus} ${II_BUS} ${pbusnum}, ${II_SLOT} ${pslot})"
+		add_radio "${TXT}" -entry "KEY=${pkey};SLOT=${pslot}"
+		let iinum+=1
+	done < /tmp/${ETH_HW}.multi
+	[ "${iinum}" -gt "10" ] && let iinum=10
+	radio_runparms $IIRID ${iinum}
+
+	typeset title_len
+	let title_len=${#INETINST_HW_SEL_TITLE}+4
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] &&
+			let RADIO_WIN_WIDTH=title_len
+
+	if (( BRDCNT > 10 ))
+	then
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 \
+			-below 0 \
+			-fg $COMBO2_FG -bg $COMBO2_BG -title "${II_CHOICE}"
+	else
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 \
+			-below 1 \
+			-fg $COMBO2_FG -bg $COMBO2_BG -title "${II_CHOICE}"
+	fi
+
+	run_radio $IIRID 0 ${iinum}
+	input_handler
+
+	wclose ${DISWIN}
+
+}  # end of ii_multi_card
+
+function ii_get_key
+{
+	echo "========== In ii_get_key ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	BRDCNT=0
+	> /tmp/${ETH_HW}.multi
+
+	while read key modname bustype busnum brdid slot
+	do
+		for id in ${BOARD_IDS}
+		do
+			[ "${id}" = "${brdid}" ] && {
+				#
+				# Increment count of found boards.
+				# Start generating multi file in
+				# case there's more than one card
+				# to choose from.
+				#
+				let BRDCNT+=1
+				KEY=${key}
+				echo "${key} ${bustype} ${busnum} ${slot}" >> /tmp/${ETH_HW}.multi
+			}
+		done
+	done < /tmp/resmgr.brdid
+
+	#
+	# If there is only one of this type board, we can go ahead
+	# and configure it.  If there is more than one, we need to ask
+	# for which one the user wants.
+	#
+	if [ "${BRDCNT}" = "1" ]
+	then
+		SLOT=$slot
+		echo "KEY=\"$KEY\"" >> /tmp/ii_parms
+		echo "SLOT=\"$SLOT\"" >> /tmp/ii_parms
+
+	elif [ "${BRDCNT}" != "0" ]
+	then
+		ii_multi_card
+
+		echo "KEY=\"$KEY\"" >> /tmp/ii_parms
+		echo "SLOT=\"$SLOT\"" >> /tmp/ii_parms
+
+		display "${INETINST_LOADING_MODULES}"
+		msg ""
+		footer "${INETINST_WAIT_MSG}"
+	fi
+
+	/sbin/resmgr -k ${KEY} -p MODNAME -v ${ETH_HW}
+
+} # end of ii_get_key
+
+function ii_add_key
+{
+	echo "========== In ii_add_key ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	#
+	# For non-autoconfigurable card, we have to build the entry by
+	# hand for the resource manager.
+	#
+	typeset JUNK
+
+	# If the IRQ is set to 2, we need to make it 9 for UnixWare.
+	[ "${IRQ}" = "2" ] && IRQ=9
+
+	/sbin/resmgr -a -p MODNAME -v "${ETH_HW}"
+
+	# Get the RM key so that we can modify this driver
+	/sbin/resmgr > /tmp/resmgr.${ETH_HW}
+	grep " ${ETH_HW} " /tmp/resmgr.${ETH_HW} | read KEY JUNK
+	rm -f /tmp/resmgr.${ETH_HW}
+
+	/sbin/resmgr -k ${KEY} -p UNIT -v "${unit}"
+	/sbin/resmgr -k ${KEY} -p IRQ -v "${IRQ}"
+	/sbin/resmgr -k ${KEY} -p IOADDR -v "${IO}"
+	/sbin/resmgr -k ${KEY} -p MEMADDR -v "${RAM}"
+	/sbin/resmgr -k ${KEY} -p DMAC -v "${II_DMA}"
+
+	echo "SLOT=\"-\"" >> /tmp/ii_parms
+
+	KEY_ADDED=1
+
+} # end of ii_add_key
+
+#
+# Called by netinst which is on the boot floppy.
+# The main function that does most of the work.
+#
+function ii_do_netinst
+{
+echo "========== In ii_do_netinst ==========" >> /tmp/ii_look
+
+# Check for any variables that are set
+. /tmp/ii.parms
+
+[ "${II_VERBOSE}" ] && set -x
+
+# make /etc/inst/nd directory to put dlpimdi file in from nics.z
+# this is also the place where dlpid will write its pipe file dlpidPIPE
+[ -d /etc/inst/nd ] || mkdir -p /etc/inst/nd
+
+#
+#  Common variables for use in script
+#
+typeset SPX_MODULES="uni ipx ripx nspx sockmod timod tirdwr"
+
+# Changed TCP_MODULES to reflect the new netstacks that are in
+# the build as of April 10 1997 added igmp incf rip 
+# removed app md5  from this variable
+
+typeset TCP_MODULES="route inet icmp igmp incf rip ip arp tcp udp sockmod timod tirdwr"
+
+typeset ETH_MAJ=72		#  Major number for NIC Drivers
+typeset jRET			#  Return code
+
+#
+#  First part is the common section:
+#	Get hardware information via menus ii_hw_select and ii_hw_config
+#	Make device nodes
+#	Reserve space in device table with idmodreg
+#	Configure networking hardware
+#
+
+#
+#  cpio in the config files (from the nics pkg) so we can generate
+#  menus for selecting/configuring nics.
+#
+cd ${IIROOT}
+cpio -icd -DZ < ${MNTROOT}/common.z >> /tmp/stderr 2>&1
+cpio -icd -DZ < ${MNTROOT}/${SEC_MEDIUM_TYPE}.z >> /tmp/stderr 2>&1
+ln -s ${IIROOT}/sbin/resmgr /sbin/resmgr
+cd ${IIROOT}/etc/conf/mod.d
+for MODULE in *
+do
+	ln -s ${IIROOT}/etc/conf/mod.d/${MODULE} /etc/conf/mod.d/
+done
+ln -s ${IIROOT}/etc/conf/pack.d /etc/conf/
+
+#
+# Ask for nodename and select a network card for installation
+#
+wclose ${CURWIN}
+# JTB commented out (2)
+# asknodename center
+# input_handler
+
+# JTB: do we need these next 2 lines?
+msg ""
+footer "${GENERIC_WAIT_FOOTER}"
+
+# JTB added here (1)
+NODE=`ivar get NODE`
+MY_UNAME=${NODE}
+
+integer II_HW_PASS=0 IIPASS=0
+typeset key modname unit ipl itype irq ios ioe mems meme
+typeset dmac bindcpu bustype brdid slot entrytype
+typeset	drvname isc ports porte
+integer strcnt=1
+
+while [ ${IIPASS} = 0 ]
+do
+	while [ "${II_HW_PASS}" = "0" ]
+	do
+		ii_hw_select
+		jRET=$?
+		[ ${jRET} = 0 ] && II_HW_PASS=1
+		#
+		#  Failure if we ran out of addresses to configure 
+		#  the NIC at or if one of the HW config menus failed.
+		#
+		[ ${jRET} = 1 ] && return 1
+		input_handler
+	done
+
+#
+# Make available the parameters saved.
+#
+. /tmp/ii_parms
+
+#
+# Determine where to find driver and get it.
+#
+if [ "${IHVNIC_USE}" = "0" ]
+then
+	# Get driver from netinstall floppies.
+	# Look at map file to see where this NIC driver resides.
+
+	while read floppy_number nic_driver
+	do
+		if [ ${nic_driver} = "${ETH_HW}" ]
+		then
+			break
+		fi
+	done < /tmp/floppy_map
+
+	unset IDSTRING
+	integer insert_floppy=0
+	if [ "${floppy_number}" = "1" ]
+	then
+		# Check if the first netinstall floppy is still inserted.
+		read IDSTRING < ${MNTROOT}/id_1
+		[ "${IDSTRING}" != "${REL_FULLNAME} 1" ] && insert_floppy=1
+	else
+		# Not on first floppy, insert another floppy.
+		insert_floppy=1
+	fi
+
+	[ "$insert_floppy" = "1" ] && {
+
+		DONE=0
+		II_FLOP_ERR=0
+		MESSAGE="\"${INETINST_ANOTHER_FLOPPY}${NICS_NAME}\""
+		while [ ${DONE} -eq 0 ]
+	        do
+			sh_umount ${MNTROOT}
+
+			wclose ${CURWIN}
+
+			if [ ${II_FLOP_ERR} != 0 ]
+			then
+				eval display -w "${MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+			else
+				eval display -w "${MESSAGE}"
+			fi
+			msg ""
+			footer "${WELCOME_FOOTER}"
+			input_handler
+
+			footer "${GENERIC_WAIT_FOOTER}"
+
+			sh_mount -r -F s5 /dev/dsk/f0t ${MNTROOT} || \
+			sh_mount -r -F s5 /dev/dsk/f1t ${MNTROOT} && {
+				read IDSTRING < ${MNTROOT}/id_${floppy_number}
+				if [ "${IDSTRING}" = "${REL_FULLNAME} ${floppy_number}" ]
+				then
+					DONE=1
+				fi
+			}
+			MESSAGE="\"${INETINST_INSERT_AGAIN}${INETINST_ANOTHER_FLOPPY}${NICS_NAME}\""
+			II_FLOP_ERR=1
+		done
+	}
+fi # IHVNIC_USE is false
+
+#
+#  Let the user know that we're busy loading in driver and making devices
+#
+wclose ${CURWIN}
+display "${INETINST_LOADING_MODULES}"
+footer "${II_FLOPPY_FOOTER}"
+msg ""
+
+TYPE="XXX"
+
+#
+# Get driver from either IHV NIC diskette or a netinstall diskette
+#
+cd ${IIROOT}
+if [ "${IHVNIC_USE}" = "1" ]
+then
+	[ ! -d etc/conf/sdevice.d ] && mkdir etc/conf/sdevice.d
+	cp ${MNTROOT}/unixware/${ETH_HW}/system etc/conf/sdevice.d/${ETH_HW}
+	cp ${MNTROOT}/unixware/${ETH_HW}/${ETH_HW}.mod etc/conf/mod.d/${ETH_HW}
+
+# copy dlpimdi file if present
+	[ -f ${MNTROOT}/unixware/${ETH_HW}/dlpimdi ] && {
+		cp ${MNTROOT}/unixware/${ETH_HW}/dlpimdi /etc/inst/nd
+		ISMDI=1
+	}
+
+# adds comment that function ii_hw_ihvnic has copied the bcfg file
+# from the IHV disk into the ihvnic_config directory.  this sources it in.
+
+	. ${IIROOT}/ihvnic_config/${CONFIG_FILE}
+
+	[ -n "${EXTRA_FILES}" ] && {	
+		for file in $EXTRA_FILES
+		do
+			dir=${file%/*}
+			[ ! -d $dir ] && mkdir -p ${IIROOT}/$dir
+			cp ${MNTROOT}/unixware/$file ${IIROOT}/$file
+		done
+	}
+else
+	cpio -icd -DZ < ${MNTROOT}/nics/${ETH_HW}.z >> /tmp/stderr 2>&1
+
+# copy dlpimdi file if present
+	[ -f ${IIROOT}/etc/inst/nd/dlpimdi ] && {
+		cp ${IIROOT}/etc/inst/nd/dlpimdi /etc/inst/nd
+		ISMDI=1
+	}
+
+# moved here from below.  remember that bcfg files aren't stored
+# on the netinstall floppies but on the 2nd _boot_ floppy!
+# in the IHV case we were incorrectly trying to source in the bcfg file
+# from CONFIG_DIR but the bcfg file never existed there.  
+# so only source in the bcfg file here if we didn't load from IHV disk.
+
+	. ${CONFIG_DIR}/${CONFIG_FILE}
+
+fi
+
+# determine driver type based on info from bcfg file
+# TYPE in the bcfg file is new to Gemini bcfgs.  UW2.1 set DLPI to true 
+# to distinguish this driver as a DLPI driver.  We still support this.
+
+[ "$TYPE" = "MDI" ] && {
+	ISMDI=1
+}
+
+[ "$TYPE" = "DLPI" ] && {
+	ISDLPI=1
+}
+
+[ "$DLPI" = "true" ] && {
+	ISDLPI=1
+}
+
+[ "$TYPE" = "ODI" ] && {
+	ISODI=1
+}
+
+[ "${ISMDI}" = "1" ] && [ "${ISDLPI}" = "1" ] && {
+	echo "Driver can't be both MDI and DLPI!"
+	echo "Driver can't be both MDI and DLPI!" 1>&2
+	for foo in 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0
+	do
+		echo $foo > /dev/null 2>&1
+	done
+	return 1	# stop the installation -- error in the bcfg file.
+}
+
+# if we get to this point and we still don't know what type we are
+# then assume ODI.  This also implies that we have a UW2.1 bcfg file,
+# since we mandate for Gemini bcfg files that TYPE be set.
+[ "${ISMDI}" = "0" ] && [ "${ISDLPI}" = "0" ] && [ "${ISODI}" = "0" ] && {
+	ISODI=1
+}
+
+echo "MDI=${ISMDI} ODI=${ISODI} DLPI=${ISDLPI}" >> /tmp/ii_look
+
+#
+#  In case of driver dependencies, make sure that all the drivers we
+#  loaded in have a link into /etc/conf/mod.d
+#
+[ ! -f /etc/conf/mod.d/${ETH_HW} ] && {
+	ln -s ${IIROOT}/etc/conf/mod.d/${ETH_HW} /etc/conf/mod.d/
+}
+
+# moved these lines up higher from below
+# adds comment that adding an additional line is necessary in
+# current scheme as the _last_ line in the file will be what is
+# registered.  The other scheme which is not used is a separate mod_register
+# file for every MDI/ODI/DLPI driver contained in driver.z.  if we did that
+# then we would know that nobody else had previously registered this
+# major number.   remember that for character drivers the major number is
+# in 3 places, and all must agree
+# 1) Master file  - used to build mod_conf.c
+# 2) mod_register file  - what the kernel should expect
+# 3) pack.d/foo/mod_conf.[co] - what the kernel will actually see
+# if 2 and 3 are not in sync, obscure modadmin -l errors result.
+# by adding the extra line to the mod_register file we know the kernel
+# will expect the proper driver to be in cdevsw[] so that the later
+# modadmin -l will find the correct information in mod_conf.o
+# In short, don't mess with these 3 lines.  They're quite necessary.
+cp ${IIROOT}/etc/conf/mod_register /tmp
+echo "5:1:${ETH_HW}:${ETH_MAJ}" >> /tmp/mod_register
+${IIROOT}/etc/conf/bin/idmodreg -f /tmp/mod_register
+
+#
+#  Now create common symbolic links/directories necessary for network install
+#  Moved here from below because some things needed libthread before it
+#  was getting linked into /usr/lib (offender was dlpid)  JB/VS 7/15/97.
+#
+typeset iilibs
+ln -s ${IIROOT}/etc/netconfig /etc/
+ln -s ${IIROOT}/etc/services /etc/
+ln -s ${IIROOT}/usr/bin/cat /usr/bin/
+ln -s ${IIROOT}/usr/bin/dd /usr/bin/
+ln -s ${IIROOT}/usr/sbin/pkgcat /usr/sbin/
+for iilibs in ${IIROOT}/usr/lib/*.so ${IIROOT}/usr/lib/*.so.2
+do
+	ln -s ${iilibs} /usr/lib/
+done
+for iilibs in /usr/lib/*.so
+do
+	ln -s ${iilibs} ${iilibs}.1
+done
+mkdir -p /var/sadm/dist
+
+
+#  Set everything up for loading the Network card's driver.  First load
+#  the ODI support modules if needed.
+#
+# line used to read:
+# [ "$LOAD_ODICORE" = 0 ] && [ "$DLPI" != "true" ] && open brace
+# but I changed it to use new scheme
+[ "${ISODI}" = "1" ] && [ "${LOAD_ODICORE}" = "0" ] && {
+	for MODULE in odimem net lsl msm
+	do
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		jRET=$?
+	done
+	LOAD_ODICORE=1
+}
+
+# we unload net0 at the end so we must remember to reload as necessary
+[ "${ISMDI}" = "1" ] && {
+	if [ "${LOAD_MDICORE}" = "0" ]
+	then
+		# must load dlpi before net0
+
+
+#		for MODULE in dlpi net0
+#        Added dlpibase to the list by HAH on 4/29/97 for BL9
+#
+		for MODULE in dlpi dlpibase net0
+		do
+			sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+			jRET=$?
+		done
+		LOAD_MDICORE=1
+	else
+		# we've been here before - never unloaded dlpi - only have to reload net0
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/net0
+		jRET=$?
+	fi
+}
+
+#
+#  Make device node for networking hardware, making sure first that the
+#  device node does not already exist.
+#
+cd /
+rm -f /dev/${ETH_HW}_0 2>/dev/null
+# delete net0 if it exists too
+rm -f /dev/net0 2>/dev/null
+# do mknod based on driver type
+
+if [ "${ISMDI}" = "1" ] 
+then
+	mkdir -p /dev/mdi 2>/dev/null
+	# MDI drivers don't use cloning driver.
+	${IIROOT}/usr/sbin/mknod /dev/mdi/${ETH_HW}0 c ${ETH_MAJ} 0
+	# major 7 is cloning driver
+	${IIROOT}/usr/sbin/mknod /dev/net0 c 7 79
+	# create a fake device for TCP (slink) and 
+	# SPX (nwdiscover and written to /etc/netware/nwconfig for npsd) to use.
+	# THIS SHOULD BE REMOVED AS STACKS SHOULD KNOW TO USE /dev/net0 INSTEAD!
+	# WE WILL END UP COPYING THIS FAKE DEVICE TO /mnt LATER ON TOO.
+	${IIROOT}/usr/sbin/mknod /dev/${ETH_HW}_0 c 7 79
+else 
+	${IIROOT}/usr/sbin/mknod /dev/${ETH_HW}_0 c 7 ${ETH_MAJ}
+fi
+
+#
+#  Register the loadable modules so we can load them; we manually add the
+#  networking hardware driver to the list.
+#
+# adds comment that etc/conf/mod_register already has the necessary
+# lines for all drivers, so this isn't necessary.
+# moved these lines further up before the load.
+# cp ${IIROOT}/etc/conf/mod_register /tmp
+# echo "5:1:${ETH_HW}:${ETH_MAJ}" >> /tmp/mod_register
+# ${IIROOT}/etc/conf/bin/idmodreg -f /tmp/mod_register
+
+# moved this line higher up
+## . ${CONFIG_DIR}/${CONFIG_FILE}
+
+# line used to read:
+# [ "$DLPI" != "true" ] && open brace
+# but I changed to use new scheme
+# While TOPOLOGY is now multivalued thankfully it wasn't for UW2.1 bcfg
+# files and/so we won't find an ODI driver where topology is multivalued.
+[ "${ISODI}" = "1" ] && {
+	case $TOPOLOGY in
+	"ETHER")
+		[ "$LOAD_ETHTSM" = 0 ] && {
+			sh_modadmin -l ${IIROOT}/etc/conf/mod.d/ethtsm
+			LOAD_ETHTSM=1
+		}
+		;;
+	"TOKEN")
+		[ "$LOAD_TOKTSM" = 0 ] && {
+			sh_modadmin -l ${IIROOT}/etc/conf/mod.d/toktsm
+			LOAD_TOKTSM=1
+		}
+		;;
+	"FDDI")
+		[ "$LOAD_FDDITSM" = 0 ] && {
+			sh_modadmin -l ${IIROOT}/etc/conf/mod.d/fdditsm
+			LOAD_FDDITSM=1
+		}
+		;;
+	esac
+}
+
+#
+# Configure the Resource Manager to know about the selected Network
+# Interface Card using the resmgr command.
+#
+if [ "${IHVNIC_USE}" = "1" ]
+then
+	grep "^${ETH_HW}" ${IIROOT}/etc/conf/sdevice.d/${ETH_HW} |
+	  read drvname isc unit ipl itype irq ports porte mems meme dma
+else
+	while read drvname isc unit ipl itype irq ports porte mems meme dma
+	do
+		[ "${drvname}" = "${ETH_HW}" ] &&  break
+	done < ${IIROOT}/etc/conf/sdev_list
+fi
+IPL=${ipl}
+ITYPE=${itype}
+
+#
+#  Add the driver and then configure all parms
+#  If RAM Addr, I/O Addr, or DMA are not set, set
+#  them to values the Resource Manager can use.
+#
+[ -z "${RAM}" ] && RAM="- -"
+[ -z "${IO}" ] && IO="- -"
+[ -z "${II_DMA}" ] && II_DMA="-1"
+
+KEY_ADDED=0
+if [ "${KEY}" ]
+then
+	/sbin/resmgr -k ${KEY} -p MODNAME -v ${ETH_HW}
+else
+	# EISA, MCA, and PCI cards may be completely autoconfigured.
+	case ${BUS} in
+	EISA|MCA|PCI)
+		if [ "${ADDRM}" = "true" ]
+		then
+			ii_add_key
+		else
+			ii_get_key
+		fi
+		;;
+	*)
+		ii_add_key
+		;;
+	esac
+
+fi
+
+#
+# Set IPL from sdev_list file
+# 
+/sbin/resmgr -k ${KEY} -p IPL -v "${IPL}"
+		
+#
+# Before setting ITYPE, make sure it's not already set.
+# Some EISA cards set it, and we shouldn't replace it.
+#
+/sbin/resmgr -k ${KEY} -p ITYPE | read JUNK
+[ "${JUNK}" = "-" ] && /sbin/resmgr -k ${KEY} -p ITYPE -v "${ITYPE}"
+
+#
+# If there was a Custom string, use that.
+#
+NIC_CUST_PARM=""
+[ -n "${CUSTOM_NUM}" ] && {
+	strcnt=1
+	while [ "$strcnt" -le "$CUSTOM_NUM" ]
+	do
+		/sbin/resmgr -k ${KEY} -p ODISTR${strcnt},s \
+			-v "${II_CUST_VAL[${strcnt}]}"
+# add in the actual parameter name to resmgr in addition to ODISTRx
+		/sbin/resmgr -k ${KEY} -p "${II_CUST_PNAME[${strcnt}]},s" \
+			-v "${II_CUST_VAL[${strcnt}]}"
+		/sbin/resmgr -k ${KEY} -p "${II_CUST_PNAME[${strcnt}]}_,s" \
+			-v "${II_CUSTOM[${strcnt}]}"
+		if [ "${NIC_CUST_PARM}" = "" ] 
+		then
+			NIC_CUST_PARM="${II_CUST_PNAME[${strcnt}]}"
+
+		else
+			NIC_CUST_PARM="${NIC_CUST_PARM} ${II_CUST_PNAME[${strcnt}]}"
+		fi
+		let strcnt+=1
+	done
+}
+
+# add in some additional information for ndcfg to use later on
+# the idea is to pretend as if ndcfg added this card to the system.
+# use a delimiter because someday we might have spaces in NAME= in netinstall
+# we must use delimiter for NIC_CUST_PARM since parms are delimited by spaces
+/sbin/resmgr -k ${KEY} -p "NIC_CUST_PARM,s" -v "${NIC_CUST_PARM}" -d \"
+/sbin/resmgr -k ${KEY} -p "NIC_CARD_NAME,s" -v "${NICS_NAME}" -d \"
+/sbin/resmgr -k ${KEY} -p "ENTRYTYPE" -v "1"		# no typing needed
+/sbin/resmgr -k ${KEY} -p "ODIMEM,s" -v ""	# delete if there
+/sbin/resmgr -k ${KEY} -p "ODI_TOPOLOGY,s" -v ""	# delete if there
+if [ "${ISMDI}" = "1" ] 
+then
+   /sbin/resmgr -k ${KEY} -p "NETCFG_ELEMENT,s" -v "net0"
+	/sbin/resmgr -k ${KEY} -p "DEV_NAME,s" -v "/dev/mdi/${ETH_HW}0"
+	/sbin/resmgr -k ${KEY} -p "MDI_NETX,s" -v "net0"
+	/sbin/resmgr -k ${KEY} -p "DRIVER_TYPE,s" -v "MDI"
+	/sbin/resmgr -k ${KEY} -p "NETINFO_DEVICE,s" -v "net0"
+	/sbin/resmgr -k ${KEY} -p "BCFGPATH,s" -v "/etc/inst/nd/mdi/${ETH_HW}/${CONFIG_FILE}"
+else
+   /sbin/resmgr -k ${KEY} -p "NETCFG_ELEMENT,s" -v "${ETH_HW}_0"
+	/sbin/resmgr -k ${KEY} -p "DEV_NAME,s" -v "/dev/${ETH_HW}_0"
+	/sbin/resmgr -k ${KEY} -p "MDI_NETX,s" -v ""		# erase if there before
+	/sbin/resmgr -k ${KEY} -p "NETINFO_DEVICE,s" -v "${ETH_HW}_0"
+	/sbin/resmgr -k ${KEY} -p "BCFGPATH,s" -v "/etc/inst/nics/drivers/${ETH_HW}/${CONFIG_FILE}.bcfg"
+	if [ "${ISODI}" = "1" ]
+	then
+		/sbin/resmgr -k ${KEY} -p "DRIVER_TYPE,s" -v "ODI"
+		/sbin/resmgr -k ${KEY} -p "ODI_TOPOLOGY,s" -v "${TOPOLOGY}" -d \"
+		if [ "${ODIMEM}" = "true" ]
+		then
+			/sbin/resmgr -k ${KEY} -p "ODIMEM,s" -v "true"
+		fi
+	else
+		/sbin/resmgr -k ${KEY} -p "DRIVER_TYPE,s" -v "DLPI"
+	fi
+fi
+
+if [ "${NIC_IS_ISA}" = "1" ]
+then
+	# since BRDBUSTYPE is known to libresmgr we don't need a ,n
+	/sbin/resmgr -k ${KEY} -p "BRDBUSTYPE" -v "1"
+fi
+			
+#
+# Now load the networking card's driver.  If it fails, let user 
+# try again with the methods selection screen.
+#
+sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${ETH_HW}
+jRET=$?
+if [ "${jRET}" != "0" ]
+then
+	wclose $CURWIN
+	display "${II_GOBACK_MSG2} ${NICS_NAME}" -below 5 -bg $MAGENTA -fg $WHITE
+	GOBACK_WIN=$CURWIN
+	ii_goback "${II_LOAD_FAIL}" "${II_GOBACK_YES2}" "${II_GOBACK_NO}"
+	input_handler
+	wclose ${GOBACK_WIN}
+	[ ${IIPASS} = 1 ] && halt
+	if [ ${KEY_ADDED} = 1 ]
+	then
+		/sbin/resmgr -r -k ${KEY}
+	else
+		/sbin/resmgr -k ${KEY} -p MODNAME -v "-"
+# adds that we must remove all params (including custom ones) here
+		[ -n "${CUSTOM_NUM}" ] && {
+			strcnt=1
+			while [ "$strcnt" -le "$CUSTOM_NUM" ]
+			do
+				/sbin/resmgr -k ${KEY} -p ODISTR${strcnt},s -v ""
+				/sbin/resmgr -k ${KEY} -p "${II_CUST_PNAME[${strcnt}]},s" -v ""
+				/sbin/resmgr -k ${KEY} -p "${II_CUST_PNAME[${strcnt}]}_,s" -v ""
+				let strcnt+=1
+			done
+		}
+	# now erase the ones we just added.  We can leave BRDBUSTYPE alone.
+		/sbin/resmgr -k ${KEY} -p "NIC_CARD_NAME,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "ENTRYTYPE" -v ""
+  		/sbin/resmgr -k ${KEY} -p "NETCFG_ELEMENT,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "DEV_NAME,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "MDI_NETX,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "DRIVER_TYPE,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "NETINFO_DEVICE,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "BCFGPATH,s" -v ""
+		/sbin/resmgr -d ${KEY} -p "NIC_CUST_PARM,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "ODIMEM,s" -v ""
+		/sbin/resmgr -k ${KEY} -p "ODI_TOPOLOGY,s" -v ""
+	fi
+	rm -f /tmp/*.trash /tmp/*.ok
+	rm -f /tmp/${ETH_HW}*
+# add line for MDI drivers and redirect to devnull since both won't exist
+	rm -f /dev/${ETH_HW}_0 2>/dev/null
+	rm -f /dev/net0 2>/dev/null
+	rm -f /dev/mdi/${ETH_HW}0 2>/dev/null
+	rm -f ${IIROOT}/etc/inst/nd/dlpimdi 2>/dev/null
+	rm -f /etc/inst/nd/dlpimdi 2>/dev/null
+# add lines to unload net0 too.  No need to unload dlpi.
+# next attempt to load a driver could be a some other type that needs the
+# major number (79) used by net0
+	sh_modadmin -u net0 > /dev/null 2>&1
+	rm -f ${IIROOT}/etc/conf/mod.d/${ETH_HW}
+	[ "$IHVNIC_USE" = 1 ] && {
+		rm -f ${IIROOT}/etc/conf/sdevice.d/${ETH_HW}
+		rm -f ${IIROOT}/ihvnic_config/*
+	}
+	[ -n "${EXTRA_FILES}" ] && {
+		for file in ${EXTRA_FILES}
+		do
+			rm -f $file
+		done
+	}
+	II_HW_PASS=0
+	OLD_CONFIG_FILE=${CONFIG_FILE}
+else
+	IIPASS=1
+fi
+
+done # while IIPASS=0
+
+# NIC driver is loaded at this point, continue with network configuration.
+# Put "IICARD" in resmgr for nics installation later, and save parameters.
+
+/sbin/resmgr -k ${KEY} -p IICARD,s -v 1
+cat /tmp/ii_parms >> /tmp/ii.parms
+
+#
+# If this is an ODI Token Ring card, make sure we load odisr
+# AFTER the driver is loaded for the card.
+#
+# line used to read:
+# [ "$DLPI" != "true" ] && [ "$TOPOLOGY" = "TOKEN" ] && open brace
+# changed to use new scheme
+[ "${ISODI}" = "1" ] && {
+	sh_modadmin -l ${IIROOT}/etc/conf/mod.d/odisr
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_MODLOAD_FAIL} odisr" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+}
+
+#
+#  If the networking card had extra files that need to be in place,
+#  put them in the right place that here.  (ie: for pumping w/microcode)
+#
+[ ! -z "${EXTRA_FILES}" ] && {
+	OIFS=${IFS}
+	IFS=${nl}
+	for MODULE in ${EXTRA_FILES}
+	do
+		# NOTE: "${MODULE%/*}" is like 'dirname ${MODULE}'
+		dir=${MODULE%/*}
+		[ ! -d $dir ] && mkdir -p $dir
+		ln -s ${IIROOT}/${MODULE} ${MODULE}
+	done
+	IFS=${OIFS}
+}
+
+#
+#  If the networking card had a command that needed to be run after
+#  loading the driver, do that here.  (ie: for pumping w/microcode)
+#
+[ ! -z "${CONFIG_CMDS}" ] && {
+	OIFS=${IFS}
+	IFS=${nl}
+	for MODULE in ${CONFIG_CMDS}
+	do
+		eval ${MODULE}
+	done
+	IFS=${OIFS}
+}
+
+# changed to use new scheme.  Not necessary to get pid of dlpid
+# in case the open fails because the _entire installation_ will shut down 
+# if the open fails!
+if [ "${ISMDI}" = "1" ]
+then
+	# kick start dlpid - leave debugging file in /tmp in case anything happens
+	${IIROOT}/usr/sbin/dlpid -l /tmp/dlpid.log -i "${ETH_HW}0"
+	# give dlpid a second to start things up.
+	for foo in 1 2 3 4 5 6 7 8 9 0
+	do
+		echo $foo > /dev/null 2>&1
+	done
+	# ok, dlpid had better be ready for us so go for it
+	< /dev/net0 > /dev/null 2>&1
+	jRET=$?
+else
+	< /dev/${ETH_HW}_0 > /dev/null 2>&1
+	jRET=$?
+fi
+
+# adds comment that if we return 1 here that means that function
+# ii_do_netinst will return 1 which means that 
+# desktop/scripts/netinst:function netinst (which calls ii_do_netinst)
+# will error and halt the installation
+[ "${jRET}" != "0" ] && {
+	wclose $CURWIN
+	display -w "${INETINST_NET_FAILURE} ${INETINST_OPENDEV_FAIL} ${ETH_HW}_0 [${ETH_HW_DESC}]" -bg $ERROR_BG -fg $ERROR_FG
+	input_handler
+	netinst_clean ERROR
+	return 1
+}
+
+#
+#  Set the uname.  Everybody needs this info
+#
+${IIROOT}/usr/bin/uname -S ${MY_UNAME}
+jRET=$?
+[ "${jRET}" != "0" ] && {
+	wclose $CURWIN
+	display -w "${INETINST_NET_FAILURE} ${INETINST_UNAME_FAIL}" -bg $ERROR_BG \
+		-fg $ERROR_FG
+	input_handler
+	netinst_clean ERROR
+	return 1
+}
+
+
+#
+#  The networking hardware has been successfully configured at this point.
+#  Here we do the network-type-specific stuff, depending on whether the
+#  user wanted TCP or SPX Network Install.
+#
+if [ "${SEC_MEDIUM_TYPE}" = "tcp" ]	####  We wanted to install over TCP
+then
+	# JTB bail out; use new code
+	return 0
+	#
+	#  TCP network install requires that we make the necessary
+	#  device nodes, load the appropriate kernel modules, then
+	#  	link the networking streams modules,
+	#	configure the networking interface (address 0.0.0.0),
+	#	use bootp to try to find TCP networking info
+	#	configure the networking interface (real address),
+	#	add the default route
+	#	ping the install server
+	#
+	for i in arp icmp ip tcp udp route
+	do
+	    OIFS="${IFS}"
+	    IFS=":"
+	    while read junk junk mod min
+	    do
+	    	[ "${mod}" == "${i}" ] && {
+	    	    ${IIROOT}/usr/sbin/mknod /dev/${mod} c 7 ${min}
+	    	    break
+	    	}
+	    done < ${IIROOT}/etc/conf/mod_register
+	    IFS="${OIFS}"
+	done 
+
+	#
+	#  Make TCP specific links, directories
+	#
+	ln -s ${IIROOT}/etc/confnet.d /etc/
+	ln -s ${IIROOT}/etc/strcf /etc/
+	ln -s ${IIROOT}/usr/lib/libresolv.so.2 /usr/lib/resolv.so.2
+
+	#
+	#  Load in modules for Networking Stack, sockets, and TLI.  These are
+	#  stored on the Network Install Floppy as bzip'ed cpio archives to
+	#  save space.  When we cpio them in and load them, we then blow them
+	#  away to save space on the boot filesystem.  
+	#
+	cd /etc/conf/mod.d/
+	for MODULE in ${TCP_MODULES}
+	do
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		jRET=$?
+		[ "${jRET}" != "0" ] && {
+			wclose $CURWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_TCPLOAD_FAIL} ${MODULE}" -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+	done
+
+	#
+	#  Let the user know we're now configuring the network
+	#
+	wclose $CURWIN
+	display "${INETINST_CONFIGURE_NETWORK}"
+	footer "${INETINST_WAIT_MSG}"
+	typeset CONFWID=$CURWIN
+
+	#
+	#  Link STREAMS modules
+	#
+	${IIROOT}/usr/sbin/slink -v -c /etc/strcf ii_boot > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_SLINK_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	${IIROOT}/usr/sbin/slink -v -c /etc/strcf add_interface res /dev/${ETH_HW}_0 ${ETH_HW}0 > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_SLINK_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Bring up the interface with a zero address to listen for
+	#  broadcast responses to BOOTP requests.
+	#
+	${IIROOT}/usr/sbin/ifconfig ${ETH_HW}0 up > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_IFCONFIG_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  We now try to run bootp to determine our address and
+	#  other significant parameters.
+	#
+	${IIROOT}/usr/sbin/bootp -a ${ETH_HW}0 -c 3 /dev/${ETH_HW}_0 \
+		${MY_UNAME} >> /tmp/ii.parms 2>>/tmp/stderr
+
+	. /tmp/ii.parms
+	#
+	#  Here's what we got back from bootp if we ran bootp...
+	#
+	MY_INET_ADDR=${INET_YOUR_IP_ADDRESS}
+	SERVER_INET_ADDR=${INET_SERVER_IP_ADDRESS}
+	MY_NETMASK=${INET_SUBNET_MASK}
+	ROUTER_INET_ADDR=${INET_ROUTER}
+
+	export MY_INET_ADDR SERVER_INET_ADDR MY_NETMASK ROUTER_INET_ADDR
+
+IIPASS=0
+while [ ${IIPASS} = 0 ]
+do
+	#
+	#  Present the user with the network configure menu for
+	#  verification of the selections we got back from bootp.
+	#
+	[ "$MY_INET_ADDR" ] && INET_YOUR_IP_ADDRESS=$MY_INET_ADDR
+	[ "$SERVER_INET_ADDR" ] && INET_SERVER_IP_ADDRESS=$SERVER_INET_ADDR
+	[ "$MY_NETMASK" ] && INET_SUBNET_MASK=$MY_NETMASK
+	[ "$ROUTER_INET_ADDR" ] && INET_ROUTER=$ROUTER_INET_ADDR
+
+	wclose $CURWIN
+	footer ""
+	msg ""
+
+	ii_net_config
+	input_handler
+	. /tmp/ii.parms
+	footer ""
+	msg ""
+	
+	#
+	#  Now configure the networking interface to use the proper
+	#  address  
+	#  
+	${IIROOT}/usr/sbin/ifconfig ${ETH_HW}0 ${MY_INET_ADDR} netmask ${MY_NETMASK} -trailers up > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_IFCONFIG_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Give ourselves a default route
+	#
+	[ -n "${ROUTER_INET_ADDR}" ] && {
+	    ${IIROOT}/usr/sbin/route add default ${ROUTER_INET_ADDR} >/dev/null
+	    jRET=$?
+	    [ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_ROUTE_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	    }
+	}
+
+	#
+	#  Ping the network install server to make sure that it's there.
+	#
+	${IIROOT}/usr/sbin/ping ${SERVER_INET_ADDR} 5 > /dev/null 2>&1
+	jRET=$?
+	if [ "${jRET}" != "0" ]
+	then
+		display "$II_GOBACK_MSG" -bg $MAGENTA -fg $WHITE
+		GOBACK_WIN=$CURWIN
+		ii_goback "${INETINST_PING_FAIL}" "${II_GOBACK_YES}" "${II_GOBACK_NO}"
+		input_handler
+		wclose ${GOBACK_WIN}
+		[ ${IIPASS} = 1 ] && halt 
+		${IIROOT}/usr/sbin/ifconfig -a down > /dev/null 2>&1
+		${IIROOT}/usr/sbin/route delete default ${ROUTER_INET_ADDR} > /dev/null
+	else
+		IIPASS=1
+	fi
+done
+
+	#
+	#  Now we're configured.  Place the TCP-specific files in the
+	#  list to be copied to the hard drive when we chroot /mnt.
+	#
+while read FILENAME
+do
+	echo ${FILENAME} >> /hd.list
+done <<EOFILES
+dev/arp
+dev/icmp
+dev/ip
+dev/tcp
+dev/udp
+usr/lib/libcrypt.so
+usr/lib/libiaf.so
+usr/lib/tcpip.so
+usr/lib/libcrypt.so.1
+usr/lib/libiaf.so.1
+usr/lib/libresolv.so.2
+usr/lib/tcpip.so
+EOFILES
+else					####  We wanted to install over SPX
+	#
+	#  SPX network install requires that we make the necessary
+	#  device nodes, load the appropriate kernel modules, then
+	#	run nwdiscover to find SPX networking info
+	#	run sap_nearest
+	#	run nwdiscover to find SPX networking info
+	#
+	#
+	II_SVC_NO="0x3ee"
+
+	#
+	#  Make device nodes
+	#
+	OIFS=${IFS}
+	IFS=':'
+	for MODULE in ipx nspx ripx
+	do
+		while read J1 J2 NAME MAJ
+		do
+			[ "${NAME}" = "${MODULE}" ] && {
+				${IIROOT}/usr/sbin/mknod /dev/${MODULE}0 c ${MAJ} 0
+				${IIROOT}/usr/sbin/mknod /dev/${MODULE} c 7 ${MAJ}
+				[ "${MODULE}" = "nspx" ] && {
+					let MAJ=$MAJ+1
+					${IIROOT}/usr/sbin/mknod /dev/${MODULE}2 c 7 ${MAJ}
+				}
+				jRET=$?
+				break
+			}
+		done < ${IIROOT}/etc/conf/mod_register
+	done
+	IFS=${OIFS}
+
+	#
+	#  Make SPX specific links, directories, stub files.
+	#
+	ln -s ${IIROOT}/usr/sbin/npsd /usr/sbin
+	mkdir /etc/netware
+	ln -s ${IIROOT}/etc/netware/conf /etc/netware/
+	mkdir -p /var/spool/sap/in
+	mkdir -p /usr/lib/locale/C/LC_MESSAGES
+	mkdir -p /var/netware
+	> /etc/netware/nwconfig
+	cd /
+	cpio -icd -DZ < ${IIROOT}/usr/lib/msgcat.cpio.z >> /tmp/stderr 2>&1
+	MODULE=""
+
+	#
+	#  Load in modules for Networking Stack, sockets, and TLI.  These are
+	#  stored on the Network Install Floppy as bzip'ed cpio archives to
+	#  save space.  When we cpio them in and load them, we then blow them
+	#  away to save space on the boot filesystem.  
+	#
+	cd /etc/conf/mod.d/
+	for MODULE in ${SPX_MODULES}
+	do
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		jRET=$?
+		[ "${jRET}" != "0" ] && {
+			wclose $CURWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_SPXLOAD_FAIL} ${MODULE}"  -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+	done
+
+	#
+	#  Let the user know we're now configuring the network
+	#
+	wclose $CURWIN
+	display "${INETINST_CONFIGURE_NETWORK}"
+	footer "${INETINST_WAIT_MSG}"
+	typeset CONFWID=$CURWIN
+
+	echo "server_name = \"$MY_UNAME\"" >> /etc/netware/nwconfig
+
+	#
+	#  Use nwdiscover to find all frame types spoken on this network.
+	#
+	LC_CTYPE="" ${IIROOT}/usr/sbin/nwdiscover -d /dev/${ETH_HW}_0 -a -c -t 1 \
+		> /tmp/frame.spx 2>>/tmp/stderr
+
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_NWDISC_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Determine if there is more than one frame type spoken here.
+	#  Eliminate any duplicates.
+	#
+	typeset spxFrame frame
+	integer spxNum inum dup
+	spxNum=1
+	while read frame junk1 junk2 junk3
+	do
+		inum=1
+		dup=0
+		while (( inum < spxNum ))
+		do
+			[ $frame = ${spxFrame[inum]} ] && dup=1
+			let inum+=1
+		done
+		[ ${dup} = "0" ] && {
+			spxFrame[spxNum]=$frame
+			let spxNum+=1
+		}
+	done < /tmp/frame.spx
+	
+	echo "lan_1_adapter = \"/dev/${ETH_HW}_0\"" >> /etc/netware/nwconfig
+
+	#
+	#  Choose a frame type if more than one was found on your network.
+	#
+	if [ ${spxNum} -gt 2 ]
+	then
+		display "$II_MULTI_FRAME"
+		typeset FWIN=$CURWIN
+		ii_frame
+		input_handler
+		wclose ${FWIN}
+		echo "lan_1_frame_type = \"${CHOICE}\"" >> \
+			/etc/netware/nwconfig
+		LC_CTYPE="" ${IIROOT}/usr/sbin/nwdiscover -f ${CHOICE} \
+			-d /dev/${ETH_HW}_0 -u >>/tmp/stderr 2>&1
+	else
+		echo "lan_1_frame_type = \"${spxFrame[1]}\"" >> \
+			/etc/netware/nwconfig
+		LC_CTYPE="" ${IIROOT}/usr/sbin/nwdiscover -f ${spxFrame[1]} \
+			-d /dev/${ETH_HW}_0 -u >>/tmp/stderr 2>&1
+	fi
+
+	echo "router_type = \"CLIENT\"" >> /etc/netware/nwconfig
+
+	#
+	#  Start up npsd to hold the ipx/spx devices open for use by
+	#  other processes.
+	#
+	LC_CTYPE="" /usr/sbin/npsd -v >> /tmp/stderr 2>&1
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_NPSD_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Use sap_nearest to determine nearest server of our desired
+	#  type to automatically configure network.
+	#
+	integer retry=0
+	while (( retry < 3 ))
+	do
+		LC_CTYPE="" ${IIROOT}/bin/sap_nearest ${II_SVC_NO} \
+			>> /var/spool/sap/in/0x4
+		jRET=$?
+		[ "${jRET}" = "0" ] && break
+		[ "${retry}" = 2 ] && [ "${jRET}" != "0" ] && {
+			wclose $CURWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_SERVER_FAIL}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+		let retry+=1
+	done
+
+	#
+	#  Give a choice of what server to use.
+	#
+	wclose $CONFWID
+	wclose $CURWIN
+	footer ""
+	msg ""
+	ii_spx_config
+	input_handler
+	wclose $CURWIN
+	footer ""
+	msg ""
+
+	#
+	#  Now we're configured.  Place the SPX-specific files in the
+	#  list to be copied to the hard drive when we chroot /mnt.
+	#
+while read FILENAME
+do
+	echo ${FILENAME} >> /hd.list
+done <<EOFILES
+dev/ipx
+dev/ipx0
+dev/nspx
+dev/nspx0
+dev/nspx2
+dev/ripx
+dev/ripx0
+etc/netware
+etc/netware/nwconfig
+etc/netware/npsd.pid
+etc/netware/conf
+etc/netware/conf/nwnet.bin
+var/spool/sap/in/0x4
+usr/lib/novell.so
+usr/lib/libnwutil.so
+usr/lib/libNwCal.so
+usr/lib/libNwClnt.so
+usr/lib/libNwLoc.so
+usr/lib/libNwNcp.so
+usr/lib/libnwnetval.so
+usr/lib/locale
+usr/lib/locale/C
+usr/lib/locale/C/LC_MESSAGES/
+usr/lib/locale/C/LC_MESSAGES/npsmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/npsmsgs.cat.m
+usr/lib/locale/C/LC_MESSAGES/utilmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/utilmsgs.cat.m
+usr/lib/locale/C/LC_MESSAGES/nwcmmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/nwcmmsgs.cat.m
+usr/sbin/npsd
+EOFILES
+
+fi					####  if [ SEC_MEDIUM_TYPE = tcp ]
+
+#
+#  Copy files ii.parms and ii.conflicts from /tmp to /var/sadm/dist so
+#  that these parameters may be used by other packages' install scripts.
+#
+cp /tmp/ii.parms /var/sadm/dist/ii.parms
+[ -f /tmp/ii.conflicts ] && cp /tmp/ii.conflicts /var/sadm/dist/ii.conflicts
+
+#
+#  Now we're configured.  Place the common files in the list to be
+#  copied to the hard drive when we chroot /mnt. This is a list of
+#  files used by copy2hd to cpio from the RAM disk to the newly created
+#  hard disk.
+#
+while read FILENAME
+do
+	echo ${FILENAME} >> /hd.list
+done <<EOFILES
+dev/${ETH_HW}_0
+etc/services
+etc/netconfig
+tmp/ii.parms
+var/sadm/dist/ii.parms
+var/sadm/dist/ii.conflicts
+usr/sbin/pkgcat
+usr/lib/libnsl.so
+usr/lib/libsocket.so.2
+usr/lib/libthread.so
+usr/lib/libnsl.so.1
+usr/lib/libthread.so.1
+usr/bin/cat
+usr/bin/dd
+usr/bin/uname
+EOFILES
+
+netinst_clean SUCCESS
+
+wclose $CURWIN
+return 0
+} # end of ii_do_netinst

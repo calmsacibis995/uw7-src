@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+#ident	"@(#)dtadmin:userad/scripts/dtprivilege	1.6"
+#copyright	"%c%"
+
+#	utility script to add or delete options in the permissions table
+XDIR=${XWINHOME:-/usr/X}
+Prefix="UX:`/usr/bin/basename $0`"
+. $XDIR/adm/dtuser.msgs
+
+MSG="`$GETTXT $TXT_Usage` { -a | -d } `$GETTXT $TXT_Name`"
+USAGE="`printf "$MSG\n" $Prefix`"
+
+PFILE=$XDIR/desktop/LoginMgr/PrivTable
+if [ $# -ne 2 ]
+then	echo $USAGE >& 2
+	exit 1
+else	case $1 in
+	-a)	/usr/bin/echo "$2" >> $PFILE; break;;
+	-d)	PAT="^$2	"
+#			---^	note the TAB; it's critical	
+		/usr/bin/ed $PFILE >/dev/null << EoF
+g/$PAT/d
+w
+q
+!
+EoF
+		break;;
+	*)	echo $USAGE >& 2
+		exit 1
+		break;
+	esac
+fi

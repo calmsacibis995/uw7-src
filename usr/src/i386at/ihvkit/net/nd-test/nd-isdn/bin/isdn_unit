@@ -1,0 +1,360 @@
+#!/bin/sh
+#
+tet_startup=""
+tet_cleanup="finish"
+
+iclist=$ICLIST
+
+ic1="start"
+ic2="dlpitest"
+ic3="mdidrvr"
+ic4="dialer"
+ic5="isdndaemon"
+ic6="capi"
+
+. $TET_ROOT/inc/libant.sh
+
+start()
+{
+	dlpiut stop
+        ndsu 'nd stop'
+	sleep 3
+
+	echoboth "start: start of isdn_unit test, looking for other machine"
+	dlpiut open device=$DEVICE interface=mdi > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		dlpiut stop
+		return
+	}
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+
+	NETTYPE=$media
+	echoboth "NETTYPE=$media"
+	echo "NETTYPE=$media" > /tmp/ant$$
+	framing
+
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		dlpiut stop
+		return
+	}
+
+	dlpiut getaddr fd=0 > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		dlpiut stop
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OURADDR=$addr
+	OURMCHN=`uname -n`
+
+	echoboth "$OURMCHN=$OURADDR"
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=180 loop=y match=n \
+			> /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=180 loop=y match=n \
+			> /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDR=$msg
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=30 loop=y match=n \
+			> /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=30 loop=y match=n \
+			> /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERMCHN=$msg
+
+	echoboth "$OTHERMCHN=$OTHERADDR"
+
+	echo OURMCHN=$OURMCHN >> /tmp/ant$$
+	echo OTHERMCHN=$OTHERMCHN >> /tmp/ant$$
+	echo OURADDR=$OURADDR >> /tmp/ant$$
+	echo OTHERADDR=$OTHERADDR >> /tmp/ant$$
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		echo 'framelist="ethernet 802.3 llc802.3 xns"' >> /tmp/ant$$
+		echo 'saplist="1234 f0 f0 ff"' >> /tmp/ant$$
+	else
+		echo 'framelist="802.5 llc802.5 snap802.5"' >> /tmp/ant$$
+		echo 'saplist="a0 a0 800"' >> /tmp/ant$$
+	fi
+	chmod 775 /tmp/ant$$
+
+	echo PASS
+	tet_result PASS
+}
+
+finish()
+{
+	echoboth "finish: cleanup"
+	dlpiut stop
+	ndsu "nd stop"
+	rm -f /tmp/ant$$
+	echo PASS
+	tet_result PASS
+}
+
+dlpitest()
+{
+	echoboth "dlpitest: test ISDN Media Manager"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup frametest 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR delay=0 loop=n > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR delay=0 loop=n > /tmp/tmp$$
+		fi
+
+		passfail $?
+
+	done
+
+	echo "dlpitest: all $ret"
+	tet_result $ret
+}
+
+mdidrvr()
+{
+	echoboth "mdidrvr: test ISDN driver"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		MMCADDR=030000000001
+		SMCADDR=030000000002
+	else
+		MMCADDR=c00000000004
+		SMCADDR=c00000000020
+	fi
+
+	syncup framemcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut addmca fd=0 ourdstaddr=$MMCADDR error=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$SMCADDR \
+				odstaddr=$MMCADDR delay=0 loop=n > /tmp/tmp$$
+		else
+			dlpiut addmca fd=0 ourdstaddr=$SMCADDR error=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$MMCADDR \
+				odstaddr=$SMCADDR delay=0 loop=n > /tmp/tmp$$
+		fi
+
+		passfail $?
+
+	done
+
+	echoboth "mdidrvr: all $ret"
+	tet_result $ret
+}
+
+dialer()
+{
+	echoboth "dialer: test ISDN dialer"
+
+	. /tmp/ant$$
+
+	ret=PASS
+	BCST=ffffffffffff
+
+	syncup framebcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+
+	done
+
+	echoboth "dialer: all $ret"
+	tet_result $ret
+}
+
+isdndaemon()
+{
+	echoboth "isdndaemon: test ISDN daemon"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	# Test only for token-ring. Do nothing for ethernet.
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		echoboth "framembcst: all $ret"
+		tet_result $ret
+		return
+	fi
+
+	BCST=c000ffffffff
+
+	syncup framembcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+	done
+
+	echoboth "isdndaemon: all $ret"
+	tet_result $ret
+}
+
+capi()
+{
+	echoboth "capi: test CAPI library"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup frametest 180 || return
+
+	set -- $saplist
+
+	[ "$MASTERSLAVE" = "slave" ] && {
+		syncup framedone 120 || return
+		echo PASS
+		tet_result PASS
+		return
+	}
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing"
+
+		dlpiut sendloop fd=0 sap=$sap framing=$framing \
+			omchnaddr=$OURADDR ourdstaddr=$OURADDR \
+			odstaddr=$OURADDR delay=0 loop=n > /tmp/tmp$$
+
+		passfail $?
+
+	done
+
+	syncup framedone 60 || return
+
+	echoboth "capi: all $ret"
+	tet_result $ret
+}
+
+. $TET_ROOT/inc/xpg3sh/mytet.h
+echo done

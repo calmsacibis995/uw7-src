@@ -1,0 +1,118 @@
+#!/bin/ksh
+#ident	"@(#)getsyslog	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter syslog server name or address (optional): $NL"  
+  read -r SYSLOGIP
+  if [ -z "$SYSLOGIP" ]
+  then
+    break
+  fi
+  if [ "$SYSLOGIP" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$SYSLOGIP" = "?" ]
+  then
+    echo "\nThe network peripheral will send syslog messages to a syslog "
+    echo "server.  Syslog messages, for example, identify when the peripheral"
+    echo "powers up or when there is a paper problem.  If no syslog server is"
+    echo "entered, the network peripheral will not send out syslog messages."
+    echo "An example of a valid syslog server address is 15.43.4.7\n"
+    $QUITHELP
+    continue
+  fi
+  LOOKUPSYSLOGIP="`gethostaddr $SYSLOGIP`"
+  WASADDR=$?
+  if [ $WASADDR -eq 1 ]
+  then
+    echo $LOOKUPSYSLOGIP | egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' >/dev/null
+    if [ $? -eq 1 ]
+    then
+      echo ""
+      echo "$SYSLOGIP is not a valid address."
+      continue
+    fi
+  fi
+  if [ -z "$LOOKUPSYSLOGIP" ]
+  then
+    echo ""
+    echo "$SYSLOGIP: unknown host"
+  else
+    onlyoneaddr $SYSLOGIP $LOOKUPSYSLOGIP
+    RETCODE=$?
+    SYSLOGIP=`cat $TMP/ONEADDR`
+    rm -f $TMP/ONEADDR
+    if [ $RETCODE -eq 1 ]
+    then
+      exit 1
+    fi
+    if [ -n "$SYSLOGIP" ]
+    then
+      break
+    fi
+  fi
+done
+
+echo $SYSLOGIP	> "$TMP/SYSLOGIP"
+if [ -z "$SYSLOGIP" ]
+then
+  exit 0
+fi
+
+while [ 0 ] 
+do
+  echo "\nEnter syslog facility (lpr/local0/.../local7 default=lpr): $NL"  
+  read -r SYSLOGFAC
+  if [ -z "$SYSLOGFAC" ]
+  then
+    break
+  fi
+  if [ "$SYSLOGFAC" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$SYSLOGFAC" = "?" ]
+  then
+    echo "\nThe network peripheral will send syslog messages to a syslog "
+    echo "server.  The syslog facility describes the part of the system that"
+    echo "generated the message.  The network peripheral interface can be"
+    echo "configured to generate syslog messages with the facility local0"
+    echo "through local7.  The default facility is lpr.\n"
+    $QUITHELP
+    continue
+  fi
+  case "$SYSLOGFAC" in
+    local[0-7]) break ;;
+    lpr) SYSLOGFAC=""
+	 break ;;
+    *) echo ""
+       echo "Invalid syslog facility."
+       echo ""
+       echo "Valid choices are: local0, local1, local2, local3, local4, local5"
+       echo "                   local6, local7"
+       echo ""
+       $QUITHELP
+       ;;
+  esac
+done
+
+echo $SYSLOGFAC > "$TMP/SYSLOGFAC"
+
+exit 0

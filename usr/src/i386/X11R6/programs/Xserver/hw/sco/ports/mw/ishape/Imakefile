@@ -1,0 +1,131 @@
+#
+#	@(#)Imakefile	12.2	2/9/98	14:38:18
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1998.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+#
+#	SCO MODIFICATION HISTORY
+#
+#	07 AUG 1991, hiramc - turn off compiler optimization, led to bugs
+#
+#	S002	Mon Aug 12 18:12:10 PDT 1991	mikep@sco.com
+# 	- Change above to use CFLAGS instead of CDEBUGFLAGS so it won't
+#	overridden by a make from the top.
+#
+#	S003	Tue Apr  2 14:31:19 PST 1996	hiramc@sco.COM
+#	- rework to make a DLL,  CFLAGS is undisturbed, beware of
+#	- compiler errors.
+#
+#
+
+#include <Server.tmpl>
+
+.SUFFIXES: .asm
+
+SRCS     =  buff1.c   buff2.c   buff3.c   line1.c   line2.c   line3.c \
+            line4.c   line5.c   line6.c
+
+#
+#	COBJS go into making up the .a library here for a static server link
+#		These are also compiled -Kpic and sent to ../shared
+#		for the DLL libXDriver.so creation
+#
+COBJS    =  buff2.o   buff3.o   line1.o   line2.o   line3.o \
+            line4.o   line5.o   line6.o
+
+#
+#	MASMOBJS are C objects that are always linked with the core
+#		server, dynamic or static. (because they have externals
+#			required by the masm asm objects)
+#
+MASMOBJS	=	../masmobjs/buff1.o
+
+#
+#	AOBJS are masm assembled objects that are sent to ../masmobjs
+#		and symbolic links are made from here to there so
+#		the make dependency will see them properly.
+#		Even though they exist here as symbolic links, they
+#		are not linked into the .a produced here.  They are
+#		always linked into the core X server, dynamic or
+#		static.
+#
+AOBJS    =  arcs01.o   arcs02.o   arcs03.o   arcs04.o   arcs05.o \
+            bres01.o   bres02.o   clip01.o   math01.o   math02.o \
+            poly01.o   poly02.o   rect01.o
+
+STD_DEFINES = ServerDefines
+
+/*
+ * INCLUDES = -I. -I$(SERVERSRC)/ddx/mi -I$(SERVERSRC)/ddx/cfb \
+ *		-I$(SERVERSRC)/include -I$(INCLUDESRC) \
+ *		-I../include
+ */
+
+   INCLUDES = -I. -I../include -I.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mfb -I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+  
+   ASM_INCLUDES = -I. -I../include -I../graphics
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(ishape,$(COBJS))
+ProfiledLibraryTarget(ishape,$(COBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(ishape,$(COBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+ProfiledLibraryTarget(ishape,$(COBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+.c.o:
+	LibObjCompile(../shared,-O -Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef SCP_PRODUCT
+SharedAsmObjectRule(../masmobjs, )
+#endif
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget(ishape,$(COBJS))
+#endif
+LintLibraryTarget(ishape,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+all::	$(AOBJS) $(MASMOBJS)
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+
+#ifndef	SCP_PRODUCT
+../masmobjs/buff1.o:	buff1.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O buff1.c
+	$(MV) buff1.o ../masmobjs/$@
+#endif
+
+DependTargetSCP(line1.c)

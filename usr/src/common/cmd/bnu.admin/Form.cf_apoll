@@ -1,0 +1,71 @@
+#ident	"@(#)Form.cf_apoll	1.2"
+#ident  "$Header$"
+ 
+################################################################################
+#	Module Name: Form.cf_poll
+################################################################################
+altslks=TRUE
+
+form="Add a Polled System"
+lifetime=shorterm
+
+`readfile $INTFBASE/conf.msg |message -s`
+
+close=`/usr/bin/rm -f /var/tmp/.poll.tmp`
+done=`/usr/bin/cp /etc/uucp/Poll /var/tmp/.poll.tmp;
+	shell /usr/bin/cat >>/var/tmp/.poll.tmp <<EOF\
+$ARG1\
+ 	EOF; 
+	$TFADMIN /usr/bin/cp /var/tmp/.poll.tmp /etc/uucp/Poll;
+       regex -e -v $RET
+      '^0$'	'OPEN TEXT $OBJ_DIR/Text.aok $OBJ_DIR/Form.cf_apoll'
+      '^.*$'	'OPEN TEXT $OBJ_DIR/Text.anok $OBJ_DIR/Form.cf_apoll'`
+
+#F1
+name=The information you typed in corresponds to the
+nrow=1
+ncol=2
+frow=1
+
+#F2
+name=following line in /etc/uucp/Poll:
+nrow=2
+ncol=2
+frow=2
+
+#F3
+name=System
+nrow=4
+ncol=2
+frow=6
+fcol=2
+rows=1
+columns=14
+value=$ARG2
+rmenu={ $ARG2 }
+menuonly=true
+
+#F4
+name=Times 
+nrow=4
+ncol=16
+frow=6
+fcol=16
+rows=1
+columns=61
+value=$ARG3
+rmenu={ $ARG3 }
+menuonly=TRUE
+
+name=CONT
+button=11
+action=DONE
+
+name=QUIT
+button=9
+action=CLEANUP
+
+name=CANCEL
+button=14
+action=`unset -l BNU_NEWLN; unset -l BNU0; unset -l BNU1; unset -l BNU2; unset -l BNU3; unset -l BNU4; unset -l BNU5`CLOSE `getfrm`
+ 

@@ -1,0 +1,59 @@
+#!/sbin/sh
+#ident	"@(#)do_cmds	15.1	97/12/19"
+
+. /isl/ui_modules/common.rc
+#
+# Should we skip ourselvs?
+#
+ivar check skip_do_cmds && ii_exit $direction
+
+#
+# Have we already run the commands?
+#
+ivar check do_cmd_done && ii_exit $direction
+
+
+#
+# What language?
+#
+LANG=`ivar get LANG`
+[ -z "$LANG" ] && LANG=C
+export LANG
+
+
+#
+# How many?
+#
+n=`ivar get do_cmd_num`
+[ -z "$n" ] && n=0
+
+#
+# Do each of the commands. They get no stdin, and the stdout is
+# thrown away. 
+#
+i=0
+while (( i < n ))
+do
+	cmd=`ivar get do_cmd[$i]`
+	if [ -n "$cmd" ]
+	then
+		output_ignored=`/sbin/sh -c "$cmd" </dev/null 2>&1`
+		rc_ignored=$?
+		#
+		# Free some memory?
+		#
+		output_ignored=""
+	fi
+	(( i += 1 ))
+done
+
+#
+# Don't do them again
+#
+ivar set do_cmd_done True
+
+#
+# Done
+#
+ii_exit $direction
+

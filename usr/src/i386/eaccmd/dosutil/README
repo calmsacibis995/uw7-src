@@ -1,0 +1,137 @@
+#ident	"@(#)eac:i386/eaccmd/dosutil/README	1.2.1.1"
+#ident  "$Header$"
+#	@(#) README 22.1 89/11/14 
+#
+#	Copyright (C) The Santa Cruz Operation, 1986.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, Microsoft Corporation
+#	and AT&T, and should be treated as Confidential.
+#
+
+	Overview of MS-DOS file transfer utilities for Unix
+	====================================================
+
+The following user commands are provided:
+
+	- dosdir	(provide "MS-DOS" style directory listing)
+	- dosls		(provide Unix style directory listing)
+	- dosmkdir	(create "MS-DOS" directory)
+	- dosrmdir	(delete "MS-DOS" directory)
+	- dosrm		(delete "MS-DOS" file)
+	- doscat	('cat' a file on an MS-DOS disk)
+	- doscp		(copy files between Unix and MS-DOS file systems)
+	- dosformat	(format a floppy disk for MS-DOS)
+
+The commands operate on the following disk formats:
+
+	3 1/2 inch MS-DOS (2 sided) floppies
+	5 1/4 inch MS-DOS (1 or 2 sided) floppies
+	MS-DOS Version 1.0 or later
+	hard disks which contain a Bad Track Table
+
+The commands which transfer data (doscp and doscat) handle newline
+format conversion for text files. When transfering text files from
+MS-DOS to Unix, CR characters are stripped. In the opposite direction
+they are inserted before each LF character. Binary files are
+unaffected. The optional -r flag to doscp and doscat can be used to
+force "raw" transfer with no processing, regardless of the file type.
+
+MS-DOS files and directories are referenced with the following syntax:
+
+	device:path
+
+As an example:
+
+	/dev/fd0:/dev/mouse.sys
+
+This refers to the file "mouse.sys" in the directory "\dev" on the
+MS-DOS file system in /dev/fd0. Note that for convenience under Unix,
+the '/' character is used as the MS-DOS pathname component separator.
+
+The file /etc/default/msdos may be created on a system to alias device
+names. For example if the file contains the following lines:
+
++	A=/dev/fd048ds9
++	B=/dev/fd148ds9
++	C=/dev/hd04
++	X=/dev/fd096ds15
++	Y=/dev/fd196ds15
+
+then the mouse.sys example earlier could be written as:
+
+	A:/dev/mouse.sys
+
++ When accessing the 48 tpi devices the media descriptor byte
++ of the DOS disk is read.  This media descriptor byte is checked
++ against the device that was specified on the command line and
++ if necessary the correct device is opened for future reading.
++ This will ensure that the correct device is always opened
++ for processing of DOS format disks.
+
++ These programs cooperate, and no two processes will access a single
++ DOS disk together.  For each DOS disk to be read or written, a
++ semaphore is created in /tmp, if it does not already exist.  These
++ semaphores are used to implement a simple readers/writers solution.
+
+The command line syntax of the commands is generally simple.
+Typically there are one or more Unix or MS-DOS files and/or
+directories allowed. Doscat and doscp have optional -r flags
+as mentioned above. Note that there is no wild card expansion
+of names within the MS-DOS file system. Here are some examples:
+
+doscat:
+
+	doscat /dev/fd0:autoexec.bat
+
+	doscat -r A:/config.sys /dir/devlist
+
+dosdir:
+
+	dosdir A: B:
+
+	dosdir A:/bin B:/dev
+
+dosls:
+
+	dosls A: B:
+
+	dosls A:/bin B:/dev
+
+dosmkdir:
+
+	dosmkdir A:/dir1 A:/dir2
+
+	dosmkdir A:/a/b/c
+
+dosrm:
+
+	dosrm A:autoexec.bat
+
+	dosrm A:/autoexec.bat
+
+dosrmdir:
+
+	dosrmdir A:/a/b
+
+doscp:
+
+	doscp *.c A:/src	(copy lots of Unix files to MS-DOS directory)
+
+	doscp file.a A:/src/filex.asm
+
+	doscp -r A:/config.sys ./dosfile
+
+dosformat:
+
+	dosformat A:
+
+	dosformat -fq B:
+
+		The '-f' switch formats without a preliminary prompt;
+		the '-q' switch formats without progress messages.
+
+	dosformat -v2 X:
+
+		The '-v' switch formats, prompting for a volume label;
+		the '-2' switch formats with 2 sectors per cluster
+			 (default is 1 sector per cluster on 96/135tpi).

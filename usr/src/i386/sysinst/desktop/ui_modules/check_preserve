@@ -1,0 +1,123 @@
+#!/sbin/sh -x
+#ident	"@(#)check_preserve	15.1	98/03/04"
+
+. /globals.sh
+. /isl/ui_modules/disk.rc
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /isl/ui_modules/common.rc
+
+#. /etc/inst/locale/$LANG/menus/global.txtstrings
+#. /etc/inst/locale/$LANG/menus/check_preserve.txtstrings
+#. /etc/inst/scripts/winrc
+#. /etc/inst/scripts/scr_init
+
+
+
+
+#
+# Ask the user if they want to use the whole disk for unix, or if they
+# want to customize the partitions.
+#
+function get_choice
+{
+[ -n "$debug" ] && set -x
+	msg
+	footer "$FooterKeys"
+	display "$QueryPreserve" -above 1 -below 6
+	main_wid=$CURWIN
+	open_radio -exit choice_done 
+	radio_wid=$RID
+	add_radio -entry "set_choice true"  "$PreserveInstall"
+	add_radio -entry "set_choice false" "$NormalInstall"
+	if [ "$preserve" = yes ]
+	then
+		current=0
+	else
+		current=1
+	fi
+	radio_runparms $radio_wid 2
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		 -above 8 -below 1 -title "$ChooseOne"
+	run_radio $radio_wid $current 2
+	main_window=$CURWIN
+	set_hotkey 1 'ivar set help_topic check_preserve; ii_exit HELP'
+	set_hotkey 9 'ii_exit PREV'
+	set_hotkey 10 go_next
+	input_handler	
+}
+
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	if [ "$1" = true ]
+	then
+		preserve=yes
+		msg "$UsesCurrent"
+	else
+		preserve=no
+		msg "$CreatesNew"
+	fi
+}
+
+function choice_done
+{
+[ -n "$debug" ] && set -x
+	wclose $main_wid
+}
+
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	load_disk_info
+	if [ "$preserve" = yes ]
+	then
+		save_disk_info PRESERVE
+	else
+		save_disk_info NEXT
+	fi
+}
+
+
+
+function preserve_possible
+{
+	# say yes, for now.
+	return 1
+}
+
+
+#
+# Main
+#
+#
+# Get the initial choice (if any).
+#
+
+
+preserve=`ivar get NOND`
+[ "$preserve" = "yes" ] || preserve=no
+
+
+#
+# Are they allowed to?
+#
+if preserve_possible
+then
+	#
+	# Let the user decide.
+	#
+	get_choice
+	input_handler
+else
+	preserve=no
+fi
+
+
+#
+# Done
+#
+go_next
+

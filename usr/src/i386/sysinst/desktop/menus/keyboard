@@ -1,0 +1,93 @@
+#ident	"@(#)keyboard	15.1"
+
+function keyb_chk
+{
+# Display an error screen if a keyboard other than "US (ASCII)" 
+# was selected but the Language Supplement package (ls) was not 
+# selected. The ls package contains the commands needed to map 
+# a non-ASCII keyboard once the system is rebooted.
+	[ -z "$ls" ] || (( ls )) || [ "${KEYBOARD}" = "NONE" ] || {
+		display -w "$KEYBOARD_ERR" -bg $ERROR_BG -fg $ERROR_FG
+		return 1
+	}
+	return 0	
+}
+
+function keyboard_set
+{
+
+# Find the mapping for selected (KBCUR) keyboard.
+
+typeset OIFS="$IFS"
+IFS="${tab}"
+set -- ${KBS[KBCUR]}
+IFS="$OIFS"
+KEYBOARD=$2
+KEYBOARD_ID=$1
+
+if [ "${KEYBOARD}" = "NONE" ]
+then
+ 	echo "KEYBOARD=\"\"" > /etc/default/keyboard
+	# If the keyboard was previously mapped, it must be remapped 
+	# back to "US (ASCII)". Since no "US (ASCII)" mapping is in 
+	# the keyboards directory, we use "US (Latin-1)".  Once the 
+	# system is rebooted, the desired "US (ASCII)" keyboard will 
+	# be mapped.
+	/usr/bin/kb_remap -k "US" vt00 vt01
+else
+	/usr/bin/kb_remap -k "$KEYBOARD" vt00 vt01
+ 	echo "KEYBOARD=$KEYBOARD" > /etc/default/keyboard
+fi
+
+keyb_chk
+footer
+msg
+return 0
+}
+
+function keyboard
+{
+	if [ -z "${KBS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A KBS ${KEYBOARDS}
+		IFS="$OIFS"
+	fi
+	msg
+	footer "$KEYBOARD_FOOTER"
+	if [ -z "$KEYBOARDRID" ]
+	then
+		if [ -z "$KBCUR" ]
+		then
+			KBCUR=22
+		fi
+		open_radio -exit keyboard_set -help 'helpwin initkeyb'
+		KEYBOARDRID=$RID
+		typeset i line=0
+		for i in "${KBS[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+
+			add_radio "$1" -entry KBCUR=$line -help 'helpwin initkeyb'
+			let line+=1
+		done
+	fi
+
+	radio_runparms $KEYBOARDRID 8
+
+#	Test if machine nodename has been found or set. If true, then
+#	we are in the view/change main menu sequence. The keyboard
+#	window is placed off center. Otherwise the window is centered.
+
+	if [ -n "$NODE" ]
+	then
+		place_window -right 0 -below 0 $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -fg $BLACK -bg $CYAN -current 'footer "$KEYBOARD_FOOTER"' -title "$KEYBOARD_ENTRY"
+	else
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -fg $BLACK -bg $CYAN -current 'footer "$KEYBOARD_FOOTER"' -title "$KEYBOARD_ENTRY"
+	fi
+
+	run_radio $KEYBOARDRID $KBCUR $RADIO_ROWS
+}

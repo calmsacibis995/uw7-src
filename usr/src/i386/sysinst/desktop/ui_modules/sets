@@ -1,0 +1,359 @@
+#!/sbin/sh 
+#ident "@(#)sets	15.1	97/12/19"
+#
+# sets -- ISL UI module:  user selects & configures sets
+#
+
+# Read cans.rc to load common functions,
+# and to load the can_ifile which defines set_ variables:
+#
+# set_code[x]		internal name for the set
+# set_label[x]		what we show the user as the set name
+# set_desc[x]		long description of the set
+# set_cans[x]		cans that apply to the set
+# set_svcs[x]		which services are in which set
+# set_lics[x]		licenses that apply to the set
+#
+# num_sets		number of sets defined
+# can_pkg_nums[x]  list of indexes into the pkg_ arrays for can #x
+#
+
+# Other variables:
+# 
+# current_set		Which set are we currently configuring
+
+. /isl/ui_modules/cans.rc
+. /isl/can_ifile
+
+#--------------------------------------------------------
+
+
+function choose_set
+{
+[ -n "$debug" ] && set -x
+	integer i
+
+	open_radio -exit 'save_exit $exitdirection'
+	r1=$RID
+	add_radio "$SETS_FINISHED" -entry "clear_win_part $desc_window 1 $((desc_lines+2)) 72 8; current_set=-1; exitdirection=NEXT"
+
+	selected=0
+	width=0
+	n=-1
+	while (( ( n += 1 ) < num_sets )) ; do
+		[ "$n" = "$current_set" ] && (( selected = n + 1 ))
+		z="${set_label[n]}"
+
+		# Pad with spaces
+		(( i = ${#z} - 1 ))
+		while (( (i += 1) < maxwid ))
+		do
+			z="$z "
+		done
+
+		# Print total size of packages currently selected
+		z="${z}${selected_size[n]} MB"
+
+		add_radio "$z" -entry "describe_set $n"
+		(( width < ${#z} )) && width=${#z}
+	done	
+
+	(( width < ${#SETS_FINISHED} )) && width=${#SETS_FINISHED}
+
+	(( n += 2 ))
+	(( n > 3 )) && (( n = 6 ))
+	(( width += 6 ))
+	place_window $width $n -title "$SETS_TITLE" -above 16 -below 1
+	window_id=$CURWIN
+	set_hotkey  1 "save_exit HELP"
+	set_hotkey  9 "save_exit PREV"
+	run_radio $r1 $selected 4
+	footer "$set_keys"
+}
+
+# clears a portion of the window
+# Usage clear_win_part wid x1 y1 x2 y2
+function clear_win_part {
+[ -n "$debug" ] && set -x
+	integer w
+	integer wid=$1 x1=$2 y1=$3 x2=$4 y2=$5
+	(( w = x2 - x1 + 1 ))
+	typeset -L$w blank=" "
+	while (( y1 <= y2 ))
+	do
+		wgotoxy $wid $x1 $y1
+		wprintf $wid "$blank"
+		(( y1 += 1 ))
+	done
+}
+
+function describe_set
+{
+[ -n "$debug" ] && set -x
+	exitdirection=OPTIONS
+	[ "$current_set" = "$1" ] && return 0
+	current_set=$1
+
+	eval d="\${set_desc_$LANG[$1]}"
+	[ -z "$d" ] && d="${set_desc[$1]}"
+	clear_win_part $desc_window 1 $(( desc_lines + 2)) 72 8
+	wgotoxy $desc_window 1 $((desc_lines+2))
+	wprintf $desc_window "$d"
+}
+
+function check_next_row {
+	[ -n "$debug" ] && set -x
+	(( i += 1 ))
+	if (( i > lines - 1 ))
+	then
+		call getkey
+		wclear $CURWIN
+		i=1
+	fi
+}
+
+function show_details {
+	[ -n "$debug" ] && set -x
+	integer j=0 k=0 l=0 
+	typeset pkg_set="" pkg_svc="" required_by="" 
+	
+	lines=18
+	for j in $ALL_PKGS_IDS $need_list
+	do
+		if [[ " ${pkg_pkg_nums[j]} " = *" $current_package "* ]]
+		then
+			required_by="$required_by $j"
+		fi
+	done	
+		
+	i=0
+	while (( i < num_sets ))
+	do
+		rb_set[$i]=""
+		for j in ${set_svc_nums[i]}
+		do
+			rb_svc[$j]=""
+			if [[ " ${svc_pkg_nums[j]} " = *" $current_package "* ]]
+			then
+				pkg_set=$i
+				pkg_svc=$j
+			fi	
+			for k in $required_by
+			do
+				if [[ " ${svc_pkg_nums[j]} " = *" $k "* ]]
+				then
+					rb_set[i]="${rb_set[i]} $k"
+					rb_svc[j]="${rb_svc[j]} $k"
+				fi
+			done
+		done
+		(( i += 1))
+	done
+
+	place_window 70 $lines -title "${pkg_label[current_package]}"
+	footer "Press any key to continue"
+	wgotoxy $CURWIN 1 1
+	wprintf $CURWIN "${PACKAGE}:${pkg_label[current_package]}"
+	wgotoxy $CURWIN 1 2
+	wprintf $CURWIN "${SERVICE}${svc_label[pkg_svc]}"
+	wgotoxy $CURWIN 1 3
+	wprintf $CURWIN "${SET}${set_label[pkg_set]}"
+	wgotoxy $CURWIN 1 5
+	wprintf $CURWIN "$PKG_REQUIRED_BY"
+	i=7
+	(( j = -1 ))
+			
+	while (( (( j += 1 )) < num_sets ))
+	do
+		[ -z "${rb_set[j]}" ] && continue
+		wgotoxy $CURWIN 1 $i
+		wprintf $CURWIN "Set: ${set_label[j]}"
+		check_next_row
+		for k in ${set_svc_nums[j]}
+		do
+			[ -z "${rb_svc[k]}" ] && continue
+			wgotoxy $CURWIN 5 $i
+			wprintf $CURWIN "Service: ${svc_label[k]}"
+			check_next_row
+			((xpos=9+${#PACKAGES}))
+			wgotoxy $CURWIN 9 $i
+			wprintf $CURWIN "$PACKAGES"
+			for l in ${rb_svc[k]}
+			do
+				wgotoxy $CURWIN $xpos $i
+				wprintf $CURWIN "${pkg_label[l]}"
+				check_next_row
+			done
+		done
+		check_next_row
+	done
+	(( i < lines - 1 )) && call getkey
+	wclose
+	footer "$REQ_FOOTER"
+	return 1
+}	
+
+function display_dependencies {
+	[ -n "$debug" ] && set -x
+	integer j i=0 rid
+	integer rows=8 needed_pkgs=0
+
+	display "$REQ_PKG_MSG" -above 1 -below 8
+	top_window=$CURWIN
+	footer "$REQ_FOOTER"
+	open_radio -exit show_details
+	rid=$RID	
+	for j in $need_list
+	do
+		add_radio "${pkg_label[j]}" -entry "current_package=$j"
+		(( needed_pkgs += 1 ))
+	done
+	(( needed_pkgs < rows )) && rows=$needed_pkgs
+	radio_runparms $rid $rows
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -above 10 -below 1 \
+			-title "Required Packages" 
+	radio_win=$CURWIN
+	set_hotkey 9 "wclose $radio_win; wclose $top_window"
+	run_radio $rid 0 $rows
+	input_handler
+}
+
+function dep_choose_exit
+{
+	typeset i j k 
+[ -n "$debug" ] && set -x
+	wclose $DEP_DISP_WIN
+	case $CHOICE in
+		${DEP_CHOICES[0]})
+			for i in $need_list
+			do
+				ALL_PKGS_IDS="$ALL_PKGS_IDS $i"
+				set_INSTPKGS $ALL_PKGS_IDS
+			done
+			show_choice=0
+			;;
+		${DEP_CHOICES[1]})
+			wclose $CURWIN
+			display_dependencies
+			show_choice=1
+			;;
+		${DEP_CHOICES[2]})
+			show_choice=0
+			;;
+	esac
+}
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	ivar set current_set $current_set
+	ivar set help_topic services	# Just in case $1 == HELP
+	ivar set selected_size $temp_size
+
+	[ $1 = NEXT ] && {
+		ALL_PKGS_IDS="${pkg_ids[*]}"
+		set_INSTPKGS $ALL_PKGS_IDS || {
+			wclose $desc_window
+			display "$DEPEND_UNMET" -fg $ERROR_FG -bg $ERROR_BG \
+				-below 6
+			DEP_DISP_WIN=$CURWIN
+
+			CHOOSE_FOOTER="$DEP_UNMET_FOOTER"
+			CHOOSE_TITLE="$DEP_UNMET_TITLE"
+			choose -f -e -exit dep_choose_exit -winparms \
+				"-above 4 -below 1 -fg $ERROR_FG -bg $ERROR_BG"\
+				"${DEP_CHOICES[0]}" "${DEP_CHOICES[@]}"
+			return 0
+		}
+	}
+
+# Quick and dirty fix for making ISL work ;-)
+# - RD, 09/24/97
+	penguin=`ivar get UnixWare_PKGS`
+	ivar set INSTPKGS "$penguin"
+# End fix
+
+	ii_exit $1
+}
+
+# JTB: temporarary block
+set_list=
+n=-1
+while (( ( n += 1 ) < num_sets )) ; do
+	set_list="$set_list ${set_code[n]}"
+done
+
+ivar set INSTSETS "$set_list"
+
+# JTB block end
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+[ -n "$debug" ] && set -x
+
+typeset -L2 remainder
+
+cs=`ivar get current_set`
+[ "$cs" = "" ] && cs=0
+current_set=-1
+#describe_set $cs
+	
+while (( 1 == 1 ))
+do
+	place_window 76 9 -above 0
+	desc_window=$CURWIN
+	wgotoxy $desc_window 1 0
+	wprintf $desc_window "$SET_INSTRUCTIONS"
+	(( desc_lines = -1 ))
+	eval "echo \"\$SET_INSTRUCTIONS\"" | {
+		while read line
+		do
+			(( desc_lines += 1 ))
+		done
+	}
+	# Get previously chosen packages
+
+	i=0
+	maxwid=0
+	temp_size=0
+	while (( i < num_sets ))
+	do
+		pkg_ids[$i]=`ivar get pkg_ids[$i]`
+
+		selected_size[$i]=0
+		largest_pkg=0
+		for j in ${pkg_ids[i]}
+		do
+			[ -n "${pkg_size[j]}" ] && {
+				(( selected_size[$i] += pkg_size[$j]/2 ))
+				(( pkg_size[$j]/2 > largest_pkg )) && \
+					(( largest_pkg = pkg_size[$j]/2 ))
+			}
+		done		
+		(( remainder = selected_size[$i] % 1000 ))
+		(( selected_size[$i] /= 1000 ))
+		(( temp_size += selected_size[i] ))
+		remainder=`call altprintf "%02d" $remainder`
+		selected_size[$i]=`call altprintf "%4d" ${selected_size[i]}`
+		selected_size[$i]="${selected_size[i]}.$remainder"
+			
+		(( ${#set_label[i]} > maxwid )) && (( maxwid = ${#set_label[i]} ))
+		(( i += 1 ))
+	done
+	(( temp_size += largest_pkg/1000 ))
+	(( maxwid += 8 ))
+
+	exitdirection=OPTIONS
+	choose_set
+	input_handler
+	while [ "$show_choice" = "1" ]
+	do
+		save_exit NEXT
+		input_handler
+	done
+done
+
+save_exit NEXT	# should never get here

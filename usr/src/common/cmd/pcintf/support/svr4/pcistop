@@ -1,0 +1,41 @@
+#! /bin/sh
+#ident	"@(#)pcintf:support/svr4/pcistop	1.2"
+
+# Shut down PC Interface
+
+# File names
+tmpPrefix=/tmp/PCI
+psOut=${tmpPrefix}psOut
+
+# Get list of executing PC-Interface processes.
+# Set the PATH explicitly so we are certain to use 
+# ps from the /sbin directory which supports the "ps -ef" syntax.  This 
+# avoids a problem where the path was previously set to find the version of
+# ps with the BSD syntax (ps -alx) (in /usr/ucb), causing the following ps -e
+# to fail. 
+PATH=/sbin:/usr/sbin:/usr/bin:/etc
+export PATH
+ps -e | grep 'pci' > $psOut
+
+conSvrPs=`grep pciconsv $psOut`
+conSvrPs=`expr "${conSvrPs}" : ' *\([0-9][0-9]*\)'`
+if [ "$conSvrPs" != "" ]; then
+	kill $conSvrPs
+else
+	echo "PC-Interface connection server (pciconsvr.ip) is not running"
+fi
+
+mapSvrPs=`grep pcimapsv $psOut`
+mapSvrPs=`expr "${mapSvrPs}" : ' *\([0-9][0-9]*\)'`
+if [ "$mapSvrPs" != "" ]; then
+	kill $mapSvrPs
+else
+	echo "PC-Interface map server (pcimapsvr.ip) is not running"
+fi
+
+# Clean up temp files
+rm -f ${tmpPrefix}*
+
+# Notify user that PC-Interface is stopped
+echo
+echo "PC-Interface service stopped."

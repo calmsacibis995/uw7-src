@@ -1,0 +1,337 @@
+#******************************************************************************
+#                                autodetect
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)autodetect	3.1	8/29/96	21:27:09
+#	@(#) autodetect 12.8 95/07/26 
+#
+# Copyright (C) 1995 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+
+#==========================================================================
+# AutoDetect --
+#       Autodetect video adapter(s) installed on the system.
+#	If none are found, skip this form.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AutoDetect {cbs} \
+{
+   global OK FAIL DESTROYED
+   global CHARM_MAINLIST_COLS MOTIF_MAXLIST_COLS MOTIFWIDTH
+   global NDSAFE
+ 
+   VtLock
+   set nfound 0
+   set posmap {}
+   set DESTROYED 0
+   set dialog [keylget cbs dialog]
+   set widget [keylget cbs widget]
+
+   SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_AUTODETECT]
+
+   # initiatate detection - return if none found
+   set autolist [BuildAutoList $NDSAFE posmap nfound]
+   set autolen [llength $autolist]
+   if {$autolist == {}} {
+   	SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	     [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_AUTODETECT_NONE]
+	return $FAIL
+   } 
+
+   # found one or more cards
+   SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+        [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_AUTODETECT_FOUND]
+
+   set autofn [VtFormDialog $dialog.autofn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_AUTODETECT_TITLE] \
+        -borderWidth [IsCharm] \
+	-MOTIF_width $MOTIFWIDTH \
+        -ok -okCallback ProcessPPLSelection \
+	-cancel -cancelCallback VxEndFormCB \
+        -cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $autofn -ok]
+
+
+   if {$nfound == 1} {
+	set labelstr [IntlLocalizeMsg \
+		SCO_VIDCONF_GUI_MSG_LABEL_AUTODETECT_ACTION $nfound]
+   } else {
+	set labelstr [IntlLocalizeMsg \
+		SCO_VIDCONF_GUI_MSG_LABEL_AUTODETECT_ACTION_MULTI $nfound]
+   }
+   set lab [VtLabel $autofn.lab \
+	-labelLeft \
+	-label $labelstr]
+
+   if {$autolen > 1} {
+	set helpstr [IntlLocalizeMsg \
+		SCO_VIDCONF_GUI_MSG_SHELP_AUTODETECT_DLIST_MULTI]
+   } else {
+	set helpstr [IntlLocalizeMsg \
+		SCO_VIDCONF_GUI_MSG_SHELP_AUTODETECT_DLIST]
+   }
+   if {[IsCharm]} {
+      set columns $CHARM_MAINLIST_COLS
+   } else {
+      set columns $MOTIF_MAXLIST_COLS
+   }
+   set dlist [DrawChainTree $autofn.dlist \
+	AutoListCB \
+	AutoListDefaultCB \
+	$autolist \
+        $columns \
+        $helpstr]
+
+   set videobtn [VtPushButton $autofn.videobtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_AUTODETECT] \
+	-CHARM_topOffset 1 \
+	-CHARM_bottomOffset 1 \
+	-autoLock VideoPPL \
+        -callback "VideoPPLCB {$cbs}"]
+   VtSetSensitive $videobtn on
+
+   set statusbar [SaStatusBar $autofn.statusbar 1]
+
+   VtSetValues $dlist -MOTIF_bottomSide $videobtn -rightSide FORM
+   VtSetValues $videobtn -MOTIF_topSide NONE -bottomSide $statusbar
+   VtSetValues $statusbar -rightSide FORM
+   VtShow $autofn
+
+   # select a good default entry
+   AutoSelectItem $dlist $autolist
+
+   VxSetVar $autofn FILTER AUTOPPL
+   VxSetVar $autofn ppllist $dlist
+   VxSetVar $autofn posmap $posmap
+
+   VtUnLock
+   return $OK
+}
+
+
+#==========================================================================
+# DetectCards --
+#	Call auto-detection script backend. Auto-detection returns
+#	lists of cards found.
+#	
+# Parameters:
+#	searchmode - mode to run search in for example - SAFE_DETECT
+# Returns: none
+#--------------------------------------------------------------------------
+proc DetectCards {searchmode} \
+{
+   global NDSCRIPT NDSTOP
+
+   set line ""
+   set options ""
+   set fh [open [format "|%s %s" $NDSCRIPT $options] r+]
+   puts $fh $searchmode
+   flush $fh
+   if {[lgets $fh line] < 1} {
+	# no adapters detected
+   }
+   puts $fh $NDSTOP
+   flush $fh
+   return $line
+}
+
+
+#==========================================================================
+# BuildAutoList --
+#	Build a list of cards detected in the system.  Return a list 
+#	of cards found.
+#
+# Parameters:
+#	searchmode - mode to run search in for example - SAFE_DETECT
+#	poslist - position in videoListMap of each card in autolist
+# Returns:
+#	autolist - list of cards detected by the search.
+#--------------------------------------------------------------------------
+proc BuildAutoList {searchmode poslist nfound} \
+{
+   global GRAFINFO XGI videoListMap
+   global AUTO_SINGLE AUTO_FIRST AUTO_MIDDLE AUTO_LAST
+   upvar $poslist posmap
+   upvar $nfound found
+
+   set detectlist {}
+   set autolist {}
+
+   set detectlist [DetectCards $searchmode]
+   if {$detectlist != {}} {
+	foreach list $detectlist {
+		keylget list "ID" id
+		keylget list "BDF" bdf
+		keylget list "AOF_PATH" aof_path
+		set aof_path [split $aof_path "/"]
+		set aoflen [llength $aof_path]
+		set model [lindex $aof_path [incr aoflen -1]]
+		set vendor [lindex $aof_path [incr aoflen -1]]
+
+      		set filename [format "%s/%s/%s%s" $GRAFINFO $vendor $model $XGI]
+      		set errstr [CheckFile $filename]
+      		if {$errstr != ""} {
+         		# the file didn't check out - skip it.
+			continue
+		}
+		SetVideos [list [list $vendor $model]]
+		set elem [GetVideoElement $vendor.$model]
+		set vendor [GetVendor $elem]
+		set model [GetModel $elem]
+		set vendorPr [GetVendorPr $vendor $model]
+		set modelPr  [GetModelPr $vendor $model]
+		if {($vendorPr == "") || ($modelPr == "")} {
+			set vendormodelPr \
+				[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UNKNOWN]
+		} else {
+			set vendormodelPr "$vendorPr $modelPr"
+		}
+		lappend aofList($id,$bdf) [list [list VENDOR $vendor] \
+					[list MODEL $model] \
+					[list VMPR $vendormodelPr]]
+	}
+	if {[info exists aofList]} {
+	   # now build input chain
+	   foreach adapter [ array names aofList ] {
+		#echo $adapter: $aofList($adapter)
+		incr found
+		set len [llength $aofList($adapter)]
+		if {$len == "1"} {
+			set elem [lindex $aofList($adapter) 0]
+			keylget elem "VENDOR" vendor
+			keylget elem "MODEL" model
+			keylget elem "VMPR" vendormodelPr
+			lappend autolist [DrawnList \
+				$AUTO_SINGLE "CARD" $vendormodelPr \
+				$vendor $model {} {} \
+				{} {} {{}} ]
+			lappend posmap $videoListMap($vendor.$model)
+		} else {
+			# two or more AOF files matching a single adapter 
+			# ADAPTER(ID)  -+- VENDOR MODEL VMPR1
+			#		|
+			#		+- VENDOR MODEL VMPR2
+			#		|
+			#		+- VENDOR MODEL VMPR3
+
+			# first one
+			set elem [lindex $aofList($adapter) 0]
+			keylget elem "VENDOR" vendor
+			keylget elem "MODEL" model
+			keylget elem "VMPR" vendormodelPr
+			lappend autolist [DrawnList \
+				$AUTO_FIRST "CARD" $vendormodelPr \
+				$vendor $model {} {} \
+				{} {} {{}} ]
+			lappend posmap $videoListMap($vendor.$model)
+
+			set i 1
+			# now the rest
+			while {$i != $len} {
+				set elem [lindex $aofList($adapter) $i]
+				keylget elem "VENDOR" vendor
+				keylget elem "MODEL" model
+				keylget elem "VMPR" vendormodelPr
+				# last one?
+				if {$i == [expr $len-1]} {
+   					lappend autolist [DrawnList \
+						$AUTO_LAST "CARD" $vendormodelPr \
+						$vendor $model {} {} \
+						{} {} {{}} ]
+				lappend posmap $videoListMap($vendor.$model)
+				} else {
+   					lappend autolist [DrawnList \
+						$AUTO_MIDDLE "CARD" $vendormodelPr \
+						$vendor $model {} {} \
+						{} {} {{}} ]
+				lappend posmap $videoListMap($vendor.$model)
+				}
+				incr i
+			}
+		}
+	   }
+	}
+   }
+   return $autolist
+}
+
+
+#==========================================================================
+# AutoListDefaultCB--
+#       Called when double click occurs on drawn list in auto screen.
+#	Initiate the default action.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AutoListDefaultCB {cbs} \
+{
+   VtUnLock
+   ProcessPPLSelection $cbs
+}
+
+
+#==========================================================================
+# AutoListCB --
+#	Called when a single click occurs on drawn list in auto screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AutoListCB {cbs} \
+{
+   return
+}
+
+
+#==========================================================================
+# VideoPPLCB --
+#	Called from auto detection dialog.  Put up the Video Point and 
+# 	Pick list but pass in the previous callback.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc VideoPPLCB {oldcbs cbs} \
+{
+   VtDestroyDialog [keylget cbs dialog]
+   VideoPPL $oldcbs
+}
+
+
+#==========================================================================
+# AutoSelectItem --
+#	Front end to SelectItem in ppl module.  Pull each 
+#	DESCRIPTION from autolist to build itemlist.
+#
+# Parameters: 
+#	dlist - drawnlist widget to update
+#	autolist - list of autodetected cards
+# Returns: none
+#--------------------------------------------------------------------------
+proc AutoSelectItem {dlist autolist} \
+{
+   global screenList screenIndex
+
+   set itemlist ""
+   foreach elem $autolist {
+	keylget elem "DESCRIPTION" description
+	lappend itemlist $description
+   }
+   SelectItem $dlist $itemlist $screenList $screenIndex "Drawn"
+}
+

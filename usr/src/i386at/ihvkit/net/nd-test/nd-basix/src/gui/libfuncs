@@ -1,0 +1,420 @@
+#*
+#*  set tabsize=4
+#*
+#*  NAME
+#*	libfuncs
+#*
+#*  SYNOPSIS
+#*
+#*  DESCRIPTION 
+#*	WKSH program part of menu_handler for GUI to UWCTS.
+#*
+#*  CAVEATS
+#*
+#*  NOTES
+#*
+#*
+
+get_file_names() {	# <SUITE>
+	SUITE=$1
+	TEST_TOOL="TET"
+	CONFIG_FILE=""
+	PARAM_FILE=""
+	LOCK_FILE=""
+	JOURNAL_FILE=""
+
+# Source common.profile for our own cfg file names.
+	. ${CFG_PATH}/common.profile
+
+	if  [ "$CONFIG_FILE" == "" ]
+	then
+		CONFIG_FILE=tetexec.cfg
+	fi
+
+	if [ "$LOCK_FILE" = "" ]
+	then
+		LOCK_FILE=TEST.lck
+	fi
+
+	if [ "$PARAM_FILE" = "" ]
+	then
+		PARAM_FILE=param.list
+	fi
+
+	if [ "$TEST_TOOL" = "TET" ]
+	then
+	  # Take the highest numbered journal with an 'e' in it.
+	  if [ -f ${TET_SUITE_ROOT}/$SUITE/results/*[e]*/journal ]
+	  then
+		JOURNAL_FILE=`ls -r ${TET_SUITE_ROOT}/$SUITE/results/*[e]*/journal | \
+			sed -e '1{
+				s/[e]*//
+				q
+				}'`
+	  fi
+	fi
+	CONFIG_FILE=${TET_SUITE_ROOT}/$SUITE/$CONFIG_FILE
+	LOCK_FILE=${TET_SUITE_ROOT}/$SUITE/$LOCK_FILE
+	PARAM_FILE=${TET_SUITE_ROOT}/$SUITE/$PARAM_FILE
+}
+
+Display_Item_List() {
+	CNT=1
+	CMD_WID_LIST=""
+	if [ -f "$CMD_LIST_FILE" ]
+	then
+		while line_str=`line`
+		do
+			eval set $line_str
+			eval item$CNT=\"$1\"
+			eval suite$CNT="$2"
+			eval cmd$CNT="$3"
+
+			DESC=`eval echo \\$item$CNT`
+			SUITE=`eval echo \\$suite$CNT`
+			CMD=`eval echo \\$cmd$CNT`
+			if [ -d ${TET_SUITE_ROOT}/$SUITE ]
+			then
+				IT_SEL=true
+			else
+				IT_SEL=false
+			fi
+			cmw $CMD $CMD checkBox $WINDOW_SCA \
+				label:"`printf "%-75s\ " "$DESC"`"\
+				sensitive:"$IT_SEL" \
+				position:right
+			eval TT=\$$CMD
+			sv $TT select:"suiteSelectCB"
+			sv $TT unselect:"suiteunSelectCB"
+			orh $TT "" -f /usr/X/lib/locale/C/help/${USER}/${SUITE}.hlp
+			CMD_WID_LIST="$CMD_WID_LIST $CMD"
+			debug "CMD_WID_LIST: " $CMD_WID_LIST_WID_LIST
+			CNT=`expr $CNT + 1`
+		done < $CMD_LIST_FILE
+	fi
+	eval cmw MAIN_BUTTONS Main_buttons flatButtons $WINDOW_BCA \
+		numItems:$NO_MAIN_BUTTONS \
+		numItemFields:1 \
+		itemFields:'{label}' \
+		traversalOn:true \
+		items:"$MAIN_BUTTONS_LIST"
+
+	sv $MAIN_BUTTONS selectProc:"SelectCB"
+}
+suiteSelectCB(){
+	if [ "$SEL_CMD" ]
+	then
+		sv $SEL_CMD set:"false"
+	fi
+
+	SEL_CMD=$CB_WIDGET
+}
+suiteunSelectCB(){
+	sv $SEL_CMD set:"false"
+	SEL_CMD=
+}
+Get_Selected_Cmds() {		 # <Widget_List>
+	SAVEPROP="`dataprint $WINDOW_SCA`"
+	eval "$SAVEPROP >> ${ERR_FILE} 2>&1"
+	CNT=1
+	SEL_COUNT=0
+	for CMD_WID in $*
+	do
+		CMD_VAL=`eval echo \\$$CMD_WID`
+		debug "CMD_VAL=" $CMD_VAL
+		if [ "$CMD_VAL" = "set" ]
+		then
+			eval CMD=\$cmd$CNT
+			eval sel_suite$SEL_COUNT=\$suite$CNT
+			eval sel_cmd$SEL_COUNT=$CMD
+			SEL_COUNT=`expr $SEL_COUNT + 1`
+		fi
+		CNT=`expr $CNT + 1`
+	done
+	if [ $SEL_COUNT -eq 0 ]
+	then
+		Notice $FORM "No test suite is selected."
+	fi
+}
+test_focus() 
+{
+	if foccanacc $1
+	then
+		echo "$2 Can Accept Focus"
+	else
+		echo "$2 Cannot Accept Focus"
+	fi
+}
+close_window()
+{
+	pd $1
+#	test_focus $FORM FORM
+#	test_focus $CAPTION CAPTION
+#	test_focus $MAIN_BUTTONS MAIN_BUTTONS
+#	test_focus $WINDOW WINDOW
+	focset $MAIN_BUTTONS 
+	focacc $MAIN_BUTTONS
+#	dw $1
+}
+Menu_SelectCB() # Widget_ID 
+{
+	OlFlatGetValues $CB_WIDGET $CB_INDEX label:LABEL
+	Menu_$LABEL $1
+}
+PopupMenuResults() # Widget_ID title <menu item list>
+{
+	(( Result_Click = Result_Click + 1 ))
+	if [ $Result_Click -eq 1 ]
+        then
+		cps PWS PopupWindowShell popupWindowShell $1 \
+			title:"$2" \
+			sensitive:TRUE x:375 
+
+	#		cps PMS menu popupMenuShell ${PWS_UCA} \
+	#		title:"$2" x:400 
+
+		eval cmw MEBUTTONS buttons flatButtons ${PWS_UCA} \
+			layoutType:fixedcols \
+			numItems:$4 \
+			numItemFields:1 \
+			itemFields:'{label}' \
+			items:"$3"
+
+		sv $MEBUTTONS selectProc:"Menu_SelectCB $PWS"
+	fi
+	pu $PWS GrabNone
+}
+PopupMenuAdmin() # Widget_ID title <menu item list>
+{
+	(( Admin_Click = Admin_Click + 1 ))
+	if [ $Admin_Click -eq 1 ]
+        then
+	cps PWS1 PopupWindowShell popupWindowShell $1 \
+		title:"$2" \
+		sensitive:TRUE x:500
+
+#	cps PMS1 menu popupMenuShell $PWS1 \
+#		title:"$2" x:500
+
+	eval cmw MEBUTTONS1 buttons flatButtons ${PWS1_UCA} \
+		layoutType:fixedcols \
+		numItems:$4 \
+		numItemFields:1 \
+		itemFields:'{label}' \
+		items:"$3"
+
+	sv $MEBUTTONS1 selectProc:"Menu_SelectCB $PWS1"
+	fi
+	pu $PWS1 GrabNone
+}
+Scrolled_Display() # $1 is Parent $2 is Heading $3 is Message $4 - x coordinate
+{
+	x1=250
+	if [ "$WID_NUM_RES" = "" ]
+	then
+		WID_NUM_RES=0
+	fi	
+	(( y1 = WID_NUM_RES * 25 + 50 ))
+	if [ "$4" != "" ]
+	then
+		(( y1 = y1 + 50 * $4 ))
+	fi
+
+	cps DPOPUP popupWindowShell popupWindowShell $1 \
+		title:"$2" y:$y1 x:250
+	cmw SCROLLEDWINDOW scrolledwindow scrolledWindow $DPOPUP_UCA
+	cmw TEXT textedit textEdit $SCROLLEDWINDOW \
+		editType:textread \
+		source:"$3" \
+		width:400 \
+		height:150 
+	Continue_Button $DPOPUP_LCA
+	sv $OK selectProc:"close_window $DPOPUP" 
+	pu $DPOPUP GrabNone
+}
+
+Continue_Button()
+{
+	cmw OK Ok flatButtons $1 \
+		numItems:1 \
+		numItemFields:1 \
+		itemFields:'{label}' \
+		items:'{continue}'
+}
+
+Notice() # <Parent-Wid-ID> <Message>
+{
+	cps NOTICE notice noticeShell $1 \
+		title:"Information"
+	Continue_Button $NOTICE_CA
+	sv $OK selectProc:"close_window $NOTICE"
+	sv $NOTICE_TA string:"$2" 
+	pu $NOTICE GrabNone
+}
+
+# Call Back routine for MAIN_BUTTONS
+SelectCB() {
+	OlFlatGetValues $CB_WIDGET $CB_INDEX label:LABEL
+#	SAVEPROP="`dataprint $WINDOW_SCA`"
+#	eval "$SAVEPROP >> ${ERR_FILE} 2>&1"
+	$LABEL
+	XFlush
+	cbclear $WINDOW_SCA
+}
+
+show_procs() {
+	PNAME=$1
+	ps -ef | grep -v grep | sort +1 -2 | nawk -f procs.awk PROC_NAME="$PNAME" ACT="SHOW"
+}
+Menu_Show_Process() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval $COMMAND=\$sel_cmd$CNT
+		#echo $COMMAND
+		show_procs $COMMAND > ${TMP_DIR}/procs$$
+		CNT=`expr $CNT + 1`
+	done
+	if [ -s ${TMP_DIR}/procs$$ ]
+	then
+  		Scrolled_Display $FORM "Running_Processes" "`cat /tmp/procs$$`"
+	else
+		Notice $FORM "No process is running."
+	fi
+	rm -f ${TMP_DIR}/procs$$
+}
+
+Menu_Kill_Process() {
+KillProc
+#	Get_Selected_Cmds $CMD_WID_LIST
+#	for COMMAND in $SEL_CMD
+#	do
+#		CMD_NAME=`basename $COMMAND`
+#		kill_procs $COMMAND
+#	done
+#	if [ $? -eq 0 ]
+#	then
+#		Notice $FORM "All the processes were killed."
+#	else
+#		Notice $FORM "No process is running or Error while killing the processes."
+#	fi
+}
+
+Menu_Remove_Locks() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval SUITE=\$sel_suite$CNT
+		CNT=`expr $CNT + 1`
+		find ${TET_SUITE_ROOT}/$SUITE \( -name tet_lock -o -name configure.lck \) -exec /bin/rm -f {} \; 
+		LOCK_FILE=${TET_SUITE_ROOT}/$SUITE/bin/tet_lock
+		if [ -f ${TET_SUITE_ROOT}/$SUITE/$LOCK_FILE ]
+		then
+			/bin/rm -f $LOCK_FILE
+		fi
+		LOCK_FILE=${TET_SUITE_ROOT}/$SUITE/bin/tet_lock
+		if [ -f ${TET_SUITE_ROOT}/$SUITE/$LOCK_FILE ]
+		then
+			/bin/rm -f $LOCK_FILE
+		fi
+		CONFIGURE_LOCK=${TET_SUITE_ROOT}/$SUITE/configure.lck
+		if [ -f ${TET_SUITE_ROOT}/$SUITE/$LOCK_FILE ]
+		then
+			/bin/rm -f $LOCK_FILE
+		fi
+	done
+	Notice $FORM "All locks were removed."
+}
+
+Menu_Exit() {
+	close_window $1
+}
+
+
+Menu_Summary_Results() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	WID_NUM_RES=0
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval SUITE=\$sel_suite$CNT
+		CNT=`expr $CNT + 1`
+		get_file_names $SUITE
+
+	# Since the summary results option of "rpt" utility does not work
+	# currently, we are using the "vres" utility of USL for this.
+
+		tmpfile=${JOURNAL_FILE}.asc
+	   	unc_read ${JOURNAL_FILE} $tmpfile
+	   	Scrolled_Display $FORM "Summary Results:$SUITE" "`vres $tmpfile 2>&1`"
+		rm -f $tmpfile
+		(( WID_NUM_RES=WID_NUM_RES + 1 ))
+	done
+}
+
+Menu_Failure_Results() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	WID_NUM_RES=0
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval SUITE=\$sel_suite$CNT
+		CNT=`expr $CNT + 1`
+		get_file_names $SUITE
+		Scrolled_Display $FORM "Failure Results:$SUITE" "`rpt -a $SUITE -p 2>&1`"
+		(( WID_NUM_RES = WID_NUM_RES + 1 ))
+	done
+}
+
+Menu_Complete_Results() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	WID_NUM_RES=0
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval SUITE=\$sel_suite$CNT
+		CNT=`expr $CNT + 1`
+		get_file_names $SUITE
+		Scrolled_Display $FORM "Complete Results:$SUITE" "`rpt -a $SUITE 2>&1`"
+		(( WID_NUM_RES = WID_NUM_RES + 1 ))
+	done
+}
+
+Results() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	if [ "$SEL_CMD" != "" ]
+	then
+		RES_MITEMS="'{Summary_Results}','{Failure_Results}','{Complete_Results}','{Exit}'"
+		PopupMenuResults $FORM "Results Menu" "$RES_MITEMS" 4
+	fi
+}
+
+Admin() {
+	Get_Selected_Cmds $CMD_WID_LIST
+	if [ "$SEL_CMD" != "" ]
+	then
+		ADM_MITEMS="'{Kill_Process}','{Remove_Locks}','{Exit}'"
+		PopupMenuAdmin $FORM "Admin Menu" "$ADM_MITEMS" 3
+	fi
+}
+
+Quit() {
+	confirm "Are you sure you want to quit?" "KILL_ALL"
+}
+
+KILL_ALL() {
+typeset PD
+	if [ "$DISP_NAME" != "" ] 
+	then 
+		echo killing $RUN_BG
+		IFS=:
+		set $DISP_NAME
+		PD=`ps -ef |grep -v grep |grep "X :$2 -s 20000 -xnetaccess off"|awk '{print $2} '` 
+		kill -9 $PD 2>/dev/null
+	fi
+	/bin/rm -rf /tmp/file1$$ /tmp/file2$$ 
+	kill -9 0
+	exit 0
+}

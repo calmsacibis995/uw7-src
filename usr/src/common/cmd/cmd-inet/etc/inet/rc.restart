@@ -1,0 +1,156 @@
+#!/sbin/sh
+#ident	"@(#)rc.restart	1.2"
+#ident	"$Header$"
+
+#This script will assist the Inet Setup Icon in the Desktop Metaphor
+#GUI where the system was installed without an inet address.  Since
+#there was no address, we can shamelessly stop all networking
+#subsystems and restart them.  This script is obviously not to be used
+#under other circumstances unless you are willing to disrupt all
+#network operations.  A reboot is far safer and is strongly
+#recommended rather than run this script on any system that has actual
+#network traffic. 
+
+#exit codes:
+#0	all worked
+#1	usage or
+#	uname -n was not found in /etc/hosts by nametoaddr
+#2	somehow listener database was not configurable
+#3	though listener is ok, an error happened to uucico set up
+#	and some uucp set up will not be attempted
+#4	though listener AND uucico are ok, an error happened.
+#	we will continue to try the rest of set up.
+RET_CODE=0	#hopefully never changes
+#if network is unavailable, then abort
+( </dev/tcp ; ) 2>/dev/null
+if [ $? -ne 0 ]
+then	echo network unavailable until reboot.
+	exit 2
+fi
+
+#Areas and subsystems that are violently reset by this script include: 
+#
+#The address of all interfaces: Ethernet, loopback, etc.
+#
+#inetd and tcp listener service providers
+#
+#RPC aka Remote Procedure Calls
+#
+#Connection Server
+#
+#RFS aka Remote File Sharing
+#
+#NFS aka Network File Sharing
+
+
+# regular expressions to search for the network programs
+# inetd				/usr/sbin/inetd
+INETD=/usr/sbin/[i]netd
+# listener on tcp		/usr/lib/saf/listen
+grepLISTEN=/usr/lib/saf/[l]isten.*inet/tcp
+caseLISTEN=/usr/lib/saf/[l]isten*inet/tcp
+# rpc				/usr/sbin/rpcbind
+RPC=/usr/sbin/[r]pcbind
+# ConnectionServer		/usr/sbin/cs
+CS=/usr/sbin/[c]s
+# rfs				rf_server
+RFS=[r]f_server
+# nfs				/usr/lib/nfs/nfsd|/usr/lib/nfs/biod
+NFS="/usr/lib/[n]fs/nfsd"
+
+#Do only one ps to detect all of these strings
+#store in one shell variable - this one ps is run rather than 5
+ALL_PROCS=`/usr/bin/ps -ef|egrep "$INETD|$grepLISTEN|$RPC|$NFS|$CS|$RFS"'` 2>/dev/null
+
+case $ALL_PROCS in
+	*$INETD*)
+		/usr/sbin/sacadm -k -p inetd
+		STOPINETD=yes;;
+	*)	STOPINETD=no;;
+esac
+
+#tcp listener unlikely to really be there when called from inet_setup icon
+case $ALL_PROCS in
+	*$caseLISTEN*)
+		/usr/sbin/sacadm -k -p tcp
+		STOPLISTEN=yes;;
+	*)	STOPLISTEN=no;;
+esac
+
+case $ALL_PROCS in
+	*$NFS*)	/sbin/sh /etc/init.d/nfs stop 2>/dev/null
+		STOPNFS=yes;;
+	*)	STOPNFS=no;;
+esac
+
+case $ALL_PROCS in
+	*$RFS*)	/sbin/sh /etc/init.d/rfs stop 2>/dev/null
+		STOPRFS=yes;;
+	*)	STOPRFS=no;;
+esac
+
+case $ALL_PROCS in
+	*$CS*)	/sbin/sh /etc/dinit.d/S80cs stop 2>/dev/null
+		STOPCS=yes;;
+	*)	STOPCS=no;;
+esac
+
+case $ALL_PROCS in
+	*$RPC*)	/sbin/sh /etc/init.d/rpc stop 2>/dev/null
+		STOPRPC=yes;;
+	*)	STOPRPC=no;;
+esac
+
+LOG=/tmp/inet.start
+export LOG
+
+# record to the error log
+/sbin/sh /etc/init.d/inetinit stop
+script_ret=$?
+
+if [ $script_ret -ne 0 ]
+then	echo >&2 "/sbin/sh /etc/init.d/inetinit stop
+returned $script_ret when stopping the network,
+some network services may be unavailable until reboot.
+Output was sent to $LOG file."
+	RET_CODE=2
+fi
+
+/sbin/sh /etc/init.d/inetinit start
+script_ret=$?
+
+if [ $script_ret -ne 0 ]
+then	echo >&2 "/sbin/sh /etc/init.d/inetinit start
+returned $script_ret when re-starting the network,
+some network services will be unavailable until reboot.
+Output was sent to $LOG file."
+	RET_CODE=2
+fi
+
+if [ yes = $STOPRPC ]
+then	/sbin/sh /etc/init.d/rpc start 2>/dev/null
+fi
+
+if [ yes = $STOPCS ]
+then	/sbin/sh /etc/init.d/cs start 2>/dev/null
+fi
+
+if [ yes = $STOPRFS ]
+then	/sbin/sh /etc/init.d/rfs start 2>/dev/null
+fi
+
+if [ yes = $STOPNFS ]
+then	/sbin/sh /etc/init.d/nfs start 2>/dev/null
+fi
+
+if [ yes = $STOPINETD ]
+then	/usr/sbin/sacadm -s -p inetd
+fi
+
+#We unconditionally start the listener, since we just set it up.
+#If this was a case where the uname -n /etc/inet/hosts address
+#was not available until this boot, of course the listener would
+#not have started.
+/usr/sbin/sacadm -s -p tcp
+
+exit $RET_CODE

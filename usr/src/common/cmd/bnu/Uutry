@@ -1,0 +1,97 @@
+#!/usr/bin/sh
+#ident	"@(#)Uutry	1.2"
+#ident "$Header$"
+
+export IFS PATH
+IFS=" 	
+"
+PATH="/usr/bin"
+
+#	This shell will start a uucico for the system given.
+#	Options:
+#	  -xN the debugging level for uucico (-x5 default)
+#	  -r  force the removal of the status file
+#	The output is put in /tmp/Name where Name is the name
+#	of the system name.  A tail -f is performed after uucico is started.
+
+STATUS=/var/uucp/.Status
+
+UUCICO=/usr/lib/uucp/uucico
+label=UX:Uutry
+catalog=uxUutry
+tty -s
+if [ "`pwd`" != "/usr/lib/uucp" -a "$?" = 0 -a -x "./uucico" ]; then
+	u1=`gettxt $catalog:1 "OK to execute uucico from current directory"`
+	u2=`gettxt $catalog:7 "y"`
+	u3=`gettxt $catalog:8 "Y"`
+	u4=`gettxt $catalog:9 "y/n"`
+	echo "$u1 (`pwd`) ($u4) \c"
+	read ans
+	if [ "$ans" = "$u2" -o "$ans" = "$u3" ]
+	    then
+		UUCICO=./uucico
+	fi
+fi
+
+REMOVE=""
+X="-x5"
+SYS=
+while [ $# -gt 0 ]
+do
+	case $1 in
+	-c)  shift; CLASS="-c$1"; shift;;
+	-c*) CLASS="$1"; shift;;
+	-x)  shift; X="-x$1"; shift;;
+	-x*) X=$1; shift;;
+	-r) REMOVE="-f"; shift;;
+	-?) pfmt -l $label -s error -g $catalog:3 "unrecognized flag %s\n" $1
+	    pfmt -l $label -s action -g $catalog:4 "Usage: %s [-r] [-xdebug_level] system\n" $0
+	    exit 1;;
+	*) SYS="$1"; shift;;
+	esac
+done
+
+if [ -z "$SYS" ]
+then
+	pfmt -l $label -s error -g $catalog:5 "system name required\n"
+	exit 1
+fi
+
+#  check for existence in Systems file
+#  only accept match of full name
+#  (important because some names may be prefixes of others!)
+XX=
+XX=`uuname | grep "^${SYS}$" `
+if [ -z "$XX" ]
+then
+	pfmt -l $label -s error -g $catalog:6 "Invalid system name \"%s\"\n" $SYS
+	exit
+fi
+
+STMP=/tmp/$SYS
+rm -f $STMP
+> $STMP
+chmod 622 $STMP
+#  remove old status file (can't actually remove, since $STATUS isn't
+#  publicly writable, but zero-ing it out works fine)
+if [ -n "$REMOVE" ]; then
+    cp /dev/null $STATUS/${SYS} 2>/dev/null
+fi
+
+echo "$UUCICO -r1 -s$SYS $CLASS $REMOVE $X >$STMP 2>&1&"
+$UUCICO  -r1 -s$SYS $CLASS $REMOVE $X >$STMP 2>&1&
+XFER=$!
+
+echo "tmp=$STMP"
+#	on heavily loaded systems, may take a moment for uucico
+#	to create debug file.
+if [ ! -f $STMP ]
+then
+	sleep 5
+fi
+tail -f $STMP &
+TAIL=$!
+trap 'kill -9 $TAIL >/dev/null 2>&1' 0 1 2 3 5 9 15
+wait $XFER
+#	sleep 2 to allow tail to complete output
+sleep 2

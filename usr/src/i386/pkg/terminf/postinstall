@@ -1,0 +1,80 @@
+#ident	"@(#)pkg.terminf:terminf/postinstall	1.5.3.9"
+#ident	"$Header$"
+
+#	Script for installation of terminfo entries
+#
+
+
+#
+#	This routine sets file or directory modes and ownership
+#	for all files in the path-name-list provided as arg.
+#
+set_attr()
+{
+	OWN=bin
+	GRP=bin
+	MAC=1
+	FIXED=NULL
+	INHER=NULL
+
+	for FN in `find $1 -print`
+	do
+		if [ -d ${FN} ]
+		then
+       			FT=d
+			MODE=775
+		elif [ -h ${FN} ]
+		then
+			continue
+		elif [ -f ${FN} ]
+		then
+			FT=f
+			MODE=644
+		fi
+		echo ${FN} ${FT} ${MODE} ${OWN} ${GRP} ${MAC} ${FIXED} ${INHER}
+	done | /usr/sbin/installf $PKGINST - 2>/dev/null
+}
+
+#
+#	Main 
+#
+
+COMPILE="TERMINFO= tic"
+PERMLOC=/usr/share/lib/terminfo
+LINKDIR=/usr/lib/terminfo
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+cd /tmp/terminf
+rm -rf /tmp/all.ti
+cat *.ti > /tmp/all.ti
+
+pfmt -s NOSTD -g ${PKGMSG}:1 "The terminfo entries are being compiled. Please wait...."
+
+eval "${COMPILE} /tmp/all.ti"
+
+set_attr /usr/share/lib/terminfo
+
+if [ ! -d "${LINKDIR}" ]
+then
+	ln -s /usr/share/lib/terminfo /usr/lib/terminfo
+fi
+
+# clean-up
+removef terminf /tmp/terminf/*.ti /tmp/terminf  > /dev/null 2>&1
+removef -f terminf
+cd /
+rm -rf /tmp/terminf /tmp/all.ti
+installf -f $PKGINST
+

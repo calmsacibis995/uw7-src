@@ -1,0 +1,48 @@
+#!/usr/bin/ksh
+#ident	"@(#)oemcd:mach.build/mankopt	1.1"
+set -x
+
+line_one=`head -1 pkgmap`
+parts=`echo $line_one | awk ' { print $2 } '`
+if [ $parts -eq 1 ]
+then
+	MP="no"
+else
+	MP="yes"
+fi
+
+iscompr="yes"
+grep "COMPRESSED=true" pkginfo > /dev/null 2>&1
+[ $? -eq 1 ] && iscompr="no"
+
+
+DOC_ROOT=\$DOC_ROOT
+export DOC_ROOT
+
+
+
+echo $line_one > new.pkgmap
+tail -n +2 pkgmap | mankopt.awkcc MP="$MP" ISCOMPR="$iscompr" >> new.pkgmap
+
+
+# now take care of pkginfo
+
+/usr/bin/ed -s pkginfo <<-!
+	g/ACTKEY=YES/d
+	a
+	ACTKEY=YES
+	.
+	w new.pkginfo
+	q
+	!
+# We've just edited the pkginfo file, so update the pkginfo entry in
+# the pkgmap file.
+set -- $(/usr/bin/ls -l new.pkginfo)
+SIZE=$5
+set -- $(/usr/bin/sum -r < new.pkginfo)
+SUM=$1
+/usr/bin/ed -s new.pkgmap <<-!
+	g/ i pkginfo /s/ [0-9]* [0-9]* / $SIZE $SUM /
+	w
+	q
+!

@@ -1,0 +1,61 @@
+#!/bin/sh
+#ident	"@(#)dtexec	15.1"
+#
+#	usage: dtexec [-Z] [-P] cmd args ...
+#
+#	execute cmd (using xterm-acs for line-drawing characters),
+#	on non-zero exit (or any exit, if -Z is the first argument)
+#	post a message to require the user to click to terminate --
+#	the idea being to keep a final screen on the xterm through
+#	which dtexec is being called (out of a dtm class, or a client)
+#       The -P was added to echo a more user friendly password prompt.
+
+# Perform validations
+if [ $# -eq 0 ]
+then
+	exit 1
+fi
+
+set -- `getopt "ZP:N" $*`
+if [ $? != 0 ]
+then
+	exit 1  
+fi
+
+ZFLAG=0
+PFLAG=0
+NFLAG=0
+DTEXEC_ACCOUNT=""
+
+for i in $*
+do
+	
+	case $i in
+	-Z)	ZFLAG=1; shift;;
+	-P)	PFLAG=1; 
+		DTEXEC_ACCOUNT="$DTEXEC_ACCOUNT $2"; shift 2;;
+	-N)	NFLAG=1; shift;;
+	esac
+done
+
+shift
+
+#  Echo user friendly password prompt.
+if [ $PFLAG = 1 ]
+then
+	PASSWORD_PROMPT=`gettxt dtexec:3  "Please enter %s password:"`
+        printf "$PASSWORD_PROMPT\n" $DTEXEC_ACCOUNT
+fi
+	
+XDIR=${XWINHOME:-/usr/X}
+
+PATH=/sbin:/usr/sbin:/etc:$PATH
+export PATH
+T1=`gettxt dtexec.sh:2  "User does not have permission to install packages\n"`
+T2=`basename $1`
+eval $*
+RET=$?
+if [ $RET -eq 1 -a $ZFLAG = 1 ]
+then	$XDIR/desktop/rft/dtmsg "$T1 $T2\n"
+fi
+exit $RET

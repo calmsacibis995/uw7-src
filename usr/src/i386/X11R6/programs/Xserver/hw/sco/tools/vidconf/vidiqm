@@ -1,0 +1,221 @@
+:
+#
+#	@(#) vidiqm 11.5 94/04/29 
+#
+#	Copyright (C) The Santa Cruz Operation, 1991.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+
+. ccsSetup.sh
+
+GRAFINFO_DIR=/usr/lib/grafinfo
+CLASSFILE=class.h
+CLASS_DIR=/etc/conf/pack.d/cn
+PARSER=vidparse
+PARSER_DIR=/usr/lib/vidconf
+export GRAFINFO_DIR CLASSFILE PARSER PARSER_DIR
+
+GRAFDEV=/usr/lib/grafinfo/grafdev
+GRAFMON=/usr/lib/grafinfo/grafmon
+DEVICES=/usr/lib/vidconf/devices
+
+TMP_FILE=/tmp/class$$
+
+# Define return values
+: ${OK=0} ${FAIL=1} ${STOP=10} ${HALT=11}
+
+# Print an error message
+#
+# Usage: error "message"
+# Argument is a quoted error message
+# Notes: error always returns $FAIL.
+#
+error() {
+	echo "$*" | sed 's/^/vidiqm ERROR: /' >&2
+	return $FAIL
+}
+
+# Remove temp files and exit with the status passed as argument
+cleanup() {
+	trap '' 1 2 3 15
+	[ -f $TMP_FILE ] && rm $TMP_FILE
+	exit $1
+}
+
+# Define traps for critical and non critical code.
+set_trap()  {	
+	trap 'error "Interrupted! Exiting ..."; cleanup 1' 1 2 3 15
+}
+unset_trap()  {
+	trap '' 1 2 3 15
+}
+ 
+# Print a message
+#
+# Usage: message "message"
+# Argument is a quoted message
+# Notes: message always returns $OK.
+#
+message() {
+	echo "$*"			
+        [ ! -t 1 ] && term_echo "$*"	#if echo's not to tty, send to tty too.
+	return $OK
+}
+
+
+# Execute scripts in /usr/lib/vidconf/scripts/*.sh
+runprescripts() {
+	if [ -f /usr/lib/vidconf/scripts/*.sh ]
+	then
+		PWD=`pwd`
+        	cd /usr/lib/vidconf/scripts
+
+        	for i in *.sh
+        	do
+                	./$i
+        	done
+		cd $PWD
+	fi
+}
+
+
+mungechk()
+{
+	## check to see if we have a special card that needs munging.
+	case $CARD in
+	# During IQM install, defer cards that use VIDSCRIPTS.
+	# CARD=ibm.vga_deferred_NN - change to CARD=ibm.vga
+	*_deferred_*)
+		SEDMATCH=_deferred_.*
+		CARD=`echo $CARD | sed -e s/$SEDMATCH//`
+		return
+		;;
+	# Compaq cards - munge CLASS 'vga' to CLASS 'tvga' if qvisconf.sh 
+	# stores TVGA in grafinfo file.
+	'compaq.qvis1280') 
+		XGIS=$GRAFINFO_DIR/compaq/qvis1280.xgi
+		SEDSTRIP=""
+		SEDMATCH=vga
+		CARDSTR="Compaq QVision 1280 (2 Mb)"
+		;;
+	'compaq.qvis1024') 
+		XGIS=$GRAFINFO_DIR/compaq/qvis1024.xgi
+		SEDSTRIP=""
+		SEDMATCH=vga
+		CARDSTR="Compaq QVision 1024 (1 Mb)"
+		;;
+	'ibm.xga') 
+		# ibm.xga   - first  release of IBM XGA adaptor
+		# ibm/xga_N.xgi
+		XGIS=$GRAFINFO_DIR/ibm/xga_*.xgi
+		SEDSTRIP="_"
+		SEDMATCH=xga
+		CARDSTR="IBM XGA"
+		;;
+	'ibm.xga-2')
+		# ibm.xga-2 - second release of IBM XGA adaptor 
+		# it supports more modes then the IBM XGA
+		# ibm/xga-2_N.xgi
+		XGIS=$GRAFINFO_DIR/ibm/xga-2_*.xgi
+		SEDSTRIP="-2_"
+		SEDMATCH=xga
+		CARDSTR="IBM XGA-2"
+		;;
+	*)
+		# It is a card that doesn't need munging.
+		return
+		;;
+	esac
+
+	## Make sure that .xgi file(s) were created (by vidconf/scripts/*.sh)
+	ls $XGIS > /dev/null 2>&1
+	if [ $? != 0 ]
+	then 
+   	   log "\nERROR: Could not find a $CARDSTR card in your system."
+	   log "ERROR: Check your system setup after you have completed the installation."
+	   log "ERROR: Then run the Video Configuration manager to configure your video card.\n"
+	   log "ERROR: Setting selection to No Graphics Adaptor and No Graphics Monitor.\n"
+
+	   # Set them to none so that scologin doesn't come up
+	   CARD=none.none
+	   MODE=none.none
+	   MON=misc.none
+	   return 
+	fi
+
+	# Only take the first file if there happens to be more then one
+	XGIFILE=`ls $XGIS 2> /dev/null | head -1`
+
+	# Process the file that was found
+	if [ -f "$XGIFILE" ]
+	then
+	   if [ \( "$CARD" = "compaq.qvis1280" \) -o \
+				\( "$CARD" = "compaq.qvis1024" \) ]
+	   then
+		grep TVGA $XGIFILE > /dev/null 2>&1
+		if [ $? -eq 0 ]; then
+		   MODE=`echo $MODE | sed -e s/$SEDMATCH/tvga/`
+		fi
+	   else
+		XGINAME=`basename $XGIFILE .xgi`
+		CARD=ibm.$XGINAME
+		# strip out any stuff (for XGA - the _ or the -2_)
+		MODENAME=`echo $XGINAME | sed -e s/$SEDSTRIP//`
+		# substitute in the new stuff (for XGA(-2) you get xgaN)
+		MODE=`echo $MODE | sed -e s/$SEDMATCH/$MODENAME/`
+	   fi
+	fi
+}
+
+################################################################
+# The code itself
+
+# create grafinfo.def, grafdev, grafmon from args and class.h 
+set_trap
+
+if [ $# != 3 ]
+then
+	error Incorrect number of arguments
+	cleanup $FAIL
+fi
+
+CARD=$1
+MODE=$2
+MON=$3
+
+# Execute scripts in /usr/lib/vidconf/scripts/*.sh
+runprescripts
+
+# check to see if this is a special card that needs munging (like XGA)
+mungechk
+
+CARDMODE=$CARD.$MODE
+
+if [ -f $DEVICES/* ]
+then
+	log "\nXDrivers: Creating grafdev file."
+	touch "$SSO_CLIENT_ROOT"/$GRAFDEV
+	for i in $DEVICES/*
+	do
+        echo `cat $i | cut -d " " -f 1`:$CARDMODE >> "$SSO_CLIENT_ROOT"/$GRAFDEV
+	done
+fi
+
+log "XDrivers: Creating grafmon file."
+
+echo $CARD:$MON > "$SSO_CLIENT_ROOT"/$GRAFMON
+
+# parsit
+log "XDrivers: Parsing grafinfo files. Please wait."
+$PARSER_DIR/$PARSER $TMP_FILE
+if [ "$?" != "0" ]
+then
+    log "\nXDrivers: Unable to update system configuration."
+    cleanup $FAIL
+fi
+
+cp $TMP_FILE  /etc/conf/pack.d/cn/class.h
+rm $TMP_FILE
+
+cleanup $OK

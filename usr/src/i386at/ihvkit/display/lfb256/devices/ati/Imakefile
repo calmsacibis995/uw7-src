@@ -1,0 +1,75 @@
+#ident	"@(#)ihvkit:display/lfb256/devices/ati/Imakefile	1.1"
+/**/#ident	"@(#)lfb256:lfb256/devices/ati/Imakefile	1.2"
+/**/#	Copyright (c) 1990, 1991, 1992 UNIX System Laboratories, Inc.
+/**/#	Copyright (c) 1988, 1989, 1990 AT&T
+/**/#	  All Rights Reserved
+
+/**/#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+/**/#	UNIX System Laboratories, Inc.
+/**/#	The copyright notice above does not evidence any
+/**/#	actual or intended publication of such source code.
+
+#include <Server.tmpl>
+#include <sv4Lib.rules>
+
+SRCS =	atiBitblt.c \
+	atiClip.c \
+	atiCmap.c \
+	atiCurs.c \
+	atiFont.c \
+	atiGlob.c \
+	atiInit.c \
+	atiLine.c \
+	atiMisc.c \
+	atiPoly.c \
+	atiSpans.c \
+	atiState.c \
+	atiVis.c \
+	ati_i.c
+
+OBJS =	atiBitblt.o \
+	atiClip.o \
+	atiCmap.o \
+	atiCurs.o \
+	atiFont.o \
+	atiGlob.o \
+	atiInit.o \
+	atiLine.o \
+	atiMisc.o \
+	atiPoly.o \
+	atiSpans.o \
+	atiState.o \
+	atiVis.o \
+	ati_i.o
+
+#if UseInstalled
+   CLASSLIB = /usr/X/lib/liblfb.so.$(DISPLIBREV)
+   INCLUDES = -I. -I../.. -I/usr/X/include/X11
+#else
+   CLASSLIB = ../../liblfb.so.$(DISPLIBREV)
+   INCLUDES = -I. -I../.. -I ../../../include -I/usr/X/include/X11
+#endif
+
+     LFLAGS = -buxz
+
+BPP_DEFINE=-DBPP=8
+
+EXTRA_DEFINES = $(BPP_DEFINE)
+
+#if XWINSharedDisplayLibrary
+
+SharedLibraryObjectRule()
+SharedLibraryTarget_a(ati,$(DISPLIBREV),$(OBJS),$(CLASSLIB),.,.)
+InstallSharedLibrary(ati,$(DISPLIBREV),(DISPLIBDIR))
+
+#else /* XWINSharedDisplayLibrary */
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(ati,$(OBJS))
+
+#endif /* XWINSharedDisplayLibrary */
+
+DependTarget()
+
+lint: ${CFILES} ${LIBCFILES}
+	$(LINT) $(LFLAGS) -Clibsmart $(INCLUDES) $(SRCS) >lint.out 2>&1

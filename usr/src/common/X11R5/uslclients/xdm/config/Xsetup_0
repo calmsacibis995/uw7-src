@@ -1,0 +1,43 @@
+#!/bin/sh
+#ident	"@(#)xdm:config/Xsetup_0	1.21"
+LD_LIBRARY_PATH=:/usr/X/lib; export LD_LIBRARY_PATH
+FONTSERVER=tcp/`uname -n`:7000; export FONTSERVER
+
+if /usr/X/bin/fsinfo > /dev/null 2>&1
+then
+   if [ $DISPLAY = ":0" ]
+   then
+        /usr/X/bin/xset fp= /usr/X/lib/fonts/misc,$FONTSERVER&
+   else    
+        /usr/X/bin/xset +fp $FONTSERVER&
+   fi
+   # This xset is also run in /usr/X/adm/.olinitrc
+   # The above line adds the font server and removes the 75dpi and
+   # 100dpi directories from the font path; the latter two are in the
+   # font server catalogue and so are not needed in the font path as
+   # well, once the font server has started (before that, for xdm, they
+   # are needed to get the Helvetica font for use on the Graphical Login window).
+else    
+   echo "Font server is not running" >&2
+fi
+eval `defadm keyboard 2> /dev/null`
+export XKEYBOARD NUMLOCK SHIFTDOWN
+eval `defadm Xim 2> /dev/null`
+export XNLSPATH
+if [ -z "$XMODIFIERS" ]
+then
+	unset XMODIFIERS
+else
+	export XMODIFIERS
+fi
+if [ ! -z "$XKEYBOARD" -a -f /usr/lib/keyboard/X/$XKEYBOARD ]
+then
+	/usr/X/bin/xmodmap /usr/lib/keyboard/X/DeFaUlT
+	/usr/X/bin/xmodmap /usr/lib/keyboard/X/AltsAndNum
+	/usr/X/bin/xmodmap /usr/lib/keyboard/X/$XKEYBOARD
+fi
+# handshaking with S69xdm start
+wait	# for xset before continuting rc2
+test -s /tmp/S69xdmpid && read PID </tmp/S69xdmpid && kill -2 $PID 2>/dev/null
+rm -f /tmp/S69xdmpid
+

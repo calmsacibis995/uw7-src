@@ -1,0 +1,56 @@
+#ident	"@(#)mk:i386at/:mkuts	1.9.4.21"
+#ident "$Header$"
+#
+#	Configure and make the UNIX Operating System with various devices
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+ROOT=${Root}
+TOOLS=${Tools}
+MACH=${Mach}
+export MACH ROOT TOOLS
+
+XENV=${Tools}/usr/ccs/bin/${Cpu}osenv
+export XENV
+
+echo "Building UP Kernel"
+
+cd ${Root}/usr/src/${Work}/uts
+
+# For full builds, "make depend" is not needed, so .make_depend is created
+# If you want to run "make depend" , comment out the next line.
+
+echo "make depend was not run on purpose" > .make_depend
+
+# Check if 'make depend' has already been run - no sense in running it twice
+if [ ! -s .make_depend ]
+then
+${XENV} ${Root}/usr/src/${Work}/makeuts -P -f unix.mk depend
+
+# If 'make depend' succeeded, then set a sentinel so that 'make depend'
+# is NOT re-run in case a subsequent kernel build happens.
+
+	if [ "$?" = "0" ]
+	then
+		echo "make depend has been run successfully" > .make_depend
+	fi
+fi
+
+
+${XENV} ${Root}/usr/src/${Work}/makeuts -P -f unix.mk install
+${XENV} ${Root}/usr/src/${Work}/makeuts -f unix.mk idbuild
+
+#  Crash must be built separately from other commands since it
+#  intimately depends on kernel headers and build flags.
+
+cd ${ROOT}/usr/src/${WORK}/cmd/crash
+
+${XENV} ${Root}/usr/src/${Work}/makeuts -f crash.mk install
+echo "ENDED `basename $0` `date`"

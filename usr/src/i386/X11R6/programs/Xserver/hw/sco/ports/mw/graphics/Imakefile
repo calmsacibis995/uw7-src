@@ -1,0 +1,183 @@
+#
+#	@(#)Imakefile	12.2	2/9/98	14:40:11
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1998.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+#
+#	SCO MODIFICATION HISTORY
+#
+#	S000 9-Aug-91 edb@sco.com
+#	- Special treatment for bank01.asm and bank02.asm
+#	S001 12-Sep-91 edb@sco.com
+#	- Remove prelink for bank manager
+#	S002	Thu Sep 12 17:13:22 PDT 1991	hiramc@sco.COM
+#		Remove sco_dep.c, not needed, functions now in mw/mwvscrn.c
+#       S003    04-Sep-92 edb@sco.com
+#               Removed evc.c
+#	S004	29-Mar-96 hiramc@sco.COM
+#	- split up all objects related to the masm code so they can
+#	- be linked into the server itself, and all others are left
+#	- to go into the .so DLL library.
+#
+
+#include <Server.tmpl>
+
+.SUFFIXES: .asm
+
+SRCS       = blitx.c      blt0x.c      ecf.c        fillx.c \
+             findfile.c   initrtns.c   linex.c      patnx.c     \
+             bankdata.c
+
+#
+#	COBJS go into making up the .a library here for a static server link
+#		These are also compiled -Kpic and sent to ../shared
+#		for the DLL libXDriver.so creation
+#
+COBJS      = ecf.o initrtns.o
+
+#
+#	MASMOBJS are C objects that are always linked with the core
+#		server, dynamic or static. (because they have externals
+#			required by the masm asm objects)
+#
+MASMOBJS = ../masmobjs/fillx.o ../masmobjs/patnx.o ../masmobjs/blt0x.o \
+	../masmobjs/bankdata.o ../masmobjs/linex.o ../masmobjs/blitx.o
+
+#
+#	AOBJS are masm assembled objects that are sent to ../masmobjs
+#		and symbolic links are made from here to there so
+#		the make dependency will see them properly.
+#		Even though they exist here as symbolic links, they
+#		are not linked into the .a produced here.  They are
+#		always linked into the core X server, dynamic or
+#		static.
+#
+AOBJS      = blit0.o blit5.o blit6.o \
+	blit7.o blit8.o blit9.o \
+	blt00.o blt01.o blt02.o \
+	blt03.o blt04.o blt05.o \
+	blt06.o blt07.o fil10.o \
+	fil15.o fil16.o fil25.o \
+	fill0.o fill3.o fill4.o \
+	fill5.o fill6.o fill7.o \
+	fill8.o fill9.o grafterp.o \
+	line01.o line02.o lin01.o \
+	lin02.o lin03.o lin04.o \
+	lin05.o pale01.o util01.o \
+	util02.o util03.o bank02.o
+
+SPECIALS =  -DSYSV -DMALLOC_0_RETURNS_NULL -DSOCKETCONN -DTCPCONN -DTCPANDSTREAM -DSERVERTLICONN -DLAI_TCP -DSTREAMWRITEMAX=4096 -DXSIGHT -DSCOUNIX32 -Di386  -DM_XENIX -DXSIGHT -DSYSV -DSCO 
+# I dont want to mess with their grafinfo stuff, it will go anyway
+
+#STD_DEFINES = ServerDefines
+STD_DEFINES = $(SPECIALS)
+CDEBUGFLAGS = ServerCDebugFlags
+#CDEBUGFLAGS = -g
+
+/*
+ * INCLUDES = -I. -I$(SERVERSRC)/ddx/mi -I$(SERVERSRC)/ddx/cfb \
+ *	-I$(SERVERSRC)/include -I$(SERVERSRC)/sys/common -I$(INCLUDESRC) \
+ *		-I../include
+ */
+
+   INCLUDES = -I. -I../include -I.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mfb -I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+  
+   ASM_INCLUDES = -I. -I../include -I../graphics -I../ishape
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(graphics,$(COBJS))
+ProfiledLibraryTarget(graphics,$(COBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(graphics,$(COBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+ProfiledLibraryTarget(graphics,$(COBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+.c.o:
+	LibObjCompile(../shared,-O -Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef SCP_PRODUCT
+SharedAsmObjectRule(../masmobjs, )
+#else
+
+all::
+
+#endif
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget(graphics,$(COBJS))
+#endif
+
+LintLibraryTarget(graphics,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+#ifndef SCP_PRODUCT
+all::	$(AOBJS) $(MASMOBJS)
+#endif
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+
+#ifndef SCP_PRODUCT
+../masmobjs/fillx.o:	fillx.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O fillx.c
+	$(MV) fillx.o ../masmobjs/$@
+
+../masmobjs/patnx.o:	patnx.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O patnx.c
+	$(MV) patnx.o ../masmobjs/$@
+
+../masmobjs/blt0x.o:	blt0x.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O blt0x.c
+	$(MV) blt0x.o ../masmobjs/$@
+
+../masmobjs/bankdata.o:	bankdata.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O bankdata.c
+	$(MV) bankdata.o ../masmobjs/$@
+
+../masmobjs/linex.o:	linex.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O linex.c
+	$(MV) linex.o ../masmobjs/$@
+
+../masmobjs/blitx.o:	blitx.c
+	$(RM) $@
+	$(CC) -c $(CCOPTIONS) $(ALLDEFINES) -O blitx.c
+	$(MV) blitx.o ../masmobjs/$@
+#endif
+
+DependTargetSCP(bankdata.c)
+

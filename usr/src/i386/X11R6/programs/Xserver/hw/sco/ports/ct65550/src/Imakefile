@@ -1,0 +1,158 @@
+/*
+ *	@(#)Imakefile	11.1	10/22/97	12:34:36
+ *	@(#) Imakefile 59.1 96/11/04 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1991-1997.
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ * Copyright (C) 1994 Double Click Imaging, Inc.
+ */
+/*
+ *	S001	Wed May 28 15:47:47 PDT 1997	-	hiramc@sco.COM
+ *      - porting to Gemini, changes marked by #if defined(USLArchitecture)
+ */
+
+#include <Server.tmpl>
+
+.SUFFIXES: .i .S
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+.c.S:
+	$(CC) -S $(CFLAGS) $*.c
+	mv $*.asm $*.S
+
+SRCS =	ctCmap.c ctCursor.c ctData.c ctGC.c \
+	ctImage.c ctInit.c ctScreen.c ctWin.c \
+	ctRectOps.c ctBres.c ctFillSp.c ctFillRct.c \
+	ctMono.c ctGlyph.c ctFont.c ctOnboard.c \
+	ctUtil.c ctMask.c ctImgCache.c
+
+OBJS =	ctCmap.o ctCursor.o ctData.o ctGC.o \
+	ctImage.o ctInit.o ctScreen.o ctWin.o \
+	ctRectOps.o ctBres.o ctFillSp.o ctFillRct.o \
+	ctMono.o ctGlyph.o ctFont.o ctOnboard.o \
+	ctUtil.o ctMask.o ctImgCache.o
+
+STD_DEFINES = ServerDefines
+    DEFINES = -DCTHEAD=$(CTLIB) -DCT_SCREEN_NAME=\"CTLIB\" \
+              -DCT_BITS_PER_PIXEL=$(CT_PIXEL_SIZE)
+#if defined(USLArchitecture)
+   INCLUDES = -I. -I.. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC) -I../src
+#else
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+              -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include \
+              -I$(FONTSRC)/include \
+              -I$(INCLUDESRC) -I../src
+
+    INSTALL = $(SCRIPTSRC)/scoinst
+#endif
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = lib$(CTLIB).a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget($(CTLIB),$(OBJS))
+ProfiledLibraryTarget($(CTLIB),$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget($(CTLIB),$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget($(CTLIB),$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+#if defined(USLArchitecture)
+all::
+        LibMkdir(shared)
+clean::
+        LibCleanDir(shared)
+.c.o:
+        LibObjCompile(shared,-Kpic)
+        NormalLibObjCompile($(NOOP_))
+#else
+NormalLibraryObjectRule()
+#endif
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+#if defined(USLArchitecture)
+
+NormalLibraryTarget($(CTLIB),$(OBJS))
+SharedXDriverTarget($(CTLIB),6.0,$(OBJS),shared,..)
+
+#else   /*      USLArchitecture */
+
+NormalLibraryTarget($(CTLIB),$(OBJS))
+
+#endif
+
+LintLibraryTarget($(CTLIB),$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+$(CTLIB)Data.o: ctData.o
+        cp ctData.o $(CTLIB)Data.o
+
+DynamicObjectRule($(CTLIB),$(DDXLIBS))
+
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(ctBres.c, LinkDirectory)
+LinkDepSourceFile(ctCmap.c, LinkDirectory)
+LinkDepSourceFile(ctCursor.c, LinkDirectory)
+LinkDepSourceFile(ctData.c, LinkDirectory)
+LinkDepSourceFile(ctDefs.h, LinkDirectory)
+LinkDepSourceFile(ctFillRct.c, LinkDirectory)
+LinkDepSourceFile(ctFillSp.c, LinkDirectory)
+LinkDepSourceFile(ctFont.c, LinkDirectory)
+LinkDepSourceFile(ctGC.c, LinkDirectory)
+LinkDepSourceFile(ctGlyph.c, LinkDirectory)
+LinkDepSourceFile(ctImage.c, LinkDirectory)
+LinkDepSourceFile(ctImgCache.c, LinkDirectory)
+LinkDepSourceFile(ctInit.c, LinkDirectory)
+LinkDepSourceFile(ctMacros.h, LinkDirectory)
+LinkDepSourceFile(ctMask.c, LinkDirectory)
+LinkDepSourceFile(ctMono.c, LinkDirectory)
+LinkDepSourceFile(ctOnboard.c, LinkDirectory)
+LinkDepSourceFile(ctOnboard.h, LinkDirectory)
+LinkDepSourceFile(ctProcs.h, LinkDirectory)
+LinkDepSourceFile(ctRectOps.c, LinkDirectory)
+LinkDepSourceFile(ctRegs.h, LinkDirectory)
+LinkDepSourceFile(ctScreen.c, LinkDirectory)
+LinkDepSourceFile(ctUtil.c, LinkDirectory)
+LinkDepSourceFile(ctWin.c, LinkDirectory)
+
+DependTarget()
+

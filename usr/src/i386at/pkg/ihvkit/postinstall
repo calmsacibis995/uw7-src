@@ -1,0 +1,67 @@
+#ident	"@(#)pkg.ihvkit:postinstall	1.1.2.2"
+
+#	@(#)pkg.ihvkit:postinstall	1.1.2.2	1/29/97	13:28:53
+#
+#	Mon Jan 20 19:05:38 EST 1997	-	hiramc@sco.COM
+#	- remove reference to display directories
+#
+
+# First, modify all of the install scripts from the original source tree,
+# so that they all work OK.
+# Second, change all of the System files in the ihvkit to have the driver
+# configured flag on, so that when a driver installation is done, the driver is
+# included upon running the newly built kernel.
+
+SRCDIR=/usr/src/ihvkit
+/bin/echo "Modifying/Installing Various Package install scripts..."
+/bin/cp $SRCDIR/pdi/dpt/dpt.hbafloppy/dpt/postinstall /tmp/temp.$$
+/bin/cat /tmp/temp.$$ | /bin/sed 's/\/tmp\/hbacpio.z//g' | /bin/sed 's/\/tmp\/\${PKGINST}\/modcpio.z//g' | /bin/sed 's/\/tmp\/\${PKGINST}\/hbacpio.z//g' > $SRCDIR/pdi/dpt/dpt.hbafloppy/dpt/postinstall
+/bin/cp $SRCDIR/pdi/dpt/dpt.hbafloppy/dpt/prototype /tmp/temp.$$
+/bin/cat /tmp/temp.$$ | /bin/grep -v "i.unw" | /bin/grep -v "var" | /bin/grep -v "modcpio.z" | /bin/grep -v "hbacpio.z" > $SRCDIR/pdi/dpt/dpt.hbafloppy/dpt/prototype
+(/bin/cat <<!
+f none	/tmp/dpt/Space.c 0644 root sys
+f none	/tmp/dpt/disk.cfg 0644 root sys
+f none	/tmp/dpt/dpt.h 0644 root sys
+f none	/tmp/dpt/loadmods 0644 root sys
+f none	/tmp/dpt/dpt 0644 root sys
+!
+) >> $SRCDIR/pdi/dpt/dpt.hbafloppy/dpt/prototype
+/bin/cp $SRCDIR/pdi/mitsumi/mitsumi.hbafloppy/mitsumi/prototype /tmp/temp.$$
+/bin/cat /tmp/temp.$$ | /bin/grep -v "i.unw" | /bin/grep -v "modcpio.z" | /bin/grep -v "hbacpio.z" | /bin/sed 's/=..\/..\/acp\/copyright//'> $SRCDIR/pdi/mitsumi/mitsumi.hbafloppy/mitsumi/prototype
+(/bin/cat <<!
+f none	/tmp/mitsumi/Space.c 0644 root sys
+f none	/tmp/mitsumi/disk.cfg 0644 root sys
+f none	/tmp/mitsumi/mitsumi.h 0644 root sys
+f none	/tmp/mitsumi/loadmods 0644 root sys
+f none	/tmp/mitsumi/mitsumi 0644 root sys
+!
+) >> $SRCDIR/pdi/mitsumi/mitsumi.hbafloppy/mitsumi/prototype
+SRC=$SRCDIR/pdi/dpt/dpt.hbafloppy/dpt
+DEST=$SRCDIR/pdi/ictha/ictha.hbafloppy/ictha
+for file in copyright pkginfo postinstall preremove prototype request
+do
+	/bin/cp $SRC/$file /tmp/temp.$$
+	/bin/cat /tmp/temp.$$ | /bin/sed 's/dpt/ictha/g' | /bin/sed 's/DPT/ICTHA/g' > $DEST/$file
+done
+/bin/echo "Modifying System files..."
+for file in /usr/src/ihvkit/*/*/*.cf/System
+do
+	/bin/echo $file
+	/bin/cp $file /tmp/temp.$$
+	/bin/cat /tmp/temp.$$ | /bin/sed 's/	N	/	Y	/' > $file
+done
+/bin/rm /tmp/temp.$$
+
+# The next lines are added to remove the magic floppy image, if it existed
+# from the prior release
+
+if [ -f "/usr/src/ihvkit/pdi/hba.debug/magic.floppy" ]
+then
+	/bin/echo "Removing the following unneeded file(s):"
+	/bin/echo "\t/usr/src/ihvkit/pdi/hba.debug/magic.floppy"
+	rm -f /usr/src/ihvkit/pdi/hba.debug/magic.floppy
+	removef ${PKGINST} - <<-! > /dev/null
+		/usr/src/ihvkit/pdi/hba.debug/magic.floppy
+	!
+	removef -f ihvkit
+fi

@@ -1,0 +1,60 @@
+#ident	"@(#)pppfilter.samp	1.2"
+#ident	"$Header$"
+#      @(#) pppfilter,v 1.2 1994/09/29 23:49:07 stevea Exp
+#      SCCS IDENTIFICATION
+#
+
+# Copyrighted as an unpublished work.
+# (c) Copyright 1987-1995 Legent Corporation
+# All rights reserved.
+#
+# RESTRICTED RIGHTS
+#
+# These programs are supplied under a license.  They may be used,
+# disclosed, and/or copied only as permitted under such license
+# agreement.  Any copy must contain the above copyright notice and
+# this restricted rights notice.  Use, copying, and/or disclosure
+# of the programs is strictly prohibited unless otherwise provided
+# in the license agreement.
+
+#
+#	One tab between fields only
+#
+# Entries have this format:
+# tag [keyword specification]...[keyword specification] 
+#
+# Entries may continue onto multiple lines by giving a '\' as the
+# last character of a line.
+#
+# Fields are:
+#	tag:	 The name for a filter specification
+#	keyword:
+#		bringup: packet that brings up link
+#		pass:	 packet that are allowed to traverse the link
+#		keepup:	 packet that resets the idle timer 
+#	specification: filter specification
+#
+# Example,
+# default bringup !port ntp and !port rwhod and !port route\
+#		and !port timed and !port bgp and !ip proto 8\
+#		and !ip proto 63 and !ip proto 89 and !icmp[0]==9\
+#		and !icmp[0]==10\
+#	  passup \
+#	  keepup !port ntp and !port rwhod and !port route\
+#		and !port timed and !port bgp and !ip proto 8\
+#		and !ip proto 63 and !ip proto 89 and !icmp[0]==9\
+#		and !icmp[0]==10
+###################################################################
+# For dedicated link, no filtering 
+dedicated	bringup keepup pass
+# For dynamic link, don't allow ntp, rwhod, routed, timed, gated and irdd
+# packets to bringup or keepup a link. But allow all packets to pass the link.
+default	bringup !port ntp and !port who and !port route\
+		and !port timed and !port bgp and !ip proto 8\
+		and !ip proto 63 and !ip proto 89 and !icmp[0] == 9\
+		and !icmp[0] == 10\
+	pass	\
+	keepup  !port ntp and !port who and !port route\
+		and !port timed and !port bgp and !ip proto 8\
+		and !ip proto 63 and !ip proto 89 and !icmp[0] == 9\
+		and !icmp[0] == 10

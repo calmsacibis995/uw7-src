@@ -1,0 +1,138 @@
+#!/usr/bin/xksh
+#ident	"@(#)ds_to_disk	15.1	97/12/19"
+
+typeset -l MEDIUM_ERROR_LOG=/tmp/med_err.log
+typeset -i part=0
+
+[ -n "$SH_DEBUG" ] && exec 2>/tmp/ds_to_d.log
+[ -n "$SH_VERBOSE" ] && set -x
+pkgs="$*"
+test -n "$cpio" || cpio=cpio
+. funcrc
+rm -f ${MEDIUM_ERROR_LOG}
+uniq=$$
+tmpdir=/tmp$uniq
+tmps=$tmpdir.*
+#fs=""
+#for i in usr var tmp
+#do
+#	if ismount /$i
+#	then
+#		tmps="$tmps /$i/$tmpdir.*"
+#		fs="$i $fs"
+#	fi
+#done
+echo $tmps >/tmp/tmpdirs
+Zopt=-Z
+cd /tmp
+export TMPDIR=/var/tmp
+test -n "$instdir" || instdir=/var/tmp/inst
+test -d "$instdir" || mkdir $instdir
+OIFS=$IFS
+IFS=
+ds_header=$(read_header) || medium_error
+IFS=$OIFS
+cd $instdir
+$cpio $Zopt -tiD$vopt */pkginfo */pkgmap */setinfo \
+	>/dev/null 2>>${MEDIUM_ERROR_LOG} || medium_error
+exec 3<&0
+integer nparts=0
+echo "$ds_header" | while read line
+do
+	case "$line" in
+	"# PaCkAgE DaTaStReAm:zip")
+		continue
+		;;
+	'#'*)
+		break
+		;;
+	esac
+	set -- $line
+	case " $pkgs " in
+	*" $1 "*)
+		nparts=nparts+$2
+		;;
+	esac
+done
+echo $nparts > nparts
+echo "$ds_header" | while read line
+do
+	case "$line" in
+	"# PaCkAgE DaTaStReAm:zip")
+		continue
+		;;
+	'#'*)
+		break
+		;;
+	esac
+	set -- $line
+	case " $pkgs " in
+	*" $1 "*)
+		topt=
+		;;
+	*)
+		topt=t
+	esac
+	if [ ! -d "$instdir/$1" ]
+	then
+		mkdir $instdir/$1
+	fi
+	cd $instdir/$1
+	let i=1
+	while [ "$i" -le "$2" ]
+	do
+		if [ "$2" = 1 ]
+		then
+			root=root
+			reloc=reloc
+		else
+			root=root.$i
+			reloc=reloc.$i
+		fi
+		if [ ! -d "$root" ]
+		then
+			let part+=1
+			mkdir $tmpdir.$part
+			ln -s $tmpdir.$part $root
+#			for fsys in $fs
+#			do
+#				mkdir /$fsys/$tmpdir.$part
+#				ln -s /$fsys/$tmpdir.$part $tmpdir.$part/$fsys
+#			done
+		fi
+		#
+		# Determine if the package is relocatable.  If so, set
+		# the relocation parameter.
+		#
+		if pkg_reloc $1 "$RELPKGS"
+		then
+			#
+			# This package is relocatable.
+			#
+			[ -d $reloc ] || ln -s $root $reloc
+			if [ -n "$value" ]
+			then
+				#
+				# Relocatable package has default value
+				# supplied.
+				#
+				[ -d $reloc$value ] || mkdir -p $reloc$value
+				ln -s $instdir/$1/$reloc$value $reloc/\$$param
+			fi
+		fi
+		$cpio $Zopt -iDdum$topt$vopt <&3 2>> ${MEDIUM_ERROR_LOG} || medium_error
+		# Every part of every package contains a copy of the pkginfo
+		# file, which implies that the pkginfo file in the current
+		# directory gets overwritten with each new part.  Because
+		# pkginst needs to update the pkginfo file, we copy pkginfo
+		# (only once per package) into a file that pkginst can safely
+		# update.
+
+		# Before this fix, on some fast machines, pkginst and
+		# ds_to_disk would sometimes update the same pkginfo file
+		# at the same time, with disastrous results.
+		(( i == 1 )) && [ -f pkginfo ] && print "$(<pkginfo)" > pkginfo.save
+		> marker.$i
+		let i=i+1
+	done
+done

@@ -1,0 +1,27 @@
+#ident	"@(#)step2rc	15.1"
+
+export FPATH=/etc/inst/scripts
+# FPATH is a variable used by ksh.  If a call to an undefined function xyz is
+# made, ksh searches FPATH until it finds a file named xyz.  It executes the
+# file xyz in the current shell (without forking), and if file xyz contains a
+# definition for a function xyz, it then executes function xyz (also without
+# forking).
+
+. /funcrc
+
+function step2fatal
+{
+	faultvt "Internal error: /inst should never exit\n" "$GenericFatalErr"
+	halt
+}
+
+trap "step2fatal" 0
+set -o vi
+export SHELL=/usr/bin/ksh
+export ENV=/funcrc
+export PATH=:/usr/bin:/sbin:/etc:/usr/sbin
+
+mkdir /proc
+sh_mount -Fproc /proc /proc
+. /inst
+exit

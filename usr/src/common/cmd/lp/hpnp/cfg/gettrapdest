@@ -1,0 +1,76 @@
+#!/bin/ksh
+#ident	"@(#)gettrapdest	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter trap destination name or address (optional): $NL"  
+  read -r TRPLST
+  if [ -z "$TRPLST" ]
+  then
+    echo "\nNo trap destination created."
+    exit 2
+  fi
+  if [ "$TRPLST" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$TRPLST" = "?" ]
+  then
+    echo "\nSNMP traps are sent to the trap destination.  Enter either"
+    echo "a host name or an IP address.\n"
+    echo "If no name or IP address is entered, you will go to the"
+    echo "\"Enter another SNMP trap destination\" prompt."
+    echo ""
+    $QUITHELP
+    continue
+  fi
+  LOOKUPTRPLST="`gethostaddr $TRPLST`"
+  WASADDR=$?
+  if [ $WASADDR -eq 1 ]
+  then
+    echo $LOOKUPTRPLST | egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' >/dev/null
+    if [ $? -eq 1 ]
+    then
+      echo ""
+      echo "$TRPLST is not a valid address."
+      continue
+    fi
+  fi
+  if [ -z "$LOOKUPTRPLST" ]
+  then
+    echo "\n$TRPLST: unknown host"
+  else
+    onlyoneaddr "$TRPLST" "$LOOKUPTRPLST"
+    RETCODE=$?
+    TRPLST="`cat -- $TMP/ONEADDR`"
+    rm -f -- "$TMP/ONEADDR"
+    if [ $RETCODE -eq 1 ]
+    then
+      exit 1
+    fi
+    if [ -z "$TRPLST" ]
+    then
+      echo "\nNo trap destination created."
+    else
+      break
+    fi
+  fi
+done
+
+echo $TRPLST	> "$TMP/TRPLST"
+exit 0

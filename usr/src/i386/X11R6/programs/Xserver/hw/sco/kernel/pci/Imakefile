@@ -1,0 +1,47 @@
+#
+#	@(#)Imakefile 11.1
+#
+# Modification History
+#
+# S001, Wed Sep 25 11:45:39 PDT 1996, hiramc
+#	- add install rules
+# S000, Wed Sep  4 04:58:52 GMT 1996, kylec
+#	- create
+#
+
+#include <Server.tmpl>
+
+VIDCONFDIR	=	$(USRLIBDIR)/vidconf
+
+DRV = pcix
+HEADERS = pcix.h
+SRCS = pci.c
+OBJS = pci.o
+
+DEFINES = -D_KERNEL
+
+all:: Driver.o
+
+Driver.o: $(OBJS)
+	$(LD) -r $(OBJS) -o Driver.o
+
+idinstall:: Driver.o
+	/etc/conf/bin/idinstall -a -k $(DRV)
+	/etc/conf/bin/idbuild -M $(DRV)
+
+iduninstall:: 
+	/etc/conf/bin/idinstall -d -k $(DRV)
+
+idload:: 
+	modadmin -l $(DRV)
+
+idunload::
+	modadmin -U $(DRV)
+
+
+InstallNonExecFile(Driver.o,$(VIDCONFDIR)/ID/pci)
+InstallNonExecFile(Master,$(VIDCONFDIR)/ID/pci)
+InstallNonExecFile(System,$(VIDCONFDIR)/ID/pci)
+InstallNonExecFile(Node,$(VIDCONFDIR)/ID/pci)
+
+BuildServerIncludes($(HEADERS),include,..)

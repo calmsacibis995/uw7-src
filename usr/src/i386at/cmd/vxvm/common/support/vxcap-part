@@ -1,0 +1,43 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxcap-part.sh	1.2 9/16/97 11:56:27 - cmd.vxvm:common/support/vxcap-part.sh
+#ident	"@(#)cmd.vxvm:common/support/vxcap-part.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+bail()
+{
+	exit 30
+}
+
+set_OS_variables
+disk=$1
+
+xcmd cd $DISKDIR/$disk
+xcmd grep -v '^#' newpart > $tmpfile1
+dogi_device_rawpath $disk diskrpath
+LC_ALL=C export LC_ALL
+echo 'y' | 
+xcmd $EDVTOC -f $tmpfile1 $diskrpath > /dev/null ||
+	quit 1
+
+quit 0

@@ -1,0 +1,75 @@
+#!/bin/ksh
+#ident	"@(#)gethatag	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  Get UHATAG for TCP/IP peripheral (printer/plotter) for boottab file
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter peripheral's LAN hardware address: $NL"
+  read -r UHATAG 
+  if [ -n "$UHATAG" ]
+  then	
+    if [ "$UHATAG" = "?" ]
+    then
+      echo ""
+      echo "The LAN hardware address (station address) is used by BOOTP to"
+      echo "respond to BOOTP requests.  The address can be found on the"
+      echo "peripheral status page, such as the printer self-test page or"
+      echo "the plotter configuration plot.  It is also available from a"
+      echo "label on the adapter card."
+      echo ""
+      echo "An example of a correct LAN hardware address is 08000903b186."
+      echo "A LAN hardware address always consists of 12 hexadecimal digits."
+      echo ""
+      echo "See the Network Peripheral Interface Installation Guide for a "
+      echo "description of how to generate a printer self-test page or a "
+      echo "plotter configuration plot."
+      echo ""
+      $QUITHELP
+      continue
+    fi
+
+    if [ "$UHATAG" = "q" ]
+    then
+      exit 1
+    fi
+    X="`echo $UHATAG | tr ABCDEF abcdef`"
+    UHATAG=$X
+    echo $UHATAG | egrep '^[0-9a-f]{12}' > /dev/null 2>&1
+    if [ $? -eq 0 ]
+    then
+      RETCODE=`echo $UHATAG | awk '{print $1}' | wc -c`
+      if [ $RETCODE = 13 ]
+      then
+        break
+      fi
+    fi
+    echo ""
+    echo "Invalid value (must contain hexadecimal digits only.)"
+    echo "Please enter 12 hexadecimal (0-9a-fA-F) digits."
+  fi
+done
+
+echo $UHATAG > "$TMP/UHATAG"
+if [ $? -ne 0 ]
+then
+	echo "Couldn't create a temporary file, is $TMP NFS mounted?"
+	exit 1
+fi
+
+exit 0

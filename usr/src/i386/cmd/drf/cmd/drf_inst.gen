@@ -1,0 +1,1071 @@
+#!/usr/bin/winxksh
+#ident	"@(#)drf:cmd/drf_inst.gen	1.23.3.2"
+
+exec 2>/tmp/stderr
+
+typeset -x SEC_MEDIUM_TYPE=tape #Secondary medium type
+#Following lines  gets edited by prep.flop
+typeset -x LANG=XXX
+typeset -x LANGS=XXX
+typeset -x LC_CTYPE=XXX
+typeset -x KEYBOARD=XXX
+typeset -x KEYBOARDS=XXX
+typeset -x VM_RUNNING=XXX
+typeset -x MEMSZ=XXX
+typeset -x SEC_MEDIUM="" #Secondary medium device node
+typeset -x DRF_DEBUG=XXX
+typeset -x REL_FULLNAME=XXX
+
+#Add debug functions, in case we'll be debugging
+function dbg_cat
+{
+	if [ ! -z "$DRF_DEBUG" ]
+	then
+		for file in $*
+		do
+			echo ">>>>>BEGIN $file" >&2
+			if [ -r "$file" ]
+			then
+				while read inlin
+				do
+					echo "	$inlin" >&2
+				done < $file
+			else
+				echo "	$file DOES NOT EXIST!"
+			fi
+			echo ">>>>>END $file" >&2
+		done
+	fi
+	return
+}
+
+function dbg_echo
+{
+	if [ ! -z "$DRF_DEBUG" ]
+	then
+		echo "+++++$*" >&2
+	fi
+	return
+}
+
+export SCRIPTS=/etc/inst/scripts
+export LANG=${LANG:-C}
+unset DRF_SUFFIX
+# set DRF_SUFFIX for the locale. DRF_SUFFIX is tacked onto TERM
+export DO_88591=false
+if [ "$LANGS" = "C" -a -z "$KEYBOARD" ] || [ "$LANGS" = "ja" ] ||
+        [ "$KEYBOARDS" = "AX" ] || [ "$KEYBOARDS" = "A01" ]
+then
+	DO_88591=false
+	TERM=${TERM%-ie}
+else
+	DO_88591=true
+	DRF_SUFFIX="-ie"
+	echo "COFONT=\"8859-1\"" >/etc/default/cofont
+fi
+if [ "$LANGS" = "ja" ]
+then
+	TERM=${TERM%-mb}
+	TERM=${TERM%-ie}-mb
+	echo "MBCONSOLE=yes" >>/etc/default/coterm
+fi
+
+export C_SCRIPTS=/etc/inst/locale/C/menus
+export LANGDEP_SCRIPTS=/etc/inst/locale/${LANG}/menus
+[ -d $LANGDEP_SCRIPTS ] || LANGDEP_SCRIPTS=$C_SCRIPTS
+export FPATH=$SCRIPTS:$LANGDEP_SCRIPTS
+export IDCMD=/etc/conf/bin
+typeset -lx SH_DEBUG=yes # set to null to turn off
+typeset -lx SH_VERBOSE=""  # set to null to turn off
+typeset -x RAMROOT=/tmp
+export DSK_GOOD="Bad"
+export PATH=$PATH:/usr/bin:/usr/sbin:/sbin:.
+export TERM
+
+function nond_init 
+{
+	dbg_echo "nond_init: BEGIN"
+	# Check the sanity of the disks
+	DSK_GOOD="Bad"
+	error=0
+	[ "$VM_RUNNING" = "Yes" ] && {
+		dbg_echo "nond_init: VM_RUNNING is true"
+		[ -s /etc/old_vtoc_1 ] && {
+		edvtoc -f /etc/old_vtoc_1 ${CHAR_DISK_NODES[0]} >/dev/null <<-END
+		y
+		END
+		call unlink /etc/old_vtoc_1
+		}
+		[ -s /etc/old_vtoc_2 -a -n "${CHAR_DISK_NODES[1]}" ] && {
+		edvtoc -f /etc/old_vtoc_2 ${CHAR_DISK_NODES[1]} >/dev/null <<-END
+		y
+		END
+		call unlink /etc/old_vtoc_2
+		}
+		kill -USR1 1
+	}
+	dbg_echo "nond_init: do prtvtoc and make sure swap exists"
+	for swap_disk in 0 1
+	do
+		prtvtoc ${CHAR_DISK_NODES[swap_disk]} >/tmp/vtoc
+		dbg_cat /tmp/vtoc
+		grep SWAP /tmp/vtoc | IFS=':	 ' read a swap_slice b
+		[  -z "$swap_slice" ] || break
+	done
+	dbg_echo "nond_init: swap slice is $swap_slice, if blank END Bad"
+	[ -n "$swap_slice" ] || return 1
+
+	dbg_echo "nond_init: Try mounting root disk as /mnt, if cannot END Bad"
+	mountloop -r ${BLOCK_DISK_NODES[0]%s0}s1 /mnt || return 1
+	dbg_echo "nond_init: Try mounting stand disk as /mnt/stand, if cannot END Bad"
+	mountloop -r ${BLOCK_DISK_NODES[0]%s0}sa /mnt/stand || return 1
+	error=0
+	dbg_echo "nond_init: mount the slices in /mnt/etc/vfstab"
+	while read special fsckdev mountp fstyp fsckpass automnt mountopts macceiling
+
+	do
+		case $mountp in
+                        /)
+				ROOTFS=$fstyp
+                                continue;;
+			/usr | /home | /home2 )
+				dbg_echo "nond_init: mount $special at /mnt/$mountp"
+				if [ "$automnt" = "yes" ]
+				then
+					sh_mount -F$fstyp -r $special /mnt/$mountp || error=1
+				fi
+				continue;;
+			/var )
+				dbg_echo "nond_init: mount $special at /mnt/$mountp"
+				sh_mount -F$fstyp -r $special /mnt/$mountp || error=1
+				continue;;
+			*) continue;;
+		esac
+	done < $VFSTAB
+	call unlink /tmp/vtoc
+	if [ $error -eq 1 ]
+	then
+		dbg_echo "nond_init: END Bad"
+		return 1
+	else	
+		DSK_GOOD="Good"
+		dbg_echo "nond_init: END Good"
+		return 0
+	fi
+}
+
+function get_max_len
+{
+        if [ "$1" = -s ]
+        then
+                shift
+                integer str=1
+        else
+                integer str=0
+        fi
+
+        var=$1
+        shift
+        integer max=0
+        for i
+        do
+                case "$i" in
+                [0-9]*)
+                        if (( max < i ))
+                        then
+                                max=i
+                        fi
+                        ;;
+                *)
+                        if (( str ))
+                        then
+                                tmp="$i"
+                        else
+                                eval tmp=\"\${$i}\"
+                        fi
+                        if (( max < ${#tmp} ))
+                        then
+                                max=${#tmp}
+                        fi
+                esac
+        done
+        let $var=$max
+}
+
+function Console_type 
+{
+	Color_Console 
+	[ -z "$DRF_SUFFIX" ] && { 
+		TERM=${TERM%-ie}
+        	set_term $TERM
+	}
+	call unlink /usr/sbin/adpt_type
+}
+
+function make_devs
+{
+	[ -s /tmp/devs.cpio ] && cpio -icdm </tmp/devs.cpio >/dev/null 2>&1
+	call unlink /tmp/devs.cpio
+	set -A CHAR_DISK_NODES -- $(/etc/scsi/bmkdev)
+	(( b_index = 0 ))
+	for b_value in ${CHAR_DISK_NODES[*]}
+	do
+		b_base=${b_value##*/}
+		b_dir=${b_value%/rdsk/${b_base}}
+		BLOCK_DISK_NODES[b_index]=${b_dir}/dsk/${b_base}
+		(( b_index += 1 ))
+	done
+	export CHAR_DISK_NODES BLOCK_DISK_NODES
+	call unlink /etc/scsi/bmkdev
+}
+
+function get_snum
+{
+	get_max_len WN_SZ SERIAL_FIELD SERIAL_TITLE
+	place_window 2+${WN_SZ}+2+10+2 6 -current 'footer "$GENERIC_FORM_FOOTER"' -right 0 -below 0 -fg $COMBO2_FG -bg $COMBO2_BG -title "$SERIAL_TITLE"
+	open_form 
+	SERIAL_FID=$FID export SERIAL_FID
+	add_field -ilen 10 -p "$SERIAL_FIELD" -entry 'msg "$SERIAL_PROMPT"' -px 2 -py 2 -ix 2+${#SERIAL_FIELD} -iy 2 -help 'helpwin drf_snum' "NEW_SNUM"
+	run_form $SERIAL_FID
+	call proc_loop
+}
+
+function check_snum
+{
+	DISK_SNUM=`cat /mnt/etc/.snum`
+	FLP_SNUM=`cat /etc/snum`
+	if [ "$DISK_SNUM" = "${FLP_SNUM}" ]
+	then
+		footer
+		msg
+		return 0
+	fi
+	attempts=0 
+	get_snum
+	if [ "$DISK_SNUM" = "${NEW_SNUM}" -o "$DISK_SNUM" = "${NEW_SNUM#????}" -o "$DISK_SNUM" = "${NEW_SNUM#?????}" ]
+	then
+	    footer
+	    msg
+	    return 0
+	else
+	    let attempts=attempts+1
+	    while [ $attempts -lt 5 ]
+	    do
+	        SERIAL_PROMPT="$INCORRECT_SNUM"
+		get_snum
+		if [ "$DISK_SNUM" = "${NEW_SNUM}" ]
+		then
+	    		msg 
+	    		footer
+	    		return 0
+		fi
+	        let attempts=attempts+1
+	    done
+	    msg 
+	    footer 2>/dev/null
+	    display  "$SNUM_FATAL"
+	    call getkey
+	    drf_rebooot
+	fi
+}
+
+function drf_rebooot
+{
+	wclose
+	msg
+	footer 2>/dev/null  
+	display "$REBOOT_MSG"
+	umountall > /dev/null 2>&1
+	[ "$VM_RUNNING" = "Yes" ] && {
+		[ -s /etc/new_vtoc_1 ] && {
+		edvtoc -f /etc/new_vtoc_1 ${CHAR_DISK_NODES[0]} >/dev/null <<-END
+		y
+		END
+		}
+		[ -s /etc/new_vtoc_2 -a -n "${CHAR_DISK_NODES[1]}" ] && {
+		edvtoc -f /etc/new_vtoc_2 ${CHAR_DISK_NODES[1]} >/dev/null <<-END
+		y
+		END
+		}
+	}
+	call getkey
+	wclose
+	call win_done
+	clear_screen
+	call uadmin 2 1
+}
+
+function unmount_files
+{
+	msg
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$DRF_UNMNT_MSG"
+	umountall >/dev/null 2>&1
+	call sleep 1
+	wclose $CURWIN
+	footer "$GENERIC_MENU_FOOTER"
+	msg "$UNMNT_PROMPT"
+}
+
+function mount_files
+{
+	msg
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$DRF_MNT_MSG"
+	umountall > /dev/null 2>&1
+	mountloop  ${BLOCK_DISK_NODES[0]%s0}s1 /mnt
+	mountloop  ${BLOCK_DISK_NODES[0]%s0}sa /mnt/stand
+	while read special fsckdev mountp fstyp fsckpass automnt mountopts macceiling
+	do
+		case $mountp in
+			/usr | /home | /home2 | /var )
+				sh_mount -F$fstyp $special /mnt/$mountp || {
+					/etc/fs/$fstyp/fsck -y $fsckdev >/dev/null 2>&1
+					sh_mount -F$fstyp $special /mnt/$mountp || error=1
+				}
+				continue;;
+			*) continue;;
+		esac
+	done < $VFSTAB
+	wclose $CURWIN
+	footer "$GENERIC_MENU_FOOTER"
+	msg "$MNT_PROMPT"
+}
+
+function get_sec_medium
+{
+	msg
+	footer 2> /dev/null #clear the footer
+	FOUND=false
+	display "$TAPE_PROMPT"
+	call getkey
+	wclose
+	for i in /dev/rmt/tape?
+	do
+		check_devs -g ${i} && {
+			SEC_MEDIUM=$i
+			FOUND=true
+			break
+		}
+	done
+	$FOUND || {
+		display "$TAPE_OPEN_ERROR" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+		return 1
+	}
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$RETENSION_WAIT"
+	tapeop -t ${SEC_MEDIUM} # Retension the tape
+	tapeop -w ${SEC_MEDIUM} # Rewind the tape
+	tapeop -f 512 ${SEC_MEDIUM} # set the fixed block length
+	wclose
+	display "$DISK_INFO_READ_MSG"
+	cd /
+	cpio -icdu -I ${SEC_MEDIUM}n '.extra.d/Drf_Rec*' >/dev/null || {
+		wclose
+		display "$TAPE_READ_ERROR" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+		return 1
+	}
+	wclose
+	return 0
+}
+
+function next_tape_prompt
+{
+	wclose
+	footer 2> /dev/null #clear the footer
+	display "$NEXT_TAPE_PROMPT"
+	call getkey
+	wclose
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$RETENSION_WAIT"
+	tapeop -t ${SEC_MEDIUM} # Retension the tape
+	tapeop -w ${SEC_MEDIUM} # Rewind the tape
+	tapeop -f 512 ${SEC_MEDIUM} # Rewind the tape
+	wclose
+	display "$DSK_RST_MSG"
+}
+
+function disp_disk_set_err
+{
+	footer 2>/dev/null
+	wclose
+	display "$DSK_SETUP_ERR"
+	call getkey
+	wclose
+}
+
+function disp_disk_rst_err
+{
+	footer 2>/dev/null
+	wclose
+	display "$DSK_RST_ERR"
+	call getkey
+	wclose
+}
+
+function do_ddrestore
+{
+	display "$DSK_RST_MSG"
+	chmod +w ${CHAR_DISK_NODES[0]%s0}p0
+	dd if=${SEC_MEDIUM}n of=${CHAR_DISK_NODES[0]%s0}p0 bs=64k  >/dev/null 2>&1
+	[ $? -ne 0 ] && {
+		disp_disk_rst_err
+		chmod -w ${CHAR_DISK_NODES[0]%s0}p0
+		return 1
+	}
+	chmod -w ${CHAR_DISK_NODES[0]%s0}p0
+	rm -rf ${WRK_DIR}
+	footer 2>/dev/null
+	wclose
+	display "$RESTORE_SUCCESS"
+	call getkey
+	wclose
+	return 0
+}
+
+# arg1 the s0 device name to create the partitions
+# arg2 contains the sizes of the partitions 
+# arg3 contains the number of partitions to create
+
+function delete_parts
+{
+	integer p0[4] p1[4] p2[4] dls[4]
+   
+	echo "fdisk -L \$1  >/tmp/fdisk_out <<-END" > /tmp/del_parts
+
+	partsize -d $1 2>/dev/null | {
+		read junk
+		read junk
+		read junk
+		read junk p0[1] junk junk p1[1] junk junk p2[1] junk
+		read junk p0[2] junk junk p1[2] junk junk p2[2] junk
+		read junk p0[3] junk junk p1[3] junk junk p2[3] junk
+		read junk p0[4] junk junk p1[4] junk junk p2[4] junk
+	}  && {
+
+		for i in 1 2 3 4
+		do
+			let dls[$i]=0
+    		done
+
+		integer count i q1 q2 num_parts
+		let num_parts=$3
+		while (( num_parts > 0))
+		do
+		     read q1 q2
+		     let count=4
+		     while (( count > 0))
+		     do
+			if ((${p0[$count]} == 100 ))
+			then
+				count=count-1
+				continue
+	   		fi
+ 	   		if (((${q1} >= ${p1[$count]} )) && ((${q1} <= ${p2[$count]})))
+	   		then
+				let dls[$count]=1
+	   		fi	
+	   		count=count-1
+         	     done
+		     let count=4
+		     while (( count > 0))
+		     do
+			if ((${p0[$count]} == 100 ))
+	   		then
+				count=count-1
+				continue
+	   		fi
+ 	   		if (((${q2} >= ${p1[$count]} )) && ((${q2} <= ${p2[$count]})))
+	   		then
+				let dls[$count]=1
+	   		fi	
+	   	        count=count-1
+         	     done
+		     let count=4
+		     while (( count > 0))
+		     do
+			if ((${p0[$count]} == 100 ))
+	   		then
+				count=count-1
+				continue
+	   		fi
+ 	   		if (((${q1} <= ${p1[$count]} )) && ((${q2} >= ${p2[$count]})))
+	   		then
+				let dls[$count]=1
+	   		fi	
+	   	        count=count-1
+         	     done
+		     num_parts=num_parts-1
+    		done < $2
+		for i in 4 3 2 1
+		do
+			if  ((${dls[$i]} > 0 )) 
+			then
+       				print  d $i >> /tmp/del_parts
+			fi
+    		done
+  	   }
+  	echo "s" >> /tmp/del_parts
+  	echo "END" >> /tmp/del_parts
+  	sh /tmp/del_parts $1 
+  	return $?
+}
+
+# arg1 file containing the script to create the partitions
+# arg2 the s0 device name to create the partitions
+# arg3 contains the sizes of the partitions 
+# arg4 contains the number of partitions 
+
+function create_parts
+{
+	delete_parts $2 $3 $4 || return 1
+	sh $1 $2
+	return $?
+}
+
+function gen_ptscript
+{
+	for i in $*
+	do
+		echo "$i" | grep "/dev/rdsk/" > /dev/null 2>&1
+		[ $? -ne 0 ] && continue
+		if [ "$fs_type" = "sfs" ]
+		then
+			print "/etc/fs/sfs/fsck -y -o p $i"
+		elif [ "$fs_type" = "vxfs" ]
+		then
+			print "/etc/fs/vxfs/fsck -y -o full $i"
+		elif [ "$fs_type" = "ufs" ]
+		then
+			print "/etc/fs/ufs/fsck -y -o p $i"
+		elif [ "$fs_type" = "s5" ]
+		then
+			print "/etc/fs/s5/fsck -y -p $i"
+		else
+			print "/etc/fs/$fs_type/fsck -y $i"
+		fi
+		break
+	done
+}
+
+function do_cpiorestore
+{
+	integer parts_create=1
+	integer dd_fs=0
+
+	display "$DSK_SETUP"
+	[ -f ${WRK_DIR}/disksetup ] || {
+		disp_disk_set_err
+		return 1
+	}
+	call symlink ${WRK_DIR}/disksetup /usr/sbin/disksetup
+	
+	[ -s ${WRK_DIR}/part_dd_1 ] && parts_create=2
+
+	create_parts ${WRK_DIR}/fd_cmds_11 ${CHAR_DISK_NODES[0]} ${WRK_DIR}/fd_cmds_12 ${parts_create}
+	[ $? -ne 0 ] && {
+		disp_disk_set_err
+		return 1
+	}
+	>/etc/mnttab      #There is no mnttab; disksetup complains about it
+	disksetup -e -m $MEMSZ -x /tmp/hdscrpts.sh -d ${WRK_DIR}/lay_out_1 -b ${WRK_DIR}/boot -IBsn ${CHAR_DISK_NODES[0]} || {
+		disp_disk_set_err
+		return 1
+	}
+	[ -s ${WRK_DIR}/lay_out_2 ] && {
+		create_parts ${WRK_DIR}/fd_cmds_21 ${CHAR_DISK_NODES[1]} ${WRK_DIR}/fd_cmds_22 1
+		[ $? -ne 0 ] && {
+			disp_disk_set_err
+			return 1
+		}
+		disksetup -e -m $MEMSZ -x /tmp/hdscrpts.sh -d ${WRK_DIR}/lay_out_2  -Isn ${CHAR_DISK_NODES[1]} || {
+			disp_disk_set_err
+			return 1
+		}
+	}
+
+	> /tmp/hdscrpts.tmp
+	> /tmp/ptscrpts.sh
+	while read line
+        do
+		fs_type=""
+                case "$line" in
+                */mount*)
+                        line="mount${line#*mount}"
+			if [ $dd_fs -eq 1 ]
+			then
+				# Also add line to post script file
+				print "$line" >> /tmp/ptscrpts.sh
+			fi
+                        ;;
+                *ufs/mkfs*\-o\ C,*)
+                        line="/etc/fs/ufs/mkfs -o L,${line#*C,}"
+			fs_type="ufs"
+                        ;;
+                *sfs/mkfs*\-o\ C,*)
+                        line="/etc/fs/sfs/mkfs -o L,bsize=${line#*bsize=}"
+			fs_type="sfs"
+                        ;;
+                *vxfs/mkfs*\-o\ C,*)
+                        line="/etc/fs/vxfs/mkfs -o L,${line#*C,}"
+			fs_type="vxfs"
+                        ;;
+		*bfs/mkfs*)
+			fs_type="bfs"
+                esac
+                print "$line" >> /tmp/hdscrpts.tmp
+		if [ $dd_fs -eq 1 -a -n "$fs_type" ]
+		then
+			gen_ptscript $line >> /tmp/ptscrpts.sh
+		fi
+        done </tmp/hdscrpts.sh
+
+	>/tmp/hdscrpts2.sh
+	while read line
+	do
+		[ -z "$line" ] && continue
+		print "$line || { disp_disk_set_err; return 1; }"
+	done < /tmp/hdscrpts.tmp >>/tmp/hdscrpts2.sh
+
+	call unlink /tmp/hdscrpts.tmp
+        . /tmp/hdscrpts2.sh
+
+	[ $? -ne 0 ] && return 1
+
+	rm -f  /tmp/del_parts /tmp/vfstab /tmp/fdisk_out
+	rm -f /tmp/hdscrpts2.sh /tmp/hdscrpts.sh
+
+	add_disk_swap
+	wclose
+	display "$DSK_RST_MSG"
+	[ -s ${WRK_DIR}/part_dd_1 ] && {
+		dbg_echo "do_cpiorestore: dd part 1"
+		read dd_to_cp sys_part < ${WRK_DIR}/part_dd_1
+		dd if=${SEC_MEDIUM}n of=${CHAR_DISK_NODES[0]%s0}${sys_part} bs=512  >/dev/null 2>&1
+		[ $? -ne 0 ] && {
+			disp_disk_rst_err
+			return 1
+		}
+	}
+
+	if [ $dd_fs -eq 0 ]
+	then
+		cd /mnt
+	 	( cpio -icmdu -M "" -G STDIO -I ${SEC_MEDIUM}n  2>/dev/null 
+		     err=$?
+		     echo one one one
+		     echo Done Done Done
+		     echo $err) |&
+   	
+		while :
+		do
+		      read -p one two three
+		      dbg_echo "do_cpiorestore: cpio output: $one - $two - $three"
+		      [ "$one" = "Done" ] && {
+			   read -p err
+		           dbg_echo "do_cpiorestore: cpio done: error was $err"
+			   break
+		      }
+		      if [ "$two" = "of" ]
+		      then
+		           dbg_echo "do_cpiorestore: cpio next: ask for next tape"
+			   next_tape_prompt
+			   print -p
+		      fi
+		done
+		dbg_echo "do_cpiorestore: cpio completed: err = $err"
+	
+		if [ $err -ne 0 -a $err -ne 2 ] 
+		then
+			   cd /
+			   disp_disk_rst_err
+			   return 1
+		fi
+	fi
+
+	[ -s /tmp/nws_sys_path ] && {
+		wait #for above asynchronous process to finish
+		( cpio -icmdu -M "" -G STDIO -I ${SEC_MEDIUM}n  2>/tmp/err
+		     err=$?
+		     echo one one one
+		     echo Done Done Done
+		     echo $err) |&
+   	
+		while :
+		do
+		      read -p one two three
+		      [ "$one" = "Done" ] && {
+			   read -p err
+			   break
+		      }
+		      if [ "$two" = "of" ]
+		      then
+			   next_tape_prompt
+			   print -p
+		      fi
+		done
+		
+		if [ $err -ne 0 -a $err -ne 2 ] 
+		then
+			   cd /
+			   disp_disk_rst_err
+			   return 1
+		fi
+	}
+
+	cd /
+
+	if [ $dd_fs -eq 1 ]
+	then
+		# need to ensure all file systems are unmounted
+		for i in 1 2 3 4 5 6
+		do
+			while read cdevice bdevice
+			do
+				umount $bdevice > /dev/null 2>&1
+			done < ${WRK_DIR}/dd_list
+		done
+		umountall >/dev/null 2>&1
+
+		while read cdevice bdevice
+		do
+			wclose
+			dd if=${SEC_MEDIUM}n of=$cdevice bs=64k > /dev/null 2>&1
+			[ $? -ne 0 ] && {
+				disp_disk_rst_err
+				return 1
+			}
+		done < ${WRK_DIR}/dd_list
+
+		# Now need to fsck/mount out file systems
+		. /tmp/ptscrpts.sh > /dev/null 2>&1
+
+		call unlink /tmp/ptscrpts.sh
+	fi
+
+	[ -s ${WRK_DIR}/part_dd_1 ] && {
+		mkdir -p /mnt/usr/lib/drf
+		>/mnt/usr/lib/drf/dd_flag
+	}
+
+	call unlink /usr/sbin/disksetup
+	chroot /mnt /etc/security/tools/priv_upd  >/dev/null 2>&1
+	chroot /mnt /sbin/initprivs  >/dev/null 2>&1
+	rm -rf /mnt/dev/X/*  #delete stale files; otherwise dtm will not come up
+	#edit /mnt/inittab to copy the vol slice at next reboot
+	[ -s ${WRK_DIR}/odm_vtoc_1 -o -s ${WRK_DIR}/odm_vtoc_2 ] && {
+	/mnt/usr/bin/ed -s /mnt/etc/inittab >/dev/null <<-END
+	1
+	i
+	drf::sysinit:/etc/vx/.drf/priv_slc_copy ${CHAR_DISK_NODES[0]%s0}sf ${CHAR_DISK_NODES[1]%s0}sf
+	.
+	w
+	q
+	END
+	cp /mnt/etc/vx/.drf/S90DRF /mnt/etc/rc2.d >/dev/null 2>&1
+	rm -rf /mnt/etc/vx/vold*   #Delete the stale odm pipe files
+	}
+
+	#Now edit the vtoc tables if necessary
+	[ -s ${WRK_DIR}/odm_vtoc_1 ] && {
+		edvtoc -f ${WRK_DIR}/odm_vtoc_1 ${CHAR_DISK_NODES[0]} >/dev/null <<-END
+		y
+		END
+		[ $? -ne -0 ] && {
+			disp_disk_rst_err
+			return 1
+		}
+		[ -s /etc/new_vtoc_1 ] && rm -f /etc/new_vtoc_1
+	}
+	[ -s ${WRK_DIR}/odm_vtoc_2 ] && {
+		edvtoc -f ${WRK_DIR}/odm_vtoc_2 ${CHAR_DISK_NODES[1]} >/dev/null <<-END
+		y
+		END
+		[ $? -ne -0 ] && {
+			disp_disk_rst_err
+			return 1
+		}
+		[ -s /etc/new_vtoc_2 ] && rm -f /etc/new_vtoc_2
+	}
+	rm -rf ${WRK_DIR} 
+	footer 2>/dev/null
+	wclose
+	display "$RESTORE_SUCCESS"
+	call getkey
+	wclose
+	return 0
+}
+
+function do_restore
+{
+	if [ -f ${WRK_DIR}/entire_dsk ]  # this is entire disk using dd
+	then
+		do_ddrestore
+	else
+		do_cpiorestore
+	fi
+}
+
+function drf_restore
+{
+	. /funcrc
+	umountall > /dev/null 2>&1
+	[ -s /tmp/diskswap.rem ] && /tmp/diskswap.rem 1>&2
+	WRK_DIR=/.extra.d/Drf_Rec export WRK_DIR
+	get_sec_medium && do_restore
+	[ -s /tmp/nws_sys_path ] && {
+		cp /mnt/usr/lib/drf/S01drf_nws /mnt/etc/rc3.d/S01drf_nws
+		cp /tmp/nws_sys_path /mnt/usr/lib/drf/nws_sys_path
+	}
+	footer "$GENERIC_MENU_FOOTER"
+	msg "$RESTORE_PROMPT"
+}
+
+function do_stty
+{
+
+        INTR=$(stty -a)
+        INTR=${INTR#*intr = }
+        INTR=${INTR%%;*}
+        if [ "$INTR" = DEL ]
+        then
+                INTR='^?'
+        elif [ "$INTR" = '<undef>' ]
+        then
+                INTR='^@'
+	fi
+	stty intr '^@'
+        tab="   "
+        nl="
+"
+}
+
+function add_disk_swap
+{
+	[ -s /tmp/diskswap.rem ] && /tmp/diskswap.rem 1>&2
+	for swap_disk in 0 1
+	do
+		prtvtoc ${CHAR_DISK_NODES[swap_disk]} >/tmp/vtoc 2> /dev/null
+		grep SWAP /tmp/vtoc | IFS=':	 ' read a swap_slice b
+		[ -z "$swap_slice" ] || break
+	done
+	call unlink /tmp/vtoc
+	[ -n "$swap_slice" ] || return 
+	/usr/sbin/swap -a ${BLOCK_DISK_NODES[swap_disk]%s0}s${swap_slice} || return 
+	echo /usr/sbin/swap -d ${BLOCK_DISK_NODES[swap_disk]%s0}s${swap_slice} >/tmp/diskswap.rem
+	chmod 755 /tmp/diskswap.rem
+
+}
+function drf_start
+{
+	dbg_echo "drf_start: BEGIN"
+	# Immediately prompt for the second disk
+
+	dbg_echo "drf_start: prompt for next floppy"
+	footer 2>/dev/null
+	display "$DRF_NEXT_FLP"
+	call getkey
+	wclose $CURWIN
+	# First, make sure this is the right floppy
+	dbg_echo "drf_start: read floppy2 label"
+	cpio -iduc -I /dev/dsk/f0t
+	if [ $? -ne 0 -o "${REL_FULLNAME} Boot Floppy 2" != "`cat /tmp/flop.label`" ] 
+	then
+		display "$FLPY2_READ_ERROR_1" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+	fi
+	dbg_echo "drf_start: read floppy2 files"
+	footer "$GENERIC_WAIT_FOOTER"
+	display "$DRF_READ_FLP"
+	[ -d /var/preserve ] || mkdir -p /var/preserve
+	[ -d /.extra.d ] || mkdir /.extra.d
+	sh_mount -F memfs -o swapmax=3000000,rootmode=01777 /memfs /.extra.d \
+		>/dev/null 2>&1
+	cpio -iduc -DZ -I /dev/dsk/f0
+	if [ $? -ne 0 ]
+	then
+		display "$FLPY2_READ_ERROR_1" -bg $RED -fg $WHITE
+		call getkey
+		wclose
+	fi
+	wclose $CURWIN
+
+	dbg_echo "drf_start: display hard modules wait screen"
+	display "$DRF_HARD_MODS_WAIT"
+	footer "$GENERIC_WAIT_FOOTER"
+	while read module
+	do
+		module=${module#*:*:} # delete the first two fields
+		module=${module%%:*}  # delete all but the first field
+		dbg_echo "drf_start: modreg/sh_modadmin $module"
+		call symlink /.extra.d/etc/conf/hbamod.d/$module /etc/conf/mod.d/$module
+		modreg 6 $module
+		sh_modadmin -l $module >/dev/null 2>&1
+		call unlink /etc/conf/mod.d/$module
+	done < /etc/loadmods
+	dbg_echo "drf_start: exec make_devs"
+	make_devs
+	wclose
+	display "$DRF_SOFT_MODS_WAIT"
+	dbg_echo "drf_start: display soft modules wait screen"
+	( cd /.extra.d/etc/conf/mod.d
+	kdb_soft=n
+	for i in *
+	do
+		if [ -s $i -a "$i" != "kdb" ] 
+		then
+			call symlink /.extra.d/etc/conf/mod.d/$i /etc/conf/mod.d/$i
+			dbg_echo "drf_start: modreg/sh_modadmin $i"
+        		modreg 4 $i
+        		sh_modadmin -l $i || {
+				wclose
+				display "$FS_MOD_LOAD_ERROR" -bg $RED -fg $WHITE
+				call getkey
+				wclose
+				display "$DRF_SOFT_MODS_WAIT"
+			}
+			call unlink /etc/conf/mod.d/$i
+		fi
+		[ "$i" = "kdb" ] && kdb_soft=y
+	done
+	if [ "$kdb_soft" = "y" ]
+	then
+		call symlink /.extra.d/etc/conf/mod.d/kdb /etc/conf/mod.d/kdb
+		dbg_echo "drf_start: modreg/sh_modadmin kdb"
+        	modreg 4 kdb
+        	sh_modadmin -l kdb || {
+			wclose
+			display "$FS_MOD_LOAD_ERROR" -bg $RED -fg $WHITE
+			call getkey
+			wclose
+			display "$DRF_SOFT_MODS_WAIT"
+		}
+		call unlink /etc/conf/mod.d/kdb
+	fi )
+	dbg_echo "drf_start: display soft modules wait screen"
+	wclose
+	display "$DRF_SOFT_MODS_WAIT"
+	footer "$GENERIC_WAIT_FOOTER"
+	call symlink /.extra.d/etc/fs /etc/fs
+	dbg_echo "drf_start: exec nond_init"
+	nond_init
+	wclose 
+	footer 2>/dev/null
+	if [ "$DSK_GOOD" == "Good" ]
+	then
+		dbg_echo "drf_start: exec check_snum"
+		# Checking the serial number determined to be irrelevant
+		#	with the new licensing
+		# check_snum
+		display  "$DRF_DSK_GOOD"
+	else
+		dbg_echo "drf_start: unable to mount required slices"
+		display  "$DRF_DSK_BAD"
+	fi
+	call getkey
+	wclose
+	dbg_echo "drf_start: unmount the fs's under /mnt"
+	umountall > /dev/null 2>&1
+	dbg_echo "drf_start: END"
+}
+
+function create_env
+{
+	print ". /funcrc" > $1
+	print clear_screen >> $1
+	print -n 'MiniWelcome="' >> $1
+	print -n "$MiniWelcome" >> $1
+	print '"' >> $1
+	print 'print "$MiniWelcome"' >> $1
+	print 'export ENV=/funcrc' >> $1
+	call putenv "ENV=$1"
+}
+
+function access_sh
+{
+	dbg_echo "access_sh: BEGIN"
+	if [ -n "$SERIALCONS" ]
+	then
+	    dbg_echo "access_sh: SERIALCONS defined, so exec 'create_env /tmp/drf_env'"
+	    create_env /tmp/drf_env
+	    dbg_echo "access_sh: call win_execute to invoke /sbin/sh"
+	    call win_execute "/sbin/sh -i -o vi 2>/dev/console >/dev/console </dev/console"
+	    call unlink /tmp/drf_env
+	else
+	    dbg_echo "access_sh: SERIALCONS not defined, so exec 'sh_newvt 2'"
+	    dbg_echo "		to create and activate a new sh screen"
+	    sh_newvt 2
+	fi
+	dbg_echo "access_sh: END"
+}
+
+#main
+
+echo "+++++DRF_DEBUG=$DRF_DEBUG" >&2
+
+dbg_echo "exec do_stty"
+do_stty
+dbg_echo "dot in $SCRIPTS/funcrc"
+. $SCRIPTS/funcrc
+dbg_echo "dot in $LANGDEP_SCRIPTS/txtstrings"
+. $LANGDEP_SCRIPTS/txtstrings
+dbg_echo "dot in $SCRIPTS/winrc"
+. $SCRIPTS/winrc
+dbg_echo "kb_remap $KEYBOARD if \$SERIALCONS not defined: $SERIALCONS"
+#Must down load the fonts before calling scr_init
+[ -z "$SERIALCONS" ] && {
+    $DO_88591 && /usr/bin/kb_remap -f 88591
+    [ -z "$KEYBOARD" ] ||  /usr/bin/kb_remap -k $KEYBOARD vt00 vt01 >/tmp/kb 2>&1
+}
+dbg_echo "exec Console_type"
+Console_type
+
+dbg_echo "kb_remap to ja if \$SERIALCONS not defined: $SERIALCONS and $LANGS=ja"
+[ -z "$SERIALCONS" ] && {
+   if [ "$LANGS" = "ja" ]
+   then
+     	#down load multi-byte console driver
+	/usr/bin/kb_remap -l ja vt00 vt01
+   fi
+}
+
+dbg_echo "exec $SCRIPTS/scr_init"
+. $SCRIPTS/scr_init boot
+typeset -x RELATED_HELPS=drf_help     # used in helpwin
+VFSTAB=/mnt/etc/vfstab export VFSTAB
+[ "$VM_RUNNING" == "Yes" ] && VFSTAB=/etc/odm_vfstab
+
+call unlink /sbin/autopush
+dbg_echo "exec drf_start"
+drf_start
+rm -f step1rc step2rc
+
+dbg_echo "begin main menu"
+WIN_ROWS=4
+get_max_len WIN_COLS DRF_MOUNT DRF_UNMOUNT DRF_SHELL DRF_RESTORE DRF_REBOOT
+open_menu -x 2 -y 1
+MAIN_MENU=$MID
+if [ "$DSK_GOOD" == "Good" ]
+then
+     WIN_ROWS=6
+     add_menu_item -entry "msg $MNT_PROMPT" -help 'helpwin drf_mount drf_help' -select 'mount_files' "$DRF_MOUNT"
+     add_menu_item -entry "msg $UNMNT_PROMPT" -help 'helpwin drf_umount drf_help' -select 'unmount_files' "$DRF_UNMOUNT"
+fi
+add_menu_item -entry "msg $SH_PROMPT" -help 'helpwin drf_sh drf_help' -select 'access_sh' "$DRF_SHELL"
+add_menu_item -entry "msg $RESTORE_PROMPT" -help 'helpwin drf_rst drf_help' -select 'drf_restore' "$DRF_RESTORE"
+add_menu_item -entry "msg $REBOOT_PROMPT" -help 'helpwin drf_rbt drf_help' -select 'drf_rebooot' "$DRF_REBOOT"
+
+place_window 2+${WIN_COLS}+2 $WIN_ROWS -title "$MAIN_TITLE" -current 'footer "$GENERIC_MENU_FOOTER"' -fg $WHITE -bg $BLUE
+set_hotkey 8 screen_refresh
+run_menu $MAIN_MENU
+call proc_loop
+wclose
+destroy_menu $MAIN_MENU
+
+drf_rebooot
+exit

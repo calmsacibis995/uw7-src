@@ -1,0 +1,200 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:16:02
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1997-1998.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+#include <Server.tmpl>
+
+.SUFFIXES: .i
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+SRCS = gd5465Cmap.c gd5465Cursor.c gd5465GC.c \
+    gd5465Image.c gd5465Data.c gd5465Screen.c \
+    gd5465Blit.c gd5465Glyph.c gd5465Font.c gd5465Tile.c \
+    gd5465Bres.c 
+
+OBJS =	gd5465Cmap.o gd5465Cursor.o gd5465GC.o \
+    gd5465_8bppImage.o gd5465_16bppImage.o gd5465_24bppImage.o \
+    gd5465Data.o gd5465Screen.o \
+    gd5465Blit.o gd5465Glyph.o gd5465Font.o gd5465Tile.o \
+    gd5465_8bppBres.o gd5465_16bppBres.o \
+    gd5465_24bppBres.o 
+
+STD_DEFINES = ServerDefines
+
+#if defined(USLArchitecture)
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+DDXLIBS = libgd5465.a
+GRAFDIR=$(USRLIBDIR)/grafinfo
+
+all::
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCPY $(NOOP_))
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget(gd5465,$(OBJS))
+SharedXDriverTarget(gd5465,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(gd5465,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(gd5465,$(DDXLIBS),gd5465Data.c)
+
+OPT8=-DBITS_PER_PIXEL=8 -DGD5465HEAD=gd5465_8bpp
+OPT16=-DBITS_PER_PIXEL=16 -DGD5465HEAD=gd5465_16bpp
+OPT24=-DBITS_PER_PIXEL=24 -DGD5465HEAD=gd5465_24bpp
+
+gd5465_8bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_8bppBres.c
+
+gd5465_8bppBres.o: 
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT8) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT8))
+
+gd5465_16bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_16bppBres.c
+
+gd5465_16bppBres.o:
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT16) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT16))
+
+gd5465_24bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_24bppBres.c
+
+gd5465_24bppBres.o:
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT24) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT24))
+
+gd5465_8bppImage.c: 
+	$(LN) gd5465Image.c gd5465_8bppImage.c
+
+gd5465_8bppImage.o: 
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT8) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT8))
+
+gd5465_16bppImage.c: 
+	$(LN) gd5465Image.c gd5465_16bppImage.c
+
+gd5465_16bppImage.o: 
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT16) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT16))
+
+gd5465_24bppImage.c: 
+	$(LN) gd5465Image.c gd5465_24bppImage.c
+
+gd5465_24bppImage.o: 
+	LibObjCompile(shared, -DMEMCPY=SLOWCOPY $(OPT24) -Kpic)
+	NormalLibObjCompile(-DMEMCPY=SLOWCOPY $(OPT24))
+
+#else
+INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+DDXLIBS = libgd5465.a
+GRAFDIR=$(USRLIBDIR)/grafinfo
+
+DEFINES= -DMEMCPY=SLOWCOPY $(EXTRA_DEFINES) 
+
+NormalLibraryObjectRule()
+
+NormalLibraryTarget(gd5465,$(OBJS))
+LintLibraryTarget(gd5465,$(SRCS))
+
+OPT8=-DBITS_PER_PIXEL=8 -DGD5465HEAD=gd5465_8bpp
+OPT16=-DBITS_PER_PIXEL=16 -DGD5465HEAD=gd5465_16bpp
+OPT24=-DBITS_PER_PIXEL=24 -DGD5465HEAD=gd5465_24bpp
+
+gd5465_8bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_8bppBres.c
+
+gd5465_8bppBres.o: 
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT8) -c gd5465_8bppBres.c
+
+gd5465_16bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_16bppBres.c
+
+gd5465_16bppBres.o:
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT16) -c gd5465_16bppBres.c
+
+gd5465_24bppBres.c: 
+	$(LN) gd5465Bres.c gd5465_24bppBres.c
+
+gd5465_24bppBres.o:
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT24) -c gd5465_24bppBres.c
+
+gd5465_8bppImage.c: 
+	$(LN) gd5465Image.c gd5465_8bppImage.c
+
+gd5465_8bppImage.o: 
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT8) -c gd5465_8bppImage.c
+
+gd5465_16bppImage.c: 
+	$(LN) gd5465Image.c gd5465_16bppImage.c
+
+gd5465_16bppImage.o: 
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT16) -c gd5465_16bppImage.c
+
+gd5465_24bppImage.c: 
+	$(LN) gd5465Image.c gd5465_24bppImage.c
+
+gd5465_24bppImage.o: 
+	$(CC) $(CCOPTIONS) $(ALLDEFINES) $(OPT24) -c gd5465_24bppImage.c
+
+clean::
+	$(RM) gd5465_8bppImage.c gd5465_16bppImage.c gd5465_24bppImage.c  
+	$(RM) gd5465_8bppBres.c gd5465_16bppBres.c gd5465_24bppBres.c 
+
+DynamicObjectRule(gd5465,$(DDXLIBS))
+#endif
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file 
+
+LinkDepSourceFile(gd5465Cmap.c,LinkDirectory)
+LinkDepSourceFile(gd5465Cursor.c,LinkDirectory)
+LinkDepSourceFile(gd5465GC.c,LinkDirectory)
+LinkDepSourceFile(gd5465Image.c,LinkDirectory)
+LinkDepSourceFile(gd5465Data.c,LinkDirectory)
+LinkDepSourceFile(gd5465Screen.c,LinkDirectory)
+LinkDepSourceFile(gd5465Defs.h,LinkDirectory)
+LinkDepSourceFile(gd5465Procs.h,LinkDirectory)
+LinkDepSourceFile(gd5465Machine.h,LinkDirectory)
+LinkDepSourceFile(gd5465Consts.h,LinkDirectory)
+LinkDepSourceFile(gd5465Blit.c,LinkDirectory)
+LinkDepSourceFile(gd5465Glyph.c,LinkDirectory)
+LinkDepSourceFile(gd5465Font.c,LinkDirectory)
+LinkDepSourceFile(gd5465Tile.c,LinkDirectory)
+LinkDepSourceFile(gd5465Bres.c,LinkDirectory)
+#endif
+
+#define IHaveSubdirs
+
+SUBDIRS= grafinfo/cirrus
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+
+DependTargetSCP(gd5465Data.c)

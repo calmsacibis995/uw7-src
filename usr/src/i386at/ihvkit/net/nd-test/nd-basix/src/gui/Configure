@@ -1,0 +1,331 @@
+#*
+#*  NAME
+#*	configure
+#*
+#*  SYNOPSIS
+#*
+#*  DESCRIPTION 
+#*	WKSH Program part of menu_handler for GUI to UWCTS.
+#*
+#*  CAVEATS
+#*
+#*  NOTES
+#*
+#*
+#*  MODIFICATION HISTORY
+#*	Modified : Yule R. Kingston,        Wipro Infotech Ltd., May 31,1994.
+#*  Modified:  Hari Hara Vinayaka Ram.N Wipro Infotech Limited July 25 1994
+#*			   to include the Display Test Suites Submenus
+#*
+
+alias debug=:
+#alias debug=echo
+
+CFG_LOCK=configure.lck
+
+Exclusives_Field() 
+# <Parent WidID> <Current Value> <List of Values>
+{
+	TITLE=$1
+	VAL=$2
+	LIST_VAL=$3
+	index=0
+	ecnt=0
+	EX_LIST=""
+	for i in $LIST_VAL
+	do
+		if [ "$EX_LIST" = "" ]
+		then
+			EX_LIST="{$i}"
+		else
+			EX_LIST="$EX_LIST,{$i}"
+		fi
+		if [ "$i" = "$VAL" ]
+		then
+			index=$ecnt
+		fi
+		ecnt=`expr $ecnt + 1`
+	done
+	eval cmw VPARAM yesno flatExclusives $TITLE \
+		itemFields:'{label}' \
+		numItems:$ecnt \
+		numItemFields:1 \
+		items:"$EX_LIST" \
+		ancestorSensitive:true
+	sv $VPARAM set:true
+	OlFlatSetValues $VPARAM $index set:true
+}
+Integer_Field() # <Parent WidID> <Current Value> <Length>
+{
+typeset D
+	if [ "$2" = "var1" ]
+	then
+		A=0
+	else
+		A=$2
+	fi
+	D=`echo "10^$3" |bc`
+	(( D = D -1 ))
+	cmw VPARAM integerField integerField $1 \
+		value:"$A" \
+		valueMax:$D \
+		charsVisible:"$3" \
+		ancestorSensitive:true
+}
+Text_Field() # <Parent WidID> <Current Value> <Length>
+{
+	if [ "$2" = "var1" ]
+	then
+		A="     "
+	else
+		A=$2
+	fi
+	cmw VPARAM textField textField $1 \
+		string:$A \
+		charsVisible:$3 \
+		verification:TextRet \
+		ancestorSensitive:true
+}
+TextRet()
+{
+	if [ "$CALL_DATA_REASON" = "return" ]
+	then
+		focmv $CB_WIDGET nextfield
+	fi
+}
+close_configure_window()
+{
+	pd $1
+	rm -f ${TET_SUITE_ROOT}/${SUITE}/$CFG_LOCK
+}
+Cfg_SelectCB() # <Parent WidID>  <SUITE> 
+{
+	OlFlatGetValues $CB_WIDGET $CB_INDEX label:LABEL
+	Configure_$LABEL $1 $2 $3
+}
+display_field() {
+	DIS_CNT=1
+	DIS_WID_LIST=""
+
+	cmw RUBBER rubber rubberTile $POPUP_UCA
+
+	cmw MAINWINDOW scrolledWindow scrolledWindow $RUBBER \
+	viewWidth:375
+
+	cmw PANE pane panes $MAINWINDOW \
+	shadowThickness:0
+
+	while [ $DIS_CNT -le $NO_PARAMS ]
+	do
+		eval PARAM_NAME=\$param$DIS_CNT
+		eval PARAM_TYPE=\$paramtype$DIS_CNT
+		eval PARAM_LEN=\$paramlen$DIS_CNT
+		eval PARAM_VAL=\$paramval$DIS_CNT 
+		eval PARAM_DVAL=\$paramdval$DIS_CNT
+		cmw TPARAM caption caption $PANE \
+			label:"$PARAM_NAME:" \
+			font:OlDefaultBoldFont \
+			ancestorSensitive:true \
+			position:left 
+
+		case "$PARAM_TYPE" in
+		I)
+			Integer_Field $TPARAM "$PARAM_VAL" $PARAM_LEN
+			;;
+		Y)
+			Exclusives_Field $TPARAM "$PARAM_DVAL" "$PARAM_VAL"
+			;;
+		S|*)
+			Text_Field $TPARAM "$PARAM_VAL" $PARAM_LEN
+			;;
+		esac
+		DIS_WID_LIST="$DIS_WID_LIST $VPARAM"
+		debug "DWL= $DIS_WID_LIST"
+		debug "VPARAM= $VPARAM"
+		HELP_FILE=/usr/X/lib/locale/C/help/${USER}/${SUITE}/${PARAM_NAME}.hlp
+		debug $HELP_FILE
+		OlRegisterHelp ${VPARAM} "" -f ${HELP_FILE}
+		DIS_CNT=`expr $DIS_CNT + 1`
+	done
+}
+
+set_default_values() {
+
+	PR_CNT=1
+	for PARAM_ID in $*
+	do
+		PARAM_VAL=""
+		eval PARAM_TYPE=\$paramtype$PR_CNT
+		eval PARAM_VAL=\$paramdval$PR_CNT 
+		case "$PARAM_TYPE" in
+		I)
+			sv $PARAM_ID value:$PARAM_VAL
+			;;
+		S|*)
+			sv $PARAM_ID string:$PARAM_VAL
+			;;
+		esac
+		PR_CNT=`expr $PR_CNT + 1`
+	done
+}
+
+get_new_values()
+{
+	PR_CNT=1
+	NEW_VAL_FILE=${TMP_DIR}/tempor$$
+	>$NEW_VAL_FILE
+	for PARAM_ID in $*
+	do
+		PARAM_NAME=`eval echo \\$param$PR_CNT`
+		PARAM_VAL=""
+		eval ptype=\$paramtype$PR_CNT
+		case "$ptype" in
+		I)
+			gv $PARAM_ID value:PARAM_VAL
+			;;
+		Y)
+			gv $PARAM_ID numItems:NITEMS
+			TCNT=0
+			LAB=""
+			while [ "$TCNT" -lt "$NITEMS" ]
+			do
+				OlFlatGetValues $PARAM_ID $TCNT set:SETVAL
+				if [ "$SETVAL" = "true" ]
+				then
+				   OlFlatGetValues $PARAM_ID $TCNT label:PARAM_VAL
+					break
+				fi
+				TCNT=`expr $TCNT + 1`
+			done
+			;;
+		S|*)
+			gv $PARAM_ID string:PARAM_VAL
+			;;
+		esac
+		eval echo $PARAM_NAME=$PARAM_VAL >> $NEW_VAL_FILE
+		PR_CNT=`expr $PR_CNT + 1`
+	done
+}
+
+update_config_file()
+{
+	inplace.nawk ${NEW_VAL_FILE} ${CONFIG_FILE}$1 > ${TMP_DIR}/config$$
+	cp ${TMP_DIR}/config$$ ${CONFIG_FILE}$1
+	rm ${TMP_DIR}/config$$ 
+}
+
+Configure_Apply() # <Widget_ID> <abs_file_name> <Additional>
+{
+	CMD=$2
+	eval WID_LIST=\$${CMD}_LIST$3
+#	get_file_names ${SUITE}
+#	get_parameter_list "$SUITE" "$CONFIG_FILE" "$PARAM_FILE"
+	get_new_values $WID_LIST 
+	update_config_file $3
+	close_configure_window $1 $2
+set +vx
+}
+Configure_Default() # <Widget_ID> <abs_file_name> <Additional>
+{
+	CMD=$2
+	eval WID_LIST=\$${CMD}_LIST$3
+	set_default_values $WID_LIST
+}
+Configure_Cancel() # <Widget_ID> <abs_file_name> <Additional>
+{
+	close_configure_window $1 $2
+}
+get_parameter_list() # <SUITE_NAME> <CONFIG_FILE> <PARAM_FILE>
+{
+	NO_PARAMS=0
+	if [ ! -s "$2" ]
+	then 
+		Notice $FORM "The configuration file $2 is not found"
+		return
+	fi
+	if [ ! -s "$3" ]
+	then
+		Notice $FORM "The parameter file $3 is not found"
+		return
+	fi
+
+	cnt=1
+	while line_str=`line`
+	do
+		eval set `echo "$line_str" |sed 's/#.*//' `
+		eval param$cnt=$1
+		eval paramtype$cnt=$2
+		eval paramlen$cnt=$3 
+		eval paramdval$cnt=$4
+		if [ "$2" = Y ]
+		then
+			eval paramdval$cnt=`sed -n 's/#.*//
+					/'$1'=/s/^.*=//p' ${CONFIG_FILE} `
+			shift; shift; shift
+			eval paramval$cnt=\$*
+		else
+			eval paramval$cnt=`sed -n 's/#.*//
+					/'$1'=/s/^.*=//p' ${CONFIG_FILE} `
+		fi
+		cnt=`expr $cnt + 1`
+	done < "$3"
+	NO_PARAMS=`expr $cnt - 1`
+	if [ $NO_PARAMS -eq 0 ]
+	then
+		Notice $FORM "Invalid paramter file $PARAM_FILE"
+	fi
+}
+
+Configure() {
+typeset DC
+	Get_Selected_Cmds $CMD_WID_LIST
+	WID_NUMBER=0
+	FLAG_SHOW=0
+	DEV_FLAG=0
+	y=-125
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval CMD=\$sel_cmd$CNT
+		eval SUITE=\$sel_suite$CNT
+		CNT=`expr $CNT + 1`
+		FLAG_MULTIPLE=0
+		x=0
+		(( y = WID_NUMBER * 25 ))
+		(( WID_NUMBER=WID_NUMBER + 1 ))
+		y1=$y
+		x1=$x
+		if [ -f ${TET_SUITE_ROOT}/${SUITE}/$CFG_LOCK ]
+		then
+			Notice $FORM "Lock Found in $SUITE Directory. If it is an error, remove it using the Remove_Locks option under the Admin menu, and try again."
+			continue
+		else
+			touch ${TET_SUITE_ROOT}/${SUITE}/$CFG_LOCK
+		fi
+		TITLE="Configure Menu:$SUITE:" 
+		get_file_names $SUITE
+		get_parameter_list "$SUITE" "$CONFIG_FILE" "$PARAM_FILE"
+		if [ $NO_PARAMS -gt 0 ]
+		then
+			cps POPUP popupWindowShell popupWindowShell $FORM \
+				title:"$TITLE" \
+				sensitive:true y:$y1 x:$x1
+
+			display_field
+			eval ${CMD}_LIST=\"$DIS_WID_LIST\"
+			cmw CFG_BUTTONS Cancel flatButtons $POPUP_LCA \
+				numItems:3 \
+				numItemFields:3 \
+				itemFields:'{label}' \
+				items:'{Apply}','{Cancel}' \
+				sensitive:true
+#				items:'{Apply}','{Default}','{Cancel}' 
+			sv $CFG_BUTTONS selectProc:"Cfg_SelectCB $POPUP $CMD "
+			pu $POPUP GrabNone
+		else
+			rm ${TET_SUITE_ROOT}/${SUITE}/$CFG_LOCK
+		fi
+	done
+	debug "Done routine Configure_Param"
+}
+

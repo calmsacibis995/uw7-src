@@ -1,0 +1,307 @@
+#ident        "@(#)initpkg:common/cmd/initpkg/init.d/nw	1.29.1.7"
+#ident	"$Id$"
+
+#	NetWare IPX Protocol Stack Startup
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+CAT=uxrc
+LABEL="UX:$0"
+
+eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -v binary_directory -v log_directory -v ipx_start_at_boot -v sap_file_compatibility`
+eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -C`
+NWBIN=$binary_directory
+LOG=$log_directory
+BOOT=$ipx_start_at_boot
+NUCSAPD=$sap_file_compatibility
+LOG=$LOG/startipx.log
+USAGE="$0 { start | stop }"
+
+if [ ! -d "$NWBIN" ]
+then			
+	# have to have /usr mounted
+	exit 1
+fi
+
+case $1 in
+'start')
+
+	if [ -f "$LOG" ]
+	then
+		rm -f $LOG.old
+		mv $LOG $LOG.old
+	fi
+
+	#
+	#	Change all NVT devives to default mode, owner, and group.
+	#
+	/usr/bin/chmod 0600 /dev/NVT/* 2> /dev/null
+	/usr/bin/chown root /dev/NVT/* 2> /dev/null
+	/usr/bin/chgrp root /dev/NVT/* 2> /dev/null
+
+	#
+	#	Discover our networks just in case they start IPX later.
+	#	nwdiscover just exits if ipx_auto_discovery is off.
+	#
+	LC_MESSAGES="$LANG" $NWBIN/nwdiscover -u -t1 >> $LOG 2>&1
+
+	if [ "$BOOT" != on ]
+	then
+		pfmt -l $LABEL -s info -g $CAT:38 "NetWare IPX startup is disabled\n"
+ 		pfmt -s nostd -g $CAT:38 "NetWare IPX startup is disabled\n" 2>> $LOG
+		exit 1
+	fi
+
+	pfmt -s nostd -g $CAT:137 "NetWare IPX setup at %s\n" "`date`" 2>> $LOG
+	/usr/bin/chmod 0644 $LOG
+
+	#	Configure the protocol stack.
+	#
+	#	Make sure server_name has a value
+	#	Make sure server_name and uname are both the same case for testing
+	#
+	unam="`uname -n`"
+	lower_uname=`echo $unam | tr [A-Z] [a-z]`
+	eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -v server_name`
+    if [ -z "$server_name" ]
+    then
+		#
+        # Server name not set, set it
+		#
+        LC_MESSAGES="$LANG" /usr/sbin/nwcm -q -s "server_name=$unam"
+		eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -v server_name`
+		server_name=`echo $server_name | tr [A-Z] [a-z]`
+	else
+		server_name=`echo $server_name | tr [A-Z] [a-z]`
+    fi
+
+	#
+	#	Make server_name tracks "uname -n" value
+	#
+	if [ ! -f /etc/netware/.olduname ]
+	then
+		echo $unam >/etc/netware/.olduname
+		/usr/bin/chown root /etc/netware/.olduname
+		/usr/bin/chgrp sys /etc/netware/.olduname
+		/usr/bin/chmod 0644 /etc/netware/.olduname
+		OLDUNAME="`cat /etc/netware/.olduname`"
+		LOWER_OLDUNAME=`echo $OLDUNAME | tr [A-Z] [a-z]`
+	else
+		OLDUNAME="`cat /etc/netware/.olduname`"
+		LOWER_OLDUNAME=`echo $OLDUNAME | tr [A-Z] [a-z]`
+		if [ "$LOWER_OLDUNAME" != "$lower_uname" ]
+		then
+			#
+			#	Uname changed since last boot,
+			#	if server_name was same as previous uname,
+			#	change server_name to new uname value
+			#
+			if [ "$server_name" = "$LOWER_OLDUNAME" ]
+			then
+				LC_MESSAGES="$LANG" /usr/sbin/nwcm -q -s "server_name=$unam"
+				eval `LC_MESSAGES="$LANG" /usr/sbin/nwcm -v server_name`
+				server_name=`echo $server_name | tr [A-Z] [a-z]`
+			fi
+		fi
+		echo $unam >/etc/netware/.olduname
+	fi
+	
+	if [ -z "$_AUTOBOOT" ]
+	then
+		if LC_MESSAGES="$LANG" $NWBIN/statnps
+		then
+			if ps -aef | fgrep -v " `cat $config_dir/npsd.pid` " | fgrep IPX >/dev/null 2>&1
+			then
+				#
+				# npsd has a pid file, and process is npsd
+				#
+				pfmt -s nostd -g $CAT:39 "NetWare IPX is already up and running\n" 2>>$LOG
+				exit 1
+			fi
+		fi
+	fi
+
+	#
+	# Clean up /var/spool/sap
+	#
+	rm -rf /var/spool/sap/in/* /var/spool/sap/*pid >/dev/null 2>&1
+
+	#
+	# Cleanup .pid files, npsd is not up
+	#
+	rm -f $config_dir/*.pid
+
+	LC_MESSAGES="$LANG" $NWBIN/startnps -v >> $LOG 2>&1
+	if LC_MESSAGES="$LANG" $NWBIN/statnps
+	then
+		:
+	else
+		pfmt -l $LABEL -s error -g $CAT:40 "Problem starting up npsd, check %s\n" "$LOG"
+		pfmt -s nostd -g $CAT:41 "Problem starting up npsd\n" 2>>$LOG
+		exit 1
+	fi
+
+	#
+	#	If server name is not the same as uname, make sure we are not
+	#	advertising UnixWare services as server_name.
+	#
+	if [ "$server_name" != "$lower_uname" ]
+	then
+		for i in 0x3e4 0x247 0x3ee 0x3e1
+		do
+			/usr/sbin/nwsaputil -d -t$i >/dev/null 2>&1
+		done
+
+		#
+		#	If we deleted a duplicate service, the nwcm enabling flag got
+		#	turned off by nwsaputil -d.  If service was a duplicate,
+		#	i.e. still exists, turn nwcm enabling flag back on.
+		#
+		for i in 0x3e4 0x247 0x3ee 0x3e1
+		do
+			SERVICE="`/usr/sbin/nwsaputil -q -t $i`"
+			if [ -n "$SERVICE" ]
+			then
+				# If this service exists, turn on appropriate nwcm parameter
+				case $i in
+				"0x3e4")
+					nwcm -s sap_unixware=on >/dev/null
+					;;
+				"0x247")
+					nwcm -s spx_network_rlogin=on >/dev/null
+					;;
+				"0x247")
+					nwcm -s sap_remote_apps=on >/dev/null
+					;;
+				"0x3ee")
+					# no nwcm paramter for this type
+					;;
+				esac
+			fi
+		done
+	fi
+
+	#
+	#	If uname changes, change UnixWare services to the new name
+	#	sapd must be up to make this change
+	#
+	if [ "$LOWER_OLDUNAME" != "$lower_uname" ]
+	then
+		UNAM=`echo $unam | tr '[a-z]' '[A-Z]'`
+		#
+		# Correct sapouts file to have correct name on UnixWare services.
+		#
+		for i in 0x03e4 0x0247 0x03ee 0x03e1
+		do
+			SAPNAME="`/usr/sbin/nwsaputil -q -t $i -n $OLDUNAME | /usr/bin/cut -f1 -d' '`"
+			SAPSOCK="`/usr/sbin/nwsaputil -q -t $i -n $OLDUNAME | /usr/bin/cut -c60-65`"
+			if [ -n "$SAPNAME" -a "$SAPNAME" != "$UNAM" ]
+			then
+				#	Delete server if name matches server name (NULL name)
+				/usr/sbin/nwsaputil -d -t$i -s$SAPSOCK >/dev/null 2>&1
+
+				#	Delete server using old uname
+				/usr/sbin/nwsaputil -d -n$SAPNAME -t$i -s$SAPSOCK >/dev/null 2>&1
+
+				#	Delete server using current uname so all entries are gone
+				/usr/sbin/nwsaputil -d -n$UNAM -t$i -s$SAPSOCK >/dev/null 2>&1
+
+				#	Add server using current uname, turns on nwcm flag
+				#	only if it actually adds the entry.  That is why we worked
+				#	so hard to get rid of all possible names for this type.
+				/usr/sbin/nwsaputil -a -n$UNAM -t$i -s$SAPSOCK >/dev/null 2>&1
+			fi
+		done
+	fi
+
+	#
+	# Start nucsapd if sap_file_compatibility is on
+	#  edit nucsapd 0x4 0x3e1 0x3e4 command line to add or delete server_type#
+	#	
+	if [ "$NUCSAPD" = on ]
+	then
+		LC_MESSAGES="$LANG" $NWBIN/nucsapd 0x4 0x3e1 0x3e4 >> $LOG 2>&1
+	fi
+	# set up spx listeners
+
+	ADDR=`/usr/bin/getipxlan -c | /usr/bin/sed -e '1,1s/^0x/x/' \
+		-n -e '1,1s/ //p' `
+	/usr/sbin/sacadm -l -p spx >/dev/null 2>&1
+	if [ "$?" != "0" \
+		-o "`nlsadmin -l - spx 2>/dev/null`" != "\\${ADDR}9060" ]
+	then 
+		/usr/sbin/sacadm -r -p spx >/dev/null 2>&1
+		/usr/sbin/sacadm -a -p spx -t listen -c "/usr/lib/saf/listen spx \
+			2>/dev/null" -v `nlsadmin -V` -n 3  2>/dev/null
+		SACRET=$?
+		if [ "${SACRET}" != "0" -a "${SACRET}" != "10" ]
+		then 
+			pfmt -l $LABEL -s warn -g $CAT:32 "%s failed - returned %s\n" "sacadm -a -p spx" "${SACRET}"
+			pfmt -s nostd -g $CAT:32 "%s failed - returned %s\n" "sacadm -a -p spx" "${SACRET}" 2>> $LOG
+		fi
+		/usr/sbin/pmadm -r -s 0 -p spx 2>/dev/null
+		/usr/sbin/pmadm -a -p spx -s 0 \
+			-i root -v `/usr/sbin/nlsadmin -V` \
+			-m `/usr/sbin/nlsadmin -c /usr/lib/saf/nlps_server \
+			-A \\\\${ADDR}9060 2>/dev/null` 2>/dev/null
+		PMRET=$?
+		if [ "${PMRET}" != "0" -a "${PMRET}" != "10" ]
+		then 
+			pfmt -l $LABEL -s warn -g $CAT:34 "%s failed (svc 0) - returned %s\n" "pmadm -a -p spx" "${PMRET}"
+			pfmt -s nostd -g $CAT:34 "%s failed (svc 0) - returned %s\n" "pmadm -a -p spx" "${PMRET}" 2>> $LOG
+		fi
+
+		grep "^lp:" /etc/saf/spx/_pmtab >/dev/null 2>&1
+		if [ "$?" = "0" ]
+		then
+			/usr/sbin/pmadm -r -p spx -s lp > /dev/null 2>&1
+		fi
+		/usr/sbin/pmadm -a -p spx -s lp -i root -v `nlsadmin -V` -m `nlsadmin \
+				-o /var/spool/lp/fifos/listenS5 2>/dev/null` >/dev/null 2>&1
+	fi
+
+
+	#
+	#	If nwsrvr package is loaded, load drivers so message doesn't
+	#	cover up login prompt
+	#
+	if /usr/bin/pkginfo nwsrvr >/dev/null 2>&1
+	then
+		/sbin/modadmin -l nemux ncpipx nwetc sfd >/dev/null 2>&1
+	fi
+
+	;;
+
+'stop')
+
+	pfmt -s nostd -g $CAT:42 "NetWare IPX shutdown at %s\n" "`date`" 2>> $LOG
+
+	#stop all the listeners 
+	/usr/sbin/sacadm -r -p spx >/dev/null 2>&1
+	/usr/sbin/pmadm -r -s 0 -p spx 2>/dev/null
+	/usr/sbin/pmadm -r -p spx -s lp > /dev/null 2>&1
+	
+	#stop all the daemons 
+	if LC_MESSAGES="$LANG" $NWBIN/stopnps -q >>$LOG 2>&1
+	then
+		:
+	else
+		pfmt -l $LABEL -s warn -g $CAT:43 "Problem stopping IPX, check %s\n" "$LOG"
+		pfmt -s nostd -g $CAT:44 "Problem stopping IPX\n" 2>>$LOG
+	fi
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE" 2>&1
+	exit 1
+	;;
+esac

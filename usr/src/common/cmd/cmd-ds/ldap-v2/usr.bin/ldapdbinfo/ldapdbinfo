@@ -1,0 +1,292 @@
+#!/usr/bin/ksh
+#==============================================================================
+# ldapdbinfo
+# 
+# EXIT STATES
+#
+#	100 - Cannot include ldaptabProcedures (not ldapdbinfo specific)
+#	120 - invalid arguments passed to ldapdbinfo
+#	121 - database configuration file not specified
+#	122 - no value given to set parameter to
+#	123 - no such parameter
+#------------------------------------------------------------------------------
+LDAPTABPROCS=/usr/lib/ldap/ldaptabProcedures
+
+if [ -f $LDAPTABPROCS ]
+then
+	. $LDAPTABPROCS
+else
+	pfmt -s nostd -g ldapmisc:3 "Fatal error, cannot find file %s\n" $LDAPTABPROCS
+	exit 100
+fi
+
+#====================================================================== XXX ===
+# displayAllParameters
+#
+# display all the viewable parameters
+#------------------------------------------------------------------------------
+displayAllParameters() {
+
+cat << 'END'
+General options:
+~~~~~~~~~~~~~~~~
+lastmod     - indicates whether timestamp attributes will be maintained
+readonly    - indicates if database is in readonly mode
+replicas    - lists replicas for the database
+replogfile  - Name of the replication log file to which slapd will log changes
+rootdn      - specifes the DN not subject to access control or administrative 
+              restrictions for operations on this database
+rootpw      - password for rootdn
+suffixes    - the DN suffix of queries passed to the database
+type        - database type (lbdm, shell)
+dbtype      - database type (lbdm, shell)
+updatedn    - If the database belongs to a slave slapd this is the DN used
+             to make changes to the replica
+
+ldbm backend specific options:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+cachesize   - size (in number of entries) of the in-memory cache
+dbcachesize - size (in bytes) of the in-memory cache
+directory   - directory where the LDBM files reside
+indexes     - indexes maintained for the database
+min_maxids  - minimum number of entry ids that an index entry will contain
+              before becoming an AllIDs entry
+mode        - file protection mode that newly created database index files
+              should have
+
+shell backend specific options (all specify the pathname of scripts):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+abandon     - pathname
+add         - pathname
+bind        - pathname
+compare     - pathname
+delete      - pathname
+modify      - pathname
+modrdn      - pathname
+search      - pathname
+unbind      - pathname
+
+END
+
+}
+
+usage()  {
+	pfmt -s nostd -g ldapmisc:39 "Usage: %s [-V] -v parameter -d configfile\n" $1
+	pfmt -s nostd -g ldapmisc:40 "Usage: %s -s parameter=value -d configfile\n" $1
+}
+
+#====================================================================== XXX ===
+#                                    MAIN
+#------------------------------------------------------------------------------
+
+# Check for no arguments
+if [ $# -eq 0 ]; then usage $0; exit 120; fi
+
+# Get command line arguments
+# -v 	value being talked about
+# -d	database config file
+
+vflag=
+dflag=
+sflag=
+QUIETMODE=
+
+while [ $# != 0 ]
+do
+	name=$1
+	case $name in
+	-v) 
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 120; fi
+		vflag=1
+		vval="$1";;
+	-d)
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 120; fi
+		dflag=1
+		dval="$1";;
+	-s)
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 120; fi
+		sflag=1
+		sval="$1";;
+	-V)
+		displayAllParameters
+		exit 0;;
+	-q)
+		QUIETMODE=true
+		;;
+	-\?)	
+		usage $0
+		exit 0;;
+	*)
+		pfmt -s nostd -g ldapmisc:11 "Unrecognised argument: %s\n" $name
+		usage $0
+		exit 120;;
+	esac
+	shift
+done
+
+
+# Check that -d <n> option has been specified, if not exit
+if [ -z "$dflag" ] 
+then
+	pfmt -s nostd -g ldapmisc:41 "Need to specify a database configuration file with -d\n"
+	usage
+	exit 121
+fi
+
+# Check whether both -s and -v are specified
+if [ ! -z "$sflag" ] && [ ! -z "$vflag" ]
+then
+	pfmt -s nostd -g ldapmisc:35 "Cannot use both -v and -s arguments\n"
+	exit 120
+fi
+
+# Find out the parameter, may need to parse the parameter if -s is used
+if [ "$vflag" == 1 ]; then 
+	# Viewing the value of a parameter
+	parameter=$vval;
+else
+	# Setting the value of a parameter
+
+	# When setting the value of a parameter, $sval will be in the format:
+	# "parameter=value", we to set parameter to the value of "parameter"
+	# and set the value of sval to "value"
+
+	checkforequals=${sval##*=*}
+	if [ -z "$checkforequals" ]
+	then
+		parameter=${sval%%=*}
+		sval=${sval#*=}
+	else
+		pfmt -s nostd -g ldapmisc:36 "No value given to set %s to\n" "$sval"
+		exit 122
+	fi
+fi
+
+# Trap case for password database
+DATABASETYPE=$(checkDatabaseType "$dval")
+if [ "$DATABASETYPE" = "passwd" ] && [ "$parameter" = "type" ] 
+then
+	echo passwd
+	exit 0
+fi
+
+case "$parameter" in
+lastmod)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" lastmod 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" lastmod "$sval"
+	;;
+readonly)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" readonly 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" readonly "$sval"
+	;;
+replicas)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" replica 1
+	[ ! -z "$sflag" ] && echo Cannot set replicas yet
+	;;
+replogfile)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" replogfile 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" replogfile "$sval"
+	;;
+rootdn)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" rootdn 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" rootdn "$sval"
+	;;
+rootpw)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" rootpw 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" rootpw "$sval"
+	;;
+suffixes)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" suffix 1
+        [ ! -z "$sflag" ] && echo Cannot set suffix values with ldapdbinfo
+        ;;
+dbtype)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" database 0
+        [ ! -z "$sflag" ] && echo cannot set this field
+        ;;
+type)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" database 0
+        [ ! -z "$sflag" ] && echo cannot set this field
+        ;;
+updatedn)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" updatedn 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" updatedn "$sval"
+	;;
+cachesize)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" cachesize 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" cachesize "$sval"
+	;;
+dbcachesize)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" dbcachesize 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval"
+	;;
+directory)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" directory 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" directory "$sval"
+	;;
+indexes)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" index 1
+	[ ! -z "$sflag" ] && Cannot set indexes yet
+	;;
+min_maxids)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" min_maxids 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" min_maxids "$sval"
+	;;
+mode)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" mode 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" mode "$sval"
+	;;
+abandon)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" abandon 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" abandon "$sval"
+	;;
+add)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" add 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" add "$sval"
+	;;
+bind)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" bind 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" bind "$sval"
+	;;
+compare)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" compare 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" compare "$sval"
+	;;
+delete)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" delete 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" delete "$sval"
+	;;
+modify)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" modify 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" modify "$sval"
+	;;
+modrdn)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" modrdn 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" modrdn "$sval"
+	;;
+search)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" search 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" search "$sval"
+	;;
+unbind)
+	[ ! -z "$vflag" ] && getDatabaseFileField "$dval" unbind 0
+	[ ! -z "$sflag" ] && setDatabaseFileField "$dval" unbind "$sval"
+	;;
+*)
+	if [ -z "$QUIETMODE" ]
+	then
+		pfmt -s nostd -g ldapmisc:38 "No such parameter - %s\n" "$parameter"
+	fi
+	exit 123
+	;;
+esac
+
+if [ -z "$QUIETMODE" ] && [ ! -z "$sflag" ]
+then
+	printf "%s=%s\n" "$parameter" "$sval"
+fi
+exit 0
+
+

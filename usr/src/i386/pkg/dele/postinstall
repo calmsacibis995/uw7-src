@@ -1,0 +1,139 @@
+#ident	"@(#)postinstall	1.25"
+
+#	copyright	"%c%"
+
+LNG=`echo $PKGINST | cut -c1-2`
+
+>/tmp/$PKGINST.ReMoVe
+>/tmp/$PKGINST.InStAlL
+
+#
+#	Link related locales
+#
+
+DIR=/usr/lib/locale
+cd ${DIR}
+for i in $LNG*
+do
+	[ -d "$i" ] || continue
+
+	# Link UNIX catalogs
+	case "$i" in
+		$LNG)	 continue ;;
+		*.88591) : ;;
+		*.*)	 continue ;;	# don't support other codesets
+		*)	 : ;;
+	esac
+
+	[ -d $i/LC_MESSAGES ] || installf $PKGINST ${DIR}/$i/LC_MESSAGES d 0555 bin bin
+	for cat in `ls $LNG/LC_MESSAGES | egrep -v "^audio|^mail|^sa|^Unix|^XDrivers"`
+	do
+		[ -f $i/LC_MESSAGES/$cat ] || \
+		    echo "${DIR}/$i/LC_MESSAGES/$cat=${DIR}/$LNG/LC_MESSAGES/$cat l"
+	done >>/tmp/$PKGINST.InStAlL
+
+	# Link miscellaneous other directories
+	(   [ -d ${DIR}/$i/LC_MESSAGES/audio ] || \
+	  	echo "${DIR}/$i/LC_MESSAGES/audio=${DIR}/$LNG/LC_MESSAGES/audio s"
+
+	    [ -d ${DIR}/$i/LC_MESSAGES/mail ] || \
+	  	echo "${DIR}/$i/LC_MESSAGES/mail=${DIR}/$LNG/LC_MESSAGES/mail s"
+
+	    [ -d ${DIR}/$i/LC_MESSAGES/sa ] || \
+	  	echo "${DIR}/$i/LC_MESSAGES/sa=${DIR}/$LNG/LC_MESSAGES/sa s"
+
+	    [ -d ${DIR}/$i/LC_MESSAGES/Unix ] || \
+	  	echo "${DIR}/$i/LC_MESSAGES/Unix=${DIR}/$LNG/LC_MESSAGES/Unix s"
+
+	    [ -d ${DIR}/$i/LC_MESSAGES/XDrivers ] || \
+	  	echo "${DIR}/$i/LC_MESSAGES/XDrivers=${DIR}/$LNG/LC_MESSAGES/XDrivers s"
+
+	    [ -d /etc/dcu.d/locale/$i ] || \
+	  	echo "/etc/dcu.d/locale/$i=/etc/dcu.d/locale/$LNG s"
+
+	    [ -d /etc/inst/locale/$i ] || \
+	  	echo "/etc/inst/locale/$i=/etc/inst/locale/$LNG s"
+
+	    [ -d /usr/lib/drf/locale/$i ] || \
+	  	echo "/usr/lib/drf/locale/$i=/usr/lib/drf/locale/$LNG s"
+
+	    [ -d /usr/share/lib/mailx/$i ] || \
+	  	echo "/usr/share/lib/mailx/$i=/usr/share/lib/mailx/$LNG s"
+	) >>/tmp/$PKGINST.InStAlL
+
+done
+
+# install scoadmin title files
+if [ -f /usr/bin/scoadmin ] 
+then
+	SCOADBIN=/usr/bin/scoadmin
+	SCOADDIR=/usr/lib/scoadmin
+	SCOTMP=/usr/lib/scoadmin/InStAlL
+
+	$SCOADBIN -f -i $SCOADDIR/account/account.obj
+	$SCOADBIN -f -i $SCOADDIR/admsetup/admsetup.obj
+	$SCOADBIN -f -i $SCOADDIR/filesystem/filesystem.obj
+	$SCOADBIN -f -i $SCOADDIR/filesystem/filesystem.obj
+	$SCOADBIN -f -i $SCOADDIR/license/license.obj
+	$SCOADBIN -f -i $SCOADDIR/printer/printer.obj
+	$SCOADBIN -f -i $SCOADDIR/printjob/printjob.obj
+	$SCOADBIN -f -i $SCOADDIR/process/process.obj
+	$SCOADBIN -f -i $SCOADDIR/tasksched/tasksched.obj
+	$SCOADBIN -f -i $SCOADDIR/template/app.obj
+	$SCOADBIN -f -i /etc/mail/admin/mail.obj
+	$SCOADBIN -f -i /etc/mail/admin/mhome.obj
+	$SCOADBIN -H /usr/lib/netcfg/wansw -f -i $SCOADDIR/pic/pic.obj
+	$SCOADBIN -H /usr/lib/netcfg/wansw -f -i $SCOADDIR/ppp/ppp.obj
+
+	$SCOADBIN -p "Software_Management" -f -i $SCOADDIR/appinst/appinst.obj
+
+	$SCOADBIN -p Hardware -f -i $SCOADDIR/dcu/dcu.obj
+	$SCOADBIN -p Hardware -f -i $SCOADDIR/modem/modem.obj
+	$SCOADBIN -p Hardware -f -i $SCOADDIR/serial/serial.obj
+	$SCOADBIN -p Hardware -f -i /usr/lib/audio/audioconfig/audioconfig.obj
+	$SCOADBIN -p Hardware -f -i /usr/X/lib/vidconf/vidconfGUI.obj
+
+	$SCOADBIN -p Networking -f -i $SCOADDIR/aas/aas.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/dhcp/dhcp.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/dns/dns.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/ftp/ftp.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/incoming/incoming.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/ldap/ldap.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/ncm/ncm.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/netmgmt/netmgmt.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/outgoing/outgoing.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/pf/pf.obj
+	$SCOADBIN -p Networking -f -i $SCOADDIR/snmpmgr/snmpmgr.obj
+	$SCOADBIN -p Networking -f -i /usr/lib/netcfg/netcfg.obj
+
+	$SCOADBIN -p System -f -i $SCOADDIR/defaults/defaults.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/i18n/i18n.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/reports/reports.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/security/security.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/shutdown/shutdown.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/sysmonitor/sysmonitor.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/sysstat/sysstat.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/systemlogs/systemlogs.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/systuner/systuner.obj
+	$SCOADBIN -p System -f -i $SCOADDIR/time/time.obj
+
+	# installing scoadmin folder title files
+	$SCOADBIN -p Hardware -n $SCOTMP/Hardware/title.$LNG
+	$SCOADBIN -p Networking -n $SCOTMP/Networking/title.$LNG
+	$SCOADBIN -p Software_Management -n $SCOTMP/Software_Management/title.$LNG
+	$SCOADBIN -p System -n $SCOTMP/System/title.$LNG
+fi
+
+ls ${SCOTMP}/* >> /tmp/$PKGINST.ReMoVe
+
+if [ -s /tmp/$PKGINST.ReMoVe ]
+then
+	cat /tmp/$PKGINST.ReMoVe | removef $PKGINST - 2>/dev/null
+fi
+rm -fr $SCOTMP
+rm /tmp/$PKGINST.ReMoVe
+removef -f $PKGINST
+
+cat /tmp/$PKGINST.InStAlL | installf $PKGINST - 2>/dev/null
+rm /tmp/$PKGINST.InStAlL
+installf -f $PKGINST

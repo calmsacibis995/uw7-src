@@ -1,0 +1,84 @@
+/*
+ * @(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ *	 Copyright (C) The Santa Cruz Operation, 1991-1994.
+ * 
+ */
+
+#define IHaveSubdirs
+#define IHaveHDKSubdirs
+#include <Server.tmpl>
+
+SRCS =	xxxCmap.c xxxCursor.c xxxData.c xxxGC.c \
+	xxxImage.c xxxInit.c xxxScreen.c xxxWin.c
+
+OBJS =	xxxCmap.o xxxCursor.o xxxData.o xxxGC.o \
+	xxxImage.o xxxInit.o xxxScreen.o xxxWin.o
+
+SUBDIRS = grafinfo/xxx
+
+STD_DEFINES = ServerDefines
+   INCLUDES = XscoServerIncludes
+   LINTLIBS = 
+    DDXLIBS = libxxx.a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(xxx,$(OBJS))
+ProfiledLibraryTarget(xxx,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(xxx,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(xxx,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o: 
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(xxx,$(OBJS))
+SharedXDriverTarget(xxx,6.0,$(OBJS),shared,..)
+LintLibraryTarget(xxx,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(xxx,$(DDXLIBS))
+DependTarget()
+HDKSUBDIRS = $(SUBDIRS)
+InstallHDKMultiple($(SRCS) xxxDefs.h xxxProcs.h Imakefile,$(HDKPORTSDIR)/xxx)
+
+/**/#
+/**/#   You may want to change the target and destination directories
+/**/#	"./grafinfo/xxx" and "xxx" in the install rule below to the
+/**/#   manufacturer's name of your video adapter.  Then update the
+/**/#   VENDOR string in your xxx.xgi file to match this directory
+/**/#	name.
+/**/#
+
+/**/#
+
+SUBDIRS = grafinfo/xxx

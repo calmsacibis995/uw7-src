@@ -1,0 +1,175 @@
+#ident	"@(#)R5Xlib:Xsi/Imakefile	1.16"
+
+#define DoNormalLib NormalLibX
+#define DoSharedLib SharedLibX
+#define DoDebugLib DebugLibX
+#define DoProfileLib ProfileLibX
+#include <Library.tmpl>
+
+#ifndef MotifBC
+#define MotifBC NO
+#endif
+
+#define BuildLocalIM YES
+
+#if Malloc0ReturnsNull
+DEFINES = -DMALLOC_0_RETURNS_NULL
+#endif
+
+   CONN_DEFINES = ConnectionFlags
+#ifdef MITPATH
+     EDB_DEFINES = -DERRORDB=\"$(USRLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(USRLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(USRLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(NLSDIR)\"
+#else /* this needed due to USL's cross env */
+     EDB_DEFINES = -DERRORDB=\"$(XWINLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(XWINLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(XWINLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(XWINLIBDIR)/Xsi/C\"
+#endif
+#if MotifBC
+      BC_DEFINES = -DMOTIFBC
+#endif
+   INSTALLFLAGS = $(INSTINCFLAGS)
+       LINTLIBS =
+
+EXTRA_INCLUDES = -I../
+EXTRA_DEFINES = -DSTREAMSCONN
+LIBNAME = Xsi
+
+SRCS = \
+	ProtoFlt.c \
+	XCnvCTToWC.c \
+	XCnvMBToCT.c \
+	XCnvWCToMB.c \
+	XCnvToStr.c \
+	XConnIM.c \
+	XCrFntSet.c \
+	XCrIC.c \
+	XGetIMVal.c \
+	XICFocus.c \
+	XICGetVal.c \
+	XICSetVal.c \
+	XIMKeyBind.c \
+	XIMProto.c \
+	XIMQueue.c \
+	XInitCT.c \
+	$(LIMSRCS) \
+	XOpenIM.c \
+	XParseCT.c \
+	XlcAccess.c \
+	XlcDefLd.c \
+	XlcLoad.c \
+	XmbDeGlyph.c \
+	XmbPrpText.c \
+	XmbText.c \
+	XmbTextExt.c \
+	XmbTextPer.c \
+	XmbTextPrp.c \
+	XwcDeGlyph.c \
+	XwcPrpText.c \
+	XwcText.c \
+	XwcTextExt.c \
+	XwcTextPer.c \
+	XwcTextPrp.c \
+	XLocalIM.c \
+	XSetLocale.c
+
+OBJS = \
+	ProtoFlt.o \
+	XCnvCTToWC.o \
+	XCnvMBToCT.o \
+	XCnvWCToMB.o \
+	XCnvToStr.o \
+	XConnIM.o \
+	XCrFntSet.o \
+	XCrIC.o \
+	XGetIMVal.o \
+	XICFocus.o \
+	XICGetVal.o \
+	XICSetVal.o \
+	XIMKeyBind.o \
+	XIMProto.o \
+	XIMQueue.o \
+	XInitCT.o \
+	XOpenIM.o \
+	XParseCT.o \
+	XlcAccess.o \
+	XlcDefLd.o \
+	XlcLoad.o \
+	XmbDeGlyph.o \
+	XmbPrpText.o \
+	XmbText.o \
+	XmbTextExt.o \
+	XmbTextPer.o \
+	XmbTextPrp.o \
+	XwcDeGlyph.o \
+	XwcPrpText.o \
+	XwcText.o \
+	XwcTextExt.o \
+	XwcTextPer.o \
+	XwcTextPrp.o \
+	XLocalIM.o \
+	XSetLocale.o
+
+DOBJS = XSetLocale.o
+
+#if DoNormalLib
+#undef ObjectCompile
+#define ObjectCompile(options) $(RM) $@			@@\
+	$(CC) -c $(CFLAGS) options -DARCHIVE $*.c
+#endif
+LibraryObjectRule()
+
+LinkSourceFile(XSetLocale.c,..)
+
+SpecialLibObjectRule(XConnIM.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XlcLoad.o,$(ICONFIGFILES),$(NLS_DEFINES))
+SpecialLibObjectRule(XLocalIM.o,$(ICONFIGFILES),$(NLS_DEFINES))
+
+#if DoSharedLib
+#if DoNormalLib
+
+#ifndef dummySharedLibraryTarget
+DUMMYLDFLAGS = -G -z text -h libX11.so.5.0 
+#define dummySharedLibraryTarget(libname,rev,solist,down,up)			@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -o up/~$@ $(DUMMYLDFLAGS) solist)		@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@						@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* dummySharedLibraryTarget */
+dummySharedLibraryTarget(dummy,$(SOXLIBREV),$(DOBJS),shared,..)
+#undef dummySharedLibraryTarget
+
+SharedLibraryTarget_a($(LIBNAME),$(SOXLIBREV),$(OBJS),-L ../$(XLIBSRC)/Xsi -ldummy, shared,..)
+#else
+SharedLibraryTarget($(LIBNAME),$(SOXLIBREV),$(OBJS),.,.)
+#endif
+
+InstallSharedLibrary($(LIBNAME),$(SOXLIBREV),$(USRLIBDIR))
+
+all::
+
+install::
+	$(INSTALL) $(INSTLIBFLAGS) libXsi.so.$(SOXLIBREV) $(USRLIBDIR);
+
+#endif /* DoSharedLib */
+
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+DependTarget()
+
+NormalLintTarget($(SRCS))

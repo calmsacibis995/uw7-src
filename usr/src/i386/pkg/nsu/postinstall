@@ -1,0 +1,904 @@
+#ident	"@(#)postinstall	1.3"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+HOW_INSTALL=NORMAL
+# We are installing from the boot floppy if
+# the script /etc/inst/scripts/postreboot.sh exists
+[ -f /etc/inst/scripts/postreboot.sh ] && {
+        HOW_INSTALL=ON_BFLOP
+}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && {
+	set -x
+	goany
+}
+
+error() {
+	[ "$UPDEBUG" = YES ] && set -x
+	errflag=1
+	case $1 in
+	1)
+		pfmt -s error -g ${PKGMSG}:1 " drvinstall on %s failed\n" $2 2>&1
+		;;
+	2)
+		pfmt -s error -g ${PKGMSG}:2 " could not create %s\n" $2 2>&1
+		;;
+	3)
+		pfmt -s error -g ${PKGMSG}:3 " could not create pseudo-terminal slave devices\n" 2>&1
+		;;
+	4)
+		pfmt -s error -g ${PKGMSG}:4 " copy failed\n" 2>&1
+		;;
+	5)
+		# message put out elsewhere
+		;;
+	6)
+		pfmt -s error -g ${PKGMSG}:5 " installation error\n" 2>&1
+		;;
+	7)
+		pfmt -s error -g ${PKGMSG}:6 " mkboot on KERNEL failed\n" 2>&1
+		;;
+	*)
+		pfmt -s error -g ${PKGMSG}:7 " undefined error\n" 2>&1
+		;;
+	esac
+}
+
+# install a module.  $1 is the module name
+
+do_install() {
+	[ "$UPDEBUG" = YES ] && set -x
+	ERR=/tmp/${1}.err
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Mfsys Sfsys Rc Node Space.c Mtune Dtune"
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if
+		[ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if
+		[ -f ${1}.Ma ]
+	then
+		grep -v "^[\*#]ident" ${1}.Ma > Master
+		rm -rf ${1}.Ma
+	fi
+	if
+		[ -f ${1}.Sy ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sy |
+			sed "${SEDCMD1}"  > System
+		rm -rf ${1}.Sy
+	fi
+	if
+		[ -f ${1}.Mf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mf > Mfsys
+		rm -rf ${1}.Mf
+	fi
+	if
+		[ -f ${1}.Sf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sf |
+			sed "${SEDCMD2}" > Sfsys
+		rm -rf ${1}.Sf
+	fi
+	if
+		[ -f ${1}.No ]
+	then
+		grep -v "^[\*#]ident" ${1}.No > Node
+		rm -rf ${1}.No
+	fi
+	if
+		[ -f ${1}.Rc ]
+	then
+		grep -v "^[\*#]ident" ${1}.Rc > Rc
+		rm -rf ${1}.Rc
+	fi
+	if
+		[ -f ${1}.Mt ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mt > Mtune
+		rm -rf ${1}.Mtune
+	fi
+	if
+		[ -f ${1}.Dt ]
+	then
+		grep -v "^[\*#]ident" ${1}.Dt > Dtune
+		rm -rf ${1}.Dtune
+	fi
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	ret=$?
+	if [ ${ret} = 0 ] || [ ${ret} = 8 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+		ret=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		ret=$?
+	fi
+	rm -rf ${IDCOMPS}
+	if [ ${ret} != 0 ]
+	then
+		message -d `pfmt -s nostd -g ${PKGMSG}:8 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR} 2>&1`
+			exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+
+# main()
+
+
+UPINSTALL=/etc/conf.sav
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=$UPGRADE_STORE/${PKGINST}.env
+
+# If $UPGFILE exists, dot it in. This is where NREG always is
+# whether or not the request script was run.
+[ -f $UPGFILE ] && . $UPGFILE
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:15 " The Installable Driver feature has been removed. The %s cannot be installed." ${NAME} 2>&1`
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+cd /var/sadm/pkg/${PKG}/install
+
+errflag=0
+
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+		-o ! -x ${CONFBIN}/idcheck ]
+then
+	message -d ${NOTOOLS}
+	exit $FAILURE
+fi
+
+#
+#	need allprivs on rc2 for network startup (cannot use filepriv)
+
+installf $PKGINST /sbin/rc2 f \? \? \? 2 NULL allprivs
+
+if pkginfo -i es >/dev/null 2>&1
+then
+	USR_PUTDEV="range=SYS_RANGE_MAX-SYS_RANGE_MIN state=pub_priv
+		mode=static ual_enable=y other=>y startup=y
+		startup_level=USER_LOGIN startup_owner=root>rw-
+		startup_group=other>rw- startup_other=>rw-"
+else
+	USR_PUTDEV=""
+fi
+export USR_PUTDEV
+
+VOLATILES=`echo /tmp/nsu/*`
+cd /tmp/nsu
+# install drivers/modules
+
+for MODULE in timod tirdwr pckt ntty net md5
+do
+	do_install ${MODULE}
+done
+${CONFBIN}/idbuild -M timod -M tirdwr -M pckt -M ntty -M net -M md5
+for i in ptm ptem pts
+do
+	if [ -f "${i}.Sy" ]
+	then
+		line=`grep "^$i[	 ]" $i.Sy 2>/dev/null`
+		set - $line
+		DEFAULT=$3
+		if [ "$DEFAULT" -ne "$NREG" ]
+		then
+			ed - $i.Sy 1>/dev/null 2>&1 <<-!
+				/^$i[ 	]/
+				s/$DEFAULT/$NREG/
+				.
+				w
+			!
+		fi
+	fi
+done
+
+# The pseudo-tty tuneables in ptm mtune file will be customized 
+# for the number of licensed users.  The default setup is
+# for 10 and UNLIMITED users (AS) so we only have to change it 
+# if only 2 users (PE) are licensed.
+NUM_USERS=`keyadm -g USERS|cut -f1`
+if [ "$NUM_USERS" = "2" ]
+then
+	sed -e "/^NUMREGPT/s//#AS NUMREGPT/" \
+	    -e "/^NUMSCOPT/s//#AS NUMSCOPT/" \
+	    -e "/^#PE /s///" ptm.Mt >ptm.Mt.$$
+	cp ptm.Mt.$$ ptm.Mt
+fi
+
+# The following is done only if the number of regular pseudo-ttys, NREG > 0
+
+
+if
+	[ "$NREG" -gt 0 ]
+then
+
+	# add /dev/ptmx as major(clone), minor(ptm)
+
+	echo "clone	ptmx	c	ptm" > /tmp/nsu/ptm.No
+
+	# (re-)configure pseudo-terminal master device
+
+	installf ${PKGINST} /dev/pts d 755 root root 4 NULL NULL || error 2 /dev/pts
+	/sbin/putdev -a pseudo_master cdevlist=/dev/ptmx \
+		desc="pseudo terminal master" $USR_PUTDEV >/dev/null 2>&1
+
+	TEMP=0
+	until
+		[ "$TEMP" -eq "$NREG" ]
+	do
+		echo "pts	pts/${TEMP}	c	${TEMP}" >> /tmp/nsu/pts.No
+		TEMP=`expr $TEMP + 1`
+	done
+
+	> /tmp/nsu/pts.Rc
+	echo "if [ -c /dev/pts000 ]" >> /tmp/nsu/pts.Rc
+	echo "then" >> /tmp/nsu/pts.Rc
+	echo "exit" >> /tmp/nsu/pts.Rc
+	echo "fi" >> /tmp/nsu/pts.Rc
+	echo "cd /dev/pts" >> /tmp/nsu/pts.Rc
+	echo "for i in *" >> /tmp/nsu/pts.Rc
+	echo "do" >> /tmp/nsu/pts.Rc
+	STRING="NUM=\`echo \$i | awk '{printf(\"%.3d\",\$1)}'\`"
+	echo "$STRING" >> /tmp/nsu/pts.Rc
+	echo "ln \$i /dev/pts\${NUM} >> /dev/null 2>&1" >> /tmp/nsu/pts.Rc
+	echo "done" >> /tmp/nsu/pts.Rc
+
+
+	for MODULE in ptm ptem pts
+	do
+		do_install ${MODULE}
+	done
+	${CONFBIN}/idbuild -M ptm -M ptem -M pts
+
+	# 
+	# edit the just installed mtune values for PTM.
+	#
+	# create temporary /etc/conf/cf.d/mtune; it's blown away
+	# below after we're done playing w/the tuneables....
+	# do not clobber mtune if it exists already
+	MTUNEORG=/usr/tmp/mtune.$$
+	if [ -f /etc/conf/cf.d/mtune ]
+	then
+        	cp /etc/conf/cf.d/mtune $MTUNEORG
+        	cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+	else
+        	cat /etc/conf/mtune.d/* > /etc/conf/cf.d/mtune
+	fi
+
+	${CONFBIN}/idtune -f NUMREGPT ${NREG}
+	
+        # if mtune existed restore it, else remove temp /etc/conf/cf.d/mtune
+        if [ -f $MTUNEORG ]
+        then
+                cp $MTUNEORG /etc/conf/cf.d/mtune
+                rm -f $MTUNEORG
+        else
+                rm -f /etc/conf/cf.d/mtune 2>/dev/null 1>/dev/null
+        fi
+
+	
+fi
+
+#
+# Just in case NSU was removed and reinstalled while ACP is still in
+# and we have changed the # of pseudo terms, we install SCO again
+# so that the range willbe right after the new pseudo terms. The
+# scipt is written in such a way that in the most likely case of 
+# where this is being installed well in advance of ACP the script will
+# do nothing
+#
+#
+# create temporary /etc/conf/cf.d/mtune; it's blown away
+# below after we're done playing w/the tuneables....
+# do not clobber mtune if it exists already
+MTUNEORG=/usr/tmp/mtune.$$
+if [ -f /etc/conf/cf.d/mtune ]
+then
+       	cp /etc/conf/cf.d/mtune $MTUNEORG
+       	cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+else
+       	cat /etc/conf/mtune.d/* > /etc/conf/cf.d/mtune
+fi
+
+if [ "$PKGINSTALL_TYPE" != NEWINSTALL ]
+then
+	set `${CONFBIN}/idtune -g NUMSCOPT`
+	/sbin/sh /var/sadm/pkg/nsu/install/sco_pt.install $1
+else
+	/sbin/sh /var/sadm/pkg/nsu/install/sco_pt.install -1
+fi
+
+# if mtune existed restore it, else remove temp /etc/conf/cf.d/mtune
+if [ -f $MTUNEORG ]
+then
+        cp $MTUNEORG /etc/conf/cf.d/mtune
+        rm -f $MTUNEORG
+else
+        rm -f /etc/conf/cf.d/mtune 2>/dev/null 1>/dev/null
+fi
+
+
+#	configure loopback transport providers
+
+for MODULE in ticlts ticots ticotsor
+do
+	do_install ${MODULE}
+done
+${CONFBIN}/idbuild -M ticlts -M ticots -M ticotsor
+
+
+#
+#The following defines the roles for the TFM database.
+#
+
+#
+#The following while-loop reads the commands and the roles
+#to which these commands are to be assigned.  If privileges, 
+#separated by a colon, appear next to the role in the script that 
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the role.
+#
+
+# create the NET role; if it is already there, ignore error
+/usr/bin/adminrole -n NET > /dev/null 2>&1
+
+while read cmd roles
+do
+    echo $cmd | egrep "^#" > /dev/null 2>&1 && continue	# Skip comments
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |            # delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+	echo $cmd $roles >> /tmp/rolelist
+	continue
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						pfmt -s warn -g ${PKGMSG}:16 " %s privilege specified to be shut off for %s,\n         but it is NOT in its set of privileges." $i $cmd
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role > /dev/null 2>&1
+        else
+            adminrole -a $base:$cmd:$privs $role > /dev/null 2>&1
+        fi
+        shift
+    done
+done <<!
+/usr/bin/cat		NET
+/usr/bin/cp		NET:owner:compat:fsysrange:filesys
+/usr/lib/saf/dbfconv	NET
+/usr/sbin/idadmin	NET
+/usr/sbin/keymaster	NET
+/usr/sbin/nlsadmin	NET
+/usr/sbin/pmadm		NET
+/usr/sbin/rxservice	NET
+/usr/sbin/sacadm	NET
+!
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+[ "$AUTOMERGE" = "No" ] && rm -f $BASEDIR/etc/netconfig
+
+############# End UPGRADE AND OVERLAY #######################
+
+if [ ! -s $BASEDIR/etc/netconfig ]
+then
+	echo "#
+#	The Network Configuration File.
+#
+# Each entry is of the form:
+#
+# network_id semantics flags protofamily protoname device nametoaddr_libs
+#" >$BASEDIR/etc/netconfig
+fi
+
+if grep '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticlts[ 	]' $BASEDIR/etc/netconfig >/dev/null 2>&1
+then
+	: Already there!
+else
+	echo "ticlts	   tpi_clts	  v	loopback	-	/dev/ticlts	/usr/lib/straddr.so" >>$BASEDIR/etc/netconfig
+fi
+
+if grep '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticots[ 	]' $BASEDIR/etc/netconfig >/dev/null 2>&1
+then
+	: Already there!
+else
+	echo "ticots	   tpi_cots	  v	loopback	-	/dev/ticots	/usr/lib/straddr.so" >>$BASEDIR/etc/netconfig
+fi
+
+if grep '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticotsord[ 	]' $BASEDIR/etc/netconfig >/dev/null 2>&1
+then
+	: Already there!
+else
+	echo "ticotsord  tpi_cots_ord	  v	loopback	-	/dev/ticotsord	/usr/lib/straddr.so" >>$BASEDIR/etc/netconfig
+fi
+
+# WARNING: This and all other packages using the netconfig file
+#	installf specifies a separate class, volatile, and 1 (i.e. SYS_PUBLIC)
+installf -c nsunetcnfg $PKGINST $BASEDIR/etc/netconfig \
+	 v 0644 root other 1 NULL NULL
+#
+# put in device database entries for ticots, ticlts ticotsord
+#
+/sbin/putdev -a ticlts cdevlist=/dev/ticlts \
+	desc="Loopback connectionless" $USR_PUTDEV >/dev/null 2>&1
+
+/sbin/putdev -a ticots cdevlist=/dev/ticots \
+	desc="Loopback virtual circuit" $USR_PUTDEV >/dev/null 2>&1
+
+/sbin/putdev -a ticotsord cdevlist=/dev/ticotsord \
+	desc="Loopback virtual circuit orderly release" $USR_PUTDEV >/dev/null 2>&1
+
+
+#
+#	create the hosts and services files for the loopback drivers...
+#
+
+UNAME=`/usr/bin/uname -n`
+
+for i in ticots ticotsord ticlts
+do
+
+	############# Begin UPGRADE AND OVERLAY #######################
+	
+	[ "$AUTOMERGE" = "No" ] && {
+
+		rm -f /etc/net/$i/services /etc/net/$i/hosts
+	}
+	
+	############# End UPGRADE AND OVERLAY #######################
+
+
+	grep '^rpcbind	rpc' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "rpcbind	rpc" >>/etc/net/$i/services
+	fi
+
+	grep '^keyserv	keyserv' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "keyserv	keyserv" >>/etc/net/$i/services
+	fi
+
+	grep '^listen	serve' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "listen	serve" >>/etc/net/$i/services
+	fi
+
+	grep '^statd	statd' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "statd	statd" >>/etc/net/$i/services
+	fi
+
+	grep '^lockd	lockd' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "lockd	lockd" >>/etc/net/$i/services
+	fi
+
+	grep '^nfsd	nfsd' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "nfsd	nfsd" >>/etc/net/$i/services
+	fi
+
+	grep '^reportscheme	reportscheme' /etc/net/$i/services >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "reportscheme	reportscheme" >>/etc/net/$i/services
+	fi
+
+	#
+	#	update the hosts files for the loopback drivers...
+	#
+
+	grep $UNAME /etc/net/$i/hosts >/dev/null 2>&1
+	if [ $? != 0 ]
+	then
+		echo "$UNAME	$UNAME" >>/etc/net/$i/hosts
+	fi
+
+	#
+	#	update the files within OAM
+	#
+
+	installf $PKGINST $BASEDIR/etc/net/$i/hosts v 0644 root sys 1 NULL NULL
+	installf $PKGINST $BASEDIR/etc/net/$i/services v 0644 root sys 1 NULL NULL
+
+done
+
+#
+#	Install listen id (if not there) and fix up files.
+#	Also allow root to execute listen with appropriate privileges.
+#
+/usr/sbin/useradd  -u 37 -g 4 -c "Network Admin" -d /usr/net/nls listen \
+	>/dev/null 2>&1
+/usr/bin/adminuser -a listen:/usr/lib/saf/listen:allprivs root >/dev/null 2>&1
+if [ "$?" -ne 0 ]
+then
+	/usr/bin/adminuser -n -a listen:/usr/lib/saf/listen:allprivs root >/dev/null 2>&1
+fi
+STEM=$BASEDIR/etc/saf
+sacadm -L -t listen 2>/dev/null | cut -f1 -d: >/tmp/listeners
+#
+#	convert the listener files that are already under SAF
+#	control
+#
+for i in `cat /tmp/listeners`
+do
+	if [ -f $STEM/$i/_pmtab ]
+	then
+		
+		cp $STEM/$i/_pmtab $STEM/$i/_opmtab || error 4
+		/usr/lib/saf/dbfconv $STEM/$i/_opmtab $STEM/$i/_pmtab
+		if [ $? -ne 0 ]
+		then
+			error 5
+			pfmt -s error -g ${PKGMSG}:10 " listener database conversion failed\n" 2>&1
+		fi
+	fi
+done
+#
+#	now convert any old style listeners into new format
+#
+sacadm -L 2>/dev/null | cut -f1 -d: >/tmp/pms
+LHOME=$BASEDIR/usr/net/nls
+for i in $LHOME/*
+do
+	NETSPEC=`basename $i`
+	if test -d $i
+	then
+		grep $NETSPEC /tmp/listeners >/dev/null
+		if [ $? -eq 0 ]
+		then
+#
+#	old listener has already been converted
+#
+			continue
+		fi
+#
+#	does another port monitor exist with this name?
+#
+		grep $NETSPEC /tmp/pms >/dev/null
+		if [ $? -eq 0 ]
+		then
+			error 5
+			pfmt -s error -g ${PKGMSG}:11 " can not convert %s listener to new format, tag already exists\n" $NETSPEC 2>&1
+			continue
+		fi
+#
+#	ok to create new port monitor
+#
+		COMMAND=/usr/lib/saf/listen
+		if [ $NETSPEC = starlan ]
+		then
+			COMMAND="$COMMAND -m slan"
+		fi
+		sacadm -a -p $NETSPEC -t listen -c "$COMMAND $NETSPEC" -v `/usr/sbin/nlsadmin -V` -y "$NETSPEC listener"
+		if [ $? -ne 0 ]
+		then
+			error 5
+			pfmt -s error -g ${PKGMSG}:12 " can not create new port monitor entry for %s\n" $NETSPEC 2>&1
+			continue
+		fi
+#
+#	convert the database file and put it in the right place
+#
+		if test -f $i/dbf
+		then
+			cp $i/dbf /tmp/$$.dbf
+			/usr/lib/saf/dbfconv /tmp/$$.dbf $STEM/$NETSPEC/_pmtab
+			if [ $? -ne 0 ]
+			then
+				error 5
+				pfmt -s error -g ${PKGMSG}:13 " listener database conversion failed\n" 2>&1
+			else
+				sacadm -x -p $NETSPEC
+			fi
+		fi
+	fi
+done
+rm /tmp/listeners
+rm /tmp/pms
+#
+# leave symbolic (and hard) links around for compatibility
+#
+if [ -d $LHOME ]
+then
+	if [ -f $LHOME/listen ]
+	then
+        	rm $LHOME/listen
+	fi
+	if [ -f $LHOME/dbfconv ]
+	then
+        	rm $LHOME/dbfconv
+	fi
+	if [ -f $LHOME/nlps_server ]
+	then
+        	rm $LHOME/nlps_server
+	fi
+	if [ -f $BASEDIR/usr/bin/nlsadmin ]
+	then
+		rm $BASEDIR/usr/bin/nlsadmin 
+	fi
+        ln -s $BASEDIR/usr/lib/saf/listen $LHOME/listen
+        ln -s $BASEDIR/usr/lib/saf/dbfconv $LHOME/dbfconv
+        ln -s $BASEDIR/usr/lib/saf/nlps_server $LHOME/nlps_server
+        ln $BASEDIR/usr/sbin/nlsadmin /usr/bin/nlsadmin
+	installf ${PKGINST} $BASEDIR/usr/bin/nlsadmin=$BASEDIR/usr/sbin/nlsadmin l || error
+fi
+
+
+#
+#	Initialize reportscheme service codes for all installed 
+#	transport providers.
+#	Note: pmadm adds the entry to all currently defined listeners.
+#
+NLS=/usr/sbin/nlsadmin
+
+pmadm -a -t listen -s reportscheme -i root -v `$NLS -V` -y "reportscheme service; execute ONLY with NULL authentication scheme" -m "`$NLS -c /usr/sbin/reportscheme`" >/dev/null 2>&1
+
+#
+#	add entries to /etc/security/MLD/nsu for multi-level directories
+#
+echo "/var/iaf/cr1" >>/etc/security/MLD/nsu
+installf ${PKGINST} /etc/security/MLD/nsu f 0644 root sys 2 NULL NULL
+
+#
+#	Do the following for TSA
+#
+
+TCPPORT=${TCPPORT:-413}
+CONF=/etc/unixtsa.conf
+STARTUP=/etc/init.d/unixtsa
+
+# add TCP entry to /etc/inet/services if it's not there already
+if egrep "^unixtsa[ 	]*${TCPPORT}/tcp" /etc/inet/services >/dev/null
+then
+    :
+else
+    echo "unixtsa	${TCPPORT}/tcp" >> /etc/inet/services
+fi
+
+# Note: the nwnet package will add SPX entry to /etc/inet/services
+
+# create initial /etc/unixtsa.conf file if it doesn't exist
+installf $PKG $CONF v 0644 root sys
+if [ ! -f $CONF ]
+then
+    cat > $CONF <<-EOF
+	#
+	# unixtsa.conf: TSA for Unix configuration file
+	# <Server name> <protocol> [<tsa codeset> <server codeset> <server locale>]
+	EOF
+fi
+
+# create startup script in /etc/rc2.d
+installf $PKG $STARTUP f 0444 root sys
+cat > $STARTUP <<'EOF'
+#
+# unixtsa start/stop script
+#
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT="uxrc"
+
+USAGE="$0 [ start | stop ]"
+
+PATH=/etc:/bin:/usr/bin:/usr/sbin
+
+DAEMON=tsad
+SERVER=tsaunix
+
+case "$1" in
+    'start')
+	_tsad=
+	if [ -z "$_AUTOBOOT" ]
+	then
+		_tsad=`ps -e | egrep ' tsad$' 2>&1`
+	fi
+	if [ -z "$_tsad" ]
+	then
+		if [ ! -x /usr/sbin/$DAEMON ]
+		then
+			exit 0
+		fi
+		/usr/sbin/$DAEMON -p/usr/sbin/$SERVER
+	fi
+	;;
+
+    'stop')
+	if [ -z "$_AUTOKILL" ]	
+	then
+		pidlist=
+		Pid=
+		pidlist=`ps -e | sed -n '/ tsad /p
+			/ tsad$/p
+			/ tsaunix /p
+			/ tsaunix$/p' |
+			while read Pid Junk
+			do
+				echo $Pid
+			done`
+		if [ -n "$pidlist" ]
+		then
+			kill -15 "$pidlist" 2>/dev/null
+		fi
+	fi
+	;;
+
+    *)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	exit 1
+	;;
+esac
+
+exit 0
+EOF
+
+# link startup script into rc2.d
+installf $PKG /etc/rc2.d/S70unixtsa=${STARTUP} l
+
+# attempt to start daemon if at run level 2 or higher, may fail
+# set +e
+who -r | while read Dot Label Level Junk
+do
+[ "$Level" -ge 2 ] && [ "${HOW_INSTALL}" != "ON_BFLOP" ] && \
+	/bin/sh /etc/init.d/unixtsa start
+done
+
+#	End of work for TSA
+
+#
+#	finished installing files: tell OAM
+#
+installf -f $PKGINST || error 6
+
+#
+#	make a new UNIX(R)
+#
+# rebuild for changes to take effect 
+# but do it only if no other pkgs in the set are being installed
+
+# XXX ${CONFBIN}/idbuild 2>>${TMP}
+# XXX if
+# XXX 	[ "$?" -ne "0" ]
+# XXX then
+# XXX 	pfmt -s nostd -g ${PKGMSG}:14 "An error has occurred during the rebuild of the UNIX System.\nErrors have been written to the file %s\n" ${TMP} 2>&1
+# XXX 	exit ${FAILURE}
+# XXX fi
+
+removef ${PKGINST} ${VOLATILES} >/dev/null 2>&1
+removef ${PKGINST} /tmp/nsu >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+errflag=`expr ${errflag:=0} + 10`
+
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+	${SCRIPTS}/pkgmrgconf "${PKGINST}" "$AUTOMERGE" "$NAME"
+
+# cleanup patch files from /var/sadm/install/contents and rm them
+
+[ "$PKGINSTALL_TYPE" = NEWINSTALL ] || ${SCRIPTS}/up_cleanup "${PKGINST}"
+
+[ "$UPDEBUG" = YES ] && goany
+
+############# End   UPGRADE AND OVERLAY #######################
+
+exit $errflag

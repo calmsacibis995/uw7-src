@@ -1,0 +1,170 @@
+#ident "@(#)cmd.plan	11.2"
+
+Test wants to run as root so it can write to /etc/sendmail.cf
+and /etc/default/mail.
+
+The test depends on the test version of mailadmin (mailadmint)
+to be installed in /etc/mail/admin/mailadmin.
+
+The automated test cases are as follows:
+
+core: our core set of functional tests, test basic positive functionality.
+grp1-n: Groups of tests developed to provoke paths that basic functionality
+	testing missed.  There lots of these.
+grp1-5: Tests designed cover what core missed on cmd.tcl.
+grp6:	Tests designed to what core missed on ma_ms1.tcl.
+grp7-9:	Tests for ma_sendmail.tcl.
+grp10:	Tests for ma_cf.tcl.
+
+core_usage:	execute our usage message routine.
+core_list:	execute each list command once.
+core_add:	execute each add command once.
+core_order:	execute each order command once.
+core_del:	execute each delete command once.
+core_def1:	set all values to default values, vfy data files.
+core_get1:	get all values, vfy values.
+core_set1:	set all values to non-default values, vfy data files.
+		Creates a new channel and renames it, and sets all values.
+
+cmd.tcl cases.
+grp1_host:	-h flag parsing.
+grp1_sendmail:	sendmail restart paths.
+grp1_uucp:	uucp commands and parser.
+grp1_add2:	add duplicate map name, check error msg.
+grp1_add3:	add duplicate altname.
+grp1_add4:	add duplicate channel name.
+grp1_add5:	add channel that conflicts with reserved mailer "error".
+grp1_add6:	add channel that conflicts with ruleset ap822_re.
+grp1_add7:	add channel that contains invalid characters "(error)".
+grp2_def:	set some default values explicity, vfy implicit values
+		(zero length strings) go into config file.
+grp2_twobad:	try to add two baduser channels, second should fail.
+grp2_add1:	add invalid add type, get error.
+grp2_del1:	del map junk, unkown map name.
+grp2_del2:	del altname junk, unkown altname name.
+grp2_del3:	del channel junk, unkown channel name.
+grp2_del4:	del junk junk, unkown del type.
+grp2_ordbad:	try to reorder baduser to not last channel.
+grp2_ord1:	order junk, invalid order type.
+grp2_list1:	list junk, invalid list type.
+grp2_fformat:	set fformat junk, invalid file format.
+grp2_set:	set junk, invalid property.
+grp3_chan1:	rename a channel to a conflicting name.
+grp3_chan2:	rename a channel to a name with invalid characters.
+grp3_chan3:	set host for smtp, validate cf file.
+grp3_chan4:	set local:junk value, invalid channel propery name.
+grp3_uucp:	create a uucp channel (defaults all values).
+grp3_chan5:	add channel with unknown table type.
+grp3_order:	order with an invalid list.
+grp4_set1:	set, not enough args for set.
+grp4_set2:	set :name, null channel name.
+grp4_set3:	set junk:name, unknown channel name.
+grp4_set4:	set junk:, null channel property name.
+grp4_set5:	set "" value, null property name.
+grp4_set6:	set fsync FALSE, just check FALSE path, file no change.
+grp4_set7:	set fsync abc, invalid TRUE/FALSE value.
+grp4_set8:	set fumask abc, invalid umask.
+grp4_set9:	set fumask 777, invalid umask.
+grp4_set10:	set fumask 07777, invalid umask.
+grp4_set11:	set local:maxline abc, invalid numeric value.
+grp4_set12:	set local:maxline -1, numeric value less than min.
+grp4_set13:	set local:maxline 20000, numeric value greater than max.
+grp4_set14:	set fumask 8, not octal.
+grp4_set15:	set fumask 9, not octal.
+grp5_nocf:	cf file not readable from host.
+grp5_nodef:	/etc/default/mail file not readable from host.
+grp5_badcf:	cf file not parsable.
+grp5_baddef:	/etc/default/mail file not parsable.
+grp5_write1:	cf file write error.
+grp5_write2:	/etc/default/mail file write error.
+grp5_copy1:	cf file copy back error.
+grp5_copy2:	/etc/default/mail file copy back error.
+
+ma_ms1.tcl cases.
+grp6_open:	open of ms1 file fails.
+grp6_kwd:	junk=TRUE, invalid keyword in file, open should fail.
+grp6_get1:	get of missing keyword (MS1_UMASK), vfy value is good.
+grp6_get2:	get of MS1_UMASK with invalid value (abc), open should fail.
+grp6_set1:	set missing keyword (MS1_UMASK), vfy appears in file.
+grp6_write:	write to file fails (ma_ms1_write open fails).
+grp6_p1:	file parse of non-numeric EXPUNGE_THRESHOLD.
+grp6_p2:	file parse of EXPUNGE_THRESHOLD > 100.
+grp6_p3:	file parse of invalid UMASK=abc.
+grp6_p4:	file parse of invalid UMASK=8.
+grp6_p5:	file parse of invalid UMASK=9.
+grp6_p6:	file parse of invalid UMASK=777.
+grp6_p7:	file parse of invalid UMASK=07777.
+grp6_lock:	file parse invalid MS1_LOCK_TIMEOUT=abc.
+grp6_null:	file parse invalid null command "=TRUE".
+grp6_noct:	file parse of octal expunge threshold (should be rejected).
+grp6_set2:	ma_ms1_set of invalid value UMASK abc.
+grp6_set3:	ma_ms1_set of invalid keyword junk TRUE.
+
+ma_sendmail.tcl test cases.
+grp7_open:	ma_cf_open of non-existant file.
+grp7_op1:	channels ruleset missing, parserr.
+grp7_op2:	no sum line.
+grp7_op3:	no lines at all.
+grp7_op4:	no Kusers line.
+grp7_op5:	no Kuucp line.
+grp7_op6:	no Kdomain line.
+grp7_op7:	no CP line.
+grp7_op8:	no CD line.
+grp7_op9:	a zillion rulesets, any of which are missing cause parserr. 
+grp7_op10:	call ma_cf_* before ma_cf_open.
+grp7_op11:	call ma_cf_write with baduser not last channel.
+grp7_op12:	call ma_cf_write with baduser not have host parameter.
+grp7_op13:	call ma_cf_write with newchan with no equates.
+grp8_op1:	call ma_cf_write fake open fail.
+grp8_op2:	call ma_cf_write fake open fail.
+grp8_op3:	call ma_cf_write fake open fail.
+grp8_set1:	set hostname to " ", name has a blank.
+grp8_set2:	set hostname to "", name is null.
+grp8_v1:	ma_cf_valid on valid cf file.
+grp8_v2:	ma_cf_valid on missing cf file.
+grp8_v3:	ma_cf_valid on cf file with bad sum.
+grp8_v4:	ma_cf_valid on empty cf file.
+grp8_v5:	ma_cf_valid first line is not checksum line.
+grp8_v6:	ma_cf_valid simulated fail on tmp open.
+grp8_set3:	set invalid table type to ma_ch_table_type_set"
+grp8_seq:	two channels same sequence #, ma_ch_names_get.
+grp8_add1:	ma_ch_create a duplicate channel name.
+grp8_add2:	add a channel whose mapname conflicts with another.
+		requires hand editted mapname for this to happen.
+grp9_p1:	parse sendmail.cf that has no map for a channel.
+grp9_p2:	parse sendmail.cf that has invalid rule in channel ruleset.
+grp9_p3:	parse sendmail.cf where channel has different mailer name.
+grp9_p4:	parse sendmail.cf where host= is set on a channel.
+grp9_p5:	parse sendmail.cf where baduser channel exists.
+grp9_p6:	parse baduser channel that has different mailer name.
+grp9_p7:	parse baduser channel that has no equates.
+grp9_p8:	parse baduser channel where host= is not set.
+grp9_p9:	parse SMTP channel that has no equates.
+grp9_set1:	set host= on local channel.
+grp9_set2:	add a baduser channel and save.
+grp9_chall:	test all ma_ch routines with unknown channel.
+grp9_del1:	delete the baduser channel, make sure it really gets deleted.
+grp9_mch:	set machine name from non-default to default
+grp9_fn:	create a table file channel where filename is null string.
+grp9_rb:	rename bad user channel to another name.
+grp9_ndtf:	create a channel with non-default table file name.
+
+grp10_p1:	single letter option name converted to full name when parsed.
+grp10_p2:	non comma-list option parse (OITrue +AAONLY +DNSRCH).
+		Also test get and set of long macro and class names.
+grp10_p3:	Set a single letter option (one that does not translate).
+grp10_p4:	two Options=, one comma, one blank delimited,
+		first of each is null, get them, no separator.
+grp10_p5:	set a continuation line for a class macro (Cw).
+grp10_p6:	using ma_domain_table_file_get call GetMapinfo.
+grp10_p7:	call GetMapInfo on missing map.
+
+Semi-Automated tests:
+
+Run the script called "mag" in a terminal window, it will start
+up the mailadmin GUI for each test case.  Type as directed below
+for each test case.
+
+The semi-automated test cases are as follows:
+
+core_test1:	Just click menu Host->Exit

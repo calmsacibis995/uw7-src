@@ -1,0 +1,180 @@
+#ident	"@(#)pkg.mpu:postinstall	1.10.1.1"
+#ident	"$Header$"
+
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+LKEYSFILE=/etc/config/licensekeys
+PKGNAME=mpu
+MYNAME=mpu
+DUPLICATE=17
+
+SERIAL_ID=${SERIAL_ID:-${SERIALID}}
+SERIAL_KEY=${SERIAL_KEY:-${SERIALKEY}}
+
+_logmsg()
+{
+	LOGFILE=/var/sadm/install/logs/${PKGINST}.log
+	PKGMSG=${PKGINST}.pkg
+	
+	if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+	then
+	    if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+		 -d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	    then
+		 cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		    /usr/lib/locale/${LOCALE}/LC_MESSAGES
+	    fi
+	fi
+
+	if [ $1 -eq 0 ]
+	then
+		pfmt -s nostd -g ${PKGMSG}:1 "Your serial number and activation key pair\n    %s\t%s\ninstalled successfully.\n" ${SERIAL_ID} ${SERIAL_KEY}     1>> ${LOGFILE} 2>&1
+
+	elif [ $1 -eq ${DUPLICATE} ]
+	then
+		pfmt -s error -g ${PKGMSG}:2 "This package contains a serial number and activation key pair\nthat has already been installed in this system.\n" 1>> ${LOGFILE} 2>&1
+	else
+		pfmt -s error -g ${PKGMSG}:3 "This package does not contain a valid serial number and\nactivation key pair for this system.\n"                  1>> ${LOGFILE} 2>&1
+
+	fi
+}
+
+
+DIR=/etc/inst/locale/${LOCALE}/menus/${PKGNAME}
+[ -d ${DIR} ] || mkdir -p ${DIR}
+
+MENUS="menu.val menu.inval menu.lim menu.dup menu.showkeys menu.keyrm" 
+for i in ${MENUS}
+do
+
+	if [ ! -f ${DIR}/${i} ]
+	then
+		if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGNAME}/${i} ]
+		then
+		       cp ${REQDIR}/inst/locale/${LOCALE}/${PKGNAME}/${i} ${DIR}
+		else
+		       cp ${REQDIR}/${PKGNAME}/${i} ${DIR}
+		fi
+	fi
+done
+
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+#
+# validate the key pair SERIAL_ID and SERIAL_KEY that was obtained
+# by the request script.
+#
+/sbin/validate $SERIAL_ID $SERIAL_KEY 2>/dev/null
+RET_CODE=$?
+
+#
+# save a copy of the key pair in a tmp file 
+# this info will be used later by the menus.
+# (menu/menu tool does not seem to like tabs!)
+#
+
+[ -d /tmp/mpu ] || mkdir -p /tmp/mpu
+
+echo "${SERIAL_ID}      ${SERIAL_KEY}" >/tmp/mpu/KEYPAIR
+
+if [ ${RET_CODE} -eq 0  -a -s ${LKEYSFILE} ]
+then
+	# save initial value of file descriptor 0 by dup to file descriptor 3
+	exec 3<&0
+
+	# redefine file descriptor 0 to be the data file
+	exec 0<${LKEYSFILE}
+
+	# Since there is no redirection in the following while loop,
+	# there is no subshell and "exit" works properly!
+	while
+		read KEY1 KEY2
+	do
+		# Determine if the Key Pair is already installed in the
+		# licensekeys file
+		if [ "${SERIAL_ID}" = "${KEY1}" -a "${SERIAL_KEY}" = "${KEY2}" ]
+		then
+			RET_CODE=${DUPLICATE}
+			break
+		fi
+	done
+
+	#restore initial value of file descriptor 0 from file descriptor 3
+	exec 0<&3
+fi
+
+if [ ${RET_CODE} -eq 0 ]
+then
+	EXIT_CODE=0
+
+	# Key pair was found valid, enter it in the licensekeys file
+	echo "${SERIAL_ID}\t${SERIAL_KEY}" | /sbin/keyadm -a 2>/dev/null
+
+	# set the resource limit
+	keyadm -s  2>/tmp/mpu/lim.errmsg
+	RET_CODE=$?
+
+	if [ "$QUIETMODE" = "true" ]
+	then
+		_logmsg ${EXIT_CODE}
+		rm -rf /tmp/mpu
+		exit ${EXIT_CODE}
+	fi
+
+	if [ ${RET_CODE} -eq 0 ]
+	then
+		# limit settings was successful, inform the user
+		menu -f ${DIR}/menu.val -o /tmp/${MYNAME}_out 2> /dev/null
+
+	else
+		#
+		# limit settings was not successful, inform user
+		# that the key pair was installed successfully and also
+		# display the error message from the "keyadm" command.
+		#
+		menu_colors warn
+		menu -f ${DIR}/menu.lim -o /tmp/${MYNAME}_out 2> /dev/null
+		menu_colors regular
+
+	fi
+else
+	EXIT_CODE=1
+
+	if [ "$QUIETMODE" = "true" ]
+	then
+		_logmsg ${RET_CODE}
+		rm -rf /tmp/mpu
+		exit ${EXIT_CODE}
+	fi
+
+	# Key pair read from floppy was invalid or was already installed,
+	# inform the user
+
+	menu_colors warn
+
+	if [ ${RET_CODE} -eq ${DUPLICATE} ]
+	then
+		menu -f ${DIR}/menu.dup -o /tmp/${MYNAME}_out 2> /dev/null
+	else
+		menu -f ${DIR}/menu.inval -o /tmp/${MYNAME}_out 2> /dev/null
+	fi
+	menu_colors regular
+fi
+
+rm -rf /tmp/mpu
+
+exit ${EXIT_CODE}

@@ -1,0 +1,21 @@
+#ident	"@(#)S02NICS	2.1"
+
+# if 'stop' was passed in, don't do anything
+[ "$1" = stop ] && exit 0
+
+# do NOT run this if on postreboot
+[ -f /etc/rc2.d/S02POSTINST ] && exit 0
+
+/sbin/dcusilent
+
+if [ "$?" != "1" ]
+then
+	exec < /dev/vt01 > /dev/vt01 2>&1
+	TERM=AT386 RC2=true /usr/sbin/niccfg
+fi
+
+if [ -f /tmp/nics.rc2.inet ]
+then
+	rm /tmp/nics.rc2.inet
+	TERM=AT386 /etc/inet/menu
+fi

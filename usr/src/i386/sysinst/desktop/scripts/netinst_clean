@@ -1,0 +1,289 @@
+#ident "@(#)netinst_clean	15.2	98/01/18"
+
+typeset MNTROOT=${MNTROOT:-/flpy2}
+typeset IIROOT=${IIROOT:-/.extra.d}
+typeset ROUTE=${IIROOT}/usr/sbin/route
+typeset IFCONFIG=${IIROOT}/usr/sbin/ifconfig
+typeset SLINK=${IIROOT}/usr/sbin/slink
+
+function unload_modules
+{
+        print -u2 "========== In unload_modules =========="
+[ -n "$debug" ] && set -x
+
+	[ $# -le 0 ] && return
+	MODULES="$*"
+
+	modadmin -s > /tmp/modadmin.$$
+	failed_to_unload=""
+	for MOD in ${MODULES}
+	do
+		grep "${MOD}$" /tmp/modadmin.$$ > /dev/null 2>&1 
+		(( $? )) || {
+			modadmin -U ${MOD} 2> /dev/null
+			(( $? )) && failed_to_unload="$failed_to_unload $MOD"
+		}
+	done
+	rm /tmp/modadmin.$$
+	[ -n "$failed_to_unload" ] && \
+		print -u2 "failed to unload: $failed_to_unload"
+}
+
+function clean_resmgr
+{
+        print -u2 "========== In clean_resmgr =========="
+[ -n "$debug" ] && set -x
+
+	[ -n "$debug" ] && set -x
+	[ -z "${NICS_TYPE}" ] && NICS_TYPE=$(ivar get NICS_TYPE)
+	[ -z "${KEY_ADDED}" ] && KEY_ADDED=$(ivar get KEY_ADDED)
+	[ -z "${NICS_KEY}" ] && NICS_KEY=$(ivar get NICS_KEY)
+	[ -z "${NICS_TYPE}" -o -z "${NICS_KEY}" ] && return
+	if [ "${KEY_ADDED}" = "1" ]
+	then
+	    /sbin/resmgr -r -k ${NICS_KEY}
+	    ivar set KEY_ADDED 0
+	else
+	    /sbin/resmgr -k ${NICS_KEY} -p MODNAME -v "-"
+	    # we must remove all params (including custom ones)
+	    NICS_CUSTOM_NUM=$(ivar get NICS_CUSTOM_NUM)
+	    [ -n "${NICS_CUSTOM_NUM}" ] && {
+		strcnt=1
+		while [ "$strcnt" -le "$NICS_CUSTOM_NUM" ]
+		do
+		    ii_cust_pname=$(ivar get NICS_CUST_PNAME[${strcnt}])
+		    /sbin/resmgr -k ${NICS_KEY} -p "${ii_cust_pname},s" -v ""
+		    /sbin/resmgr -k ${NICS_KEY} -p "${ii_cust_pname}_,s" -v ""
+		    let strcnt+=1
+		done
+	    }
+	    # now erase the ones we just added. 
+	    # We can leave BRDBUSTYPE alone.
+	    #/sbin/resmgr -k ${NICS_KEY} -p "NIC_CARD_NAME,s" -v ""
+	    #/sbin/resmgr -k ${NICS_KEY} -p "NETCFG_ELEMENT,s" -v ""
+	    #/sbin/resmgr -k ${NICS_KEY} -p "MDI_NETX,s" -v ""
+	    #/sbin/resmgr -k ${NICS_KEY} -p "NETINFO_DEVICE,s" -v ""
+	    #/sbin/resmgr -k ${NICS_KEY} -p "NIC_CUST_PARM,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "ENTRYTYPE" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "NDCFG_UNIT,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "DEV_NAME,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "DRIVER_TYPE,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "BCFGPATH,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "IICARD,s" -v ""
+	    /sbin/resmgr -k ${NICS_KEY} -p "TOPOLOGY,s" -v ""
+	fi
+	ivar set NICS_KEY ""
+	[[ "${NICS_TYPE}" == "MDI" ]] && /sbin/resmgr -r -m net0
+}
+
+#
+#  Clean up before exiting
+#
+function netinst_clean
+{
+        print -u2 "========== In netinst_clean =========="
+[ -n "$debug" ] && set -x
+
+	typeset SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+	typeset NICS_TYPE=$(ivar get NICS_TYPE)
+	typeset tcp_status=$(svar get tcp_status)
+	typeset spx_status=$(svar get spx_status)
+	typeset nics_status=$(svar get nics_status)
+	typeset NICS_DRIVER_NAME=$(ivar get NICS_DRIVER_NAME)
+	typeset NICS_DDI_VERSION=$(ivar get NICS_DDI_VERSION)
+	typeset DDI_VERSION=${NICS_DDI_VERSION%%[.a-zA-Z]*}
+	typeset ddi_version=${DDI_VERSION:-7}
+	typeset tcp_error=0 tcp_clean=0
+	typeset spx_error=0 spx_clean=0
+	typeset nics_error=0 is_niccfg=0 nics_clean=0
+
+	case $module in
+	ii_detect|ii_select|ii_config)
+		[ "$1" == "ERROR" ] && nics_error=1
+		[ "$1" == "CLEAN" ] && nics_clean=1
+		;;
+	"netinst_tcp")
+		[ "$1" == "ERROR" ] && tcp_error=1
+		[ "$1" == "CLEAN" ] && tcp_clean=1
+		tcp_error=1
+		;;
+	"netinst_spx")
+		[ "$1" == "ERROR" ] && spx_error=1
+		[ "$1" == "CLEAN" ] && spx_clean=1
+		spx_error=1
+		;;
+	"media")
+		[ "$1" == "ERROR" ] && {
+			tcp_error=1
+			spx_error=1
+		}
+		[ "$1" == "CLEAN" ] && {
+			tcp_clean=1
+			spx_clean=1
+		}
+		;;
+	esac
+
+	(( $tcp_clean || $tcp_error || $nics_error )) && {
+	    (( ${tcp_status:-0} )) && {
+	    # this is done on error or reconfig
+	    [ -f $ROUTE -a -f $SLINK -a -f $IFCONFIG ] && {
+	    	TCP_ROUTER_ADDR=$(ivar get TCP_ROUTER_ADDR)
+	    	[[ -n "${TCP_ROUTER_ADDR}" ]] && \
+	    	    ${ROUTE} delete default ${TCP_ROUTER_ADDR} 1>&2
+	    	${IFCONFIG} -a down 
+
+	    	if [ "${NICS_TYPE}" == "MDI" ]
+	    	then
+	    	    dev_name="/dev/mdi/${NICS_DRIVER_NAME}0"
+	    	    ${SLINK} -uv -c /etc/strcf add_interface res \
+			    /dev/net0 ${dev_name} 
+	    	else
+	    	    dev_name="/dev/${NICS_DRIVER_NAME}_0"
+	    	    ${SLINK} -uv -c /etc/strcf add_interface res \
+			    /dev/${NICS_DRIVER_NAME}_0 ${dev_name} 
+	    	fi
+	    	${SLINK} -uv -c /etc/strcf ii_boot
+	    }
+	    }
+	    #unload_modules route icmp incf rip arp tcp udp sockmod timod tirdwr net ip inet
+	    unload_modules route icmp incf rip arp tcp udp sockmod timod tirdwr net ip
+	    # this is done on success in order to clean up memory
+	    (( $tcp_clean )) && {
+		    RMFILES=$(cat /tmp/tcp.list)
+		    > /tmp/newhd.list
+		    for file in $RMFILES
+		    do
+			grep $file /hd.list > /dev/null 2>&1
+			(( $? )) && {
+			    rm -f $file 2>/dev/null
+			    rm -f ${IIROOT}/$file 2>/dev/null
+			} || echo $file >> /tmp/newhd.list
+		    done
+		    cp /tmp/newhd.list /hd.list
+		    rm -f /tmp/newhd.list
+
+	    } || {
+		    svar set tcp_status 0
+	    }
+	}
+
+	(( $spx_error || $spx_clean || $nics_error )) && {
+	    (( ${spx_status:-0} )) && {
+            [ -f /etc/netware/npsd.pid ] && {
+                read PID < etc/netware/npsd.pid
+                kill -TERM $PID
+                npsd_killed=0
+                npsd_loop_count=0
+                while [ npsd_loop_count -lt 5 ]
+                do
+                    [ -d /proc/${PID} ] || {
+                        npsd_killed=1
+                        break
+                    }
+                    (( npsd_loop_count += 1 ))
+                    call sleep 3
+                done
+                (( $npsd_killed )) || \
+			print -u2 "could not shut down npsd"
+                rm -f /etc/npsd.pid
+            }
+	    }
+	    unload_modules uni ipx ripx nspx sockmod timod tirdwr
+    
+            # remove files from extraction process
+	    (( $spx_clean )) && {
+		    RMFILES=$(cat /tmp/spx.list)
+		    > /tmp/newhd.list
+		    for file in $RMFILES
+		    do
+			grep $file /hd.list > /dev/null 2>&1
+			(( $? )) && {
+			    rm -f $file 2>/dev/null
+			    rm -f ${IIROOT}/$file 2>/dev/null
+			} || echo $file >> /tmp/newhd.list
+		    done
+		    cp /tmp/newhd.list /hd.list
+		    rm -f /tmp/newhd.list
+
+	    } || {
+		    svar set spx_status 0
+	    }
+	}
+
+	# don't clean up NIC if this is a protocol config error
+	(( $nics_error || $nics_clean )) && {
+	    (( ${nics_status:-0} )) && {
+		    [ -f /etc/dlpid.pid ] && {
+			read PID < etc/dlpid.pid
+			kill -TERM $PID
+			dlpid_killed=0
+			dlpid_loop_count=0
+			while [ dlpid_loop_count -lt 5 ]
+			do
+			    [ -d /proc/${PID} ] || {
+				dlpid_killed=1
+				break
+			    }
+			    (( dlpid_loop_count += 1 ))
+			    call sleep 3
+			done
+			(( $dlpid_killed )) || \
+				print -u2 "could not shut down dlpid"
+			rm -f /etc/dlpid.pid
+		    }
+	    }
+	    (( $nics_error )) && {
+	        unload_modules ${NICS_DRIVER_NAME} net0 dlpibase dlpi
+	        #unload_modules ${NICS_DRIVER_NAME} net0
+	        clean_resmgr
+                if [ "${NICS_TYPE}" = "MDI" ]
+                then
+	            rm -f /dev/net0 2>/dev/null
+	            if [ ${ddi_version} -lt 8 ]
+	            then
+	                rm -f /dev/mdi/${NICS_DRIVER_NAME}0
+	            else
+	                rm -f /etc/conf/sdevice.d/${NICS_DRIVER_NAME}
+	                rm -f /etc/conf/mdevice.d/${NICS_DRIVER_NAME}
+	                rm -f /etc/conf/node.d/${NICS_DRIVER_NAME}
+	            fi
+	            rm -f ${IIROOT}/etc/inst/nd/dlpimdi
+	            rm -f /etc/inst/nd/dlpimdi
+	        else
+	            rm -f /dev/${NICS_DRIVER_NAME}_0
+                fi
+	    }
+
+	    (( $nics_clean )) && {
+		rm -f /tmp/*.trash /tmp/*.ok
+		rm -f /tmp/${NICS_DRIVER_NAME}.irq
+		rm -f /tmp/${NICS_DRIVER_NAME}.ioaddr
+		rm -f /tmp/${NICS_DRIVER_NAME}.ramaddr
+		rm -f /tmp/${NICS_DRIVER_NAME}.dma
+
+		CONFIG_DIR=${IIROOT}/config
+		NICS_CONFIG_FILE=$(ivar get NICS_CONFIG_FILE)
+		. ${CONFIG_DIR}/${NICS_CONFIG_FILE} > /dev/null 2>&1
+	    
+		RMFILES=$(cat /tmp/${NICS_DRIVER_NAME}.list)
+		> /tmp/newhd.list
+		for file in ${RMFILES} ${EXTRA_FILES}
+		do
+		    grep $file /hd.list > /dev/null 2>&1
+		    (( $? )) && {
+			rm -f $file
+			rm -f ${IIROOT}/$file 
+		    } || echo $file >> /tmp/newhd.list
+		done
+		cp /tmp/newhd.list /hd.list
+		rm -f /tmp/newhd.list
+
+		rm -f /tmp/*.list /tmp/mod_register /tmp/resmgr.*
+		rm -f /tmp/netflop.label /tmp/bootp.out /tmp/floppy_map
+	    } || {
+	        svar set nics_status 0
+	    }
+	}
+} # end of netinst_clean
+

@@ -1,0 +1,380 @@
+
+/*****************************************************************************
+ *			  USL SVR4 specfic parameters
+ *
+ * ALL SVR4 specific variables must be defined here. Except for usl.cf,
+ * site.def and svr4<architecture>.cf files, all other files in this directory 
+ * must be "AS IS" from MIT.
+ *
+ * usl.cf	: common defines to all ports are defined in this file.
+ * svr4_<architecture>.cf : any architecture dependent stuff must be defined
+ *						   in this file
+ * site.def : site specific (The default provided by USL is for ix86)
+ *			  This file as provided by USL, is specific for Intel
+ *			  architecture, and must be changed accordingly for other
+ *			  architectures.
+ * define the appropriate architecture in site.def in "#ifdef BeforeVendorCF
+ * block
+ *****************************************************************************/
+/*
+ *	Fri Jan 10 19:03:52 EST 1997	-	hiramc@sco.COM
+ *	- add parallel make and depend rules from R6 usl.cf
+ *	- to parallize makes in lib and uslclients
+ */
+
+#define SystemV4			YES
+#define BootstrapCFlags			-Dusl
+#define	Release5			YES
+
+#if SVR4ix86Architecture
+#include <svr4_ix86.cf>
+#elif SVR4SparcArchitecture
+#include <svr4_sparc.cf>
+#elif SVR4MipsArchitecture
+#include <svr4_mips.cf>
+#endif
+
+/* IF YOU MAKE ANY CHANGES TO ANY FLAGS, DO A MAKE CLEAN !!!!
+ *
+ * To build an archive along with shared library, ForceNormalLib must
+ * be set to YES; DON'T FORGET to "make clean" if you change this variable.
+ * If you don't need archive libs (saves plenty of compile time and disk
+ * space), set the ForceNormalLib to NO.
+ *
+ * To build with memory checking libraries, set MEMUTILDEF and MEMUTILLIB
+ * as shown.  If you don't want memory checking tools (near release/p-load
+ * time) the MEMUTIL flags should be set off by undef'ing the define.
+ * This is typically done with "sed" in the loadWorld script.
+ */
+#if NightlyBuild
+#define ForceNormalLib NO	
+MEMUTILDEF = -DMEMUTIL
+MEMUTILLIB = -L$(TOP)/lib/Memutil -lmemut
+#else   /* NightlyBuild */
+#define ForceNormalLib YES
+MEMUTILDEF =
+MEMUTILLIB =
+INC = $(TOOLS)/usr/include
+#endif /* NighltyBuild */
+
+#define LdCombineFlags			-r
+#define YFlags
+#define ArCmd			$(PFX)ar rv
+#define CppCmd			$(TOOLS)/usr/ccs/lib/$(PFX)cpp
+#define LdCmd			$(PFX)ld
+#define LintCmd			$(PFX)lint
+#define MakeCmd			$(PFX)make
+#define AsCmd			$(PFX)as
+#define CcCmd			$(PFX)cc
+#define StripCmd		$(PFX)strip
+#define McsCmd			$(PFX)mcs -d
+#define HccCmd 			/bin/cc
+#define CpCmd			/bin/cp
+#define LnCmd			/bin/ln -s
+#define MvCmd			/bin/mv
+#define RmCmd			/bin/rm	-f
+#define LsCmd			/bin/ls
+#define CdCmd			cd
+#define PrCmd			/bin/pr
+#define ChmodCmd		$(CH)chmod
+#define ChownCmd		$(CH)chown
+#define ChgrpCmd		$(CH)chgrp 
+#define SedCmd			/bin/sed
+#define AwkCmd			/usr/bin/awk
+#define InstallCmd		$(TOP)/util/scripts/bsdinst.sh
+
+         YFLAGS = YFlags
+          STRIP = StripCmd
+            AWK = AwkCmd
+             CD = CdCmd
+             LS = LsCmd
+             PR = PrCmd
+          CHMOD = ChmodCmd
+          CHOWN = ChownCmd
+          CHGRP = ChgrpCmd
+            SED = SedCmd
+            MCS = McsCmd
+
+           YACC = $(PFX)yacc -p$(TOOLS)/usr/ccs/lib/yaccpar
+            LEX = $(PFX)lex -l$(TOOLS)/usr/ccs/lib/lex/ncform
+
+  PROTO_DEFINES =
+LOCAL_LIBRARIES = $(XLIB)
+  SYS_LIBRARIES =
+
+/**** The following stuff is to set up BUILD_DEFINES ****/
+/**** If you want to make something in IMAKE_DEFINES permanent, do it here */
+  USE_INSTALLED =
+   SYS_TO_BUILD =
+   ARCHIVE_ONLY =
+
+#ifdef UseInstalled
+  USE_INSTALLED = -DUseInstalled
+#endif
+#ifdef ArchiveOnly
+   ARCHIVE_ONLY = -DArchiveOnly
+#endif
+
+BUILD_DEFINES = $(SYS_TO_BUILD) $(USE_INSTALLED) $(ARCHIVE_ONLY)
+
+XCOMM :: end of BUILD_DEFINES set-up
+
+#ifdef SystemV4
+       UNIX_REL = -DSVR4
+#endif
+
+MAKEDEFINES = $(STD_DEFINES) $(BUILD_DEFINES) $(UNIX_REL) $(CCS_USED)
+
+#define ShLibFlags -L $(ROOT)/$(MACH)/usr/lib -L $(ROOT)/$(MACH)/lib
+
+XCOMM operating system:  OSName
+
+#define OSDefines		-DUSL -DSVR4
+#define OSVendor		"Unix System Laboratories"
+#define OSName			SVR4 Release 4.1 ES
+#define OSMajorVersion		4
+#define OSMinorVersion		1
+
+/*
+ * STAR system puts wierd numbers in the next line; there should 
+ * not be any numbers in the next line.
+ * If you see any numbers, replace the numbers with the correct
+ * string and then start the build
+ * The existince of Ctl-A () in this comment should prevent STAR from
+ * replacing %C%.  Do not remove this comment.
+ */
+#define XFileSearchPathBase /usr/X/lib/locale/%L/%T/%N%C%S:/usr/X/lib/locale/%l/%T/%N%C%S:/usr/X/lib/locale/%L/%T/%N%S:/usr/X/lib/locale/%l/%T/%N%S:/usr/X/lib/%L/%T/%N%C%S:/usr/X/lib/%l/%T/%N%C%S:/usr/X/lib/%T/%N%C%S:/usr/X/lib/%L/%T/%N%S:/usr/X/lib/%l/%T/%N%S:/usr/X/lib/%T/%N%S:/usr/X/lib/locale/C/%T/%N%C%S:/usr/X/lib/locale/C/%T/%N%S
+
+/*
+ * INSTALLFLAGS is used in InstallMultipleHelpFiles ; the user can override
+ * by defining in their own Imakefile. Default is defined here.
+ */
+INSTALLFLAGS = -m 0644
+#include <sv4Lib.rules>
+
+/*
+ * Define a rule that facilitates making symbolic links for desktop clients.
+ * usage: InstallDesktopClient($(BINDIR)/module, $(DESKTOPDIR)/category/name)
+ */
+#ifndef InstallDesktopClient
+#define InstallDesktopClient(module,alias)                              @@\
+install:: alias                                                         @@\
+                                                                        @@\
+LinkFile(alias,module)
+
+#endif /* InstallDesktopLink */
+
+/*
+ * The following InstallFonts? are used only for R4 fonts, once we move
+ * completely to R5 fonts, we can get rid of these rules
+ */
+
+/*
+ * InstallFonts - generate rules to install font files
+ *
+ * Either use InstallFonts(), or use both InstallFonts1()
+ * and InstallFonts2().  The latter two were added to prevent
+ * core dumps during install of fonts/bdf/100dpi
+ */
+#ifndef InstallFonts1
+#define InstallFonts1(dest)						@@\
+InstallMultipleFlags($(OBJS1),dest,$(INSTDATFLAGS))
+#endif /* InstallFonts1 */
+
+#ifndef InstallFonts2
+#define InstallFonts2(dest)						@@\
+InstallMultipleFlags($(OBJS2),dest,$(INSTDATFLAGS))			@@\
+									@@\
+install::  fonts.dir							@@\
+	$(INSTALL) $(INSTDATFLAGS) fonts.dir dest
+#endif /* InstallFonts2 */
+
+
+#ifdef UseInstalled
+#define _Use(a,b) a
+#else
+#define _Use(a,b) b
+#endif
+
+INCLUDE_EXTENSION = _Use($(INCDIR)/extensions, $(EXTENSIONSRC)/include)
+
+#ifdef UseInstalled
+     /* When UseInstalled is used for Open Look, -I$(INCROOT) must be
+	removed from TOP_INCLUDES and deferred till EXTRA_INCLUDES.  Do this
+	here (instead of in usl.cf) to override TOP_INCLUDES in Imake.tmpl
+      */
+     TOP_INCLUDES =
+   EXTRA_INCLUDES = -I$(ROOT)$(MACH)$(DESTDIR)/$(INCROOT) -I$(ROOT)$(MACH)$(DESTDIR)/$(INCDIR) -I$(INC)
+#else
+   EXTRA_INCLUDES = -I$(INCLUDESRC) -I$(INC)
+#endif /* UseInstalled */
+
+#ifndef MakeDirectories0
+#define MakeDirectories0(step,dirs)	@@\
+step::					@@\
+	$(MKDIRHIER) dirs
+#endif
+
+/*
+ * HostNormalProgramTarget - generate rules to compile and link the indicated 
+ * program; since it does not use any default object files, it may be used for
+ * multiple programs in the same Imakefile.  It uses HCC instead of CC.
+ * IMPORTANT: this only works when "objects" is **1 .c file**!!!
+ */
+#ifndef HostNormalProgramTarget
+#define	HostNormalProgramTarget(program,objects,deplibs,locallibs,syslibs)	@@\
+program: objects deplibs						@@\
+	RemoveTargetProgram($@)						@@\
+	$(HCC) -o $@ objects $(LDOPTIONS) locallibs $(LDLIBS) syslibs $(EXTRA_LOAD_FLAGS) @@\
+									@@\
+clean::									@@\
+	$(RM) program
+#endif /* HostNormalProgramTarget */
+
+#define	NormalAssemblerObjectRule()					@@\
+.s.o:									@@\
+	$(RM) $@							@@\
+	$(CC) -c $(CFLAGS) $<
+
+
+#define	InstallMultipleHelpFiles(list,dest)				@@\
+install:: list								@@\
+	@-if [ ! -d $(DESTDIR)dest ]; then \					@@\
+	   mkdir -p $(DESTDIR)dest; \						@@\
+	fi								@@\
+	@for i in list; do \						@@\
+	(set -x; \
+	mkdir /tmp/$$$$; \
+	awk	'/\\$$/ {printf "%s", substr($$0, 0, length($$0)-1)}; \
+		!/\\$$/ {print $$0}' $$i > /tmp/$$$$/`basename $$i`; \
+	$(INSTALL) $(INSTALLFLAGS) /tmp/$$$$/`basename $$i` $(DESTDIR)dest; \
+	rm -rf /tmp/$$$$); \
+	done
+
+#define PreciousObject(object)						@@\
+.PRECIOUS:: object
+
+/* CIA Target */
+#define CiaTarget()						@@\
+.SUFFIXES: .A .H						@@\
+								@@\
+.c.A .h.H:							@@\
+	$(CIA) -cp $(CCOPTIONS) $(ALLDEFINES) $(CIAFLAGS) $<	@@\
+								@@\
+CIA_OBJS = $(SRCS:.c=.A)					@@\
+								@@\
+CIA = cia							@@\
+								@@\
+CIAFLAGS = -iv							@@\
+								@@\
+PreciousObject(symbol.db)					@@\
+PreciousObject(reference.db)					@@\
+								@@\
+ciadb:	symbol.db reference.db					@@\
+								@@\
+symbol.db reference.db:	$(CIA_OBJS)				@@\
+	$(CIA) $(CIA_OBJS)
+
+#define XSPTarget(PGM)					@@\
+all:: PGM.h						@@\
+							@@\
+PGM.h: PGM.xsp						@@\
+	$(ATTSRC)/local/tools/xsp/xsp PGM.xsp PGM.h	@@\
+							@@\
+SimpleProgramTarget(PGM)				@@\
+							@@\
+Makefile::						@@\
+	@(if [ ! -f PGM.h ]; \				@@\
+	then \						@@\
+	touch 0101000070 PGM.h; \			@@\
+	fi)						@@\
+							@@\
+Makefiles::						@@\
+	@(if [ ! -f PGM.h ]; \				@@\
+	then \						@@\
+	touch 0101000070 PGM.h; \			@@\
+	fi)						@@\
+
+/*
+ *	PARALLEL versions of MakeSubdirs and DependSubdirs
+ */
+/*
+ * MakeFlagsToShellFlags - set variables before starting a loop.
+ * makeflags is the set of "make" flags to check.
+ * shellcmd is the shell command to execute if any of the flags are set.
+ *
+ * The usual use of this rule is to translate make's "don't quit on error"
+ * flags into the equivalent for the shell.  To do this, "make -i" always
+ * becomes "set +e".  "make -k" should also turn on "set +e" if the target
+ * is building subdirectories.  That is, subdirectories are independent
+ * and should appear to be multiple targets, even though they are
+ * implemented in a loop in a single target.
+ */
+#ifndef MakeFlagsToShellFlags
+#define MakeFlagsToShellFlags(makeflags,shellcmd)\
+	for flag in ${MAKEFLAGS} ''; do \				@@\
+	  case "$$flag" in *=*) ;; *[makeflags]*) shellcmd;; esac; done
+#endif
+
+
+/*
+ * ParallelNamedTargetSubdirs - recursively make a series of steps
+ */
+#ifndef ParallelNamedTargetSubdirs
+#define ParallelNamedTargetSubdirs(name,dirs,verb,flags,subname)	@@\
+name::									@@\
+	@MakeFlagsToShellFlags(ik,set +e); \				@@\
+	DirCount=`echo dirs | wc -w`; \				@@\
+	DirsDone=1; \						@@\
+	AA="aa ab ac ad ae af ag ah ai aj ak al am"; \		@@\
+	while [ $$DirsDone -le $$DirCount ]; do \		@@\
+	echo "#!/bin/sh\n#\nCleanUp ()\n{\nkill -1 \$$paa \$$pab \$$pac \$$pad \$$pae \$$paf \$$pag \$$pah \$$pai \$$paj \$$pak \$$pal \$$pam 2> /dev/null > /dev/null\nkill -15 \$$paa \$$pab \$$pac \$$pad \$$pae \$$paf \$$pag \$$pah \$$pai \$$paj \$$pak \$$pal \$$pam 2> /dev/null > /dev/null\nexit 0\n}\n#" > tmpParaMake; \		@@\
+echo "trap 'echo \"Caught signal, exiting ... \" ; CleanUp 1' 1 2 3 15" >> tmpParaMake; \							@@\
+	  Count=1; \						@@\
+	if [ -z "${PARALLEL}" ]; then { \			@@\
+		PARALLEL=1; \					@@\
+	} else { \						@@\
+		PARALLEL=${PARALLEL}; \				@@\
+	} fi; \							@@\
+  while [ $$Count -le $${PARALLEL} -a $$DirsDone -le $$DirCount ]; do \	@@\
+	DO_DIR=`echo dirs | awk 'BEGIN{N="'$$DirsDone'"}{print $$N }'`; \ @@\
+		SUFX=`echo $$AA | awk 'BEGIN{N="'$$Count'"}{print $$N}'`; \ @@\
+	echo echo verb "in $(CURRENT_DIR)/$$DO_DIR ..." >> tmpParaMake; \  @@\
+ echo "cd $$DO_DIR &&  $(MAKE) $(MFLAGS) $(flags) subname &" >> tmpParaMake; \ @@\
+ echo "p$$SUFX=\$$!" >> tmpParaMake; \			@@\
+        	Count=`expr $$Count + 1`; \				@@\
+	  	DirsDone=`expr $$DirsDone + 1`; \		@@\
+	  done; \						@@\
+ echo wait >> tmpParaMake; \					@@\
+ sh tmpParaMake; \						@@\
+	done ; \						@@\
+	rm -f tmpParaMake
+#endif
+
+/*
+ * ParallelNamedMakeSubdirs - generate rules to do makes in
+ *	the given subdirectories.
+ * If you want CDEBUGFLAGS passed along to subdirectories, provide a line like
+ * the following in the appropriate Imakefile
+ * 
+ *         #define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+ */
+#ifndef ParallelNamedMakeSubdirs
+#define ParallelNamedMakeSubdirs(name,dirs) \
+ParallelNamedTargetSubdirs(name,dirs,"making" name,PassCDebugFlags,all)
+#endif /* ParallelNamedMakeSubdirs */
+
+#ifndef ParallelMakeSubdirs
+#define ParallelMakeSubdirs(dirs) \
+ParallelNamedMakeSubdirs(all,dirs)
+#endif /* ParallelMakeSubdirs */
+
+
+/*
+ * ParallelDependSubdirs - generate rules to recursively compute
+ * dependencies as part of the make depend step.
+ */
+#ifndef ParallelDependSubdirs
+#define ParallelDependSubdirs(dirs) \
+ParallelNamedTargetSubdirs(depend,dirs,"depending",NullParameter,depend)
+#endif /* ParallelDependSubdirs */

@@ -1,0 +1,47 @@
+#ident	"@(#):mkfiles	16.1	97/11/08"
+echo "START `basename $0` `date`"
+
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+
+
+#
+# Place the SVR3.2 shared objects found
+# in $ROOT/usr/src/$WORK/shared into $ROOT/$MACH/usr/lib
+#
+
+
+[ -d ${Root}/${Mach}/usr/lib ] || mkdir -p ${Root}/${Mach}/usr/lib
+
+cp ${Root}/usr/src/${Work}/shared/lib* ${Root}/${Mach}/usr/lib
+
+# copy special version of OSR5 libc for OSRcompat
+SPECIAL_INST=${Root}/${Mach}/OSR5/udk/.install
+cp ${Root}/usr/src/${Work}/shared/OSR5.libc ${SPECIAL_INST}/forOSR5.libc.so.1
+cp ${Root}/usr/src/${Work}/shared/mv.static ${SPECIAL_INST}
+
+#
+#	Now create /dev/null
+#
+
+touch ${Root}/${Mach}/dev/null
+
+#
+#	Create file so network install flop knows pathname to
+#	install pkg image on server.
+#
+
+[ -d ${Root}/${Mach}/var/sadm/dist ] || mkdir -p ${Root}/${Mach}/var/sadm/dist
+
+echo "REL_FULLNAME=${REL_FULLNAME}${LOAD}" > ${Root}/${Mach}/var/sadm/dist/rel_fullname
+
+echo "REL_FULLNAME=${REL_FULLNAME}" > ${Root}/${Mach}/var/sadm/dist/rel_fullname2
+
+echo "ENDED `basename $0` `date`"
+exit 0
+

@@ -1,0 +1,851 @@
+/**/#pragma ident	"@(#)R5Xlib:Imakefile	1.4.1.42"
+
+XCOMM $XConsortium: Imakefile,v 1.126 91/09/09 14:47:13 rws Exp $
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+XCOMM
+XCOMM do not use -z text for libX11.so.1, because we need to use -lc while
+XCOMM making libX11.so.?; this way, libX11.so.? cause libX11.so.? to have
+XCOMM its own copy of any non-abi functions, ex: lrand48 and srand48
+XCOMM
+
+#define DoNormalLib NormalLibX
+#define DoSharedLib SharedLibX
+#define DoDebugLib DebugLibX
+#define DoProfileLib ProfileLibX
+#include <Library.tmpl>
+
+#define BuildXimp	YES
+#define BuildXsi	YES	
+
+SUBDIRS =  Xsi Ximp 
+
+#ifndef MotifBC
+#define MotifBC YES 
+#endif
+
+#ifdef MacIIArchitecture
+XBSDLIB = /**/
+#endif
+#if Malloc0ReturnsNull
+        DEFINES = -DMALLOC_0_RETURNS_NULL
+#endif
+#if HasXdmAuth
+        XDMAUTHDEFS = -DHASXDMAUTH
+        XDMAUTHOBJS = Wrap.o Wraphelp.o
+        XDMAUTHSRCS = Wrap.c Wraphelp.c
+#endif
+#if HasSecureRPC
+        RPCDEFS = -DSECURE_RPC
+#endif
+   CONN_DEFINES = ConnectionFlags
+#if MITSTUFF
+     EDB_DEFINES = -DERRORDB=\"$(USRLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(USRLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(USRLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(NLSDIR)\"
+#else
+     EDB_DEFINES = -DERRORDB=\"$(XWINLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(XWINLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(XWINLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(XWINLIBDIR)/nls\"
+#endif
+#if MotifBC
+      BC_DEFINES = -DMOTIFBC
+#endif
+   INSTALLFLAGS = $(INSTINCFLAGS)
+       AUTHOBJS = AuDispose.o AuGetAddr.o AuGetBest.o AuFileName.o AuRead.o 
+       AUTHSRCS = AuDispose.c AuGetAddr.c AuGetBest.c AuFileName.c AuRead.c 
+           SRCS = $(SRCS1) $(SRCS2) $(SHSRCS3) /* try *.c if you have trouble */
+        HEADERS = Xlib.h Xresource.h Xutil.h cursorfont.h Xlibint.h \
+			Xcms.h Xlocale.h Xstreams.h copyright.h
+       LINTLIBS =
+
+LCSRCS = \
+	XIM.c
+	
+
+SRCS1 =\
+	Context.c \
+	Depths.c \
+	ParseCmd.c \
+	Quarks.c \
+	XAllCells.c \
+	XAllPlanes.c \
+	XAllowEv.c \
+	XAutoRep.c \
+	XBackgnd.c \
+	XBdrWidth.c \
+	XBell.c \
+	XBorder.c \
+	XChAccCon.c \
+	XChClMode.c \
+	XChActPGb.c \
+	XChCmap.c \
+	XChGC.c \
+	XChKeyCon.c \
+	XChPntCon.c \
+	XChProp.c \
+	XChSaveSet.c \
+	XChWAttrs.c \
+	XChWindow.c \
+	XChkIfEv.c \
+	XChkMaskEv.c \
+	XChkWinEv.c \
+	XChkTypEv.c \
+	XChkTypWEv.c \
+	XCirWin.c \
+	XCirWinDn.c \
+	XCirWinUp.c \
+	XClDisplay.c \
+	XClear.c \
+	XClearArea.c \
+	XConfWind.c \
+	XConnDis.c \
+	XConvSel.c \
+	XCopyArea.c \
+	XCopyCmap.c \
+	XCopyGC.c \
+	XCopyPlane.c \
+	XCrBFData.c \
+	XCrCmap.c \
+	XCrCursor.c \
+	XCrGC.c \
+	XCrGlCur.c \
+	XCrPFBData.c \
+	XCrPixmap.c \
+	XCrWindow.c \
+	XCursor.c \
+	XDefCursor.c \
+	XDelProp.c \
+	XDestSubs.c \
+	XDestWind.c \
+	XDisName.c \
+	XDrArc.c \
+	XDrArcs.c \
+	XDrLine.c \
+	XDrLines.c \
+	XDrPoint.c \
+	XDrPoints.c \
+	XDrRect.c \
+	XDrRects.c \
+	XDrSegs.c \
+	XErrDes.c \
+	XErrHndlr.c \
+	XEvToWire.c \
+	XFetchName.c \
+	XFillArc.c \
+	XFillArcs.c \
+	XFillPoly.c \
+	XFillRect.c \
+	XFillRects.c \
+	XFlush.c \
+	XFont.c \
+	XFontNames.c \
+	XFontInfo.c \
+	XFreeCmap.c \
+	XFreeCols.c \
+	XFreeCurs.c \
+	XFreeEData.c \
+	XFreeGC.c \
+	XFreePix.c \
+	XFSSaver.c \
+	XGCMisc.c \
+	XGeom.c \
+	XGetAtomNm.c \
+	XGetColor.c \
+	XGetDflt.c \
+	XGetFPath.c \
+	XGetFProp.c \
+	XGetGeom.c \
+	XGetHColor.c \
+	XGetHints.c \
+	XGetIFocus.c \
+	XGetImage.c \
+	XGetKCnt.c \
+	XGetMoEv.c \
+	XGetPCnt.c \
+	XGetPntMap.c \
+	XGetProp.c \
+	XGetSOwner.c \
+	XGetSSaver.c \
+	XGetStCmap.c \
+	XGetWAttrs.c \
+	XGrButton.c \
+	XGrKey.c \
+	XGrKeybd.c \
+	XGrPointer.c \
+	XGrServer.c \
+	XHost.c \
+	XIfEvent.c \
+	XImUtil.c \
+	XImText.c \
+	XImText16.c \
+	XInitExt.c \
+	XInsCmap.c \
+	XIntAtom.c \
+	XKeyBind.c \
+	XKeysymStr.c \
+	XKillCl.c \
+	XLiHosts.c \
+	XLiICmaps.c \
+	XLiProps.c \
+	XListExt.c \
+	XLoadFont.c \
+	XLookupCol.c \
+	XLowerWin.c 
+
+LCOBJS = \
+	XIM.o
+	
+OBJS1 =\
+	Context.o \
+	Depths.o \
+	ParseCmd.o \
+	Quarks.o \
+	XAllCells.o \
+	XAllPlanes.o \
+	XAllowEv.o \
+	XAutoRep.o \
+	XBackgnd.o \
+	XBdrWidth.o \
+	XBell.o \
+	XBorder.o \
+	XChAccCon.o \
+	XChClMode.o \
+	XChActPGb.o \
+	XChCmap.o \
+	XChGC.o \
+	XChKeyCon.o \
+	XChPntCon.o \
+	XChProp.o \
+	XChSaveSet.o \
+	XChWAttrs.o \
+	XChWindow.o \
+	XChkIfEv.o \
+	XChkMaskEv.o \
+	XChkWinEv.o \
+	XChkTypEv.o \
+	XChkTypWEv.o \
+	XCirWin.o \
+	XCirWinDn.o \
+	XCirWinUp.o \
+	XClDisplay.o \
+	XClear.o \
+	XClearArea.o \
+	XConfWind.o \
+	XConnDis.o \
+	XConvSel.o \
+	XCopyArea.o \
+	XCopyCmap.o \
+	XCopyGC.o \
+	XCopyPlane.o \
+	XCrBFData.o \
+	XCrCmap.o \
+	XCrCursor.o \
+	XCrGC.o \
+	XCrGlCur.o \
+	XCrPFBData.o \
+	XCrPixmap.o \
+	XCrWindow.o \
+	XCursor.o \
+	XDefCursor.o \
+	XDelProp.o \
+	XDestSubs.o \
+	XDestWind.o \
+	XDisName.o \
+	XDrArc.o \
+	XDrArcs.o \
+	XDrLine.o \
+	XDrLines.o \
+	XDrPoint.o \
+	XDrPoints.o \
+	XDrRect.o \
+	XDrRects.o \
+	XDrSegs.o \
+	XErrDes.o \
+	XErrHndlr.o \
+	XEvToWire.o \
+	XFetchName.o \
+	XFillArc.o \
+	XFillArcs.o \
+	XFillPoly.o \
+	XFillRect.o \
+	XFillRects.o \
+	XFlush.o \
+	XFont.o \
+	XFontNames.o \
+	XFontInfo.o \
+	XFreeCmap.o \
+	XFreeCols.o \
+	XFreeCurs.o \
+	XFreeEData.o \
+	XFreeGC.o \
+	XFreePix.o \
+	XFSSaver.o \
+	XGCMisc.o \
+	XGeom.o \
+	XGetAtomNm.o \
+	XGetColor.o \
+	XGetDflt.o \
+	XGetFPath.o \
+	XGetFProp.o \
+	XGetGeom.o \
+	XGetHColor.o \
+	XGetHints.o \
+	XGetIFocus.o \
+	XGetImage.o \
+	XGetKCnt.o \
+	XGetMoEv.o \
+	XGetPCnt.o \
+	XGetPntMap.o \
+	XGetProp.o \
+	XGetSOwner.o \
+	XGetSSaver.o \
+	XGetStCmap.o \
+	XGetWAttrs.o \
+	XGrButton.o \
+	XGrKey.o \
+	XGrKeybd.o \
+	XGrPointer.o \
+	XGrServer.o \
+	XHost.o \
+	XIfEvent.o \
+	XImUtil.o \
+	XImText.o \
+	XImText16.o \
+	XInitExt.o \
+	XInsCmap.o \
+	XIntAtom.o \
+	XKeyBind.o \
+	XKeysymStr.o \
+	XKillCl.o \
+	XLiHosts.o \
+	XLiICmaps.o \
+	XLiProps.o \
+	XListExt.o \
+	XLoadFont.o \
+	XLookupCol.o \
+	XLowerWin.o 
+
+SRCS2 =\
+	XMacros.c \
+	XMapRaised.c \
+	XMapSubs.c \
+	XMapWindow.c \
+	XMaskEvent.c \
+	XMisc.c \
+	XModMap.c \
+	XMoveWin.c \
+	XNextEvent.c \
+	XOpenDis.c \
+	XParseCol.c \
+	XParseGeom.c \
+	XPeekEvent.c \
+	XPeekIfEv.c \
+	XPending.c \
+	XPmapBgnd.c \
+	XPmapBord.c \
+	XPolyReg.c \
+	XPolyTxt.c \
+	XPolyTxt16.c \
+	XPutBEvent.c \
+	XPutImage.c \
+	XQuBest.c \
+	XQuColor.c \
+	XQuColors.c \
+	XQuCurShp.c \
+	XQuExt.c \
+	XQuKeybd.c \
+	XQuPntr.c \
+	XQuStipShp.c \
+	XQuTextE16.c \
+	XQuTextExt.c \
+	XQuTileShp.c \
+	XQuTree.c \
+	XRaiseWin.c \
+	XRdBitF.c \
+	XRecolorC.c \
+	XReconfWin.c \
+	XRegion.c \
+	XRepWindow.c \
+	XRestackWs.c \
+	XRotProp.c \
+	XScrResStr.c \
+	XSelInput.c \
+	XSendEvent.c \
+	XSetBack.c \
+	XSetCRects.c \
+	XSetClMask.c \
+	XSetClOrig.c \
+	XSetDashes.c \
+	XSetFPath.c \
+	XSetFont.c \
+	XSetFore.c \
+	XSetFunc.c \
+	XSetHints.c \
+	XSetIFocus.c \
+	XSetLStyle.c \
+	XSetPMask.c \
+	XSetPntMap.c \
+	XSetSOwner.c \
+	XSetSSaver.c \
+	XSetState.c \
+	XSetStip.c \
+	XSetStCmap.c \
+	XSetTile.c \
+	XSetTSOrig.c\
+	XStBytes.c \
+	XStColor.c \
+	XStColors.c \
+	XStNColor.c \
+	XStName.c \
+	XStrKeysym.c \
+	XSync.c \
+	XSynchro.c \
+	XText.c \
+	XText16.c \
+	XTextExt.c \
+	XTextExt16.c \
+	XTrCoords.c \
+	XUndefCurs.c \
+	XUngrabBut.c \
+	XUngrabKbd.c \
+	XUngrabKey.c \
+	XUngrabPtr.c \
+	XUngrabSvr.c \
+	XUninsCmap.c \
+	XUnldFont.c \
+	XUnmapSubs.c \
+	XUnmapWin.c \
+	XVisUtil.c \
+	XWarpPtr.c \
+	XWinEvent.c \
+	XWindow.c \
+	XWrBitF.c \
+	XlibInt.c \
+	Xrm.c \
+	Xstreams.c \
+	evtomask.c \
+	globals.c \
+	GetGCVals.c \
+	GetNrmHint.c \
+	GetRGBCMap.c \
+	GetTxtProp.c \
+	GetWMCMapW.c \
+	GetWMProto.c \
+	Iconify.c \
+	PixFormats.c \
+	PropAlloc.c \
+	ReconfWM.c \
+	SetNrmHint.c \
+	SetRGBCMap.c \
+	SetTxtProp.c \
+	SetWMCMapW.c \
+	SetWMProps.c \
+	SetWMProto.c \
+	StrToText.c \
+	TextToStr.c \
+	WMGeom.c \
+	Withdraw.c \
+	$(AUTHSRCS) \
+	$(XDMAUTHSRCS) \
+	xwinhome.c
+
+OBJS2 =\
+	XMacros.o \
+	XMapRaised.o \
+	XMapSubs.o \
+	XMapWindow.o \
+	XMaskEvent.o \
+	XMisc.o \
+	XModMap.o \
+	XMoveWin.o \
+	XNextEvent.o \
+	XOpenDis.o \
+	XParseCol.o \
+	XParseGeom.o \
+	XPeekEvent.o \
+	XPeekIfEv.o \
+	XPending.o \
+	XPmapBgnd.o \
+	XPmapBord.o \
+	XPolyReg.o \
+	XPolyTxt.o \
+	XPolyTxt16.o \
+	XPutBEvent.o \
+	XPutImage.o \
+	XQuBest.o \
+	XQuColor.o \
+	XQuColors.o \
+	XQuCurShp.o \
+	XQuExt.o \
+	XQuKeybd.o \
+	XQuPntr.o \
+	XQuStipShp.o \
+	XQuTextE16.o \
+	XQuTextExt.o \
+	XQuTileShp.o \
+	XQuTree.o \
+	XRaiseWin.o \
+	XRdBitF.o \
+	XRecolorC.o \
+	XReconfWin.o \
+	XRegion.o \
+	XRepWindow.o \
+	XRestackWs.o \
+	XRotProp.o \
+	XScrResStr.o \
+	XSelInput.o \
+	XSendEvent.o \
+	XSetBack.o \
+	XSetCRects.o \
+	XSetClMask.o \
+	XSetClOrig.o \
+	XSetDashes.o \
+	XSetFPath.o \
+	XSetFont.o \
+	XSetFore.o \
+	XSetFunc.o \
+	XSetHints.o \
+	XSetIFocus.o \
+	XSetLStyle.o \
+	XSetPMask.o \
+	XSetPntMap.o \
+	XSetSOwner.o \
+	XSetSSaver.o \
+	XSetState.o \
+	XSetStip.o \
+	XSetStCmap.o \
+	XSetTile.o \
+	XSetTSOrig.o\
+	XStBytes.o \
+	XStColor.o \
+	XStColors.o \
+	XStNColor.o \
+	XStName.o \
+	XStrKeysym.o \
+	XSync.o \
+	XSynchro.o \
+	XText.o \
+	XText16.o \
+	XTextExt.o \
+	XTextExt16.o \
+	XTrCoords.o \
+	XUndefCurs.o \
+	XUngrabBut.o \
+	XUngrabKbd.o \
+	XUngrabKey.o \
+	XUngrabPtr.o \
+	XUngrabSvr.o \
+	XUninsCmap.o \
+	XUnldFont.o \
+	XUnmapSubs.o \
+	XUnmapWin.o \
+	XVisUtil.o \
+	XWarpPtr.o \
+	XWinEvent.o \
+	XWindow.o \
+	XWrBitF.o \
+	XlibInt.o \
+	Xrm.o \
+	Xstreams.o \
+	evtomask.o \
+	globals.o \
+	GetGCVals.o \
+	GetNrmHint.o \
+	GetRGBCMap.o \
+	GetTxtProp.o \
+	GetWMCMapW.o \
+	GetWMProto.o \
+	Iconify.o \
+	PixFormats.o \
+	PropAlloc.o \
+	ReconfWM.o \
+	SetNrmHint.o \
+	SetRGBCMap.o \
+	SetTxtProp.o \
+	SetWMCMapW.o \
+	SetWMProps.o \
+	SetWMProto.o \
+	StrToText.o \
+	TextToStr.o \
+	WMGeom.o \
+	Withdraw.o \
+	$(AUTHOBJS) \
+	$(XDMAUTHOBJS) \
+	xwinhome.o
+
+SRCS3 = \
+	CIELab.c \
+	CIELabGcC.c \
+	CIELabGcL.c \
+	CIELabGcLC.c \
+	CIELabMnL.c \
+	CIELabMxC.c \
+	CIELabMxL.c \
+	CIELabMxLC.c \
+	CIELabWpAj.c \
+	CIELuv.c \
+	CIELuvGcC.c \
+	CIELuvGcL.c \
+	CIELuvGcLC.c \
+	CIELuvMnL.c \
+	CIELuvMxC.c \
+	CIELuvMxL.c \
+	CIELuvMxLC.c \
+	CIELuvWpAj.c \
+	CIEXYZ.c \
+	CIEuvY.c \
+	CIExyY.c \
+	TekHVC.c \
+	TekHVCGcC.c \
+	TekHVCGcV.c \
+	TekHVCGcVC.c \
+	TekHVCMnV.c \
+	TekHVCMxC.c \
+	TekHVCMxV.c \
+	TekHVCMxVC.c \
+	TekHVCMxVs.c \
+	TekHVCWpAj.c \
+	UNDEFINED.c \
+	XcmsAddDIC.c \
+	XcmsAddSF.c \
+	XcmsAlNCol.c \
+	XcmsAllCol.c \
+	XcmsCCC.c \
+	XcmsCmap.c \
+	XcmsColNm.c \
+	XcmsCvColW.c \
+	XcmsCvCols.c \
+	XcmsGlobls.c \
+	XcmsIdOfPr.c \
+	XcmsInt.c \
+	XcmsLRGB.c \
+	XcmsLkCol.c \
+	XcmsMath.c \
+	XcmsOfCCC.c \
+	XcmsPrOfId.c \
+	XcmsProp.c \
+	XcmsQBlack.c \
+	XcmsQBlue.c \
+	XcmsQGreen.c \
+	XcmsQRed.c \
+	XcmsQWhite.c \
+	XcmsQuCol.c \
+	XcmsQuCols.c \
+	XcmsSetCCC.c \
+	XcmsSetGet.c \
+	XcmsStCol.c \
+	XcmsStCols.c \
+	XcmsTrig.c \
+	XcmsXRGB.c \
+	XFSWrap.c \
+	XICWrap.c \
+	XIMWrap.c \
+	XlcWrap.c \
+	XmbWMProps.c \
+	XmbWrap.c \
+	XwcWrap.c \
+	XFilterEv.c \
+	XRegstFlt.c 
+
+SHSRCS3 = \
+	$(SRCS3) \
+	$(LCSRCS)
+
+OBJS3 = \
+	CIELab.o \
+	CIELabGcC.o \
+	CIELabGcL.o \
+	CIELabGcLC.o \
+	CIELabMnL.o \
+	CIELabMxC.o \
+	CIELabMxL.o \
+	CIELabMxLC.o \
+	CIELabWpAj.o \
+	CIELuv.o \
+	CIELuvGcC.o \
+	CIELuvGcL.o \
+	CIELuvGcLC.o \
+	CIELuvMnL.o \
+	CIELuvMxC.o \
+	CIELuvMxL.o \
+	CIELuvMxLC.o \
+	CIELuvWpAj.o \
+	CIEXYZ.o \
+	CIEuvY.o \
+	CIExyY.o \
+	TekHVC.o \
+	TekHVCGcC.o \
+	TekHVCGcV.o \
+	TekHVCGcVC.o \
+	TekHVCMnV.o \
+	TekHVCMxC.o \
+	TekHVCMxV.o \
+	TekHVCMxVC.o \
+	TekHVCMxVs.o \
+	TekHVCWpAj.o \
+	UNDEFINED.o \
+	XcmsAddDIC.o \
+	XcmsAddSF.o \
+	XcmsAlNCol.o \
+	XcmsAllCol.o \
+	XcmsCCC.o \
+	XcmsCmap.o \
+	XcmsColNm.o \
+	XcmsCvColW.o \
+	XcmsCvCols.o \
+	XcmsGlobls.o \
+	XcmsIdOfPr.o \
+	XcmsInt.o \
+	XcmsLRGB.o \
+	XcmsLkCol.o \
+	XcmsMath.o \
+	XcmsOfCCC.o \
+	XcmsPrOfId.o \
+	XcmsProp.o \
+	XcmsQBlack.o \
+	XcmsQBlue.o \
+	XcmsQGreen.o \
+	XcmsQRed.o \
+	XcmsQWhite.o \
+	XcmsQuCol.o \
+	XcmsQuCols.o \
+	XcmsSetCCC.o \
+	XcmsSetGet.o \
+	XcmsStCol.o \
+	XcmsStCols.o \
+	XcmsTrig.o \
+	XcmsXRGB.o \
+	XFSWrap.o \
+	XICWrap.o \
+	XIMWrap.o \
+	XlcWrap.o \
+	XmbWMProps.o \
+	XmbWrap.o \
+	XwcWrap.o \
+	XFilterEv.o \
+	XRegstFlt.o 
+
+SHOBJS3 = \
+	$(OBJS3) \
+	$(LCOBJS)
+
+CONNHDR =\
+	Xstreams.h
+
+OBJS = $(OBJS1) $(OBJS2) $(OBJS3)
+SHOBJS = $(OBJS1) $(OBJS2) $(SHOBJS3)
+
+#if DoNormalLib
+#undef ObjectCompile
+#define ObjectCompile(options) $(RM) $@			@@\
+	$(CC) -c $(CFLAGS) options -DARCHIVE $*.c
+#endif
+LibraryObjectRule()
+
+SpecialLibObjectRule(XErrDes.o,$(ICONFIGFILES),$(EDB_DEFINES))
+SpecialLibObjectRule(XStrKeysym.o,$(ICONFIGFILES),$(KDB_DEFINES))
+SpecialLibObjectRule(XConnDis.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XOpenDis.o,$(ICONFIGFILES),$(XDMAUTHDEFS) $(RPCDEFS) $(CONN_DEFINES) $(BC_DEFINES))
+SpecialLibObjectRule(Wrap.o,$(ICONFIGFILES),$(XDMAUTHDEFS))
+SpecialLibObjectRule(Xstreams.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XlibInt.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XcmsColNm.o,$(ICONFIGFILES),$(CMS_DEFINES))
+SpecialLibObjectRule(globals.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(Context.o,$(ICONFIGFILES),$(BC_DEFINES))
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+MakeLintLibSubdirs($(LINTSUBDIRS))
+MakeLintSubdirs($(LINTSUBDIRS),install.ln,install.ln)
+
+#if DoSharedLib
+INPUTLIB = 
+#if DoNormalLib
+SharedLibraryTarget3(X11,$(SOXLIBREV),$(OBJS1),$(OBJS2),$(SHOBJS3),shared,..)
+CreateRelocatableObjs3(X11,$(OBJS1),$(OBJS2),$(SHOBJS3),shared,..)
+#else
+SharedLibraryTarget3(X11,$(SOXLIBREV),$(OBJS1),$(OBJS2),$(SHOBJS3),.,.)
+CreateRelocatableObjs3(X11,$(OBJS1),$(OBJS2),$(SHOBJS3),.,.)
+#endif /* DoNormalLib */
+
+InstallSharedLibrary_m(X11,$(SOXLIBREV),$(USRLIBDIR))
+#endif /* DoSharedLib */
+
+#if DoNormalLib
+NormalLibraryTarget3(X11,$(OBJS1),$(OBJS2),$(OBJS3))
+InstallLibrary(X11,$(USRLIBDIR))
+#endif
+
+#if DoProfileLib && ProfileLibXArchive
+ProfiledLibraryTarget(X11,$(OBJS))
+InstallLibrary(X11_p,$(USRLIBDIR))
+#endif
+#if DoDebugLib && DebugLibXArchive
+DebuggedLibraryTarget(X11,$(OBJS))
+InstallLibrary(X11_d,$(USRLIBDIR))
+#endif
+
+LintLibraryTarget(X11,$(SRCS))
+
+BuildIncludes($(HEADERS),.,.)
+InstallMultiple($(HEADERS),$(INCDIR))
+#if InstallXcmsTxt
+InstallNonExecFile(Xcms.txt,$(USRLIBDIR))
+#endif
+InstallNonExecFile(XErrorDB,$(USRLIBDIR))
+InstallNonExecFile(XKeysymDB,$(USRLIBDIR))
+InstallLintLibrary(X11,$(LINTLIBDIR))
+
+InstallNonExecFile(region.h,$(INCDIR))
+
+LinkSourceFile(AuDispose.c,$(XAUTHSRC))
+LinkSourceFile(AuGetAddr.c,$(XAUTHSRC))
+LinkSourceFile(AuGetBest.c,$(XAUTHSRC))
+LinkSourceFile(AuFileName.c,$(XAUTHSRC))
+LinkSourceFile(AuRead.c,$(XAUTHSRC))
+LinkSourceFile(Wrap.h,$(XDMCPLIBSRC))
+LinkSourceFile(Wrap.c,$(XDMCPLIBSRC))
+LinkSourceFile(Wraphelp.c,$(XDMCPLIBSRC))
+LinkSourceFile(XIM.c,XIM)
+
+all::
+	$(RM) libXIM.so*;
+	$(LN) libX11.so libXIM.so.$(SOXLIBREV);
+	$(LN) libX11.so libXIM.so.1;
+
+install::
+	(cd $(USRLIBDIR); $(RM) libXIM.so*);
+	(cd $(USRLIBDIR); $(LN) libX11.so libXIM.so.$(SOXLIBREV));
+	(cd $(USRLIBDIR); $(LN) libX11.so libXIM.so.1);
+
+ks_tables.h: $(INCLUDESRC)/keysymdef.h util/makekeys.c
+	$(RM) $@ makekeys
+	-$(CC) -o makekeys util/makekeys.c $(CFLAGS) $(LOCAL_LDFLAGS)
+	./makekeys < $(INCLUDESRC)/keysymdef.h > ks_tables_h
+	$(MV) ks_tables_h $@
+	$(RM) makekeys ks_tables_h
+
+includes:: ks_tables.h Wrap.h $(AUTHSRCS) $(XDMAUTHSRCS) $(LCHDRS) $(LCSYMSRCS)\
+	$(LCSRCS)
+
+depend:: ks_tables.h Wrap.h $(AUTHSRCS) $(XDMAUTHSRCS) $(LCHDRS) $(LCSYMSRCS)\
+	 $(LCSRCS)
+
+clean::
+	$(RM) ks_tables_h ks_tables.h makekeys
+
+clean::
+	$(RM) $(AUTHSRCS) $(XDMAUTHSRCS) $(LCHDRS) $(LCSYMSRCS) $(LCSRCS)
+
+DependTarget3($(SRCS1),$(SRCS2),$(SHSRCS3))
+
+
+XCOMM structure alignment errors can safely be ignored.
+XCOMM complaints about qevent can be ignored too.
+
+NormalLintTarget($(SRCS))

@@ -1,0 +1,22 @@
+%% Virtual Memory (VM) Parameters
+%%% Page Size Extension Parameters
+% SEGKMEM_PSE_BYTES
+Specifies the amount of physical memory to reserve for
+use by the kernel memory allocator (KMA).
+Setting aside memory for this purpose can provide a performance benefit
+for systems that heavily use KMA.
+The physical memory is reserved for use by KMA and
+cannot be used for anything else.
+
+SEGKMEM_BYTES is the minimum size of the kpgseg kernel 
+virtual segment.  This segment is used by the kernel memory allocator
+for all its memory, by the hardware address translation layer (HAT)
+for its page tables, and by various drivers for both temporary and
+permanent mappings.  
+
+SEGKMEM_PSE_BYTES will be rounded up to the next 4MB boundary.
+SEGKMEM_PSE_BYTES should be less than SEGKMEM_BYTES, since some KMA requests
+(for DMA-accessible buffers, or buffers with special alignment
+or boundary restrictions) can only be satisfied with non-PSE backed KMA.
+The system will automatically reduce SEGKMEM_PSE_BYTES 
+so that at least 2 Megabytes of non-PSE backed KMA is available.

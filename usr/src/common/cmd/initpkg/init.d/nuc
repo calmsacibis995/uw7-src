@@ -1,0 +1,130 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/nuc	1.29.2.2"
+#ident	"$Header$"
+
+#	nuc startup
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then
+			LANG=C
+		else
+			eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/nuc { start | stop }"
+
+eval `LC_MESSAGES="$LANG" nwcm -v binary_directory -v nuc`
+NWBIN=$binary_directory
+NUC_ACTIVE=$nuc
+LOG=/tmp/nuc.start
+
+if [ ! -d /usr/bin ]
+then			
+	# have to have /usr mounted
+	exit 1
+fi
+
+case $1 in
+'start')
+	if [ "$NUC_ACTIVE" != on ]
+	then
+ 		pfmt -s nostd -g $CAT:193 "NetWare Unix Client startup is disabled\n" 2>> $LOG
+		exit 1
+	fi
+
+	#	Figure out as to whether npsd is up -- Ram M
+	if ${NWBIN}/statnps 
+	then
+		:
+	else
+		pfmt -s nostd -g $CAT:136 "NetWare IPX is not up and running\n" 2>> $LOG
+ 		exit 1
+ 	fi
+
+
+	#	Start the Management Portal.
+	pfmt -s nostd -g $CAT:29 "Trying to start up %s..." "nwmp" 2>> $LOG
+	if [ ! -f /usr/bin/nwmp ]
+	then
+		pfmt -s nostd -g $CAT:27 "%s missing.\n" "/usr/bin/nwmp" 2>> $LOG
+		exit 1
+	fi
+	/usr/bin/nwmp start >> $LOG 2>&1
+	/usr/bin/nwmp noburst >> $LOG 2>&1
+	pfmt -s nostd -g $CAT:31 "Done!\n" 2>> $LOG
+
+	pfmt -s nostd -g $CAT:29 "Trying to start up %s..." "nucd" 2>> $LOG
+	if [ ! -f /usr/sbin/nucd ]
+	then
+		pfmt -s nostd -g $CAT:27 "%s missing.\n" "/usr/sbin/nucd" 2>> $LOG
+		exit 1
+	fi
+	/usr/sbin/nucd  >> $LOG 2>&1
+	pfmt -s nostd -g $CAT:31 "Done!\n" 2>> $LOG
+	
+	#	Starting NetWare Unix Client Auto Mounter
+
+	if [ ! -d /.NetWare ]
+	then
+		/usr/bin/mkdir -m 555 /.NetWare
+		/usr/bin/chown root /.NetWare
+		/usr/bin/chgrp sys /.NetWare
+	fi
+
+	/sbin/mount -F nucam /.NetWare /.NetWare
+	
+	#	Start the 'r' command daemon.
+	pfmt -s nostd -g $CAT:29 "Trying to start up %s..." "nwnetd" 2>> $LOG
+	if [ ! -f /usr/sbin/nwnetd ]
+	then
+        	pfmt -s nostd -g $CAT:157 "\n%s missing\n\n" "/usr/sbin/nwnetd" 2>> ${LOG}
+		exit 1
+	fi
+	/usr/sbin/nwnetd
+	pfmt -s nostd -g $CAT:31 "Done!\n" 2>> $LOG
+
+    if [ -f /usr/sbin/nwchecksums ]
+    then
+        /usr/sbin/nwchecksums
+        if [ $? -ne 0 ]
+        then
+            pfmt -s nostd -g $CAT:156 "\nnwchecksums failed\n\n" 2>>${LOG}
+        fi
+    else
+        pfmt -s nostd -g $CAT:157 "\n%s missing\n\n" "/usr/sbin/nwchecksums" 2>> ${LOG}
+    fi
+
+	if [ -f /usr/sbin/nwsignatures ]
+	then
+		/usr/sbin/nwsignatures
+		if [ $? -ne 0 ]
+		then
+			pfmt -s nostd -g $CAT:35 "\nnwsignatures failed\n\n" 2>>${LOG}
+		fi
+	else
+		pfmt -s nostd -g $CAT:36 "\n%s missing\n\n" "/usr/sbin/nwsignatures" 2>> ${LOG}
+	fi
+
+	;;
+
+'stop')
+
+	$TFADMIN /sbin/umountall -F nucam
+	$TFADMIN /sbin/umountall -F nucfs
+	/usr/bin/nwmp stop
+
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE" 2>&1
+	exit 1
+	;;
+esac

@@ -1,0 +1,109 @@
+/**/#pragma ident	"@(#)libMDtI:Imakefile	1.20"
+
+#if Release5
+#define DoNormalLib	NO
+#define DoSharedLib	YES
+#define DoDebugLib	NO
+#define DoProfileLib	NO
+
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+#endif
+
+       INCLUDES = -I. -I$(LIBSRC) -I$(LIBSRC)/Xm -I$(LIBSRC)/Dt
+   INSTALLFLAGS = $(INSTINCFLAGS)
+        LIBNAME = MDtI
+          SHLIB = MDtI
+            LIB = lib$(LIBNAME).so
+  EXTRA_DEFINES = -DUSE_FONT_OBJECT -DUSE_COLOR_OBJECT \
+                  -DDONT_USE_DT_FUNCS -DUSE_REGCOMP
+#if SystemV4
+         MALLOC =
+#else
+         MALLOC = malloc.o
+#endif
+
+           GUI_SRCS = \ 
+		Flat.c \
+		FlatCopy.c \
+		FlatCvt.c \
+		FGraph.c \
+		FIconBox.c \
+		FIconbox.c \
+		FIconBoxI.c \
+		FlatState.c \
+		FlatUtil.c \		
+		HyperText.c \		
+		HyperText0.c \		
+		ScrollUtil.c \
+ 		array.c \
+                buffutil.c \
+		container.c \
+		dndutil.c \
+		drawicon.c \
+		dtutil.c \
+		objutil.c \
+		sizeicon.c \
+		xy.c
+
+           NONGUI_SRCS =\ 
+		dayone.c\
+		devtab.c\
+		extern.c\
+		fileclass.c\
+		iconmask.c\
+		misc.c\
+		mountdev.c\
+		p_cache.c\
+		propEH.c
+
+           NONGUI_HDRS =\ 
+		DtStubI.h\
+		DesktopP.h\
+		WidePosDef.h\
+		dayone.h\
+		default.icon\
+		mapfile.h
+
+SRCS = $(GUI_SRCS) $(NONGUI_SRCS)
+		
+GUI_OBJS = $(GUI_SRCS:.c=.o)
+NONGUI_OBJS = $(NONGUI_SRCS:.c=.o)
+OBJS = $(GUI_OBJS) $(NONGUI_OBJS)
+
+#if Release5
+LibraryObjectRule()
+
+	/* Define targets to build and install shared library */
+	/* No need to protect with DoNormalLib because we don't need .a */
+#if DoSharedLib
+SharedLibraryTarget($(LIBNAME),$(SODTIREV),$(OBJS),.,.)
+CreateRelocatableObjs($(LIBNAME),$(OBJS),.,.)
+InstallSharedLibrary_m($(LIBNAME),$(SODTIREV),$(USRLIBDIR))
+#endif		/* DoSharedLib */
+
+	/* Define targets to build and install normal library */
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+	/* Define targets to build and install profiled library */
+#if DoProfileLib
+ProfiledLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME)_p,$(USRLIBDIR))
+#endif
+
+#else /* Release5 */
+
+all:: libMDtI.so
+
+SharedLibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(OBJS),,)
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+InstallMsgCatalog(dtdevtab)
+InstallMsgCatalog(dayone)
+LintLibraryTarget(MDtI,$(SRCS))
+DependTarget()
+

@@ -1,0 +1,50 @@
+#! /sbin/sh
+#ident	"@(#)DtRuntime:check_undefs	1.2"
+#
+# Check UNDEF symbols from DtRuntime.so
+#
+
+if [ "$#" = 0 ]
+then
+	DtRuntime=dtruntime.so
+else
+	DtRuntime=$1
+fi
+
+TmpFile=$$new_undefs$$
+KnownUndefs=KNOWN_UNDEFS
+
+if [ ! -f $KnownUndefs ]
+then
+	touch $KnownUndefs
+fi
+
+echo "Checking $DtRuntime, please wait..."
+
+nm $DtRuntime | grep "UNDEF" | sed -e "s/ //g" | while read line
+do
+	if [ "UNDEF" = `echo $line | cut -f7 -d "|"` ]
+	then
+		FuncName=`echo $line | cut -f8 -d "|"`
+
+		(set +e; grep "^$FuncName" $KnownUndefs > /dev/null 2>&1)
+		if [ $? -ne 0 ]
+		then
+#			echo "Warning: NEW UNDEF: $FuncName"
+			echo $FuncName >> $TmpFile
+		fi
+
+#		echo "$FuncName"
+	fi
+done
+
+if [ -s $TmpFile ]
+then
+#	echo "Found NEW UNDEFs, append them to $KnownUndefs!"
+	echo "$DtRuntime contains new undef symbols."
+	echo "Please forward $TmpFile to Sam Chang, THANK YOU"
+#	echo "Check $TmpFile, modify $KnownUndefs if necessary"
+#	echo "\tand delete $TmpFile afterward"
+#	cat $TmpFile >> $KnownUndefs
+#	rm -f $TmpFile
+fi

@@ -1,0 +1,425 @@
+#!/usr/bin/ksh
+
+#ident	@(#):mkpkg	16.1	97/11/08
+
+#	Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995 Novell, Inc. All Rights Reserved.
+#	Copyright (c) 1984, 1985, 1986, 1987, 1988, 1989, 1990 Novell, Inc. All Rights Reserved.
+#	  All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF Novell Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+
+#
+# command to build packages
+#
+# Locale "jfegs" was added on 96/10/2  by Wanghwa Lin
+
+echo "START `basename $0` `date`"
+CMD=$0
+DESCRIPTION="Script to build packages and SIPS"
+
+Usage(){
+	echo "Usage: ${CMD} [ -P pkgmk cmd ] [ -L locale ] [ -r rootpath ] [ -d dest ] [ -c | -n ] [ -a | -p -x -s | pkg(s) ]"
+	echo "Usage: ${CMD} -h #for help info"
+	test "$1" = "help" && {
+		echo "Usage: If -a or any of -xsp are set, explicit pkgs are ignored."
+		echo "Usage: If -a is set, -xsp are ignored."
+		echo
+		echo "Usage: -P default = \$ROOT/usr/src/\$WORK/cmd/pkgtools/oampkg/pkgmk/pkgmk"
+		echo "Usage: -r default = \$ROOT/\$MACH"
+		echo "Usage: -d default = \$ROOT/\$SPOOL"
+		echo "Usage: -L default = \$LOCALE, else \"C\""
+		echo ${CMD} - ${DESCRIPTION}
+		test -f ${2:-Not-Set} && {
+			grep '##USAGE##' $2 | 
+			while read opt xxx descript
+			do
+				case ${opt} in
+				-*)	
+					opt=`echo $opt | sed 's/)//p'`
+					echo "$opt	# $descript"
+					;;
+				esac
+			done
+		}
+		echo
+	}
+	exit 1
+}
+
+turnon()
+{
+	FILE=$1
+	locale=$2
+	sed -e "/^#${locale}/s/^#${locale}//" $FILE
+}
+efigs_response()
+{
+sed -e "/^PKGLIST/s/$/ dele frle esle itle/" \
+		response
+}
+jfigs_response()
+{
+	sed -e "/^PKGLIST/s/ ls / ls ${1}le /" response
+}
+jfegs_response()
+{
+sed -e "/^PKGLIST/s/$/ dele frle esle jale/" \
+                  response
+}
+
+#
+# start of script
+# main
+#
+
+bad=0
+for i in ROOT MACH WORK SPOOL REL
+do
+if eval [ -z \"\${$i}\" ]
+then
+        echo "$i" is not set.
+        bad=1
+fi
+done
+[ $bad -eq 1 ] && exit 1
+
+aflag=0
+sflag=0
+xflag=0
+pflag=0
+Lflag=0
+flag=0
+
+unset ARG
+unset BARG
+unset L_LOCALE
+unset kopt
+
+L_LOCALE=${LOCALE:-C}
+
+set -- `getopt B:L:P:r:d:hncakxsp? $*` || Usage
+
+for i in $*
+do
+	case $i in
+		-h)	##USAGE## This extended usage information
+			Usage help `type ${CMD}|awk '{print $3}'`
+			shift;;
+		-c)	##USAGE## Use compression to build pkgs
+			ARG=$i; shift;;
+		-n)	##USAGE## Verify only
+			ARG=$i; shift;;
+		-a)	##USAGE## Build all pkgs & sets (ignores -xsp flags)
+			aflag=1; flag=1; shift;;
+		-x)	##USAGE## Build graphics pkgs only
+			xflag=1; flag=1; shift;;
+		-s)	##USAGE## Build SIPS only (not member pkgs)
+			sflag=1; flag=1; shift;;
+		-k)	kopt="-k"; shift;;
+		-p)	##USAGE## Build OS pkgs only
+			pflag=1; flag=1; shift;;
+		-B)	##USAGE## Pass "-B <blksize>" option to pkgmk
+			BARG="-B $2"; shift 2;;
+		-P)	##USAGE## Absolute path of pkgmk executable
+			PKGMK="$2"; shift 2;;
+		-r)	##USAGE## Pass "-r <rootpath>" option to pkgmk
+			Binroot="$2"; shift 2;;
+		-d)	##USAGE## Pass "-d <dest>" option to pkgmk
+			Pkgdest="$2"; shift 2;;
+		-L)	##USAGE## Modify set files to include locale-specific pkg
+			L_LOCALE=$2;Lflag=`expr $Lflag + 1`;shift 2;;
+		--)	shift; break;;
+	esac
+done
+
+D=`date '+%D'`
+ARCH=IA32
+# default blocks = 2876
+DEF_BLOCKS=2876
+
+[ ${PKGMK} ] || PKGMK=$ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgmk/pkgmk
+[ ${Binroot} ] || Binroot=$ROOT/$MACH
+[ ${Pkgdest} ] || Pkgdest=$ROOT/$SPOOL
+
+if [ $flag -eq 0 -a $# -lt 1 ]
+then
+	echo "${CMD}: No pkg[s]/set[s] specified"
+	Usage
+fi
+
+if [ $flag -eq 1 ]
+then
+	shift $#
+fi
+
+. $ROOT/usr/src/$WORK/build/tools/getpkginfo
+
+if [ $aflag = 1 ]
+then
+	alist=`GREP "^[a-zA-Z][a-zA-Z0-9+.]*	yes	" | cut -f1`
+	set $alist
+fi
+
+
+if [ $pflag = 1 -a $aflag = 0 ]
+then
+	plist=`GREP "^[a-zA-Z][a-zA-Z0-9+.]*	yes	[0-9]*	pkg	" | cut -f1`
+	set $plist
+fi
+if [ $xflag = 1 -a $aflag = 0 ]
+then
+	xlist=`GREP "^[a-zA-Z][a-zA-Z0-9+.]*	yes	[0-9]*	Xpkg	" | cut -f1`
+	set $* $xlist
+fi
+if [ $sflag = 1 -a $aflag = 0 ]
+then
+	slist=`GREP "^[a-zA-Z][a-zA-Z0-9+.]*	yes	[0-9]*	set	" | cut -f1`
+	set $* $slist
+fi
+if [ $Lflag -ge 1 ]
+then
+	if [ $Lflag -gt 1 ] 
+	then 
+		echo "Multiple locales on command line."
+		exit 1
+	fi
+	case ${L_LOCALE} in
+		fr|french)	L_LOCALE=fr;;
+		it|italian)	L_LOCALE=it;;
+		de|german)	L_LOCALE=de;;
+		es|spanish)	L_LOCALE=es;;
+		ja|japanese)	L_LOCALE=ja;;
+		C)		L_LOCALE=C;;
+		efigs)		L_LOCALE=efigs;;
+                jfegs)          L_LOCALE=jfegs;;
+		me)		;; ##modified English 
+		 *)		echo "Locale not recognized."
+				exit 1;;
+	esac
+fi
+
+for PkgDir in $*
+do
+	BLOCKS=`GREP "^$PkgDir	" | cut -f3`
+	if [ -z "${BLOCKS}" ]
+	then
+		BLOCKS=${DEF_BLOCKS}
+	fi
+	IS_SET=`GREP "^$PkgDir	" | cut -f4`
+	HAS_LOCALE=`GREP "^$PkgDir	" | cut -f5`
+
+	if [ "${HAS_LOCALE}" != "yes" ]
+	then
+		LPkgdest=${Pkgdest}
+	else
+		LPkgdest=${Pkgdest}/locale/${L_LOCALE}
+		if [ "${IS_SET}" = "set" -a -d ${LPkgdest} ]
+		then
+			cd ${LPkgdest}
+			for i in *
+			do
+				if [ ! -f $i/pkgmap -o -f $i/setinfo ]
+				then
+					continue
+				fi
+	
+				# if here, $i is a pkg, but not a SIP
+	
+				if [ -h $Pkgdest/$i ]
+				then
+					rm -f $Pkgdest/$i
+				elif [ -d $Pkgdest/$i -o -f $Pkgdest/$i ]
+				then
+					echo "ERROR: locale specific pkg $i not a link"
+					exit 1
+				fi
+				echo "linking $i"
+				ln -s $LPkgdest/$i $Pkgdest/$i
+				if [ $? -ne 0 ]
+				then
+					echo "Error: cannot link $i"
+					exit 1
+				fi
+			done
+		fi
+	fi
+	
+	cd $ROOT/usr/src/$WORK
+
+	if [ -d $ROOT/usr/src/$WORK/pkg/$PkgDir ]
+	then
+		cd pkg/$PkgDir
+		echo == pkg  ${PkgDir}
+	elif [ -d $ROOT/usr/src/$WORK/X11R5/olpkg.oam/$PkgDir ]
+	then
+		cd X11R5/olpkg.oam/$PkgDir
+		echo == Xpkg ${PkgDir}
+	elif [ -d $ROOT/usr/src/$WORK/X11R6/Xpackaging/$PkgDir ]
+ 	then
+		cd X11R6/Xpackaging/$PkgDir
+		echo == X6pkg ${PkgDir}
+	elif [ -d $ROOT/usr/src/$WORK/set/$PkgDir ]
+	then
+		# For the UnixWare set we need L_LOCALE-specific files.
+		# We must move to a tmp directory where we can create 
+		# these temporary files.
+		
+		if [ $PkgDir = "UnixWare" ]
+		then
+			
+			if [ -d set/tmp ]
+			then
+				cd set/tmp
+				rm -rf *
+			else
+				mkdir set/tmp 
+				if [ $? != 0 ] 
+				then 
+					echo "Could not make the set/tmp directory."
+					exit 1
+				fi
+				cd set/tmp
+			fi
+			
+			cp ../$PkgDir/* .
+			
+			# Modify the UnixWare setinfo and prototype files to 
+			# "turn on" the appropriate language extension package. 
+			# No language extension package is needed for the C locale.
+			
+			if [ ${L_LOCALE} != "C" ]
+			then
+				S=/tmp/setinfo$$
+				P=/tmp/prototype$$
+				if [ ${L_LOCALE} = "efigs" ]
+				then
+					for i in fr it de es
+					do
+						turnon setinfo ${i} > ${S}
+						mv ${S} setinfo
+						turnon prototype ${i} > ${P}
+						mv ${P} prototype
+					done
+                                elif [ ${L_LOCALE} = "jfegs" ]
+                                then
+ 					 for i in fr de es ja
+                                         do
+                                                turnon setinfo ${i} > ${S}
+                                                mv ${S} setinfo
+                                                turnon prototype ${i} > ${P}
+                                                mv ${P} prototype
+                                         done
+
+				else
+					turnon setinfo ${L_LOCALE} > ${S}
+					mv ${S} setinfo
+					turnon prototype ${L_LOCALE} > ${P}
+					mv ${P} prototype
+				fi
+			fi
+			
+			# Modify the UnixWare response files to include the
+			# correct language extension package in PKGLIST. No
+			# entry is needed for the C locale.
+			
+			if [ "${L_LOCALE}" != "C" ] 
+			then
+				R=/tmp/response$$
+				if [ "${L_LOCALE}" = "efigs" ]
+				then
+					efigs_response > ${R}
+					mv ${R} response
+                                elif [ "${L_LOCALE}" = "jfegs" ]
+                                then
+                                        jfegs_response > ${R}
+                                        mv ${R} response
+
+				else
+					jfigs_response ${L_LOCALE} > ${R}
+					mv ${R} response
+				fi
+			fi
+			
+		else 
+			cd set/$PkgDir
+		fi
+
+		bad=0
+		Setpkgs=`cat setinfo | sed -n '/^[a-zA-Z]/p'| cut -f1`
+		for i in ${Setpkgs}
+		do
+			if [ ! -d $Pkgdest/$i ]
+			then
+				echo "Error: Can't find pkg image for <$i>"
+				bad=1
+			fi
+		done
+		if [ $bad = 1 ]
+		then
+			echo "Warning: Not pkgmk'ing set <$PkgDir> due to missing pkg image(s)"
+			continue
+		fi
+
+		for i in $Setpkgs
+		do
+			Parts=`head -1 $Pkgdest/$i/pkgmap | cut -d" " -f2`
+			ed setinfo >/dev/null 2>&1 <<-DONE
+			1,\$s/^$i	[0-9]*	/$i	$Parts	/
+			w
+			q
+			DONE
+		done
+		echo == set  ${PkgDir}
+	else
+		echo "Warning: pkg/set scripts for <$PkgDir> not found"
+		continue
+	fi
+
+if [ ! -d $LPkgdest ]
+then
+	echo "$LPkgdest does not exist"
+	echo "Making $LPkgdest"
+	mkdir -p $LPkgdest
+	if [ $? -ne 0 ]
+	then
+		"mkdir of $LPkgdest failed, exiting"
+		exit 2
+	fi
+fi
+
+# only if LOAD is set in user's env, we'll use it
+
+	echo "$PKGMK $kopt $ARG $BARG -p"UW7 $D $LOAD" -r $Binroot -d $LPkgdest \
+	-fprototype -l$BLOCKS -o -a$ARCH WORK=$WORK PKGBINLOC=$Pkgdest" > \
+	${LPkgdest}/${PkgDir}.out 2>&1
+
+	$PKGMK $kopt $ARG $BARG -p"UW7 $D $LOAD" -r $Binroot -d $LPkgdest \
+	-fprototype -l$BLOCKS -o -a$ARCH WORK=$WORK PKGBINLOC=$Pkgdest >> \
+	${LPkgdest}/${PkgDir}.out 2>&1
+
+	# if we just made the locale links, remove them.
+	if [ "${IS_SET}" = "set" -a "X${HAS_LOCALE}" = "Xyes" ]
+	then
+		cd $LPkgdest
+		for i in *
+		do
+			if [ ! -f $i/pkgmap ]
+			then
+				continue
+			fi
+
+			if [ -h $Pkgdest/$i ]
+			then
+				echo "unlinking $i"
+				rm -f $Pkgdest/$i
+			fi
+		done
+	fi
+done
+# This link is required for prep.flop can_ifile dependency generation
+(( $sflag )) && ln -s $LPkgdest/locale/$L_LOCALE/UnixWare $Pkgdest/UnixWare
+echo "ENDED `basename $0` `date`"
+

@@ -1,0 +1,40 @@
+#ident	"@(#)Makefile.osr5	11.1"
+
+SHELL	= /bin/sh
+
+LOCALDEF=	-DSYS5 -DSYS5DIR -DSENDMTS -DTYPESIG=int -O -I../sendmail/src\
+		-I.. -D_ptr=__ptr -D_cnt=__cnt -DOpenServer
+
+LIBS	=	-lsocket
+
+include ../cmdrules.osr5
+
+LDLIBS	=	-L$(USRLIB) ../c-client/libc-client.a
+
+DESTDIR= $(USRBIN)
+
+build:	slocal
+
+OBJS =	slocal.o utils.o m_getfld.o callbacks.o
+
+slocal:	$(OBJS)
+	$(CC) $(LDFLAGS) -o slocal $(OBJS) $(LDLIBS) $(LIBS)
+
+callbacks.o:	../c-client/callbacks.c
+	$(CC) $(CFLAGS) $(DEFLIST) -c $?
+
+install: slocal
+	if [ ! -d $(ETC) ] ; then mkdir -p $(ETC) ; fi
+	$(INS) -f $(ETC)/mail slocal
+
+clean:
+	rm -f $(OBJS)
+
+clobber: clean
+	-rm -f slocal
+
+local-install:
+	cp slocal /usr/bin/slocal
+
+local-remove:
+	rm -f /usr/bin/slocal

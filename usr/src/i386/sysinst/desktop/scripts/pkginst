@@ -1,0 +1,503 @@
+#!/usr/bin/ksh
+
+#ident  "@(#)pkginst	15.1	97/12/19"
+
+[ -n "$cpio" ] || cpio=cpio
+
+# check to see if debugging is turned on, if so place all debug logs into
+# the log file which will exist in the /tmp/log directory
+
+#mkdir -p /tmp/log
+
+#if ivar check debug_inst
+#[ -n "$debug" ] && {
+#       exec 2>> /tmp/log/pkg.log
+#       set -x
+#       date 1>&2
+#       debug=True
+#}
+
+
+
+call unlink $MEDIUM_ERR_FLAG
+call unlink /tmp/installf.out
+
+PKGLOC=/var/sadm/pkg
+PKGTMPDIR=$1
+shift
+PKGLIST="$*"
+tmp=/tmp/inst$$
+. /etc/TIMEZONE
+
+until [ -s $PKGTMPDIR/nparts ]
+do
+	if [ -f $MEDIUM_ERR_FLAG ]
+	then
+		inst_error
+	else
+		call sleep 3
+	fi
+done
+
+GAUGE_TITLE="$INST_GAUGE_TITLE"
+gauge_start $(<$PKGTMPDIR/nparts) -title "$GAUGE_TITLE" -above 8 -below 1
+
+set -a
+for PKGINST
+do
+	# Install the ast package only for the AST Manhattan SMP platform.
+	[ "$PKGINST" = ast ] && {
+		/usr/bin/autodetect 1>/dev/null 2>&1
+		[ $? != 2 ] && continue
+	}
+
+	set -- $UnixWare_PKG_NUMS
+
+	for myset in $INSTSETS
+	do
+		if [ "$PKGINST" = "$myset" ]
+		then
+			showSet "${pkg_label[$1]}"
+			export SETINST="${pkg_code[$1]}"
+			export SETNAME="${pkg_label[$1]}"
+			break
+		fi
+	done
+
+	showPackage "${pkg_label[$1]}"
+	showAction ""
+
+
+	REQDIR=$PKGTMPDIR/$PKGINST/install
+	[ -d $PKGLOC/$PKGINST/install ] || mkdir -p $PKGLOC/$PKGINST/install
+	until [ -d $PKGTMPDIR/$PKGINST ]
+	do
+		if [ -f $MEDIUM_ERR_FLAG ]
+		then
+			inst_error
+		else
+			eval showAction \"$PKG_FETCH\"
+			call sleep 3
+		fi
+	done
+	print -u2 ==== Processing $PKGINST
+	{
+		cd $PKGTMPDIR/$PKGINST
+		until [ -f marker.1 ]
+		do
+			if [ -f $MEDIUM_ERR_FLAG ]
+			then
+				inst_error
+			else
+				eval showAction \"$PKG_FETCH\"
+				call sleep 3
+			fi
+		done
+
+		showAction "$PRE_INST"
+
+		[ -s pkginfo.save ] || {
+			kill -TERM $ds_to_disk_PID > /dev/null 2>&1
+			eval "faultvt \"$NO_PKGINFO_SAVE\""
+			halt
+		}
+		{
+			print "PKGINST=$PKGINST"
+			print "SETNAME=$FULL_SET_NAME"
+			print "SETINST=$SET_NAME"
+			print "OAMBASE=/usr/sadm/sysadm"
+			print "PKGSAV=$PKGLOC/$PKGINST/save"
+			print "TZ=$TZ"
+			print "INSTDATE=$(date '+%b %d %Y %I:%M %p')"
+		} >> pkginfo.save
+		while read line
+		do
+			eval ${line%%=*}=\"${line#*=}\"
+		done < pkginfo.save
+		[ "$PKGINST" = "$PKG" ] || {
+			kill -TERM $ds_to_disk_PID > /dev/null 2>&1
+			eval "faultvt \"$PKG_NOMATCH\""
+			halt
+		}
+		if eval [ -n "\"\$${PKGINST}CLASSES\"" ]
+		then
+			eval CLASSES="\"\$${PKGINST}CLASSES\""
+		fi
+		[ -f install/moreinfo ] && {
+			while read line
+			do
+				eval ${line%%=*}=\"${line#*=}\"
+			done < install/moreinfo
+		}
+		if isreloc "$PKGINST" "$RELPKGS"
+		then
+			reloc_flag=1
+		else
+			reloc_flag=0
+		fi
+		if [ -f install/response ]
+		then
+			. install/response >&2
+		fi
+		if [ -f install/request ]
+		then
+			case "$PKGINST" in
+			base|cmds|ls|inet|nics|nwnet|nfs|oam|osmp|dynatext|compaq|ast|UWdocs|deUWdocs|esUWdocs|frUWdocs|itUWdocs|jaUWdocs)
+				print -u2 Calling $PKGINST request
+				( . install/request $tmp ) >&2
+				if [ -f $tmp ]
+				then
+					. $tmp >&2
+# done by hah                   else
+#                                 export HOW_INSTALL=ON_BFLOP
+				fi
+				call unlink $tmp
+				;;
+			*)
+				: # default -- do nothing
+				;;
+			esac
+		fi
+		if [ -f install/preinstall ]
+		then
+			print -u2 Calling $PKGINST preinstall
+			( . install/preinstall ) >&2
+			[ $? = 1 -o $? = 3 ] && continue
+		fi
+
+# These two lines have to come after the request/preinstall scripts
+# have been run, because the request/preinstall scripts might run
+# 'chkpkgrel', which if the new 'pkginfo' file has been copied in
+# already will always report 'overlay'
+		$cpio -pldm $PKGLOC/$PKGINST < install/instfiles
+		print "$(<pkginfo.save)" > $PKGLOC/$PKGINST/pkginfo
+
+		let curpart=1
+		read line < pkgmap
+		set -- $line
+		parts=$2
+		# clear out cumulative files. NOTE: install must be writable!
+		call unlink install/all.llink
+		call unlink install/all.slink
+		while (( curpart <= parts ))
+		do
+
+			# First '.' required to differentiate class="inst"
+			call unlink install/INST.$curpart.list
+			until [ -f marker.$curpart ]
+			do
+				if [ -f $MEDIUM_ERR_FLAG ]
+				then
+					inst_error
+				else
+					eval showAction \"$PART_FETCH\"
+					call sleep 3
+				fi
+			done
+			eval showAction \"$INST_PART\"
+
+			print -u2 Processing part $curpart
+			for class in $CLASSES
+			do
+				typeset -i PART$class
+				# skip undefined classes
+				(( PART$class == 0 )) && continue
+				# Process the entries in the class.
+				if (( PART$class == curpart ))
+				then
+					# map contents file now, since it is processed once
+					[ -f install/$class.cont ] && {
+					if (( reloc_flag ))
+					then
+						mappath install/$class.cont 2
+					else
+						cat install/$class.cont
+					fi
+					} >> /tmp/installf.out
+					# this could be mapped later when llinks processed
+					[ -f install/$class.llink ] && {
+					if (( reloc_flag ))
+					then
+						mappath install/$class.llink 1
+					else
+						cat install/$class.llink
+					fi
+					} >> install/all.llink
+					# this could be mapped later when slinks processed
+					[ -f install/$class.slink ] && {
+					if (( reloc_flag ))
+					then
+						mappath install/$class.slink 1
+					else
+						cat install/$class.slink
+					fi
+					} >> install/all.slink
+				fi
+				# If this class has nothing in this part, carry on...
+				[ -f install/$class.$curpart.list ] &&
+				if [ -s install/i.$class ]
+				then
+					if (( reloc_flag ))
+					then
+						mappath install/$class$curpart.action 3
+					else
+						cat install/$class$curpart.action
+					fi | ( . install/i.$class ) >&2
+				else
+					if (( reloc_flag ))
+					then
+						mappath install/$class.$curpart.list 0
+					else
+						cat install/$class.$curpart.list
+					fi >>install/INST.$curpart.list
+				fi
+			done
+			if [ "$parts" = 1 ]
+			then
+				cd root
+			else
+				cd root.$curpart
+			fi
+			if (( reloc_flag ))
+			then
+				mappath $PKGTMPDIR/$PKGINST/install/INST.$curpart.list 0
+			else
+				cat $PKGTMPDIR/$PKGINST/install/INST.$curpart.list
+			fi | $cpio -pdulm /
+			cd $PKGTMPDIR/$PKGINST
+			let curpart=curpart+1
+			#print DONE
+			gauge_add
+		done #while (( curpart <= parts ))
+
+		showAction "$LINKS"
+
+		if [ -f install/all.llink ]
+		then
+			print -u2 Processing hard links
+			cd /
+			while read dest src
+			do
+				call unlink /$dest
+				call link /$src /$dest
+				[ "$?" != 0 ] && print -u2 "Error linking $dest to $src"
+			done < $PKGTMPDIR/$PKGINST/install/all.llink
+			cd $PKGTMPDIR/$PKGINST
+		fi
+		if [ -f install/all.slink ]
+		then
+			print -u2 Processing symbolic links
+			while read dest src
+			do
+				call unlink /$dest
+				call symlink $src /$dest
+				[ "$?" != 0 ] && print -u2 "Error symlinking $dest to $src"
+			done < install/all.slink
+		fi
+
+		showAction "$POST_INST"
+
+
+		for class in $CLASSES
+		do
+			[ -s install/i.$class ] &&
+				( . install/i.$class ENDOFCLASS </dev/null) >&2
+		done
+		print ${NAME} > $PKGLOC/${PKGINST}/predepend
+		call chmod $PKGLOC/${PKGINST}/predepend 0644
+		call unlink /var/options/${PKGINST}.name
+		call symlink $PKGLOC/${PKGINST}/predepend /var/options/${PKGINST}.name
+		if [ "$PKGINST" = base ]
+		then
+			mv /usr/sbin/installf /usr/sbin/REALinstallf
+			mv /usr/sbin/removef /usr/sbin/REALremovef
+			cp /etc/inst/scripts/installf /usr/sbin/installf
+			cp /etc/inst/scripts/removef /usr/sbin/removef
+			mv /etc/conf/bin/idbuild /etc/conf/bin/REALidbuild
+			print "#!/sbin/sh\nexit 0" > /etc/conf/bin/idbuild
+			chmod 555 /etc/conf/bin/idbuild
+		fi
+		if [ -f install/postinstall ]
+		then
+			print -u2 Calling $PKGINST postinstall
+			export HDROOT LANGDEP_SCRIPTS MARKER NOREMOVE PATH \
+				PKGINST PKGINSTALL_TYPE PKGLIST PROMPTNODE \
+				REQDIR SAVECONTENTS SCRIPTS SHELL TZ AUTOMERGE
+                if [ "$PKGINST" = inet ]
+                 then
+			/sbin/sh -x  install/postinstall >&2
+                 else   
+			/sbin/sh install/postinstall >&2
+                 fi
+		fi
+	} 
+	#| while read line
+	#do
+	#	if [ "$line" = DONE ]
+	#	then
+	#	gauge_add
+	#	fi
+	#done
+
+#NY temporary fix until ul93-31328a1 is fixed.
+	if [ "$PKGINST" = "$SET_NAME" ]
+	then
+		cd /var/tmp/inst/$SET_NAME
+		cp pkgmap setinfo /var/sadm/pkg/$SET_NAME
+		cd /
+	fi
+
+# Remove tmp files from root partition. Originally the temp files were removed
+# only after all packages were installed. Somone's lack of ingenuity or
+# laziness resulted in Gemini not being able to install on machines with
+# small hard drives (500Mb or less). 
+
+# So go through the current directory looking for symbolic links, if any
+# are found then read the symbolic link path and delete the link and the
+# source. This way files are deleted as soon as the package is done installing
+# and this consumes far less temporary space on the hard drive.
+# - Ranjit Deshpande 09/16/97
+
+	cdecl "char [256]" linkbuffer=
+
+	cd $PKGTMPDIR/$PKGINST
+	for file in *
+	do
+
+		# If file is symbolic link
+		if [[ -L "$file" ]]
+		then
+			# Read link path
+			call -c readlink "./$file" linkbuffer 256
+			(( buflen=$? ))
+
+			# Readlink does not terminate buffer with \0
+			# hence altprintf is used to print $buflen
+			# number of characters
+			orig_file="$(call -c altprintf "%.${buflen}s" linkbuffer)"
+			# Now get rid of it already
+			sh_rm -rf $orig_file
+		fi
+
+		# Remove the linked file/directory
+		sh_rm -rf $file
+
+	done 
+	cd $PKGTMPDIR
+	sh_rm -rf $PKGINST
+
+# End of removal of temp files
+
+set -- $UnixWare_PKG_NUMS
+shift
+UnixWare_PKG_NUMS="$*"
+done #for PKGINST
+set +a
+
+kill -TERM $ds_to_disk_PID > /dev/null 2>&1
+wclose $GAUGEWDW
+#wclose $INSTWID
+#display "$DO_SETUP"
+#SETUPWID=$CURWIN
+
+showPackage " "
+showAction "$REG_FILES"
+
+sh_rm -rf /var/tmp/inst $(</tmp/tmpdirs)
+
+# Need to split the long removef lines in installf.out so that instlist can
+# tolerate the input.  Sorry about the lack of indentation below, but we have a
+# few tools (sysinst/cmd/checkwhite.c and sysinst/cmd/rmwhite.sh) that strip
+# out comments and white space to save space, and they won't operate on a file
+# if they see that it has leading white space inside a quoted string.
+PGM='$1 == "removef" && NF > 12 {
+for (i = 3; i <= NF; i += 10) {
+cmd = $1 " " $2
+for (j = i; j <= i + 9; ++j)
+cmd = cmd " " $j
+print cmd
+}
+next
+}
+{ print }
+'
+# Tell instlist whether activation key validation is turned on.
+unset ACTKEY
+/usr/bin/grep 'ACTKEY=YES' /var/sadm/pkg/base/pkginfo > /dev/null 2>&1 &&
+	export ACTKEY=YES
+
+PKGBIN=/usr/sadm/install/bin
+CONTFILE=/var/sadm/install/contents
+
+awk "$PGM" /tmp/installf.out |
+	instlist > ${CONTFILE}.new 2> /tmp/instlist.err
+instlist_retval=$?
+
+if [ "$PKGINSTALL_TYPE" = "NEWINSTALL" -a  "$SET_NAME" = "UnixWare" ]
+then
+	call rename ${CONTFILE}.new ${CONTFILE}
+else
+	if [ "$SET_NAME" = "UnixWare" ]
+	then
+		cp ${CONTFILE} /tmp/contents
+		grep -v "^/dev/" /tmp/contents >${CONTFILE}
+	fi
+
+	if ${PKGBIN}/mergcont ${CONTFILE}.new
+	then
+		call unlink ${CONTFILE}.new
+	else
+		call rename ${CONTFILE} ${CONTFILE}.old
+		call rename ${CONTFILE}.new ${CONTFILE}
+	fi
+fi
+
+# If the return value is 10, it means that the root file system does not
+# support MAC levels, which implies that enhanced security cannot run on this
+# machine.
+if (( instlist_retval == 10 ))
+then
+	# Arrange it so that pkgadd will not set inheritable privileges.
+	/usr/bin/defadm oampkg LPM=NO
+else
+	# Enhanced security can run on this machine,
+	# so set up users and roles now.
+	if [ -f /tmp/userlist ]
+	then
+		/etc/inst/scripts/adminobj -u < /tmp/userlist
+	fi
+	if [ -f /tmp/rolelist ]
+	then
+		/etc/inst/scripts/adminobj -r < /tmp/rolelist
+	fi
+	/sbin/chlvl USER_PUBLIC ${CONTFILE}
+fi
+
+# instlist does not handle pathnames with "=" properly.
+# The cmds package installs a file named "~=". instlist
+# drops the "=" from the entry in the contents file. As
+# a shortcut fix, we just edit the contents file to insert
+# the "=" and quote the line. 
+	sed -e /\'.*charlib\\/~\'/s/~/~=/ \
+	    -e /\^\\/usr.*charlib\\/~\ /s,/usr,\'/usr, \
+	    -e /\'\\/usr.*charlib\\/~\ /s/~/~=\'/ \
+	$CONTFILE >$CONTFILE.tmp
+	call unlink $CONTFILE
+	call rename $CONTFILE.tmp $CONTFILE
+	call chown $CONTFILE 0 0
+
+if [ -f /usr/sbin/REALinstallf ]
+then
+	call unlink /usr/sbin/installf
+	mv /usr/sbin/REALinstallf /usr/sbin/installf
+fi
+if [ -f /usr/sbin/REALremovef ]
+then
+	call unlink /usr/sbin/removef
+	mv /usr/sbin/REALremovef /usr/sbin/removef
+fi
+if [ -f /etc/conf/bin/REALidbuild ]
+then
+	call unlink /etc/conf/bin/idbuild
+	mv /etc/conf/bin/REALidbuild /etc/conf/bin/idbuild
+fi

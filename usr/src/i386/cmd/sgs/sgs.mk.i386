@@ -1,0 +1,61 @@
+#ident	"@(#)sgs:sgs.mk.i386	1.14.1.4"
+
+#	i386 Cross-SGS Global Makefile
+#	PATHEDIT MUST BE RUN BEFORE THIS MAKEFILE IS USED!
+#
+#
+
+include $(CMDRULES)
+
+SGSD=`pwd`
+RP=
+OSRULES=$(RP)/lib.rulefile
+
+all:	install libs
+	echo "Finished building and installing both tools and libraries."
+
+libs:
+	cd ../../lib; $(CCSBIN)/$(SGS)env $(MAKE) -k -f .lib.mk install \
+	OSRULES=$(OSRULES) LIBRULES=$(RP)/sgs.l.rules
+# The following bit looks like sleight of hand and is required so that the
+# proper rules files get passed to libelf and libld at the proper times.
+# When building libelf and libld to be used by (i.e. linked into) the 
+# cross compiler itself, CMDRULES must be set to sgsrules.  This is the
+# default case, set up in $(SGS)env.  The following lines are executed only
+# while building the libraries that the cross compiler links to the target
+# a.outs (i.e. the "native" libraries).  In this case, the sgs.l.rules file
+# is required.  So, here it is necessary to set CMDRULES to sgs.l.rules to
+# ensure libelf and libld are built for the target machine.
+	cd xenv/$(CPU); \
+		$(CCSBIN)/$(SGS)env $(MAKE) libclobber CMDRULES=$(RP)/sgs.l.rules; \
+		$(CCSBIN)/$(SGS)env $(MAKE) libs CMDRULES=$(RP)/sgs.l.rules; \
+		$(CCSBIN)/$(SGS)env $(MAKE) libinstall CMDRULES=$(RP)/sgs.l.rules; \
+		$(CCSBIN)/$(SGS)env $(MAKE) libclobber CMDRULES=$(RP)/sgs.l.rules;
+		echo "Installed default libraries."
+
+compat_libs:
+	cd ../../lib; $(CCSBIN)/$(SGS)env $(MAKE) -k -f .lib.mk install_sgs_libs \
+	OSRULES=$(OSRULES) LIBRULES=$(RP)/sgs.l.rules
+
+install:
+	cd xenv/$(CPU); $(MAKE) install CMDRULES=$(SGSD)/sgsrules
+	cd xenv/$(CPU); $(MAKE) libcopy	CMDRULES=$(SGSD)/sgsrules
+
+shrink:	clobber
+	if [ -f "$(CCSBIN)/$(SGS)env" ] ; \
+	then \
+		cd ../../lib; $(CCSBIN)/$(SGS)env $(MAKE) -f .lib.mk clobber ; \
+	fi
+
+lintit:
+	cd xenv/$(CPU); $(MAKE) lintit 
+
+libslintit:
+	cd ../../lib; $(MAKE) .lib.mk lintit
+
+clean:
+	cd xenv/$(CPU); $(MAKE) clean CMDRULES=$(SGSD)/sgsrules
+
+clobber:
+	cd xenv/$(CPU); $(MAKE) clobber CMDRULES=$(SGSD)/sgsrules
+

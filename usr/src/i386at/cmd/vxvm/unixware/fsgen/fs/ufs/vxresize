@@ -1,0 +1,47 @@
+# @(#)cmd.vxvm:unixware/fsgen/fs/ufs/volresize.sh	1.1 1/24/97 21:47:01 - cmd.vxvm:unixware/fsgen/fs/ufs/volresize.sh
+#ident	"@(#)cmd.vxvm:unixware/fsgen/fs/ufs/volresize.sh	1.1"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+if [ "X$1" = Xrootdg ]
+then
+	rawdev="/dev/vx/rdsk/$2"
+else
+	rawdev="/dev/vx/rdsk/$1/$2"
+fi
+
+exec < /etc/mnttab
+while read dev mntpt fstype more
+do
+	if [ "/dev/vx/dsk/$1/$2" = "$dev" ] ||
+	   [ "X$1" = Xrootdg -a "/dev/vx/dsk/$2" = "$dev" ]
+	then
+		dfout=`df -t "\$dev"`
+		cursize=`expr "\$dfout" : \
+			 '.*total:[ 	]*\([0-9]*\) blocks[ 	]*[0-9]* files'`
+		[ "$cursize" -eq "$3" ] && exit 0
+		/usr/lib/fs/ufs/mkfs -M "$mntpt" "$rawdev" "$3"
+		exit $?
+	fi
+done
+
+# device is not mounted
+/usr/lib/fs/ufs/mkfs -G "$rawdev" "$3" 
+exit $?

@@ -1,0 +1,30 @@
+$ "%W"
+
+$moduleset SCO_PSRSETUPGUI tcl=psrsetup
+
+$	"@(#)psrsetup.msg	1.2"
+
+$ Titles
+SCO_PSRSETUPGUI_MSG_DLGTITLE		"Processor Setup"
+SCO_PSRSETUPGUI_MSG_FORMTITLE		"Processor Setup %s"
+
+$ Main menu
+SCO_PSRSETUPGUI_MSG_MENU_HOSTS		"Hosts"
+SCO_PSRSETUPGUI_MSG_MN_MENU_HOSTS	"t"
+SCO_PSRSETUPGUI_MSG_MENU_OPENHOST	"Open host..."
+SCO_PSRSETUPGUI_MSG_MN_MENU_OPENHOST	"O"
+SCO_PSRSETUPGUI_MSG_MENU_EXIT		"Exit"
+SCO_PSRSETUPGUI_MSG_MN_MENU_EXIT	"x"
+SCO_PSRSETUPGUI_MSG_MENU_ACTION		"Action"
+SCO_PSRSETUPGUI_MSG_MN_MENU_ACTION	"A"
+SCO_PSRSETUPGUI_MSG_MENU_PROPS		"Properties"
+SCO_PSRSETUPGUI_MSG_MN_MENU_PROPS	"P"
+SCO_PSRSETUPGUI_MSG_MENU_START		"Start/Stop"
+SCO_PSRSETUPGUI_MSG_MN_MENU_START	"S"
+
+$ Messages
+$ %s in the name of the scoadmin script in the two messages below
+SCO_PSRSETUPGUI_MSG_USAGE1      "Usage: %s \[host\]"
+SCO_PSRSETUPGUI_MSG_USAGE2	"Usage: %s"
+SCO_PSRSETUPGUI_MSG_SELECT_STOP "Select a processor start or stop"
+SCO_PSRSETUPGUI_MSG_SELECT_PROP "Select a processor to look at the properties of"

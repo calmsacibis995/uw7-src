@@ -1,0 +1,354 @@
+                   Resmgr Variables - a better picture
+
+                         Document Version: 6.1
+
+Note:  this document doesn't describe all of the variables used by ndcfg
+in the resmgr.  I'll be adding that eventually.
+
+The file /stand/resmgr is stored a memory image of the in-core database
+as read by the idconfupdate command.  idconfupdate walks through all
+keys (except RM_KEY), all parameters and all values, and saves this to
+an array in memory.  This array is then written to the file /stand/resmgr.
+Two special delimiters are used for each key and each value to determine
+when the end has been reached: RM_ENDOFPARAMS and RM_ENDOFVALS.
+When the resmgr file is read by the kernel at init time, the kernel knows
+that it is done reading an entry when it encounteres these special
+parameters and values.
+
+In addition, the resmgr database (/stand/resmgr) can be compressed.  The 
+commands in usr/src/i386/cmd/drf/cmd/prep_flop.sh do just this:
+COMPRESS=/usr/lib/drf/bzip
+${COMPRESS} -s28k ${ROOT}/${LCL_MACH}/stand/memfs.meta >memfs.meta
+${COMPRESS} -s28k ${ROOT}/${LCL_MACH}/stand/memfs.fs >memfs.fs
+${COMPRESS} -s28k ${ROOT}/${LCL_MACH}/etc/initprog/${LOGO_IMG}>${LOGO_IMG}
+${COMPRESS} -s28k /stand/${RESMGR} > resmgr
+Remember that NetInstall uses bzip with the -s32k argument.
+
+A number of programs query or update the in-core resmgr database:
+dcu, niccfg, resmgr, idconfupdate, idresadd, and anything using the
+routines in libresmgr.so or the ioctls on /dev/resmgr
+usr/src/i386at/cmd/mouse/mouseadmin.c
+usr/src/i386at/cmd/xdcu/dcusilent.c        - see CM_DCU_MODE below 
+
+idresadd is called by idinstall and takes a driver's System files and
+adds them to the resmgr, (probably) under a new key.  idresadd 
+adds the following variables to the resmgr, assuming they are "set"
+in the System file:
+CM_MODNAME, CM_UNIT, CM_ITYPE, CM_IPL, CM_IRQ, CM_DMAC, CM_IOADDR, 
+CM_MEMADDR, CM_BINDCPU, CM_ENTRYTYPE
+This takes care of most variables automatically.
+
+idconfupdate takes the existing System file and copies it to 
+/etc/conf/.sdevice.d before writing the new sdevice.d file
+
+read-only variables cannot be modified the associated addval/delval
+routine (cm_addval/rm_addval, cm_delval/rm_delval):
+
+to print keys stored at RM_KEY: resmgr -k -1 -p CM_BUSTYPES,n
+
+
+RM_KEY RM_KEY RM_KEY RM_KEY RM_KEY
+----------------------------------
+The following params are read-only and stored at key RM_KEY by
+the remgr itself:
+
+RM_TIMESTAMP      "RM_TIMESTAMP"- described below
+RM_INITFILE       "RM_INITFILE" - described below
+
+The following params are also stored at key RM_KEY:
+
+CM_BUSTYPES       "BUSTYPES"    -see CM_BUSTYPES below 
+
+CM_DCU_MODE       "DCU_MODE"    -see CM_DCU_MODE below
+
+CM_PCI_VERSION    "PCI_VERSION" -see CM_PCI_VERSION below
+
+NICCFG NICCFG NICCFG
+--------------------
+The following parameters are written by niccfg 
+
+"NIC_CARD_NAME"  - written by niccfg, could be read by nic drivers 
+(but none do).  Stores the card name.
+
+"NIC_CUST_PARM"  - written by niccfg, could be read by nic drivers 
+(but none do).  Contains the name of the CUSTOM[x] parameter from bcfg
+which was written to that key by niccfg/dcu.  Drivers use the CUSTOM[x]
+variable, but niccfg would know what this parameter is by reading
+NIC_CUST_PARM.
+
+MISC MISC MISC MISC
+-------------------
+
+"IICARD"         - written by the NetInstall process.  NIC drivers
+could query this variable and take some special action for 
+NetInstall.  No driver uses this parameter.
+
+"DCU_ACTION"     - written by the dcu, read by the file
+common/cmd/initpkg/aconf1_sinit.sh.  This file is installed as
+/sbin/aconf1_sinit.sh.  Stored as a string and has two
+possible values: "REBUILD" and "REBOOT".  The dcu writes these after
+it has done matching of board ids to the associated Drvmap file to
+obtain the driver name *and* the driver's System file has a "$static"
+line in it.  If the driver has $static and autoconfigurable (field 2 
+in Drvmap is "Y") then there's no need to rebuild the kernel so 
+the value "REBOOT" is written to parameter DCU_ACTION.  
+If the driver has $static and isn't autoconfigurable then the kernel
+must be relinked, so "REBUILD" is written to parameter DCU_ACTION.
+Later on aconf1_sinit.sh reads DCU_ACTION and if set to REBUILD
+then runs /etc/conf/bin/idbuild.   If DCU_ACTION is REBOOT then
+it prints "New hardware instance mapped to static driver, rebooting to 
+incorporate addition." to the screen, sleeps 5 seconds, then runs
+/sbin/uadmin 2 1 which reboots the machine.
+DCU_ACTION will not be written if the System file doesn't have 
+a "$static" line.  
+ 
+The following cm params are read-only:
+CM_MODNAME, CM_BRDBUSTYPE, CM_BRDID, CM_CA_DEVCONFIG, CM_SLOT, CM_TYPE,
+CM_BINDCPU, CM_DEVNUM, CM_FUNCNUM, CM_BUSNUM, CM_SBRDID, CM_PCI_VERSION.
+
+                       RESOURCE MANAGER PARAMETERS
+
+#define RM_TIMESTAMP "RM_TIMESTAMP" /* time of last change to database */
+RM_TIMESTAMP is of type time_t and is initially 0.
+updated to hrestime.tv_sec when resmgr updated by driver or user.
+Unknown if is this parameters is modified by resmgr itself when it 
+finds a new board vs what was stored in resmgr file on disk.
+
+#define RM_INITFILE  "RM_INITFILE"  /* State of initial resmgr file */
+RM_INITFILE is a string which contains the name of the resmgr file
+set at boot time. it names the file in /stand that was set at boot 
+time.  corresponds to RESMGR= token in boot(4).
+
+                     CONFIGURATION MANAGER PARAMETERS
+
+#define CM_BINDCPU        "BINDCPU"     /* Explicit CPU binding, if any;
+Never set by 2.1 kernel.  Only used by cm_get_intr_info(which is only
+called by cm_intr_attach()) to set the int_cpu member of the passed-in 
+intr_info structure.  the int_cpu member is accessed through the ic_intr_info
+structure from 3rd argument to cm_intr_attach
+can be set by idresadd (called by idinstall) as well.
+
+#define CM_BOOTHBA        "BOOTHBA"     /* Used to "mark" boot hba entry */
+Not applicable to network drivers
+
+#define CM_BRDBUSTYPE     "BRDBUSTYPE"  /* What type of board, ISA, EISA ... */
+set at init time for each key.  tells what type of board it is.
+value is a number.  Value is one of the following:
+bus types: CM_BUS_ISA/CM_BUS_EISA/CM_BUS_PCI/CM_BUS_PCMCIA/
+CM_BUS_PNPISA/CM_BUS_MCA/CM_BUS_SYS.
+#define CM_BUS_UNK   0x00
+#define CM_BUS_ISA   0x01
+#define CM_BUS_EISA  0x02
+#define CM_BUS_PCI   0x04
+#define CM_BUS_PCMCIA   0x08
+#define CM_BUS_PNPISA   0x10
+#define CM_BUS_MCA   0x20
+#define CM_BUS_SYS   0x40     /* System devices: serial, parallel.. */
+
+You'll never see CM_BUS_PNPISA set; support for it doesn't exist.
+
+This is what the _cm_get_brdbustype() routine looks for too.
+set when _cm_add_entry() is called. 
+NOT SET AUTOMATICALLY FOR ISA CARDS
+
+#define CM_BRDID          "BRDID"       /* Board ID from NVRAM */
+stored as a hex ASCII string containing the board id with a leading
+"0x".  Set automatically.
+NOT APPLICABLE TO ISA
+
+#define CM_BUSNUM         "BUSNUM"      /* Bus instance for PCI */
+stored as a cm_num_t on a per-key basis.  PCI 2.0 and 2.1 only
+Set automatically.
+NOT APPLICABLE TO ISA
+
+#define CM_BUSTYPES       "BUSTYPES"    /* Bitmask of bus types */
+undocumented.  same result as calling cm_bustypes() routine.
+stored at key RM_KEY as cm_num_t as a *bitmask* of all possible
+bus types found on the system: CM_BUS_ISA/CM_BUS_EISA/CM_BUS_PCI/
+CM_BUS_PCMCIA/CM_BUS_PNPISA/CM_BUS_MCA/CM_BUS_SYS.
+If CM_BUS_ISA  bit set then print CM_ISA("ISA").
+If CM_BUS_EISA bit set then print CM_EISA("EISA").
+If CM_BUS_PCI  bit set then print CM_PCI("PCI")
+If CM_BUS_PCMCIA bit set then print CM_PCCARD("PCCARD") NOTE PCMCIA->PCCARD!
+If CM_BUS_PNPISA bit set then print CM_PNPISA("PnPISA")
+If CM_BUS_MCA bit set then print CM_MCA("MCA")
+The CM_BUS_SYS bit is not set or used by anyone.
+The CM_BUS_PNPISA bit is not set or used by anyone.
+CM_BUSTYPES is set automatically.
+
+#define CM_CA_DEVCONFIG   "CA_DEVCONFIG"/* Magic cookie we pass to ca_ funcs*/
+undocumented.  one of these for every key for autodetected hardware
+type is cm_num_t.  used by HBA drivers and ODI's lsl driver.
+Set each time a new key is added to the resmgr database for a EISA/PCI/MCA
+card then this parameter gets added to the resmgr database
+it is a hex number that points to a bus_access structure.
+From there you can access the bus, device, and function information
+for the particular hardware.  note the unions everywhere!
+Same thing as what the cm_*_devconfig_* routines use but available to
+other drivers.
+Will not be present on ISA keys.
+This is one way to determine if key is for a PCI 2.0 or PCI 2.1 system.
+See CM_PCI_VERSION.
+NOT APPLICABLE TO ISA
+
+#define CM_CLAIM          "CLAIM"       /* Bitmask of parameters to claim */
+represents parameters the driver wants to "own".  Set explicitly
+using cm_addval or implicitly when calling cm_AT_putconf.
+is checked at resmgr init time and also when calling cm_register_devconfig
+(PCI/MCA/EISA specific configuration access at init time) in routine
+_cm_add_vals:  
+1) if adding a new board or not adding a new board and 
+   CM_SET_IRQ bit not set in CM_CLAIM then call _cm_check_irq.
+2) if adding a new board or not adding a new board and 
+   CM_SET_ITYPE bit not set in CM_CLAIM then call _cm_check_itype.
+3) if adding a new board or not adding a new board and 
+   CM_SET_DMAC bit not set in CM_CLAIM then call _cm_check_dma.
+4) if adding a new board or not adding a new board and 
+   CM_SET_IOADDR bit not set in CM_CLAIM then call _cm_check_ioaddr.
+5) if adding a new board or not adding a new board and 
+   CM_SET_MEMADDR bit not set in CM_CLAIM then call _cm_check_memaddr.
+The _cm_check_* routines check walk through every possible value for the
+associated respecetive parameter (CM_IOADDR/CM_MEMADDR/etc.) and ensure
+that the value passed in actually matches the hardware NVRAM 
+information for that slot.   If you don't claim the parameter as 
+your own then these routines should ensure the number is correct for
+that slot by checking against NVRAM.
+Obviously, ISA boards don't have this concept and should set the
+associated bits in CM_CLAIM.
+
+#define CM_DCU_MODE       "DCU_MODE"    /* How should DCU run ?? */
+cm_num_t.  written by resmgr autoconf code to one of 
+CM_DCU_NOCHG(1), CM_DCU_SILENT(2), or CM_DCU_INTERACTIVE(3)
+1 means NO relevant changes made to resmgr(this is the default)
+2 means run DCU in silent mode (resmgr autoconf sets this if
+  we have changed (by adding/removing) any boards relative to the 
+  loaded resmgr file)
+3 means unconditionally run DCU interactively
+at init time depending on if any DCU parameters were modified.
+CM_DCU_MODE is stored at key RM_KEY as a cm_num_t.
+read by the program usr/src/i386at/cmd/xdcu/dcusilent.c which is
+/sbin/dcusilent on an installed machine.  The exit status of
+the dcusilent program is the value of DCU_MODE.
+The front-end /sbin/dcu binary runs the dcusilent program
+set to CM_DCU_NOCHG at init time.  
+CM_DCU_MODE is not modified if resmgr modified at post-init time 
+by further driver or resmgr commands -- it only reflects the
+initial work done by resmgr at init time.
+
+#define CM_DEVNUM         "DEVNUM"      /* Device number for PCI */
+automatically set on all PCI 2.0 and 2.1 devices at associated key
+to ci_pci_devfuncnumber >> 3.  See DEVCONFIG and bus_access struct.
+
+#define CM_DMAC           "DMAC"        /* DMA Channel */
+set by resmgr init time and for detected configuration 
+access (PCI/MCA/EISA) boards.
+not automatically set for ISA devices.
+can be set by idresadd (called by idinstall) as well.
+set by cm_AT_putconf if CM_SET_DMAC bit set.
+
+#define CM_ENTRYTYPE      "ENTRYTYPE"   /* Type of RM database entry */
+cm_num_t stored at each key.
+only used by resmgr and idconfupdate.  not used by resmgr/cmmgr kernel
+code at all(kernel uses CM_CLAIM).  has two values (not a bitmask!)
+   CM_ENTRY_DEFAULT  1 /* Added by idresadd & idconfupdate -s */
+   CM_ENTRY_DRVOWNED 2 /* PCU=Platform Configuration Utility (eisaconfig,
+                          pciconfig, etc.) data interpreted and maintained 
+                          by driver */
+Nobody sets CM_ENTRY_DRVOWNED -- but they should.
+dcu looks at the Drvmap file and if bus is ISA then sets ENTRY_DEFAULT
+if bus is anything but ISA then you should set ENTRY_DRVOWNED (dcu
+just has a routine which adds a new key to resmgr if ENTRY_DEFAULT since
+the PCU autoconfig stuff won't automatically add it to the resmgr).
+dcu also has code to see if this is "1", assumes it is an ISA board, 
+and deletes the key as well when cleaning up the resmgr.
+
+#define CM_FUNCNUM        "FUNCNUM"     /* Function number for PCI and EISA */
+set on all PCI 2.0 and 2.1 as well as EISA
+contains low 3 bits of devfuncnumber from bus_access structure (see 
+CM_CA_DEVCONFIG) for PCI
+
+#define CM_IOADDR         "IOADDR"      /* I/O Address Range */
+set by resmgr init time and for detected configuration 
+access (PCI/MCA/EISA) boards.
+can be set idconfupdate and idresadd(called from idinstall) too.
+set by cm_AT_putconf if CM_SET_IOADDR bit set.
+
+#define CM_IPL            "IPL"         /* Interrupt Priority Level */
+this parameter is added by idresadd (called by idinstall) from information
+contained in the System file.  Drivers will typically query for this
+parameter prior to calling cm_intr_attach or .
+used by cm_get_intr_info (called by cm_intr_attach)
+also used by idconfupdate and idresadd(called by idinstall).
+the blc (BusLogic) HBA gets CM_IPL prior to calling cm_intr_attach
+the mfpd (parallel port) driver uses this. 
+the atup PSM adds CM_IPL to the resmgr at the atup driver's key with the
+value of "plhi + 1".
+
+#define CM_IRQ            "IRQ"         /* Interrupt Vector */
+set by resmgr init time and for detected configuration 
+access (PCI/MCA/EISA) boards.  ISA: Also added by idresadd (called by 
+idinstall) from information contained in the System file.
+set by cm_AT_putconf if CM_SET_IRQ bit set.
+
+#define CM_ITYPE          "ITYPE"       /* Interrupt Type */
+set by resmgr init time and for detected configuration access
+(PCI/MCA/EISA) boards.  
+set by cm_AT_putconf if CM_SET_ITYPE bit set.
+can be set by idresadd (called by idinstall) as well.
+
+#define CM_MEMADDR        "MEMADDR"     /* Memory Address Range */
+set by resmgr init time and for detected configuration access
+(PCI/MCA/EISA) boards
+can be set by idresadd (called by idinstall) as well.
+set by cm_AT_putconf if CM_SET_MEMADDR bit set.
+
+#define CM_MODNAME        "MODNAME"     /* Module Name */
+not set by kernel confmgr/resmgr code
+set by idresadd (called by idinstall) and idconfupdate -s
+
+#define CM_PCI_VERSION    "PCI_VERSION" /* PCI bus rev */
+stored at RM_KEY as a cm_num_t.   undocumented.
+contains PCI_REV_2_1 or PCI_REV_2_0
+see CM_CA_DEVCONFIG.
+
+#define CM_SBRDID         "SBRDID"      /* 'sub' board id */
+PCI 2.1(maybe 2.0?) specific.  fixes MR ul95-33214. 
+If ci_pcisbrdid is non-zero, then CM_SBRDID will be added at
+resmgr init time for the given key and contains the subsystem 
+device id and the subsystem vendor id.
+
+#define CM_SLOT           "SLOT"        /* Slot the board is in */
+set on EISA, MCA, and PCI 2.1 (not 2.0).  added at resmgr init time.
+For EISA and MCA this can be obtained from the CM_CA_DEVCONFIG value.
+for PCI this is from pbusdata.pci_irq_buffer[i].slot.
+
+#define CM_TYPE           "TYPE"        /* tag different types of records */
+Not used or set by anything in kernel
+Not used or set by idtools commands
+
+#define CM_UNIT           "UNIT"        /* Unit Field */
+This represents the Unit field from the System file.
+not set or used by kernel confmgr/resmgr code
+set by idresadd and idconfupdate -s from System file.
+used by IDA HBA driver to fix CM_UNIT so that idconfupdate will run
+later and update the IDA System file.
+used by PCCARD pcic driver to locate an "asyc" entry which has UNIT number
+greater than MINSERIALPCCARDUNIT which means special PCCARD serial port for
+modem card.
+used by SDI autoconf driver
+This *could* be used as a unique-per-key value which backtracks to the
+System file but should NOT be used to uniquely identify the particular
+"instance" of a driver for multiple boards of the same type on the system.
+See the UNIT= discussion in the bcfg file section for more information.
+
+The CM_UNIT field is one way of determining a particular instance of
+an ISA board.  If an ISA board is removed, you can determine the affected
+System line
+If an autodetected (PCI/EISA/MCA) board is removed, its associated resmgr
+key will also, so CM_UNIT is a means whereby drivers can still recognize
+which absolute board to refer to.  This is useful if there are many 
+identical PCI boards in the machine and one is removed.
+--------------------------------------------------------------------------
+**************************************************************************
+
+The End.

@@ -1,0 +1,197 @@
+SUITE=nd-dlpi
+
+if  [ $# -lt 1 ]
+then
+	echo "USAGE : $0 <scenario name > "
+	exit 1
+fi
+SCEN_NAME=$1
+GUI=0
+DISPCMD=echo
+echo "Auto setup for DLPI tests started..."
+if  [ $# -gt 1 ]
+then
+	if [ $2 = "GUI=YES" ]
+	then
+		DISPCMD=gui_notice.wksh
+	fi
+fi
+
+DLPI_PROFILE=${TET_SUITE_ROOT}/$SUITE/dlpi_profile
+CONFIG_FILE=${TET_SUITE_ROOT}/$SUITE.cfg
+
+if [ -r $DLPI_PROFILE -a -r $CONFIG_FILE ]
+then
+	:
+else
+	$DISPCMD "$0: ERROR:file '$DLPI_PROFILE' or '$CONFIG_FILE' missing"
+	exit 1
+fi
+
+. $DLPI_PROFILE
+. $CONFIG_FILE
+
+# Test and remote machine(s) need to be in init state 3
+
+echo "Checking init state on $NODE0...."
+
+runlevel=`who -r | awk '{ print $3 }'`
+if [ $runlevel != 3 ] 
+then 
+	$DISPCMD "ERROR: $NODE0 must be in init state 3 to run $SUITE test suites
+	$NODE0 current init state> $runlevel 
+	To change state type init 3 at command line as root" 
+	exit 1
+else
+ 	echo "$NODE0 Init State: <$runlevel>"
+fi
+
+echo "Checking init state on $NODE1...."
+ping $NODE1 
+if [ $? != 0 ] 
+then 
+	$DISPCMD "ERROR: ping to $NODE1 failed!
+	Check that $NODE1 is in init state 3 by
+        typing "who -r"  on $NODE1"
+	exit 1
+else
+ 	rsh -n -l $USER $NODE1 "who -r " > run
+	node0_state=`grep run-level run |awk '{ print $3 }'` 
+ 	echo "$NODE1 Init State: <$node0_state>"
+fi
+
+if [ "${TET_SUITE_ROOT}" -a "$USER" ]
+then
+	:
+else
+	$DISPCMD "$0: ERROR:environmental variable TET_SUITE_ROOT and USER not set. Please have \nthese variables set and run the tests again."
+	exit 1
+fi
+
+CONFIG_ERROR="NOTE: The tests should be configured before they can be executed. \nPlease have the tests configured either by updating the configuration file \n'$CONFIG_FILE' or using GUI."
+
+if [ ! -r $CONFIG_FILE ]
+then
+	$DISPCMD "ERROR: Configuration file '$CONFIG_FILE' missing"
+	exit 1
+fi
+
+if [ ! "$NODECOUNT" ]
+then
+	$DISPCMD "ERROR: Variable NODECOUNT not set."
+	$DISPCMD "$CONFIG_ERROR" 
+fi
+>rhosts
+cnt=0
+while [ $cnt -lt $NODECOUNT ]
+do
+	node=`eval echo \\$NODE$cnt`
+	if [ ! "$node" ]
+	then
+	 	$DISPCMD "ERROR: Variable NODE$cnt not set."
+		$DISPCMD "$CONFIG_ERROR"
+		exit 1
+	fi
+	eval echo \$NODE$cnt  $USER >>rhosts
+	cnt=`expr $cnt + 1`
+done
+
+# collect dlpi configuration data from each machine involved in the tests
+# starting with the local machine
+
+${TET_SUITE_ROOT}/bin/get_dlpi_conf >${TET_SUITE_ROOT}/$SUITE/dlpi_config
+echo "$NODE0\c" > ${TET_SUITE_ROOT}/$SUITE/dlpi_nodename
+cnt=1
+while [ $cnt -lt $NODECOUNT ]
+do
+	node=`eval echo \\$NODE$cnt`
+	# check if the machine is on the network
+	# exit if not able to run pwd as user of test suites
+        echo "Attempting remote shell to $NODE1 ...."
+	rsh -n -l $USER $node pwd >>/dev/null 2>&1
+	ret=$?
+	if [ $ret != 0 ]
+	then
+		$DISPCMD "ERROR: Machine $node is not responding. Tests could \
+not be started. \nCheck your TCP/IP setup and start again"
+		exit 1
+	fi
+
+	rcp rhosts $node:${TET_SUITE_ROOT}/.rhosts >/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		$DISPCMD "ERROR: rcp to \"$node\" failed. Please make sure \
+that the \nentry \"$NODE0\" is present in the /etc/hosts.equiv file of the \
+\nmachine \"$node.\"." 
+		exit 1
+	fi
+	rcp $CONFIG_FILE $node:$CONFIG_FILE
+	rcp ${TET_SUITE_ROOT}/$SUITE/dlpi_profile $node:${TET_SUITE_ROOT}/$SUITE/dlpi_profile
+	rsh -l $USER $node rm -rf ${TET_SUITE_ROOT}/$SUITE/bin/tet_lock 
+	rsh -l $USER $node bin/get_dlpi_conf >>${TET_SUITE_ROOT}/$SUITE/dlpi_config
+	echo "$node\c" > ${TET_SUITE_ROOT}/$SUITE/nodename.$$
+	rcp ${TET_SUITE_ROOT}/$SUITE/nodename.$$ $node:${TET_SUITE_ROOT}/$SUITE/dlpi_nodename
+	rm ${TET_SUITE_ROOT}/$SUITE/nodename.$$
+
+	cnt=`expr $cnt + 1`
+done
+
+rm -rf ${TET_SUITE_ROOT}/$SUITE/bin/tet_lock
+
+cnt=1
+while [ $cnt -lt $NODECOUNT ]
+do
+	node=`eval echo \\$NODE$cnt`
+	rcp ${TET_SUITE_ROOT}/$SUITE/dlpi_config $node:${TET_SUITE_ROOT}/$SUITE/dlpi_config
+	rsh  -n -l $USER $node ". $SUITE/dlpi_profile;${TET_ROOT}/bin/tcc -e $SUITE listen " >$node.log 2>&1 &
+	eval PID$cnt=$!
+	echo "Listener started on machine $node ..."
+	sleep 25
+	cnt=`expr $cnt + 1`
+done
+cd ${TET_SUITE_ROOT}/$SUITE
+no_results_files=`ls  ${TET_SUITE_ROOT}/$SUITE/results|wc -l`
+echo
+echo "Test started on local machine ..."
+${TET_ROOT}/bin/tcc -e $SUITE $SCEN_NAME &
+MAINPID=$!
+
+tmp=$no_results_files
+while [ $tmp -eq $no_results_files ]
+do
+	sleep 5
+	tmp=`ls  ${TET_SUITE_ROOT}/$SUITE/results|wc -l`
+done
+#now we are sure that a results file has been created
+${TET_SUITE_ROOT}/bin/RunReport -a $SUITE &
+
+wait $MAINPID		# wait for the processes
+
+cnt=1
+echo $NODECOUNT
+echo $cnt
+while [ $cnt -lt $NODECOUNT ]
+do
+	node=`eval echo \\$NODE$cnt`
+	echo
+	echo "Stopping Listener on machine $node ..."
+	pids=`rsh -n -l $USER $node "ps -ef |grep $SUITE|nawk '{print \\\$2}'"`
+	pid1=`echo $pids`
+	rsh -n $node "kill -9 $pid1" >/dev/null 2>&1
+	ret=$?
+	if [ $ret != 0 ]
+	then
+		$DISPCMD "WARNING: Tests completed. But, Machine $node is not responding now. The listeners on that machine have to be manually killed. "
+	fi
+
+	pid=`eval echo \\$PID$cnt`
+	kill -0 $pid >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		kill  $pid >/dev/null 2>&1
+	fi
+
+	cnt=`expr $cnt + 1`
+done
+$DISPCMD "DLPI tests have been completed."
+exit 0

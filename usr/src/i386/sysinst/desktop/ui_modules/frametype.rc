@@ -1,0 +1,56 @@
+#ident	"@(#)frametype.rc	15.1	98/03/04"
+# winxksh resource for selecting frame type (networking)
+# Jeremy Boulton
+# May 10, 1997
+
+set -A NETWORK_FRAME_TYPE_TXT \
+	"ETHERNET_II" \
+	"ETHERNET_802.2" \
+	"ETHERNET_802.3" \
+	"ETHERNET_SNAP" \
+	"FDDI" \
+	"FDDI_SNAP" \
+	"TOKEN-RING" \
+	"TOKEN-RING_SNAP"
+
+if [ "$module" = "ipxconf" ]
+then
+	i=${#NETWORK_FRAME_TYPE_TXT[*]}
+	NETWORK_FRAME_TYPE_TXT[$i]="AUTO_DISCOVER"
+fi
+
+FRAME_TYPE_MAX_LEN=0
+
+for i in "${NETWORK_FRAME_TYPE_TXT[@]}"
+do
+	(( FRAME_TYPE_MAX_LEN < ${#i} )) && (( FRAME_TYPE_MAX_LEN = ${#i} ))
+done
+
+
+function choose_frame_type
+{
+	CHOOSE_TITLE="${CHOOSE_FRAME_TYPE_TITLE}"
+	CHOOSE_FOOTER="${CHOOSE_FRAME_TYPE_FOOTER}"
+
+	ft_choice="${NETWORK_FRAME_TYPE_TXT[0]}"
+
+	for i in "${NETWORK_FRAME_TYPE_TXT[@]}"
+	do
+		[[ $1 = $i ]] && ft_choice="${i}"
+	done
+
+	choose -f -winparms "-above 4 -below 1" "${ft_choice}" "${NETWORK_FRAME_TYPE_TXT[@]}"
+}
+
+# determine if a frame type is in the list of acceptable frame types
+function valid_frame_type
+{
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+	for i in "${NETWORK_FRAME_TYPE_TXT[@]}"
+	do
+		[[ $1 = $i ]] && return 0
+	done
+	return 1
+}

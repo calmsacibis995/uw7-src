@@ -1,0 +1,206 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxcap-vol.sh	1.3 9/16/97 11:56:28 - cmd.vxvm:common/support/vxcap-vol.sh
+#ident	"@(#)cmd.vxvm:common/support/vxcap-vol.sh	1.3"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+set_rootdisk
+
+disk=$1
+
+bail()
+{
+	quit 10
+}
+
+reboot=
+rootencap=
+
+# list of file systems whose underlying partition should not be removed.
+# Keeping the partitions makes it easier to revert back to a non-VxVM
+# configuration.
+
+#fskeeplist=${VOL_KEEPER_FILESYSTEMS:='/ /usr /usr/kvm /var /var/adm'}
+fskeeplist=${VOL_KEEPER_FILESYSTEMS:='/ /usr /stand /var /home'}
+
+partencaplist=
+partkeeplist=
+dgname=
+voldir=/dev/vx/dsk
+rvoldir=/dev/vx/rdsk
+if [ -s $DISKDIR/$disk/dg ]; then
+	dgname=`cat $DISKDIR/$disk/dg`
+	voldir=/dev/vx/dsk/$dgname
+	rvoldir=/dev/vx/rdsk/$dgname
+fi
+
+xcmd cd $DISKDIR/$disk
+
+
+# Create volume, plex, and subdisk configuration records for the
+# encapsulation
+
+sed -n 's/^#vxmake[ 	]*//p' newpart > $tmpfile1
+[ -s $tmpfile1 ] && disk=$disk egettxt "Adding volumes for $disk..." vxvmshm:111
+if [ -n "$dgname" ]; then
+	xcmd vxmake -g "$dgname" -d $tmpfile1
+else
+	xcmd vxmake -d $tmpfile1
+fi
+
+grep '^#vxvol' newpart > $tmpfile1
+[ -s $tmpfile1 ] && echo "Starting new volumes..."
+exec 3<&1 < $tmpfile1
+while read line; do
+	expr "$line" : '#\(.*\)' > $tmpfile2
+	if [ ! -s $tmpfile2 ]; then
+		continue
+	fi
+	if [ -n "$dgname" ]; then
+		sed -e "s/vxvol/vxvol -g \"$dgname\" /" $tmpfile2 > $tmpfile3
+		mv $tmpfile3 $tmpfile2
+	fi
+	eval "`cat $tmpfile2`"
+done
+exec 0<&3 3<&-
+
+grep '^#rename' newpart > $tmpfile1
+
+# get the list of file systems that are currently mounted, so that we
+# can compare with the list of file systems we are renaming
+voladm_mounted_filesystems mountlist
+
+if [ -s $tmpfile1 ]
+then
+	egettxt "Updating ${VOL_VFSTAB_PATH}..." vxvmshm:516
+	xcmd cp $SYSROOT/$VOL_VFSTAB_PATH $tmpfile2
+	exec 3<&1 < $tmpfile1
+	while read rename dev vol; do
+		partencaplist="$partencaplist $dev"
+		dir=`awk '
+			$0 ~ /#.*/ { next; }
+			$1=="'$VOL_DISK_BLKPATH/$dev'" || $2=="'$VOL_DISK_RAWPATH/$dev'" {
+				print $3
+				exit
+			}
+			$1=="'$VOL_AP_DISK_BLKPATH/$dev'" || $2 == "'$VOL_AP_DISK_RAWPATH'" {
+				print $3
+				exit
+			}' $tmpfile2`
+		if [ -z "$dir" ]
+		then
+			#echo "Test rootdisk [ $rootdisk ] = rename [ $dev ]"
+			if [ "X${rootdisk}s1" = "X${dev}" ]
+			then
+				dir=/
+			fi
+		fi
+		[ -z "$dir" ] && continue
+		xcmd awk '
+			BEGIN { OFS="	"; nline=0; }
+			$0 ~ /#.*/ { print $0; next; }
+			{
+				if ($4 == "swap") {
+					dir="swap"
+				} else {
+					dir=$3
+				}
+				encap=0
+				if ($1 == "'$VOL_DISK_BLKPATH/$dev'") {
+					$1="'$voldir/$vol'"
+					encap=1
+				}
+				if ($2 == "'$VOL_DISK_RAWPATH/$dev'") {
+					$2="'$rvoldir/$vol'"
+					encap=1
+				}
+				if ($1 == "'$VOL_AP_DISK_BLKPATH/$dev'") {
+					$1="'$voldir/$vol'"
+					encap=1
+				}
+				if ($2 == "'$VOL_AP_DISK_RAWPATH/$dev'") {
+					$2="'$rvoldir/$vol'"
+					enacp=1
+				}
+				if (encap) {
+					endline[nline++]=\
+						"#NOTE: volume '$vol' (" dir \
+						") encapsulated partition '$dev'"
+				}
+				print $0
+			}
+			END {	for (i=0; i<nline; i++) {
+					print endline[i]
+				}
+			}' $tmpfile2 > $tmpfile3
+		xcmd mv $tmpfile3 $tmpfile2
+		list_member "$dir" $mountlist && reboot=yes
+		[ "X$dir" = X/ ] && rootencap=yes
+		if list_member "$dir" $fskeeplist
+		then
+			partkeeplist="$partkeeplist $dev"
+		fi
+	done
+	exec 0<&3 3<&-
+	sync
+	xcmd mv $tmpfile2 $SYSROOT/$VOL_VFSTAB_PATH
+	sync
+fi
+
+# 
+# Remove partitions that we no longer want.  Keep partitions that
+# map /, /usr, /var and that don't have the normal partition tags.
+# Also keep any slices that we did not encapsulate.
+
+eval `vxparms`
+grep -v '^#' newpart > $tmpfile1
+if [ -s $tmpfile1 ]
+then
+	while read slice tag flags start size
+	do
+		dogi_device_slice $disk $slice ds
+		if list_member $tag 0x0 $V_USR $V_HOME &&
+		   list_member $ds $partencaplist &&
+		   not list_member $ds $partkeeplist
+		then
+			tag=0x0
+			flags=0x0
+			start=0
+			size=0
+		fi
+		echo $slice $tag $flags $start $size
+	done < $tmpfile1 > $tmpfile2
+	if [ -s $tmpfile2 ]
+	then
+		echo "Remove encapsulated partitions..."
+		#[ -z "$rootencap" ] || echo "This is a root encapsulation.."
+		dogi_device_rawpath $disk drawpath
+		LC_ALL=C export LC_ALL
+		echo y | $EDVTOC -f $tmpfile2 "$drawpath" > /dev/null
+	fi
+fi
+
+# signal what actions vxvm-reconfig should take
+[ -n "$rootencap" ] && quit 102
+[ -n "$reboot" ] && quit 101
+quit 0

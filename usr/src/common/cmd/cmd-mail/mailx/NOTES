@@ -1,0 +1,218 @@
+1) Make sure delete of all mail messages leaves the box in
+   the state we expect (empty .mailbox and remove others).
+
+2) Make sure binary data is passed through C-Client OK.
+
+3) New mail arriving after mailfolder is read in via C-Client
+   isn't preserved as new when the mailfolder is closed.
+
+4) the mailx append operation is performed by copying the mbox contents
+   to a temp file, writing the pertinent mailbox messages to the
+   now empty mbox, and rewriting the tempfile contents back to
+   mbox. This is only done for messages from the default mailbox,
+   I think. So there shouldn't be a problem with the race condition
+   of more than one mailx client trying to quit at the same time.
+   The quit operation doesn't do any of this if the inbox is opened
+   readonly.
+
+5) mail_rename uses links. This won't work across filesystems.
+   /tmp is a separate filesystem, so this is going to be problematic,
+   at best.
+
+6) mail_move() and maybe mail_copy() don't seem to use the default 
+   mailbox format when writing messages. (^A's seem to be missing)
+
+7) message flags not preserved properly when quit() is called.
+
+8) fix newfileinfo() to use mail_status() output. take the output
+   lines and create a new routine so that it can be called from
+   outside newfileinfo(). This will enable the startup to output
+   info from mail_status without having to loop through message
+   status flags.
+
+9) The "Status:" line doesn't come through the fetchheader
+   routines. This differs in how mailx shows mail header info.
+   See the "showheaders", "print", "next", "type", and "respond"
+   commands. There are probably others, too, but this is a
+   good enough list to represent the differences.
+
+10) mail_expunge may be dumping core if more than one client
+   tries to open the mailbox.
+
+11) mail_append_full prepends the envelope info with the wrong
+   originating sender.
+
+12) what happended to the $HOME and $USER processing on the
+   inbox_confdir?
+
+13) mailx allows a write of a message without the header info
+   In this case, we don't want the envelope info written out.
+
+14) mail_append_full doesn't seem to write messages out with
+   ^A delimiters.
+
+15) housekeeping info written out by c-client for SCO message store
+   makes the output from the swrite function in mailx to have
+   different, and incorrect results. Perhaps swrite is a local
+   only operation!?
+
+16) mailbox locking is messed up in mailx for more than one
+   mailx session on a mailbox.
+
+17) tmpfiles aren't being removed properly because we are no
+   longer renaming them when done. Make sure cleanup happens
+   when edits are complete.
+
+18) verify that all message flag info is loaded when a copy, 
+   append, move, or save is done for all messages affected.
+
+19) sizes are wrong
+
+20) dead.letter isn't being truncated when something goes there.
+
+21) What is the purpose of Tflag Should we preserve it?
+
+22) check out the use of netnews through mailx.
+
+23) moving of read mail to mbox that doesn't exist seems to fail.
+   This might have something to do with the MBOX entry in my .mailrc.
+
+24) mailbox name {user=name}inbox should open that users inbox, permissions
+   permitting.
+
+25) mailx has an option to ignore interrupts. Can this be done with cclient?
+
+26) the interactive commands "folders" currently does an ls. Perhaps it
+   should do a c-client listing instead.
+
+27) what happens if I exit a program without closing the mailbox?
+   On the network?
+
+28) what happend if someone edits the mailbox while I have it open.
+   Try vi.
+
+29) C-CLIENT is now required for building of mailx. We'll have to make
+   sure the build environment does the correct thing. (make cclient and
+   mail.h available during build phases)
+
+30) use pfmt to do error message output. This will conform to the
+   I18N way of doing things. Probably have to add messages to the
+   message catalogs. See the gettxt() function, too.
+
+31) check that a delete of a message also loads the flags into cache.
+
+32) check function nontext() (from type1()) for metamail.
+
+33) remove stralloc debug code. It may be why header display is so slow.
+
+34) Can you rename mailboxes between servers?
+
+35) specifying a mailbox other than you over IMAP should open readonly.
+   This is because we don't have access to the remote .mailrc info, or
+   special user environemnt variables.
+
+36) misprint in mail_copy_full() doc (internal.doc). Reference to 
+   mail_search_full().
+
+38) MBOX on remote host isn't necessarily in the same $HOME as
+   the local machine. Check out the Getf() function in fio.c.
+
+39) $HOME for MBOX determination isn't reliable across the net.
+
+40) what happens if we run out of disk space when doing a move,
+   copy, or rename? How about append?
+
+41) startup status doesn't seem right. With status 'R', message still new.
+
+42) new mail can be erronously reported is quitting after save (or hold).
+
+43) status filename (+path) not meaningful if remotehost is set.
+
+44) change to inbox from other file, in edit mode, MBOX functionality doesn't
+   work. Should save read messages into MBOX. Calls edstop instead of quit.
+
+45) changing to a folder you currently have open causes the open to
+   be in read only mode. This probably has something to do with the
+   fact that setfile() opens the new box before it closes the old box.
+   Should probably just do an open of the newbox with the old stream. 
+   This will allow us to skip the connection and authentication steps
+   (I think).
+
+46) ~M doesn't put message at left margin
+
+47) ~h puts comma at end of To: line.
+
+48) If MBOX is set to "{host}folder", MBOX will be reset to "mbox"
+   when the user tries to quit the folder. A warning will be issued
+   stating that the folder name is invalid.
+
+49) The above needs to be done for all variables that represent mail
+   folders, like RECORD.
+
+50) figure out the message catalog stuff (pfmt).
+
+51) Should I force readonly status on a mailbox if the IMAP user name
+   isn't that of the shell login user?
+
+52) The old mailx used effective gid to do some of it's work (like fopen).
+   Is this something to worry about?
+
+53) can not save messages to /dev/null anymore
+
+54) save a message that has been marked as "\\SEEN" but not fOLD into
+   another mailbox using the mail_copy() command doesn't set the fOLD
+   flag in the destination mailbox.
+
+55) savemail() is used to append/overwrite the dead.letter file. I haven't put
+   c-client hooks into savemail yet.
+
+56) -R badhostname fails "Error 0".
+
+57) if permissions disallow verifying or opening a mailbox, there may be
+   a misleading error message, like "No mail for user".
+END
+
+
+POSIX test setup notes:
+
+1) change the value of MS1_FOLDER_FORMAT from "MMDF" to "Sendmail" in
+	/etc/default/mail.
+2) change the value of MS1_EXPUNGE_THRESHOLD from 50 to 100 in
+	/etc/default/mail.
+May need POSIX waivers for these side effects:
+
+1) using mail_append_full() to save messages between mail folders
+   will set the fOLD status (or unset the MNEW status) on the
+   saved copy of the mail. This is because c-client reserves the
+   recent marker to mean that the delivery agent has put this message
+   here, not the user agent. In mailx, you can move a message
+   marked as new to a different folder, and the status is completely
+   preserved.
+
+2) mailx has a -u flag to open another users mailbox. We may not be
+   able to do this if we can't figure out the users INBOX name. The
+   c-client interface figures out INBOX by the users UID. Perhaps we
+   can play games with this, but it will be dicey.
+
+3) tp335 in mailx_05.sh of VSC 4.1.5 assums that it is ok to append
+   messages to an invalid message folder (a file with arbitrary data
+   preexisting). C-client's scoms driver detects that this is an invalid
+   folder because it doesn't start with a "From " line as the first line.
+   Throughout the test cases, the assumption that mailfolders are flat
+   files causes test cases to fail. Because the cleanup procedure only
+   removes the mailbox itself, any support file c-client needed are
+   left around. In particular are the .*.index files. If the corresponding
+   index file is not removed when a mailbox is removed, test cases can
+   become confused. Either begintest has to do the 'rm -rf .*.index'
+   command, or it should use the mailx 'delete *' command to clear a mailbox
+   so that it is removed (this doesn't work for INBOX).
+
+
+TESTING:
+
+install the basix package first
+install the uta package next
+
+have to do something about call to execmail from mailx.
+
+remember to unset the MAIL environment variable

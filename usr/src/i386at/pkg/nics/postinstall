@@ -1,0 +1,406 @@
+#!/usr/bin/xksh
+#ident	"@(#)postinstall	29.2"
+#ident	"$Header$"
+
+# do not use apostrophes in middle of script (even in comments)
+# as parser can not grok them properly
+
+# we need to be able to source in bcfg files.  unfortunately, pkgadd/pkginstall
+# runs us as a Bourne shell, and .bcfgs use arrays, so we must switch to Korn
+# /bin/ksh has hard links to sh in the ISL case so use winxksh
+[ "$RANDOM" = "$RANDOM" ] && {
+	exec /usr/bin/xksh $0
+}
+
+# running under ksh now.  save all of stderr - just in case
+# since we run script multiple times (3 possible phases) add pid to name
+# so we do not overwrite earlier copies
+exec 2>/var/adm/log/nics.postinstall.err.$$
+
+# turn on debugging information - just in case
+# set -x
+
+# function to idinstall any DEPEND= drivers from the .bcfg file to
+# the link kit.  one of them could be $static so we must do this early
+# to prevent a second relink later on.
+do_depends()
+{
+
+	# if not set then return
+	[ "$DEPEND" = "" ] && return 0
+	if [ "$NICS_TYPE" = "MDI" ]
+	then
+		LOCATION=/etc/inst/nd/mdi
+	else
+		LOCATION=/etc/inst/nics/drivers
+	fi
+
+OIFS=$IFS
+IFS=""
+	echo "$DEPEND"  | while read line
+	do
+		[ "$line" = "" ] && continue
+		cd $LOCATION/$DEPEND
+		/etc/conf/bin/idinstall -P nics -d ${line} > /dev/null 2>&1
+		# this next line may produce an error about /dev/volprivate
+		# not found but the idinstall still appears to work
+		/etc/conf/bin/idinstall -P nics -k -a ${line}
+	done
+
+IFS=$OIFS
+	return 0
+}
+
+
+# function to add $static to the odimem System file.  assumes we are in the
+# right directory already.
+
+edit_odimem_system()
+{
+
+ed -s System <<! >/dev/null
+/^odimem
+i
+\$static
+.
+w
+q
+!
+
+}
+
+
+do_dlpimdi_mods()
+{
+
+	for MOD_NAME in $DLPI_MODS
+	do
+		[ ! -f /etc/conf/mdevice.d/${MOD_NAME} ] && {
+			cd /etc/inst/nd/${MOD_NAME}
+			/etc/conf/bin/idinstall -P nics -d ${MOD_NAME} > /dev/null 2>&1
+			# this next line may produce an error about 
+			# /dev/volprivate not found but the idinstall still
+			# appears to work.  error only occurs when routine is
+			# called in the ISL pre-reboot phase
+			/etc/conf/bin/idinstall -P nics -k -a ${MOD_NAME}
+			DLPI_BLD="${DLPI_BLD} -M ${MOD_NAME}"
+		}
+	done
+
+}
+
+
+# function to remove $depend odimem from the lsl System file
+edit_lsl_master()
+{
+
+
+ed -s Master <<! >/dev/null
+/^\$depend odimem
+d
+w
+q
+!
+
+}
+
+# function to add the NETCFG role to the TFM database
+# and add commands to that role
+postinstaddrole()
+{
+	/bin/adminrole NETCFG > /dev/null
+	if [ $? -ne 0 ]
+	then
+        	/bin/adminrole -n NETCFG
+	fi
+	/bin/adminrole -r ndcfg NETCFG 2> /dev/null
+	/bin/adminrole -a ndcfg:/usr/sbin/ndcfg:owner:dacread:dacwrite:loadmod:setflevel:filesys NETCFG
+	/bin/adminrole -r nd NETCFG 2> /dev/null
+	/bin/adminrole -a nd:/etc/nd:owner:dacread:dacwrite:loadmod:setflevel:filesys NETCFG
+	/bin/adminrole -r mv NETCFG 2> /dev/null
+	/bin/adminrole -a mv:/bin/mv:owner:dacwrite NETCFG
+	/bin/adminrole -r rm NETCFG 2> /dev/null
+	/bin/adminrole -a rm:/bin/rm:owner:dacwrite NETCFG
+
+}
+
+# main MAIN Main
+
+DLPI_BLD=""
+IDTUNE=/etc/conf/bin/idtune
+# DEBUG=/bin/echo
+DEBUG=/bin/true
+# Add Netcfg to SCOAdmin
+NCFG_DIR=/usr/lib/netcfg
+[ -f /usr/bin/scoadmin ] && [ -d $NCFG_DIR/netcfg.obj ] && {
+/usr/bin/scoadmin -p Networking -f -c $NCFG_DIR/netcfg.obj
+}
+
+ODI_MODS="msm ethtsm toktsm fdditsm odisr"
+DLPI_MODS="dlpi dlpibase"
+
+# 3 possible cases we need to handle:
+# a) isl case, pre relink/reboot - do idinstall, idtunes, etc.
+#    check for /etc/inst/scripts/postreboot.sh (even though we have not 
+#    rebooted !)
+#    this way kernel stune files will be set appropriately so that when we
+#    actually do the idinstall of the driver with ndcfg in step b) below
+#    we will not be changing their values, making a *second* relink unnecessary.
+# b) isl case, post reboot - silently add network card to system
+#    check for /etc/rc2.d/S02POSTINST (renamed from postreboot.sh immediately
+#    prior to actual reboot).   does the echo idinstall | ndcfg
+# c) post isl pkgadd case - ensure odimem static, no idtunes.
+#    if above two checks do not make it.
+# 
+
+if [ -f /etc/inst/scripts/postreboot.sh ]
+then
+
+	# *******************ISL CASE, PRE RELINK/REBOOT.   CASE A) ABOVE
+
+	$DEBUG "ISL CASE, PRE RELINK/REBOOT" 1>&2
+
+	. /isl/ifile
+	
+	# if no .bcfg file set, user did not select a network card at ISL time 
+	# nothing for us to do - return immediately
+	[ "$NICS_CONFIG_FILE" = "" ] && exit 0
+	[ "$NICS_DRIVER_NAME" = "" ] && exit 0
+
+	if [ "$NICS_TYPE" = "" ]
+	then
+		echo "NICS_TYPE variable is not set"
+		exit 1
+	fi
+
+	if [ "$NICS_TYPE" = "MDI" ] 
+	then
+		. /etc/inst/nd/mdi/$NICS_DRIVER_NAME/$NICS_CONFIG_FILE
+	elif [ "$NICS_TYPE" = "ODI" -o "$NICS_TYPE" = "DLPI" ]
+	then
+		. /etc/inst/nics/drivers/$NICS_DRIVER_NAME/${NICS_CONFIG_FILE}.bcfg
+	else
+		echo "Unknown driver type $NICS_TYPE"
+		exit 1
+	fi
+
+
+	# if .bcfg file has any IDTUNE lines, do them now
+	[ -n "$IDTUNE_NUM" ] && {
+OIFS=$IFS
+IFS="
+"
+		integer i=1
+		while (( i <= $IDTUNE_NUM ))
+		do
+			$IDTUNE -f ${IDTUNE_ARRAY[i]}
+			let i+=1
+		done
+IFS=$OIFS
+	}
+
+	# put odimem into the link kit if it is not already there 
+	# (it will not be there since isl case)
+	[ ! -f /etc/conf/mdevice.d/odimem ] && {
+
+		cd /etc/inst/nics/drivers/odimem
+
+		edit_odimem_system
+
+		# remove any previous installed version in case it exists
+		/etc/conf/bin/idinstall -P nics -d odimem > /dev/null 2>&1
+
+		# add the new version from this directory.  This may produce
+		# an error about /dev/volprivate not found but idinstall still
+		# appears to work - BL14 let ndcfg do this, no ODI drivers needing odimem
+		# and odimem hogs RAM while in the system - N
+		# /etc/conf/bin/idinstall -P nics -k -a odimem
+
+	}
+
+	# no need to do idtune for ODIMEM_MBLK_NUMBUF/ODIMEM_NUMBUF as
+	# odimem Mtune file defaults to 1.  if you ever need to do this borrow
+	# the routine do_odimem from niccfg and insert it here.
+	# it is also possible that:
+	# ODIMEM never set in .bcfg file
+	# driver type is DLPI or MDI, not using odimem at all
+	# key off of $NICS_TYPE before you do any of this anyway
+
+	cd /etc/inst/nics/drivers/lsl
+
+	edit_lsl_master
+
+	# install dlpi and dlpibase into link kit
+	do_dlpimdi_mods
+
+	# if .bcfg has any DEPEND= drivers, they could be $static, so
+	# idinstall them too since they will be needed later on.  note that
+	# ndcfg is smart and will not re-idinstall a DEPEND= driver if it 		# already exists in the link kit(ndcfg calls idcheck -y)
+	do_depends
+
+	# tell system that we should relink kernel later on.  This
+	# should happen anyway after invoking this script since we have not
+	# done the final relink
+
+	/etc/conf/bin/idbuild >/dev/null 2>&1
+
+	exit 0
+
+elif [ -f /etc/rc2.d/S02POSTINST ]
+then
+
+	# *******************ISL CASE, POST RELINK/REBOOT.   CASE B) ABOVE
+
+	$DEBUG "ISL CASE, POST RELINK/REBOOT" 1>&2
+
+	. /isl/ifile
+	
+	# if no .bcfg file set, user did not select a network card at ISL 
+	# time - only install dlpi/dlpibase drivers
+	if [ "$NICS_CONFIG_FILE" = "" -o "$NICS_DRIVER_NAME" = "" ]
+	then
+		do_dlpimdi_mods
+		[ "${DLPI_BLD}" ] && /etc/conf/bin/idbuild ${DLPI_BLD} > /dev/null 2>&1
+		postinstaddrole
+		exit 0
+	fi
+	if [ "$NICS_TYPE" = "" ]
+	then
+		echo "NICS_TYPE variable is not set"
+		exit 1
+	fi
+
+	if [ "$NICS_TYPE" = "MDI" ] 
+	then
+		. /etc/inst/nd/mdi/$NICS_DRIVER_NAME/$NICS_CONFIG_FILE
+		location=/etc/inst/nd/mdi/$NICS_DRIVER_NAME/$NICS_CONFIG_FILE
+	elif [ "$NICS_TYPE" = "ODI" -o "$NICS_TYPE" = "DLPI" ]
+	then
+		. /etc/inst/nics/drivers/$NICS_DRIVER_NAME/${NICS_CONFIG_FILE}.bcfg
+		location=/etc/inst/nics/drivers/$NICS_DRIVER_NAME/${NICS_CONFIG_FILE}.bcfg
+	else
+		echo "Unknown driver type $NICS_TYPE"
+		exit 1
+	fi
+
+	# odimem already idinstalled, made static
+	# no need to do any idtunes for odimem here either
+	# any DEPEND= drivers already taken care of and in link kit.
+	# just need to issue the idinstall to put driver and any
+	# infrastructure drivers into link kit
+	
+	# get bcfg index number from path name.  ndcfg must load in all
+	# bcfg files in order to produce an index.  fortunately we are done
+	# loading .bcfg files so this index will not change in next call to
+	# ndcfg again below.
+	index=`echo bcfgpathtoindex $location | /usr/lib/netcfg/bin/ndcfg -a`
+
+	if [ "$index" = "-1" ] 
+	then
+		# should not happen...
+		echo "ndcfg says unknown bcfg pathname $location"
+		exit 1
+	fi
+
+	busstuff=""
+	# we cannot depend on NICS_KEY from the ifile any more as resmgr keys
+	# can get shuffled around from the reboot, so what was once the correct
+	# key is not any more.we figure out proper key by looking for the IICARD
+	# parameter in the resmgr which indicates this is the key we used
+	# for netinstall.  Note that we remove the key for netinstalls over
+	# ISA so it may not exist any more.
+	if [ "$BUS" != "ISA" ]
+	then
+		NICS_KEY=`echo iicard | /usr/lib/netcfg/bin/ndcfg -q`
+		# remove spaces
+		NICS_KEY=`echo $NICS_KEY`
+		if [ "$NICS_KEY" != "-1" ] 
+		then
+			busstuff="KEY=$NICS_KEY"
+		else
+			echo "ndcfg iicard ret NICS_KEY -1"
+			exit 1
+		fi
+	else
+		[ -n "$NICS_IO" ] && busstuff="$busstuff IOADDR=$NICS_IO"
+		[ -n "$NICS_RAM" ] && busstuff="$busstuff MEMADDR=$NICS_RAM"
+		[ -n "$NICS_IRQ" ] && busstuff="$busstuff IRQ=$NICS_IRQ"
+		[ -n "$NICS_DMA" ] && busstuff="$busstuff DMAC=$NICS_DMA"
+	fi
+
+	# now do custom parameters
+	custom=""
+	if [ "$NICS_CUSTOM_NUM" != "" ] 
+	then
+		integer i=1
+
+		while (( i <= $NICS_CUSTOM_NUM ))
+		do
+			# because bcfg might use __STRING__ freetext enclose
+			# custom parameters with braces just in case.
+			# CABLETYPE=1
+			custom="$custom ${NICS_CUST_PNAME[i]}={${NICS_CUST_VAL[i]}}"
+			# CABLETYPE_=Aui
+			custom="$custom ${NICS_CUST_PNAME[i]}_={${NICS_CUSTOM[i]}}"
+			let i+=1
+		done
+	fi
+	# now construct necessary idinstall line to pipe to ndcfg.  Note
+	# we do not support OLDIOADDR=xxx-yyy here and assume that the card
+	# is present at the I/O address the user supplies.
+	# likewise, we also do not support BINDCPU/UNIT/IPL/ITYPE here.
+	# Unfortunately, ndcfg must re-load all of its bcfgs again here...
+	# send stdout to stderr which is sent to /tmp/nics.postinstall.err
+
+	# since we run script up to 3 times, add pid to log name output to save
+	# earlier copies
+	echo "IDINSTALL $index $NICS_TOPOLOGY 0 1 $busstuff $custom __CHARM=0" | /usr/lib/netcfg/bin/ndcfg -v -b -l /var/adm/log/ndcfg.log.$$ -j 1>&2
+
+	# no need to run idbuild here, case A) above did the work and nothing
+	# will have changed to necessitate a kernel relink.
+	
+	# add NETCFG role and commands to TFM database
+	postinstaddrole
+
+	exit 0
+else
+	# *******************NORMAL PKGADD CASE              CASE C) ABOVE
+
+	$DEBUG "NORMAL PKGADD CASE" 1>&2
+
+	# put odimem into the link kit if it is not already there
+	[ ! -f /etc/conf/mdevice.d/odimem ] && {
+
+		cd /etc/inst/nics/drivers/odimem
+
+		edit_odimem_system
+
+		# remove any previous installed version in case it exists
+		/etc/conf/bin/idinstall -P nics -d odimem > /dev/null 2>&1
+
+		# add the new version from this directory
+		# BL14 let ndcfg do this, no ODI drivers remaining needing odimem
+		# and odimem hogs RAM while in the system - N
+		# /etc/conf/bin/idinstall -P nics -k -a odimem
+
+		# and tell kernel to rebuild later on
+		/etc/conf/bin/idbuild
+
+	}
+
+	cd /etc/inst/nics/drivers/lsl
+
+	edit_lsl_master
+
+	# install dlpi and dlpibase into link kit and ensure usable now.
+	do_dlpimdi_mods
+
+	[ "${DLPI_BLD}" ] && /etc/conf/bin/idbuild ${DLPI_BLD} > /dev/null 2>&1
+
+	# add NETCFG role and commands to TFM database
+	postinstaddrole
+	exit 0
+fi
+
+# not reached...
+exit 1

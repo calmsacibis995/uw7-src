@@ -1,0 +1,84 @@
+/*
+ *	@(#)Imakefile	6.3	4/4/96	15:49:43
+ *
+ * Copyright (C) 1991-1996 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+/*
+ *
+ *	S002	Wed Apr  3 16:33:44 PST 1996	hiramc@sco.COM
+ *	- create shared DLL properly
+ *	S001	Wed Nov 16 09:38:57 PST 1994	hiramc@sco.COM
+ *	     Remove SpecialFlagsObjectRule(dfbCmap, -Olitc -DUSE_INLINE_CODE)
+ *	     For BL10 build
+ */
+
+#include <Server.tmpl>
+
+SRCS =	dfbCmap.c dfbData.c dfbInit.c dfbScreen.c dfbSwitch.c
+
+OBJS =	dfbCmap.o dfbData.o dfbInit.o dfbScreen.o dfbSwitch.o
+
+STD_DEFINES = ServerDefines
+
+#   INCLUDES = -I. -I$(SERVERSRC)/include -I$(FONTSRC)/include -I$(INCLUDESRC) \
+#	-I$(SERVERSRC)/ddx -I$(SERVERSRC)/sys/common
+   INCLUDES = -I. -I$(SERVERSRC)/include -I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libdfb.a
+
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(dfb,$(OBJS))
+ProfiledLibraryTarget(dfb,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(dfb,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(dfb,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o: 
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(dfb,$(OBJS))
+SharedXDriverTarget(dfb,6.0,$(OBJS),shared,..)
+LintLibraryTarget(dfb,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(dfb,$(DDXLIBS))
+DependTarget()
+
+/* 
+ * HDKSRCS = Imakefile dfbProcs.h dfbScrStr.h dfbSwitch.h $(SRCS)
+ * InstallHDKMultiple(${HDKSRCS},$(HDKPORTSDIR)/dfb)
+ */

@@ -1,0 +1,36 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/MOUNTFSYS	1.1.11.8"
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	# if catalogs aren't under /usr/lib/locale, check /etc/inst/locale
+	if [ -d /usr/lib/locale/$LANG ] 
+	then LC_MESSAGES=$LANG
+	else LC_MESSAGES=/etc/inst/locale/$LANG
+	fi
+	export LANG LC_MESSAGES
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+# Mount file systems
+
+/sbin/mountall -l >/dev/null 2>&1
+if [ -f /etc/.fscklog ]
+then
+	pfmt -l $LABEL -s info -g $CAT:13 "The system is fine and is now coming up.\n\n"
+	/sbin/rm /etc/.fscklog >/dev/null 2>&1
+fi
+
+# make sure /usr subtree is present by testing for /usr/sbin
+if [ ! -d /usr/sbin ]
+then
+	pfmt -l $LABEL -s info -g $CAT:14 "/usr sub-tree is not present - changing to single user mode\n"
+	/sbin/init S
+fi

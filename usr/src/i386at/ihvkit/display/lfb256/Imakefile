@@ -1,0 +1,129 @@
+#ident	"@(#)ihvkit:display/lfb256/Imakefile	1.1"
+/**/#	Copyright (c) 1990, 1991, 1992 UNIX System Laboratories, Inc.
+/**/#	Copyright (c) 1988, 1989, 1990 AT&T
+/**/#	  All Rights Reserved
+
+/**/#	Copyright (c) 1993  Intel Corporation
+/**/#		All Rights Reserved
+
+#include <Server.tmpl>
+#include <sv4Lib.rules>
+
+/*
+ * Debugging the server with dynamically linked library is sometimes painful
+ * To statically link liblfb.a into the server:
+ *
+ * #undef XWINSharedDisplayLibrary
+ * and define a VENDOR_DIR; this can be any one of the directories under
+ * devices
+ *
+ * and do:
+ *	make clean
+ *	make Makefile
+ *	make
+ *	cd ../../.. (ie: to the server dir)
+ *	make Xwin_a (make sure SDD=.....liblfb.a in the server/Makefile)
+ */
+
+/* #undef XWINSharedDisplayLibrary */
+
+/*
+ * for archive, we have to include the objects from one of the directories
+ * under "devices", so that these objects are archived into liblfb.a
+ */ 
+#if XWINSharedDisplayLibrary
+VENDOROBJS =
+#else
+VENDOROBJS = ./devices/ati/?*.o
+DEF_VENDORDIR = ./devices/ati
+#endif
+
+BPP_DEFINE=-DBPP=8
+EXTRA_DEFINES = $(BPP_DEFINE)
+IMAKE_DEFINES = $(BPP_DEFINE)
+
+#define IHaveSubdirs
+SUBDIRS = devices
+
+/* 
+ * BEGIN: COMPATIBILITY SECTION
+ *
+ * NOTE: These comments are for those who are concerned about maintaining
+ * compatability with older (SI spec 1.0) server.  In other words, if you
+ * want your DM to work with both the new and old servers (SI specs 1.1 and
+ * 1.0 respectively), read this; otherwise, you can ignore this section.
+ *
+ * The file, v1compat.c is left in this directory only for reference. DM
+ * writers who want to support both the old (pre SI v1.1) and new X servers
+ * should go through this file carefully
+ *
+ */
+
+#define Compatibility 1
+
+#if Compatibility
+COMPAT_SRC = lfbCompat.c
+COMPAT_OBJ = lfbCompat.o
+#else
+COMPAT_SRC =
+COMPAT_OBJ =
+#endif
+
+SRCS =	lfbArc.c \
+	lfbBitblt.c \
+	lfbCache.c \
+	lfbExten.c \
+	lfbFont.c \
+	lfbGlob.c \
+	lfbInit.c \
+	lfbLine.c \
+	lfbPoly.c \
+	lfbScanL.c \
+	lfbSpans.c \
+	lfbState.c \
+	lfbStplblt.c \
+	lfbUtil.c \
+	$(COMPAT_SRC)
+
+OBJS =	lfbArc.o \
+	lfbBitblt.o \
+	lfbCache.o \
+	lfbExten.o \
+	lfbFont.o \
+	lfbGlob.o \
+	lfbInit.o \
+	lfbLine.o \
+	lfbPoly.o \
+	lfbScanL.o \
+	lfbSpans.o \
+	lfbState.o \
+	lfbStplblt.o \
+	lfbUtil.o \
+	$(COMPAT_OBJ)
+
+INCLUDES = -I.  -I/usr/X/include/X11 -I../include
+LFLAGS = -buxz
+
+#if XWINSharedDisplayLibrary
+
+SharedLibraryObjectRule()
+SharedLibraryTarget(lfb,$(DISPLIBREV),$(OBJS),.,.)
+InstallSharedLibrary(lfb,$(DISPLIBREV),$(DISPLIBDIR))
+
+#else /* XWINSharedDisplayLibrary */
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(lfb,$(OBJS))
+
+#endif /* XWINSharedDisplayLibrary */
+
+XCOMM	The SUBDIRS rules need to be after the library rules as the
+XCOMM	SUBDIRS depend on the library
+
+MakeSubdirs($(SUBDIRS))
+ForceSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+DependTarget()
+
+lint: ${CFILES} ${LIBCFILES}
+	$(LINT) $(LFLAGS) -Clibsmart $(INCLUDES) $(SRCS) >lint.out 2>&1

@@ -1,0 +1,204 @@
+#ident	"@(#)dcu:menus/dcumain	1.28.2.1"
+
+function dcucancel
+{
+# dcucancel(main_wid)
+# Called when the "Exit DCU and Cancel Changes" "Main Menu" option
+# is selected.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer key err=0 i=0
+typeset _t 
+
+while (( i+=1 ))
+do
+	if [ "${BDTYPE[$i]}" = $none ]
+	then
+		break
+	fi
+	if [ -n "${BDCHGS[$i]}" ]
+	then
+		display "$MODNOSAVE" -bg $RED -fg $WHITE
+		_t=$CURWIN
+		RMexit_choice
+		input_handler
+		wclose $_t
+		if [ "$EXIT_CONF" = "1" ]
+		then
+			dcumain
+			return 0
+		fi
+		break
+	fi
+done
+
+i=0
+if [ "$UNIX_INSTALL" = Y ]
+then
+	#update resmgr database
+	while (( i+=1 ))
+	do
+		if [ "${BDTYPE[$i]}" = $none ]
+		then
+			break
+		fi
+		BDCHGS[$i]=""
+	done
+
+	IHVaddresmgr
+
+	i=0
+	while (( i+=1 ))
+	do
+		if [ "${BDTYPE[$i]}" = $none ]
+		then
+			break
+		fi
+		if [ "${BDTYPE[$i]}" = $unused ]
+		then
+			continue
+		fi
+		if (( ${BDCHGS[$i]} ))
+		then
+			if [ "${BDCNFG[$i]}" = "$Y" ]
+			then
+				wrtRM_key $i
+				err=$?
+				if (( err ))
+				then
+					display -w "$BAD_UPDATE" -bg $RED -fg $WHITE
+					footer "$GENERIC_CONTINUE_FOOTER"
+					call proc_loop
+				fi
+			fi
+		fi
+	done
+fi
+
+for key in $DEL_KEYS
+do
+	RMdelkey $key
+done
+
+HBADISKETTE=0
+DCUCNFGIHV=
+call RMclose
+msgnoerr
+footer ""
+wclose $1
+}
+
+function exit_exit
+{
+# exit_exit()
+# Choices exit callback when the Exit DCU and Cancel Changes
+# Main Menu selection item has been choosen and a change has been
+# detected and is not going to be saved.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+        case $CHOICE in
+        ${EXIT_OPT[0]})
+                EXIT_CONF=0
+                ;;
+        ${EXIT_OPT[1]})
+                EXIT_CONF=1
+                ;;
+        esac
+}
+
+function RMexit_choice
+{
+# RMexit_choice()
+# Called when exiting the DCU without saving any changes that were made.
+# The user is given the ability to "Ignore Changes and Exit DCU" or
+# "Enter the DCU to Apply Changes".
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+        typeset exitchoice
+
+        if [ -z "${EXIT_OPT}" ]
+        then
+                typeset OIFS="$IFS"
+                IFS="$nl"
+                set -A EXIT_OPT ${CHOOSE_EXIT_CONF}
+                IFS="$OIFS"
+        fi
+        exitchoice=$EXIT_OPT
+	CHOOSE_TITLE="$CHOICES"
+	CHOOSE_FOOTER="$DCU_CHOOSE_FOOTER"
+        choose -f -e -exit exit_exit -winparms " -below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$exitchoice" "${EXIT_OPT[@]}"
+}
+
+function dcurestart
+{
+# dcurestart(main_wid)
+# Used to be called when the "Restart DCU and Cancel Changes" "Main Menu"
+# option was selected.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer key
+for key in $DEL_KEYS
+do
+	RMdelkey $key
+done
+
+call RMclose
+msgnoerr
+footer ""
+wclose $1
+if [ "$UNIX_INSTALL" = Y ]
+then
+	/sbin/dcu
+else
+	[ "$DCUSILENT" = N ] && {
+		call endwin
+		dcuclear
+	}
+	setstty
+	exec ${DCUDIR}/winxksh -c "${DCUSCRIPTS}/dcu"
+fi
+}
+
+function dcumain
+{
+# dcumain()
+# Called whenever the DCU Main Menu needs to be displayed.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 1 ] && {
+print -u2 "$0 called"
+set -x
+}
+	integer lines=5
+	place_window DCUMAINWIDTH+5 $lines -title "$DCUMAIN_TITLE" -current 'footer "$DCUMAIN_FOOTER"'
+	typeset wid=$CURWIN
+	open_menu -exit 'msgnoerr "$DCUEXIT_ERR"; false' -x 3 -y 1
+	typeset mid=$MID
+		add_menu_item -help 'helpwin dcu.board' -select "wclose $wid; boards 1" -entry 'msgnoerr $BOARD_PROMPT'  "$BOARD"
+	add_menu_item -help 'helpwin dcu.driver' -select "wclose $wid; category" -entry 'msgnoerr $DRIVER_PROMPT'  "$DRIVER"
+	add_menu_item -help 'helpwin dcu.apply' -select "footer "";wclose $wid; RMupdate $wid" -entry 'msgnoerr $SAVE_PROMPT'  "$SAVE"
+	add_menu_item -help 'helpwin dcu.cancel' -select "footer "";wclose $wid; dcucancel $wid" -entry 'msgnoerr $DCUCANCEL_PROMPT'  "$DCUCANCEL"
+#	if [ "$UNIX_INSTALL" != Y ]
+#	then
+#		add_menu_item -help 'helpwin dcu.restart' -select "dcurestart $wid" -entry 'msgnoerr $RESTART_PROMPT'  "^$RESTART"
+#	fi
+	run_menu $mid 0
+}

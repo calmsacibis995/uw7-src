@@ -1,0 +1,29 @@
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+PROGS 	    = Launch_Application
+HELPDIR     =  $(USRLIBDIR)/locale/C/help
+LD_RUN_PATH = /usr/X/lib
+
+           SRCS = la_launch.c
+           OBJS = la_launch.o
+        HEADERS = la_launch.h la_login.h
+
+       INCLUDES = -I../libdlist -I$(LIBSRC) -I$(LIBSRC)/Xol \
+                  -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = ../libdlist/libdlist.a XolClientLibs 
+        DEPLIBS =  XolClientDepLibs
+  SYS_LIBRARIES = -lm -liaf -lxchoose -lgen -lc \
+                  -L../../../cmd/cmd-nw/lib -lnwutil -lthread 
+  CC = LD_RUN_PATH=/usr/X/lib $(PFX)cc
+
+ComplexProgramTarget(Launch_Application)
+InstallNonExecFile(remoteApplication.xpm, $(USRLIBDIR)/pixmaps)
+InstallProgramWithFlags($(PROGS), $(BINDIR), -o root -g sys -m 4550)
+InstallMsgCatalog(launchappl)
+
+install::	all MakeMCatalog
+
+MakeMCatalog:
+	mkmsgs -o launchappl.str launchappl
+	[ -d $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES ] || \
+		mkdir -p $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES
+	cp launchappl $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES

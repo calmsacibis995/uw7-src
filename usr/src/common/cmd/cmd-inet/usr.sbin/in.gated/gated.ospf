@@ -1,0 +1,46 @@
+#ident	"@(#)gated.ospf	1.2"
+#      SCCS IDENTIFICATION
+#
+#	sample OSPF config file
+#
+
+#traceoptions "/tmp/gatedlog" replace size 1000k files 2 all;
+
+ospf yes {
+	area 0.0.0.2 {
+		authtype none;
+		networks {
+			19.0.0.0 mask 255.0.0.0 ;
+		};
+		interface 128.212.137.2
+		cost 1 {
+			retransmitinterval 5;
+			transitdelay 1;
+			priority 1;
+			hellointerval 10;
+			routerdeadinterval 40;
+		};
+	};
+};
+
+# Turn off unused protocols
+bgp no;
+egp no;
+rip no;
+
+import proto ospfase {
+      all ;
+};
+
+export proto ospfase type 1  {
+   proto ospfase {
+      all
+        metric 1;   };
+   proto static  {
+      all
+        metric 1;   };
+   proto direct  {
+      all
+        metric 1;   };
+};
+

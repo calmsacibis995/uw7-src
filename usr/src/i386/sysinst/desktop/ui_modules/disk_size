@@ -1,0 +1,143 @@
+#!/sbin/sh
+#ident	"@(#)disk_size	15.1	98/03/04"
+
+. /isl/ui_modules/common.rc
+[ "$direction" = PREV ] && ii_exit PREV  # only check going fwd
+
+#
+# Is the hard disk big enough?
+#
+function disk_big_enough
+{
+[ -n "$debug" ] && set -x
+	#
+	# Call partsize to get the size of the root disk. This might fail.
+	# Partsize depends on bmkdev having been run (see dcu module).
+	#
+	size=`partsize -s ${CHAR_DISK_NODES[0]}` || partsize_error
+	#
+	if (( size >= min_hd_size ))
+	then
+		#
+		# It's big enough
+		#
+		return 0
+	else
+		#
+		# It's too small
+		#
+		return 1
+	fi
+}
+
+
+#
+# Let them know that the disk is too small. They can go back (to add another
+# hba). But they can't go forward.
+#
+function tell_small_disk
+{
+[ -n "$debug" ] && set -x
+	display -w  "
+   $DISK_SIZE_TOO_SMALL (${size}$MBYTES. $YOU_NEED ${min_hd_size}$MBYTES). 
+
+   $DISK_SIZE_ANOTHER_HBA
+ " 
+	set_hotkey 1 get_help
+	set_hotkey 10 go_nowhere
+	footer "$DISK_SIZE_KEYS"
+	input_handler
+}
+
+
+function go_nowhere
+{
+	msg "$DISK_SIZE_ERROR_OK"
+	beep
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic disk_size
+	ii_exit HELP
+}
+
+
+#
+# The partsize command failed
+#
+function partsize_error
+{
+[ -n "$debug" ] && set -x
+	display -w "$DISK_SIZE_ERROR_SIZE"
+	footer "$DISK_SIZE_PRESS_KEY"
+	input_handler
+	ii_exit DIE
+}
+
+
+#
+# No character device node name was specified in ivar. (see dcu).
+#
+function no_disk_error
+{
+[ -n "$debug" ] && set -x
+   display -w "$DISK_SIZE_ERROR_NO_DISK" -bg $ERROR_BG -fg $ERROR_FG
+	footer "$DISK_SIZE_PRESS_KEY"
+	input_handler
+}
+
+
+
+#
+# Main
+#
+
+#
+# This is set in the init module.
+#
+min_hd_size=`ivar get min_hd_size`
+[ -z "$min_hd_size" ] && min_hd_size=80
+
+#
+# Should we check?
+#
+(( min_hd_size == 0 )) && ii_exit NEXT
+
+#
+# Get the first in the list of character device nodes.
+# Why always the first one? Is it because we always install on scsi
+# id 0? What if you only have scsi ids 3, 4 and 5? Will the first
+# node be the id 3 disk?
+#
+CHAR_DISK_NODES[0]=`ivar get CHAR_DISK_NODES[0]`
+if [ -z "${CHAR_DISK_NODES[0]}" ] 
+then
+	no_disk_error
+	ii_exit PREV
+fi
+
+#
+# Now check it's size
+#
+if disk_big_enough
+then
+	#
+	# Cool. 
+	#
+	ii_exit NEXT
+else
+	#
+	# The disk is not big enough. Don't let them continue.
+	#
+	tell_small_disk
+	ii_exit PREV
+fi
+
+#
+# Done. Shouldn't get here, but just in case...
+#
+ii_exit NEXT
+

@@ -1,0 +1,360 @@
+#!/bin/ksh
+#
+#===============================================================================
+#
+#	ident @(#) donls 11.1 97/10/30 
+#
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#******************************************************************************
+#
+# donls is based on the scoadmin donls script.
+# It is used to build and install localized message catalogues. 
+# Can also be used to check for discrepancies between english and other
+# message files.
+#
+# Usage: 
+# donls [-d directory] [-o obj_name] [-m modfile]
+#	all|build|install|local-install|local-remove|clean|clobber|msgchk 
+#
+# donls is used to build and install message catalogs and title files.
+# It may also be used to do consistency checks on message files (although
+# this feature currently only works for tcl script message files-- I'll
+# fix that later).  donls depends upon install paths passed in via
+# the command line-- this is so that install locations specified via
+# the xenv cmdrules file can be passed on by makefiles.  Otherwise, if
+# you are doing a test install and/or invoking donls manually, you might 
+# want to set these variables in your environment.
+#
+# Some assumptions:
+#	- Directory specified by -d is the directory to begin searching
+#	  for message/title files in.  If no -d specified, then we start
+#	  searching in the current directory. 
+#	- If donls finds a *.gen file, it always uses mkcatdefs on it
+#	  to create the message catalog.
+#	- If donls finds a *.msg file, it checks if a module ids file
+#	  exists.  The path to the module ids file may be passed in
+#	  via the -m flag, and otherwise, will assume that the module ids
+#	  file is in the directory from which donls is called, and is called
+#	  "modfile".  If the module ids file does not exist, then we
+#	  assume that the catalog is for a c program, and we use mkcatdefs
+#	  to create the catalog.  If the module ids file does exist, then
+#	  we assume that the catalog is for a tcl script, and we use
+#	  mkcatdecl.
+#
+# For local-install, donls will install message catalogs in
+# $LOCINSDIR/usr/lib/locale/<language>/LC_MESSAGES/mail -- so set 
+# LOCINSDIR in your env if you just want to install in a test 
+# directory, and not in the real location on the system.
+#
+#===============================================================================
+
+# All the following variables *should* be passed in from the Makefile
+# line calling donls, since we need them from the cmdrules file in the 
+# xenv, which is sourced in by each Makefile.  Otherwise, we try and
+# find some values for them.  (If you want to invoke donls manually,
+# for some testing purposes, you should at least set the varialbles
+# TOOLS, ROOT, and MACH.)
+if [ "$TCL" = "" ]
+then
+    TCL=$TOOLS/usr/bin/tcl
+fi
+
+if [ "$INS" = "" ]
+then
+    INS=$TOOLS/bin/install
+fi
+
+if [ "$MKCATDECL" = "" ]
+then
+    MKCATDECL="$TCL $TOOLS/usr/bin/mkcatdecl"
+fi
+
+if [ "$MKCATDEFS" = "" ]
+then
+    MKCATDEFS="$TOOLS/usr/bin/mkcatdefs"
+fi
+
+if [ "$USRLIB" = "" ]
+then
+    USRLIB="$ROOT/$MACH/usr/lib"
+fi
+
+if [ "$ETC" = "" ]
+then
+    ETC="$ROOT/$MACH/etc"
+fi
+
+# gencat is not from the xenv
+GENCAT=/usr/bin/gencat
+
+# $COMPONENT is the name of the directory where all mail message cats live
+# under the usr/lib/locale/<LANG>/LC_MESSAGES directory.  This should 
+# correspond to what's specified in module IDs files.  (For now they all 
+# live under "mail", but if this should change, could pass this in as an 
+# argument.)
+COMPONENT=mail
+USAGE="[-d cat_dir] [-o object] all|build|install|local-install|local-remove|clean|clobber|msgchk"
+
+usage() {
+    echo "Usage: $progname" $USAGE >&2
+    echo "Example: donls -d NLS build" >&2
+    exit 1
+}
+
+set_destinations() {
+
+    case $2 in
+    install)
+	NLSLIB="$USRLIB/locale"
+	OBJDIR="$ETC/mail/admin/$OBJ_NAME.obj"
+	;;
+    local-install|local-remove)
+	NLSLIB="$LOCINSDIR/usr/lib/locale"
+	OBJDIR="$LOCINSDIR/etc/mail/admin/$OBJ_NAME.obj"
+	;;
+    *)
+	NLSLIB="$USRLIB/locale"
+	OBJDIR="$ETC/mail/admin/$OBJ_NAME.obj"
+	;;
+    esac
+
+    case $1 in
+    C|EN|en)
+	CAT_DESTS="$NLSLIB/en/LC_MESSAGES/$COMPONENT"
+	OBJ_DESTS="$OBJDIR/en $OBJDIR/C"
+	;;
+    DE|de)
+	CAT_DESTS="$NLSLIB/de/LC_MESSAGES/$COMPONENT"
+	OBJ_DESTS="$OBJDIR/de"
+	;;
+    FR|fr)
+	CAT_DESTS="$NLSLIB/fr/LC_MESSAGES/$COMPONENT" 
+	OBJ_DESTS="$OBJDIR/fr"
+	;;
+    *)
+	CAT_DESTS="$NLSLIB/$1/LC_MESSAGES/$COMPONENT"
+	OBJ_DESTS="$OBJDIR/$1"
+	;;
+    esac
+}
+
+check_messages() {
+    rm -f *.msg.tcl
+    cd en
+    filelist=`ls *.msg`
+    cd ..
+    for file in $filelist 
+    do
+	for lang in *
+	do
+	    [ "$lang" = "en" ] && continue
+	    echo "\tcomparing $file <en vs $lang>"
+	    $MKCATDECL -i $MODFILE -M en/$file $lang/$file \
+		1>../$file.en.vs.$lang 2>&1
+	    rm -f *.msg.tcl
+	    if [ -s "../$file.en.vs.$lang" ] 
+	    then
+		echo "\t*** Discrepancies found. See <$file.en.vs.$lang>"
+	    else
+		echo "\tCongratulations. No discrepancy found."
+	    fi 
+	done
+    done
+}
+
+progname=`basename $0`
+CAT_DIR=""
+OBJ_NAME=""
+MODFILE=""
+while getopts d:o: option
+do
+	case $option in
+	d)	CAT_DIR=$OPTARG;;
+	o)	OBJ_NAME=$OPTARG;;
+	m)	MODFILE=$OPTARG;;
+	*)	usage;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && usage
+
+action=$1
+case "$action" in
+	all|build|install|local-install|local-remove|clean|clobber|msgchk)
+		;;
+	*)
+		echo "$progname: invalid action $action"
+		usage;;
+esac
+
+[ -z "$MODFILE" ] && MODFILE=`pwd`/modfile
+[ -n "$CAT_DIR" ] && {
+	[ -d "$CAT_DIR" ] || {
+		echo "$progname: $CAT_DIR must be a directory" >&2
+		exit 1
+	}
+	cd $CAT_DIR
+	[ $? -ne 0 ] && {
+		echo "$progname: unable to change directory to $CAT_DIR" >&2
+		exit 1
+	}
+}
+	
+CWD=`pwd`
+
+[ -z "$OBJ_NAME" ] && {
+	OBJ_NAME=`basename $CWD`
+}
+
+if [ "$action" = "msgchk" ] 
+then
+	check_messages
+	exit 0
+fi
+ 
+for language in *
+do
+    [ -d "$CWD/$language" ] || continue
+    cd $CWD/$language
+
+    [ $? -ne 0 ] && {
+	echo "$progname: unable to change directory to $CWD/$language" >&2
+	continue
+    }
+
+    # determine the real component and destinations
+    set_destinations $language $action
+
+    # install message catalogs
+    for msg in *.gen *.msg
+    do
+	[ -f "$msg" ] || continue
+
+	echo $msg | egrep '.gen$' >/dev/null
+	dogen=$?
+	if [ $dogen -eq 0 ]
+	then
+	    CATNAME=`basename $msg .gen`
+	else
+	    CATNAME=`basename $msg .msg`
+	fi
+
+	case "$action" in
+	all|build)
+	    if [ $msg -nt $CATNAME.cat ] 
+	    then
+		echo "\tGenerating message catalog in $language"
+
+		if [ $dogen -eq 1 -a -f "$MODFILE" ]
+		then
+		    echo "\t$MKCATDECL -i $MODFILE -g $msg" 
+		    $MKCATDECL -i $MODFILE -g $msg 
+		    echo "\t$GENCAT -X $CATNAME.cat $CATNAME.gen" 
+		    $GENCAT -X $CATNAME.cat $CATNAME.gen 
+		    echo "\trm -f $CATNAME.gen"
+		    rm -f $CATNAME.gen
+		else
+		    echo "\t$MKCATDEFS -h -a $COMPONENT $CATNAME $msg > temp"
+		    $MKCATDEFS -h -a $COMPONENT $CATNAME $msg > temp
+		    echo "\t$GENCAT -X $CATNAME.cat temp"
+		    $GENCAT -X $CATNAME.cat temp
+		    echo "\trm -f temp"
+		    rm -f temp
+		fi
+	    fi
+	    ;;
+
+	install)
+	    if [ ! -f $CATNAME.cat ]
+	    then
+		echo "\t*** Error: $language/$CATNAME.cat does not exist"
+		continue
+	    fi
+
+	    for dest in $CAT_DESTS
+	    do
+		[ -d $dest ] || mkdir -p $dest
+		$INS -f $dest $CATNAME.cat
+		done
+	    ;;
+
+	local-install)
+	    if [ ! -f $CATNAME.cat ]
+	    then
+		echo "\t*** $language/$CATNAME.cat does not exist"
+		continue
+	    fi
+
+	    for dest in $CAT_DESTS
+	    do
+		[ -d $dest ] || mkdir -p $dest
+		echo "\tcp $CATNAME.cat $dest"
+		cp $CATNAME.cat $dest
+		echo "\tchmod 644 $dest/$CATNAME.cat"
+		chmod 644 $dest/$CATNAME.cat
+		echo "\tchown bin:bin $dest/$CATNAME.cat"
+		chown bin:bin $dest/$CATNAME.cat
+	    done
+	    ;;
+
+	local-remove|clobber)
+	    for dest in $CAT_DESTS
+	    do
+		echo "\trm -f $dest/$CATNAME.cat"
+		rm -f $dest/$CATNAME.cat 
+	    done
+	    ;;
+
+	clean)
+	    echo "\trm -f $CATNAME.cat"
+	    rm -f $CATNAME.cat
+	    ;;
+	esac
+    done
+
+    # install title files
+    if [ -f title ]
+    then
+	case "$action" in
+	all|install)
+	    for dest in $OBJ_DESTS
+	    do
+		[ -d $dest ] || mkdir -p $dest
+		$INS -f $dest title
+	    done
+	    ;;
+	local-install)
+	    for dest in $OBJ_DESTS
+	    do
+		[ -d $dest ] || mkdir -p $dest
+		echo "\tcp title $dest"
+		cp title $dest
+		echo "\tchmod 644 $dest/title"
+		chmod 644 $dest/title
+		echo "\tchown bin:bin $dest/title"
+		chown bin:bin $dest/title
+	    done
+	    ;;
+	local-remove|clobber)
+	    for dest in $OBJ_DESTS
+	    do
+		echo "\trm -f $dest/title"
+		rm -f $dest/title 
+	    done
+	    ;;
+	esac
+    fi
+done
+exit 0

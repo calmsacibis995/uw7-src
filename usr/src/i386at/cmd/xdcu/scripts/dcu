@@ -1,0 +1,230 @@
+#!/etc/dcu.d/winxksh
+#ident	"@(#)dcu:scripts/dcu	1.32.3.1"
+#DCUDEBUG=5 export DCUDEBUG
+
+if [  "${UNIX_INSTALL}" = N ]
+then
+	exec 2>/tmp/dcu.err
+fi
+PS4='[$LINENO]+ '
+
+struct termios_data c_iflag:ulong c_oflag:ulong c_cflag:ulong c_lflag:ulong c_cc :'char [19]'
+struct termiox_data x_hflag:ushort x_cflag:ushort x_rflag:'ushort [5]' x_sflag:ushort
+
+function dcuclear
+{
+# dcuclear()
+# Called when the dcu is being exited and reseting the terminal
+# via its setstty() function to do a `tput clear`.
+# Calling/Exit State: void.
+
+	[ "$DCUDEBUG" -gt 3 ] && {
+		print -u2 "$0 called"
+		set -x
+	}
+	tput clear
+}
+
+function getstty
+{
+# getstty()
+# Called to get the current terminal settings.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+	cdecl -g termios_data cbs={}
+	cdecl -g termiox_data cbx={}
+
+	ccall tcgetattr 0, cbs
+	retd=$_RETD
+
+# TCGETX
+	ccall ioctl 0 22529 cbx
+	retd=$_RETD
+}
+
+function pr_dcu_reboot
+{
+# pr_dcu_reboot()
+# Called to display a message before the system is automatically rebooted
+# when a conflict is detected during the Installation process.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+display  -w "$DCUreboot" -bg $RED -fg $WHITE
+footer $GENERIC_CONTINUE_FOOTER
+call proc_loop
+}
+
+function setstty
+{
+# setstty()
+# Called when existing the dcu to reset the terminal settings.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+# TCSANOW/TCSETS - change occurs immediately
+	ccall tcsetattr 0, 21518, cbs
+	retd=$_RETD
+
+# TCSETX
+	ccall ioctl 0 22530 cbx
+	retd=$_RETD
+}
+
+# main()
+#	Device Configuration Utility
+
+[ "$DCUDEBUG" -gt 1 ] && {
+print -u2 "dcu called"
+set -x
+}
+getstty
+UNIX_INSTALL=${UNIX_INSTALL:-N}
+DCUMODE=DCUSCREENS
+DCUSILENT=N
+DCUMAP=N
+DCUCONFLICT=N
+export DCUSCRIPTS=${DCUDIR}/scripts
+export DCULIBS=${DCUDIR}/dculib
+export DCUMENUS=${DCUDIR}/menus
+export DCULOCALE=${DCUDIR}/locale/${LOCALE}
+OLANGDEP_SCRIPTS=${LANGDEP_SCRIPTS}
+export LANGDEP_SCRIPTS=${DCULOCALE}
+OFPATH=$FPATH
+FPATH=:${DCUDIR}/scripts:${DCUDIR}/menus/${LOCALE}:${DCUSCRIPTS}:${DCUMENUS}:${LANGDEP_SCRIPTS}/help:$FPATH
+
+unset -f helpwin
+while getopts :sSND:C arguments
+do
+	case "$arguments" in
+	s) 
+		DCUMODE=LITTLE_SILENT
+		DCUSILENT=Y
+		DCUMAP=Y
+		> /etc/dcu.d/.run_silent
+		;;
+	S) 
+		DCUMODE=BIG_SILENT
+		DCUSILENT=Y
+		DCUMAP=Y
+		> /etc/dcu.d/.run_silent
+		;;
+	N) 
+		if [ "$UNIX_INSTALL" = Y ]
+		then
+			DCUMODE=DCUSCREENS
+			DCUMAP=Y
+		else
+			DCUMODE=NO_UPDATE
+			DCUSILENT=Y
+			DCUMAP=Y
+		fi
+		;;
+	C) 
+		DCUCONFLICT=Y
+		;;
+	D) 
+		shift
+		DCUMODE=DCUDELMODS
+		set -A DCUMODVALS "$*"
+		DCUSILENT=Y
+		;;
+	:) 
+		print "$0: -$OPTARG requires a value"
+		exit 2
+		;;
+	\?) 
+		print "$0: unknown option -$OPTARG"
+		exit 2
+		;;
+	esac
+done
+
+autoload boards drivers category dcumain dcurc start choose
+
+. ${DCULOCALE}/txtstrings
+. ${DCUSCRIPTS}/funcrc
+
+if [ -n "$Continued_String" ]
+then
+	call strdup "Continued_String=$Continued_String"
+	call -c putenv $_RETX
+fi
+if [ -n "$PageUp_String" ]
+then
+	call strdup "PageUp_String=$PageUp_String"
+	call -c putenv $_RETX
+fi
+if [ -n "PageDown_String" ]
+then
+	call strdup "PageDown_String=$PageDown_String"
+	call -c putenv $_RETX
+fi
+
+if [ "$DCUMODE" = DCUSCREENS ]
+then
+	. ${DCULOCALE}/config
+	if [ "${UNIX_INSTALL}" = Y ]
+	then
+		. /etc/inst/scripts/winrc
+		. /etc/inst/scripts/scr_init boot
+	else
+		GENERIC_HEADER="$DCU_GENERIC_HEADER"
+		. ${DCUSCRIPTS}/winrc
+		. ${DCUSCRIPTS}/scr_init
+	fi
+fi
+
+. ${DCUSCRIPTS}/start
+if [ "$DCU_HALT" = Y ] && [ "$UNIX_INSTALL" = Y ]
+then
+	pr_dcu_reboot
+	halt
+fi
+
+FPATH=$OFPATH
+unset -f helpwin
+LANGDEP_SCRIPTS=${OLANGDEP_SCRIPTS}
+if [ "$UNIX_INSTALL" = N ]
+then
+	[ "$DCUSILENT" = N ] && {
+		call endwin
+		dcuclear
+	}
+	if [ -n "$RSMGR_UPDATE" -a -x ${ROOT}/etc/conf/bin/idconfupdate ] 
+	then
+		${ROOT}/etc/conf/bin/idconfupdate
+		[ "$?" != "0" ] && DCU_EXIT_CODE=4
+	fi
+
+	idbuild_cmd="${ROOT}/etc/conf/bin/idbuild"
+	if [ $DCU_EXIT_CODE -eq 0 -a -x $idbuild_cmd ]
+	then
+		integer i=0
+		while (( i < ${#LOADMODS[@]} ))
+		do
+			idbuild_cmd="$idbuild_cmd -M ${LOADMODS[$i]}"
+			let i+=1
+		done
+
+		if (( i > 0 ))
+		then
+			$idbuild_cmd > /dev/null 2>&1
+			[ "$?" != "0" ] && DCU_EXIT_CODE=5
+		fi
+	fi
+	setstty
+fi
+
+exit $DCU_EXIT_CODE

@@ -1,0 +1,89 @@
+/**/#pragma ident	"@(#)m1.2libs:DtWidget/Imakefile	1.11"
+
+MODULE=DtWidget
+
+#ifndef DoNormalLib
+#define DoNormalLib NormalLibDtWidget
+#endif
+#ifndef DoSharedLib
+#define DoSharedLib SharedLibDtWidget
+#endif
+
+#include <Library.tmpl>
+
+/* General case INCLUDES DEFINES
+ * Each individual architecture may have more or less of the above.
+ * Use EXTRA_DEFINES and EXTRA_INCLUDES to add defines and includes
+ * to an individual architecture.
+ */
+DEFINES = -DXK_MISCELLANY -D_BMS -DMULTIBYTE -D_CMDINV -DBENTO_ENABLED
+INCLUDES =  -I. -I$(DTINCLUDESRC) -I$(LIBSRC) -I$(BMSLIBSRC) -I$(XMSRC)
+EXTRA_DEFINES=-DNO_REGCOMP -DI18N_MSG
+
+INSTALLFLAGS = $(INSTINCFLAGS)
+
+LINTLIBS = $(LINTXLIB) $(LINTXTOOL) $(LINTXM) 
+
+HEADERS = \
+	SpinBox.h \
+	SpinBoxP.h \
+	DtMsgsP.h \
+	ComboBox.h \
+	ComboBoxP.h
+
+SRCS = \
+	SpinBox.c \
+	DtMsgs.c \
+	ComboBox.c
+
+OBJS = \
+	SpinBox.o \
+	DtMsgs.o \
+	ComboBox.o
+
+/* For install of developer's build environment */
+LOCAL_BINSTALL_LIBDEST = lib
+LOCAL_BINSTALL_INCLUDEDEST = include/Dt
+
+#if BuildMotif
+LibraryObjectRule()
+#else /* BuildMotif */
+all::
+lint::
+depend::
+#endif /* BuildMotif */
+#if DoSharedLib
+#if BuildMotif
+#if DoNormalLib
+SharedLibraryTarget(DtWidget,$(SODTWIDGETREV),$(OBJS),shared,..)
+CreateRelocatableObjs(DtWidget,$(OBJS),shared,..)
+#else
+SharedLibraryTarget(DtWidget,$(SODTWIDGETREV),$(OBJS),.,.)
+CreateRelocatableObjs(DtWidget,$(OBJS),.,.)
+#endif
+#endif /* BuildMotif */
+InstallSharedLibrary_m(DtWidget,$(SODTWIDGETREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+#if BuildMotif
+NormalLibraryTarget(DtWidget,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(DtWidget,$(USRLIBDIR))
+#endif
+
+#if BuildMotif
+LintLibraryTarget(DtWidget,$(SRCS))
+InstallLintLibrary(DtWidget,$(LINTLIBDIR))
+#endif /* BuildMotif */
+
+MakeDirectories(install,$(INCDIR)/Dt)
+InstallMultiple($(HEADERS),$(INCROOT)/Dt)
+BuildIncludes($(HEADERS),Dt,../lib/DtWidget)
+ 
+#if BuildMotif
+DependTarget()
+#endif /* BuildMotif */
+
+install::DtWidget.msg
+        MakeDir($(MSGCATDIR))
+        $(INSTALL) $(INSTALLFLAGS) DtWidget.msg $(MSGCATDIR)/DtWidget.msg

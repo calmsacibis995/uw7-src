@@ -1,0 +1,27 @@
+In order to add new structure definitions to scodb:
+
+1.  Generate an object module .o which #include's the structures of
+    interest.  This must be compiled with the "cc -g -W0,-d1" option to 
+    to generate DWARF I format debugging information.
+    Ensure that you build the object with "make" flags matching the
+    DEBUG/non-DEBUG UNIPROC/non-UNIPROC status of the kernel in which scodb
+    is installed.  Do not use the name "kstruct.o" for this module, as this
+    already exists and contains the core kernel structure definitions.
+
+2.  Copy the new object module into the /etc/conf/pack.d/scodb/info directory.
+
+3.  At this point, the structure definitions will be automatically added to
+    to scodb.
+
+In order to add line numbers into scodb (note that this only works
+for static parts of the kernel and not dynamically loadable parts):
+
+1.  Recompile the desired modules with the "cc -g -W0,-d1" option to 
+    to generate DWARF I format line number debugging information.
+
+2.  Re-link a new kernel with the re-compiled modules.
+
+3.  After the new kernel is re-booted, the line number information will
+    be printed out automatically when disassembling the modules which were
+    re-compiled with "-g -W0,-d1".
+

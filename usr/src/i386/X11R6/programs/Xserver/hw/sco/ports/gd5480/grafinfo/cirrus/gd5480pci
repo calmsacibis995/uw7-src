@@ -1,0 +1,42 @@
+:
+#
+#	@(#)gd5480pci	11.3	12/16/97	16:30:46
+#       @(#) gd5480pci 58.1 96/10/09
+#
+#       Copyright (C) The Santa Cruz Operation, 1991-1997.
+#       The Santa Cruz Operation, and should be treated as Confidential.
+#       This Module contains Proprietary Information of
+#       The Santa Cruz Operation, and should be treated as Confidential.
+#
+USRLIBDIR=/usr/X11R6.1/lib
+PCIINFO=${USRLIBDIR}/vidconf/scripts/pciinfo
+#
+set_trap()  {
+        trap 'echo "Interrupted! Giving up..."; cleanup 1' 1 2 3 15
+}
+
+unset_trap()  {
+        trap '' 1 2 3 15
+}
+
+cleanup() {
+        trap '' 1 2 3 15
+        exit $1
+}
+
+set_trap
+${PCIINFO} -q -d 0x000000BC -v 0x00001013
+status="$?"
+if [ $status = "1" ]
+then
+        echo "Cannot find a Cirrus Logic GD5480 card in this computer!"
+        cleanup 1
+fi
+base=`${PCIINFO} -v 0x00001013 -d 0x000000BC -W 0x12`
+
+TEMPLATE=${USRLIBDIR}/grafinfo/cirrus/gd5480pci.tmpl
+XGIFILE=${USRLIBDIR}/grafinfo/cirrus/gd5480pci.xgi
+
+sedarg="s/@FRAMEBUFFER@/"$base"0000/g"
+sed -e $sedarg < ${TEMPLATE} > ${XGIFILE}
+cleanup 0

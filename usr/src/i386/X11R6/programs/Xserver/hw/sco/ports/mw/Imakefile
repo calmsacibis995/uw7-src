@@ -1,0 +1,74 @@
+#	@(#)Imakefile	12.2	2/9/98	14:31:42
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1998.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+#
+#	SCO MODIFICATION HISTORY
+#
+#	S000	Sun Sep 20 21:28:21 PDT 1992	mikep@sco.com
+#	-  Add FONTSRC to INCLUDES
+#	S001	Fri Sep 25 16:00:46 PDT 1992	hiramc@sco.COM
+#		Add libfont.a to libs to resolve references to
+#		stuff in libfont.a
+#	S002	Mon Nov 09 15:09:23 PST 1992	mikep@sco.com
+#	- Remove S001.  Fixed in globals.c
+#	S003	Tue Apr  2 09:20:24 PST 1996	hiramc@sco.COM
+#	- has been reworked to do all the subdirectories properly
+#	- and now makes a .so DLL library on either UW 2.1 or OSR5
+#
+
+#define IHaveSubdirs
+#define IHaveHDKSubdirs
+#include <Server.tmpl>
+
+SRCS =	mwData.c mwInit.c mwCursor.c mwBStore.c
+
+OBJS =	mwData.o mwInit.o mwCursor.o mwBStore.o
+
+STD_DEFINES = ServerDefines
+CDEBUGFLAGS = ServerCDebugFlags
+
+   INCLUDES = -I. -I./include -I.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+   DDXLIBS = libmw.a graphics/libgraphics.a ishape/libishape.a mw/libmwmw.a 
+
+XCOMM	directory masmobjs should be last since the makes in the other
+XCOMM	directories leave objects in masmobjs which are linked together
+XCOMM	after all those are done.
+
+SUBDIRS = grafinfo scripts mw graphics ishape masmobjs
+HDKSUBDIRS = masmobjs
+
+MakeSubdirs($(SUBDIRS))
+
+.c.o:
+	LibObjCompile(shared,-O -Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget(mw,$(OBJS))
+
+SharedLibraryTarget(mw,6.0,*.o,shared,..)
+#endif
+
+LintLibraryTarget(mw,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRuleSCP(mw,$(DDXLIBS) $(DDXLIBS),mwInit.c)
+
+includes::
+	LibMkdir(shared)
+
+DependSubdirs($(SUBDIRS))
+
+DependTargetSCP(mwInit.c)

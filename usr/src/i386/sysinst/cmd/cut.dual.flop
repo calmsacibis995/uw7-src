@@ -1,0 +1,381 @@
+#!/usr/bin/ksh
+#	Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995, 1996 Santa Cruz Operation, Inc. All Rights Reserved.
+#	Copyright (c) 1984, 1985, 1986, 1987, 1988, 1989, 1990 AT&T, Inc. All Rights Reserved.
+#	  All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF Santa Cruz Operation, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)proto:cmd/cut.dual.flop	1.1"
+
+# script to create boot floppy.
+
+function ask_drive
+{
+	[ -n "$MEDIUM" ] ||
+	read "MEDIUM?Please enter diskette1 or diskette2 (default is diskette1): "
+	[ -n "$MEDIUM" ] || MEDIUM="diskette1"
+	case "$MEDIUM" in
+	diskette1)
+		DRVLETTER=A
+		;;
+	diskette2)
+		DRVLETTER=B
+		;;
+	*)
+		print -u2 ERROR: Must specify diskette1 or diskette2.
+		exit 1
+		;;
+	esac
+	export BLOCKS=$(devattr $MEDIUM capacity)
+	case $BLOCKS in
+	2844) # 3.5-inch diskette
+
+	   	read "TWO_FLOP?Do you want to cut two floppies Y/N (default is N)"
+		
+		[ -n "$TWO_FLOP" ] || NUM_FLOP="N"
+		if [ "$TWO_FLOP" = "Y" ]
+		then
+	            BLOCKS=2370
+                fi	
+		
+		TRKSIZE=36
+		if [ "${LANG}" = "ja" ]
+		then
+			FIRST='FIRST '
+		else
+			FIRST=''
+		fi
+		;;
+	2370) # 5.25-inch diskette
+		TRKSIZE=30
+		FIRST='FIRST '
+		;;
+	*)
+		print -u2 ERROR -- diskette must be either 1.44MB 3.5 inch
+		print -u2 or 1.2MB 5.25 inch
+		exit 2
+		;;
+	esac
+	FDRIVE=$(devattr $MEDIUM fmtcmd)
+	FDRIVE=${FDRIVE##* }
+}
+
+function select_boot
+{
+	rm -f boot fboot
+
+	BOOT=$PROTO/locale/$LANG/boot.fd
+	[ -s "$BOOT" ] || BOOT=$PROTO/locale/C/boot.fd
+	[ -s "$BOOT" ] || {
+		print -u2 ERROR: $BOOT does not exist.
+		exit 1
+	}
+	ln -s $BOOT boot
+
+	FBOOT=$ROOT/$LCL_MACH/etc/fboot
+	[ -z "$special_flag" ] || FBOOT=$ROOT/$LCL_MACH/etc/cpqfboot
+	[ -s "$FBOOT" ] || {
+		print -u2 ERROR: $FBOOT does not exist.
+		exit 1
+	}
+	ln -s $FBOOT fboot
+}
+
+function stripem
+{
+	typeset i save_pwd=$PWD
+
+	[ -d $2 ] || mkdir -p $2
+	cd $1
+	for i in *
+	do
+		rmwhite $i $2/$i
+	done
+	cd $save_pwd
+}
+
+function strip_comments
+{
+	. $PROTO/bin/rmwhite
+	[ -d $PROTO/stage/winxksh ] || mkdir $PROTO/stage/winxksh
+	rmwhite $ROOT/$MACH/usr/lib/winxksh/scr_init $PROTO/stage/winxksh/scr_init
+	rmwhite $ROOT/$MACH/usr/lib/winxksh/winrc $PROTO/stage/winxksh/winrc
+
+	stripem $ROOT/$MACH/etc/dcu.d/menus   $PROTO/stage/dcu.d/menus
+	stripem $ROOT/$MACH/etc/dcu.d/scripts $PROTO/stage/dcu.d/scripts
+	stripem $PROTO/desktop/menus          $PROTO/stage/desktop/menus
+	stripem $PROTO/desktop/scripts        $PROTO/stage/desktop/scripts
+}
+
+function prep_flop2
+{
+	(( BLOCKS == 2370 )) || [ "$LANG" = "ja" ] || return
+	print "Making tree for SECOND boot floppy."
+	rm -rf flop2root
+	set -e
+	mkdir flop2root
+	cd flop2root
+	mkdir -p \
+		etc/conf/hbamod.d \
+		etc/conf/fsmod.d \
+		etc/dcu.d/dculib \
+		etc/dcu.d/locale/${LANG} \
+		etc/dcu.d/menus \
+		etc/dcu.d/scripts \
+		etc/inst/scripts \
+		etc/inst/locale/${LANG}/menus/help \
+		etc/scsi \
+		sbin \
+		usr/bin \
+		usr/sbin
+	cp $PROTO/locale/$LANG/menus/help/nics.conf/config.z etc/inst/locale/${LANG}/menus/help/config.z
+	cp $PROTO/locale/$LANG/menus/help/nicshlp.z etc/inst/locale/${LANG}/menus/help/nicshlp.z
+	cp $PROTO/stage/dcu.d/menus/drivers etc/dcu.d/menus/drivers
+	cp $PROTO/stage/desktop/menus/allinit etc/inst/scripts/allinit
+	cp $PROTO/stage/desktop/menus/asktime etc/inst/scripts/asktime
+	cp $PROTO/stage/desktop/menus/fd etc/inst/scripts/fd
+	cp $PROTO/stage/desktop/menus/fdinit etc/inst/scripts/fdinit
+	cp $PROTO/stage/desktop/menus/fs etc/inst/scripts/fs
+	cp $PROTO/stage/desktop/menus/nond_init etc/inst/scripts/nond_init
+	cp $PROTO/stage/desktop/menus/pkgs etc/inst/scripts/pkgs
+	cp $PROTO/stage/desktop/menus/useanswers etc/inst/scripts/useanswers
+	cp $PROTO/stage/desktop/scripts/desktop.prep etc/inst/scripts/desktop.prep
+	cp $PROTO/stage/desktop/scripts/netinst etc/inst/scripts/netinst
+	cp $ROOT/$MACH/usr/bin/ls usr/bin/ls
+	cp $ROOT/$MACH/usr/bin/uncompress usr/bin/uncompress
+	cp $ROOT/$MACH/usr/sbin/fdisk.boot usr/sbin/fdisk
+	cp $ROOT/$MACH/usr/sbin/prtvtoc usr/sbin/prtvtoc
+	cp $ROOT/.$MACH/etc/conf/modnew.d/adsc etc/conf/hbamod.d/adsc
+	cp $ROOT/.$MACH/etc/conf/modnew.d/dpt etc/conf/hbamod.d/dpt
+	cp $ROOT/.$MACH/etc/conf/modnew.d/ictha etc/conf/hbamod.d/ictha
+	cp $ROOT/.$MACH/etc/conf/modnew.d/ide etc/conf/hbamod.d/ide
+	cp $ROOT/.$MACH/etc/conf/modnew.d/dosfs etc/conf/fsmod.d/dosfs
+	cp $ROOT/.$MACH/etc/conf/modnew.d/s5 etc/conf/fsmod.d/s5
+	set +e
+	LIST=$(find * -type f -print)
+	print $LIST | xargs chmod 555 
+	print $LIST | xargs chgrp sys
+	print $LIST | xargs chown root
+	typeset OIFS=$IFS
+	IFS=
+	print -r $LIST | cpio -oLDV -H crc > /tmp/out1.$$
+	IFS=$OIFS
+	cd ..
+	print Compressing image for SECOND boot floppy.
+	bzip -s32k /tmp/out1.$$ > /tmp/out2.$$
+	wrt -s /tmp/out2.$$ > flop2.image
+	rm /tmp/out?.$$
+}
+
+function get_answer
+{
+	while :
+	do
+		print -n "\007\nInsert $1 floppy into $MEDIUM drive and press\n\t<ENTER> "
+		print -n "to write floppy,\n\tF\tto format and write floppy,\n\ts\tto "
+		print -n "skip, or\n\tq\tto quit: "
+		read a
+		case "$a" in
+		"")
+			return 0
+			;;
+		F)
+			/usr/sbin/format -i$2 $FDRIVE || exit $?
+			return 0
+			;;
+		s)
+			return 1
+			;;
+		q)
+			exit 0
+			;;
+		*)
+			print -u2 ERROR: Invalid response -- try again.
+			;;
+		esac
+	done
+}
+
+function cut_flop1
+{
+	get_answer "${FIRST}boot" 1 || return
+	sbfpack fboot dcmp mip sip boot $LOGO_IMG unix resmgr memfs.meta memfs.fs $FDRIVE || exit $?
+	print "Done with ${FIRST}boot floppy.\007"
+}
+
+function cut_flop2
+{
+	integer count
+	(( BLOCKS == 2370 )) || [ "$LANG" = "ja" ] || return
+	get_answer "SECOND boot" 2 || return
+	print Writing to SECOND boot floppy.
+	set -- $(ls -l flop2.image)
+	(( count = $5 / 512 ))
+	. ${ROOT}/${MACH}/var/sadm/dist/rel_fullname
+	echo  "${REL_FULLNAME} Boot Floppy 2" >/tmp/flop.label
+	ls /tmp/flop.label | cpio -oc -O $FDRIVE || exit $?
+	/usr/bin/dd if=flop2.image of=${FDRIVE%t} bs=${TRKSIZE}b || exit $?
+	print "Wrote $count blocks to SECOND boot floppy."
+	print "Done with SECOND boot floppy.\007"
+}
+
+function cut_magic
+{
+	get_answer "magic" 2 || return
+	grep -v "^#" $PROTO/desktop/files/magic.proto |
+		sed \
+			-e "s,\$ROOT,$ROOT," \
+			-e "s,\$MACH,$MACH," \
+			-e "s,\$WORK,$WORK," \
+			> $FLOPPROTO
+	> $MAGICIMAGE
+	/sbin/mkfs -Fs5 -b 512 $MAGICIMAGE $FLOPPROTO 2 $TRKSIZE || exit $?
+	/usr/bin/dd if=$MAGICIMAGE of=$FDRIVE bs=${TRKSIZE}b || exit $?
+	print "Done with magic floppy.\007"
+}
+
+#main()
+
+FLOPPROTO=/tmp/flopproto$$
+MAGICIMAGE=/tmp/magic$$
+trap "rm -f $FLOPPROTO $MAGICIMAGE; exit" 0 1 2 3 15
+PATH=$PROTO/bin:$PATH export PATH
+LOGO_IMG=logo.img
+setflag=-u		#default is UnixWare set
+LANG=C
+unset special_flag
+nflag=0
+quick=false
+
+while getopts qul:s c
+do
+	case $c in
+		u)
+			# make UnixWare floppy (default)
+			;;
+		l)
+			LANG=$OPTARG
+			;;
+		s)	
+			special_flag=-s
+			;;
+		q)
+			quick=true
+			;;
+		\?)
+			print -u2 "Usage: $0 [-u] [-l locale] [diskette1|diskette2]"
+			print -u2 "\t-u cuts a boot floppy for UnixWare set."
+			print -u2 "\t-l specifies the locale for the boot floppy."
+			exit 1
+			# The -s and -q options are intentionally not listed here.
+			;;
+		*)
+			print -u2 Internal error during getopts.
+			exit 2
+			;;
+	esac
+done
+(( VAL = OPTIND - 1 ))
+shift $VAL
+
+MEDIUM=$1
+if [ "$PROTO" = "" ]
+then
+	if [ "$2" = "" ]
+	then
+		read "PROTO?PROTO is not set. Enter the path for PROTO: "
+	else
+		PROTO=$2
+	fi
+fi
+if [ "$ROOT" = "" ]
+then
+	if [ "$3" = "" ]
+	then
+		read "ROOT?ROOT is not set. Enter the path for ROOT: "
+	else
+		ROOT=$3
+	fi
+fi
+if [ "$MACH" = "" ]
+then
+	if [ "$4" = "" ]
+	then
+		read "MACH?MACH is not set. Enter the path for MACH: "
+	else
+		MACH=$4
+	fi
+fi
+export LCL_MACH=.$MACH
+
+cd $PROTO/stage
+ask_drive
+$quick || {
+	select_boot
+
+	# Construct the screen "Loading system modules" and the 
+	# choose-language menu.  These are only used for BACK_END_MANUAL
+	# cd-rom installations.
+	>lang.items
+	>lang.msgs
+	>lang.footers
+	>smartmsg1
+
+	case $LANG in
+	C|de|es|fr|it)	
+		# Use lines for C and FIGS translations
+		for i in C de es fr it
+		do
+			DIR=$PROTO/locale/$i
+			[ -f $DIR/smartmsg1 ] && /usr/bin/cat $DIR/smartmsg1 >> smartmsg1 
+			[ -f $DIR/lang.msgs -a -f $DIR/lang.footers ] && {
+				echo `basename $DIR` >> lang.items
+				cat $DIR/lang.msgs >> lang.msgs
+				cat $DIR/lang.footers >> lang.footers
+			}
+		done
+		;;
+	*)
+		# Default is message from only C locale. 
+		/usr/bin/cat $PROTO/locale/C/smartmsg1 > smartmsg1
+		;;
+	esac	
+
+	/usr/bin/egrep '(^PC850.*88591.*d$)|(^sjis.*eucJP)' \
+		$ROOT/$MACH/var/opt/ls/iconv_data.ls > iconv_data
+
+	#
+	# We need the mfpd drvmap file on the boot floppy, but its
+	# verify routine is NOT available to be run from the boot
+	# floppy.  So the user doesn't get a "failed to verify"
+	# message, we'll indicate NO verify routine during install.
+	#
+
+	ed -s $ROOT/.$MACH/etc/conf/drvmap.d/mfpd <<-EOF
+	g/Y|Y/s//Y|N/
+	w
+	q
+	EOF
+
+	strip_comments
+	cd $PROTO
+	rm -f stage/desktop/menus/initrc
+	for i in `cat $PROTO/desktop/menus/initrc.gen`
+	do
+		cat $i >> $PROTO/stage/desktop/menus/initrc
+	done
+	rm -f stage/desktop/scripts/tools
+	for i in `cat $PROTO/desktop/scripts/tools.gen`
+	do
+		cat $i >> $PROTO/stage/desktop/scripts/tools
+	done
+	cd $PROTO/stage
+	conframdfs $special_flag $setflag -l $LANG || exit $?
+	make -f $PROTO/desktop/cut.flop.mk || exit $?
+	prep_flop2
+}
+cut_flop1
+cut_flop2
+cut_magic

@@ -1,0 +1,2130 @@
+#!/usr/bin/winxksh
+#ident	"@(#)postreboot	15.2	98/01/14"
+
+export SHADOW_BOXES=1
+export INIT_SCREEN=true
+cp /usr/share/lib/terminfo/A/AT386-ie /usr/share/lib/terminfo/A/AT386-ie.bak > /dev/null 2>&1
+cp /isl/AT386-ie /usr/share/lib/terminfo/A/AT386-ie > /dev/null 2>&1
+
+. /funcrc
+. /isl/ifile
+
+DEBUG_ALL=${DEBUG_ALL:-0}
+[ $DEBUG_ALL = 1 ] && debug=1 || debug=
+
+echo "\033[01z" > /dev/console
+if [ -n "$debug" ] 
+then
+	exec 2> /var/adm/log/postreboot
+	set -x
+else
+	exec 2> /dev/null
+fi
+
+MAPCHAN=$LOCALE_CODESET
+LOCALE_CODESET=${LOCALE_CODESET:-88591}
+COFONT="8859-${LOCALE_CODESET#????}"
+/sbin/pcfont $COFONT
+
+# Source in Messages
+. /etc/inst/locale/$LANG/menus/postreboot.txtstrings
+. /etc/inst/locale/$LANG/menus/global.txtstrings
+# Source in required files
+. /etc/inst/scripts/winrc
+. /etc/inst/scripts/choose
+. /etc/inst/scripts/scr_init
+
+#
+# ifile must contain definitions for the following variables:
+#    ROOT_PW_ENCRYPTED	(set by 'password' UI module)
+#	or	
+#    ROOT_PASSWD	(set by Compaq)
+#
+#    OWNER_PW_ENCRYPTED	(set by 'owner' UI module)
+#	or
+#    OWNER_PASSWD	(set by Compaq)
+#
+#    USERNAME
+#    USERNUM
+#    USERID
+
+#
+# set multibyte console terminal for Japanese.
+# return 0 for success and 1 for failure
+# In the Japanese locale, this needs to be called
+# in place of the stty VGA_C80x25 calls and also
+# for the newvt created for nics and inet.
+#
+function setmbterm
+{
+[ -n "$debug" ] && set -x
+	[ -z "$LANG" -o "$LANG" != "ja" ] && return 1
+
+	if [ -x /sbin/pcfont ]
+	then
+		/sbin/pcfont -l $LANG && return 0
+	fi
+	return 1
+}
+unset -f menu
+trap 'exit 3' 15
+trap '' 2
+ 
+stty -istrip
+
+cd /
+# If /tmp is mounted as memfs, then unmount it because we need several files
+# that are located under the mount point.  Do the same for /var/tmp.
+MOUNTIT1=false
+LC_MESSAGES=C /sbin/mount -v |
+/usr/bin/grep '/tmp on /tmp type memfs' > /dev/null 2>&1 && {
+	/sbin/umount /tmp
+	MOUNTIT1=true
+}
+MOUNTIT2=false
+LC_MESSAGES=C /sbin/mount -v |
+/usr/bin/grep '/var/tmp on /var/tmp type memfs' > /dev/null 2>&1 && {
+	/sbin/umount /var/tmp
+	MOUNTIT2=true
+}
+
+[ -s /tmp/tmpdirs ] && /sbin/rm -rf $(</tmp/tmpdirs) > /dev/null 2>&1 &
+/sbin/rm -rf /var/tmp/*       > /dev/null 2>&1 &
+
+blue_and_clear()
+{
+[ -n "$debug" ] && set -x
+	[ "${TERM}" = "AT386" -o "${TERM}" = "AT386-ie" -o "${TERM}" = "AT386-mb" ] || return
+
+	# work-around for Dell VGA fast-write bug.
+	# Force text mode to color 80x25
+	( setmbterm || stty VGA_C80x25 ) </dev/console 1>/dev/null 2>/dev/null
+
+	# Reinitialize console screen to white on blue and clear it.
+	print -n "\033[0m\033[=0E\033[=7F\033[=1G\033[0m\033[J\033[7m\033[m\033[2J\033[H" > /dev/console 2>&1  
+}
+
+logmsg()
+{
+[ -n "$debug" ] && set -x
+	return
+}
+
+smartdone()
+{
+[ -n "$debug" ] && set -x
+	[ -s /tmp/unixware.dat ] || return
+	[ -d /sysmnt ] || /usr/bin/mkdir /sysmnt
+	SYSCONFIGNODE=$(/usr/bin/devattr disk1 bdevice)
+	SYSCONFIGNODE=${SYSCONFIGNODE%??}p${SYSCONFIGPART}
+	sh_mount -F dosfs $SYSCONFIGNODE /sysmnt > /dev/null 2>&1 || {
+		rmdir /sysmnt
+		return
+	}
+	[ -s /sysmnt/unixware.dat ] || {
+		sh_umount /sysmnt
+		rmdir /sysmnt
+		return
+	}
+	/usr/bin/sed -e '/IFILE_USED=NO/s/NO/YES/' /sysmnt/unixware.dat \
+		> /tmp/unixware.tmp
+	mv /tmp/unixware.tmp /sysmnt/unixware.dat
+	sh_umount /sysmnt
+	rmdir /sysmnt
+}
+
+bye_bye ()
+{
+[ -n "$debug" ] && set -x
+	display "$CLEAN_UP"
+	footer
+	cd /
+	# make sure /etc/vfstab has 644 permissions
+	chmod 644 /etc/vfstab
+	[ "${TERM}" = "AT386" -o "${TERM}" = "AT386-ie" -o "${TERM}" = "AT386-mb" ] && {
+		# put colors back to normal
+		( setmbterm || stty VGA_C80x25 ) </dev/console 1>/dev/null 2>/dev/null
+		print -n "\033[0m\033[=0E\033[=7F\033[=0G\033[0m\033[J\033[7m\033[m\033[2J\033[H" > /dev/console 2>&1
+	}
+	menu -c >/dev/$TERMDEV </dev/$TERMDEV
+	pfmt -s nostd -g base.pkg:54 "The system is coming up.\n" \
+		> /dev/$TERMDEV 2>&1
+	cp	 /etc/rc2.d/S02POSTINST  /isl/postreboot.that_ran
+	call unlink /etc/rc2.d/S02POSTINST
+	call unlink /etc/init.d/S02POSTINST
+	(
+	/usr/sbin/removef base - <<-!! > /dev/null
+		/etc/inst/locale/C/menus/hd/addusers.1
+		/etc/inst/locale/C/menus/hd/addusers.10
+		/etc/inst/locale/C/menus/hd/addusers.2
+		/etc/inst/locale/C/menus/hd/addusers.3
+		/etc/inst/locale/C/menus/hd/addusers.4
+		/etc/inst/locale/C/menus/hd/addusers.5
+		/etc/inst/locale/C/menus/hd/addusers.6
+		/etc/inst/locale/C/menus/hd/addusers.7
+		/etc/inst/locale/C/menus/hd/addusers.8
+		/etc/inst/locale/C/menus/hd/chkmouse.1
+		/etc/inst/locale/C/menus/hd/chkmouse.2
+		/etc/inst/locale/C/menus/hd/chkmouse.3
+		/etc/inst/locale/C/menus/hd/chkmouse.4
+		/etc/inst/locale/C/menus/hd/chkmouse.5
+		/etc/inst/locale/C/menus/hd/chkmouse.6
+		/etc/inst/locale/C/menus/hd/chkmouse.7
+		/etc/inst/locale/C/menus/hd/chkmouse.8
+		/etc/inst/locale/C/menus/hd/err_user_login
+		/etc/inst/locale/C/menus/hd
+		/etc/inst/scripts/adminobj
+		/etc/inst/scripts/get_tz_offset
+		/etc/inst/scripts/install_more
+		/etc/inst/scripts/loadhba
+		/etc/inst/scripts/applysid
+		/etc/inst/scripts/odm
+		/etc/inst/scripts/pdiconfig
+		/etc/inst/scripts/rebuild
+		/etc/inst/scripts/postreboot.sh
+		/etc/inst/scripts
+		/sbin/instlist
+		/usr/bin/passwd.stdin
+	!!
+	
+	/usr/sbin/removef -f base > /dev/null
+	) &
+
+	[ "$UPDEBUG" = "YES" ] || {
+		# Clean up
+		smartdone
+		CURDIR=`pwd`
+		cd /tmp
+		/usr/bin/find . -exec rm -rf {} \; > /dev/null 2>&1
+		cd $CURDIR
+
+		# If the cmds package is *not* installed, then /usr/bin/ksh is
+		# really a copy of winxksh, so remove it.
+		pkginfo -i cmds > /dev/null 2>&1 || /sbin/rm -f /usr/bin/ksh
+
+		grep -v "^LicenseData=" /isl/ifile > /tmp/ifile 2> /dev/null
+		/usr/bin/mv /tmp/ifile /isl/ifile > /dev/null 2>&1
+
+		/usr/sbin/filepriv -d /usr/bin/passwd.stdin
+		/usr/bin/rm -rf \
+			/TIMEZONE \
+			/cd-rom \
+			/dev/cdrom? \
+			/ds_to_disk \
+			/etc/inst/.ovfstab \
+			/etc/inst/locale/$LANG/menus/hd \
+			/etc/inst/locale/$LANG/menus/*.txtstrings \
+			/etc/inst/locale/keyboards \
+			/etc/inst/scripts \
+			/etc/inst/up/up.err \
+			/funcrc \
+			/hd.list \
+			/inst \
+			/pkginst \
+			/sbin/instlist \
+			/step1rc \
+			/step2rc \
+			/usr/bin/kb_remap \
+			1> /dev/null 2>&1
+			# /usr/bin/passwd.stdin \
+	}
+
+# Save ifile, disk.info, slice.info and partition.info
+	[ ! -d /var/adm/isl ] && mkdir -p /var/adm/isl
+	/sbin/cp /isl/ifile /isl/disk.info /isl/slice.info /isl/partition.info /var/adm/isl
+	/usr/bin/chmod 0700 /var/adm/isl
+	/usr/bin/chown 0:0 /var/adm/isl
+
+	[ -z "$debug" ] && rm -rf /isl
+
+	print -n "\033[0m\033[=0E\033[=7F\033[=0G\033[0m\033[J\033[7m\033[m\033[2J\033[H" > /dev/vt01 2>&1
+	cp /usr/share/lib/terminfo/A/AT386-ie.bak /usr/share/lib/terminfo/A/AT386-ie > /dev/null 2>&1
+
+	echo "\033[00z" > /dev/console
+	# RD - Moved pcfont and here otherwise winxksh screen is garbled
+	# $DO_88591 && /sbin/pcfont 8859-1
+	# necessary in case a locale with diff font needs is selected in the 
+	# Language Supplement install
+	/sbin/loadfont
+
+	# When we called "/usr/bin/rm -rf $(</tmp/tmpdirs)" above, we removed
+	# privileges on most or all of the files in the system by decrementing
+	# their link counts.  So, reset all file privileges now.
+	wait
+	/etc/security/tools/priv_upd
+	/sbin/initprivs
+
+	$MOUNTIT1 && /sbin/mount /tmp
+	$MOUNTIT2 && /sbin/mount /var/tmp
+	exit 0
+}
+
+# This procedure is used during the reconfiguration of drivers
+# and tunables for an UPGRADE installation.
+
+convert_to_decimal ()
+{
+[ -n "$debug" ] && set -x
+	[ "$UPDEBUG" = "YES" ] && set -x
+	(( $# == 1 )) || {
+		print -u2 Usage: $0 number
+		return 1
+	}
+	[ $1 ] || {
+		print -u2 ERROR -- Argument is null.
+		return 1
+	}
+	NUMSTR=$1
+	typeset -i NUM=0 BASE=10
+	case $NUMSTR in
+	0x*|0X*)
+		BASE=16
+		NUMSTR=${NUMSTR#??} # Strip off the 0x or 0X
+		;;
+	0*)
+		BASE=8
+		;;
+	esac
+	# The ksh forces this function to return an error
+	# if the assignment below fails.
+	(( NUM = $BASE#$NUMSTR ))
+	echo $NUM
+	return 0
+}
+
+setup_reconfig ()
+{
+[ -n "$debug" ] && set -x
+	[ -f ${RECONFIG_MARKER} ] && return
+	menu_colors regular
+	unset RETURN_VALUE
+
+	menu -f $UPGRADE_MSGS/reconfig.sel -o /tmp/recon.$$ </dev/$TERMDEV >/dev/$TERMDEV
+
+	[ "$UPDEBUG" = "YES" ] && set -x
+
+	. /tmp/recon.$$
+
+	[ "$RETURN_VALUE" = 2 ] && {
+
+		/sbin/rm ${RECONFIG_MARKER} 2>/dev/null
+		# The requirements state to save everything in $UPGRADE_STORE
+		# if the user selects to NOT reconfigure their modules.
+		# The $CONF_SAV tree will get blown away later in this script
+
+		cd $CONF_SAV
+		/usr/bin/mkdir -p $UPGRADE_STORE/etc/conf >/dev/null 2>&1
+
+		/usr/bin/find * -print |
+			cpio -pdlmu $UPGRADE_STORE/etc/conf >>$UPERR 2>&1
+
+		return
+	}
+
+	# Now I'll create a file that the rc script will key off of
+	# to decide whether or not to reconfigure the drivers.
+
+	> ${RECONFIG_MARKER}
+
+	[ "$UPDEBUG" = "YES" ] && goany
+}
+
+# main ()
+
+######## initialize environment .....
+
+### RD
+display "$ENV_CONF" -bg $COMBO1_BG -fg $COMBO1_FG
+###
+
+MSE_MENUS=/etc/inst/locale/${LANG}/menus/hd
+USER_MENUS=/etc/inst/locale/${LANG}/menus/hd
+UP_MENUS=/etc/inst/locale/${LANG}/menus/hd
+UPGRADE_MSGS=/etc/inst/locale/${LANG}/menus/upgrade
+
+
+#  If no ${LANG} directory, fall back on the C-locale for
+#  menu files.
+
+if [ ! -d ${MSE_MENUS} ]
+then
+	MSE_MENUS=/etc/inst/locale/C/menus/hd
+fi
+
+if [ ! -d ${USER_MENUS} ]
+then
+	USER_MENUS=/etc/inst/locale/C/menus/hd
+fi
+
+if [ ! -d ${UP_MENUS} ]
+then
+	UP_MENUS=/etc/inst/locale/C/menus/hd
+fi
+
+if [ ! -d ${UPGRADE_MSGS} ]
+then
+	UPGRADE_MSGS=/etc/inst/locale/C/menus/upgrade
+fi
+
+#  Set up to use menu_colors; default to C-locale if ${LANG}'s dir has
+#  no menu_colors.sh
+
+if [ -f /etc/inst/locale/${LANG}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LANG}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+. /etc/inst/locale/${LANG}/menus/mouse.txtstrings
+
+SBINPKGINST=/usr/sbin/pkginst
+SPACE=" "
+TAB="	"
+ETCINST=/etc/inst
+export UPGRADE_STORE=/etc/inst/save.user
+UPINSTALL=$ETCINST/up
+UPERR=$UPINSTALL/up.err
+CONF=/etc/conf
+CONF_SAV=/etc/conf.sav
+CONF_ORIG=/etc/CONF.ORIG
+SILENT_INSTALL=false
+export SILENT_INSTALL
+
+echo Contents of /etc/default/locale: >> /isl/postreboot.debug
+cat /etc/default/locale >> /isl/postreboot.debug
+echo Contents of /etc/default/keyboard: >> /isl/postreboot.debug
+cat /etc/default/keyboard >> /isl/postreboot.debug
+echo LANG=$LANG >> /isl/postreboot.debug
+echo KEYBOARD=$KEYBOARD >> /isl/postreboot.debug
+
+[ ! -s /tmp/unixware.dat ] || . /tmp/unixware.dat
+. /etc/default/locale
+. /etc/default/keyboard
+LANG=${LANG:-C}
+export LANG KEYBOARD
+setmbterm </dev/console
+
+echo LANG=$LANG >> /isl/postreboot.debug
+echo KEYBOARD=$KEYBOARD >> /isl/postreboot.debug
+
+unset T_SUFFIX
+>/etc/default/cofont
+chmod 644 /etc/default/cofont
+
+DO_88591=true
+#if [ "$LANG" = "C" -a -z "$KEYBOARD" ] || [ "$LANG" = "ja" ] ||
+#	[ "$KEYBOARD" = "AX" ] || [ "$KEYBOARD" = "A01" ]
+if [ -z "$MAPCHAN" ]
+then
+	DO_88591=false
+	if [ "$LANG" = "ja" ]
+	then
+		T_SUFFIX="-mb"
+	fi
+fi
+
+echo LANG=$LANG >> /isl/postreboot.debug
+echo KEYBOARD=$KEYBOARD >> /isl/postreboot.debug
+echo DO_88591=$DO_88591 >> /isl/postreboot.debug
+
+### RD 
+wclose $CURWIN
+display "$FONT_CONF" 
+###
+
+# set up Terminal type, fonts and keyboard mapping.
+$DO_88591 && {
+	T_SUFFIX="-ie"
+	#/usr/bin/pcfont 8859-1
+
+[ ! -z "$KEYBOARD" ] && echo running /usr/bin/mapkey /usr/lib/keyboard/$KEYBOARD >> /isl/postreboot.debug
+
+	[ ! -z "$KEYBOARD" ] && /usr/bin/mapkey /usr/lib/keyboard/$KEYBOARD
+
+echo running /usr/bin/mapchan -f /usr/lib/mapchan/$MAPCHAN >> /isl/postreboot.debug
+
+# First run ttymap to create /var/adm/ttymap.data otherwise there is
+# hell to pay. ttymap is also called by /etc/dinit.d/S23ttymap and is
+# run in run level 2 or 3. No real reason for it not running earlier.
+
+        /usr/sbin/ttymap
+        chmod 644 /var/adm/ttymap.data
+        chown sys /var/adm/ttymap.data
+        chgrp sys /var/adm/ttymap.data
+
+	[ -f /usr/lib/mapchan/$MAPCHAN.dk ] && {
+		/usr/bin/mapchan -f /usr/lib/mapchan/$MAPCHAN.dk
+		echo "MAPCHAN=\"/usr/lib/mapchan/$MAPCHAN.dk\"" >>/etc/default/keyboard
+	}
+
+	# Save terminal setup for use by LS package.
+	echo "COFONT=\"$COFONT\"" >/etc/default/cofont
+}
+
+# get boot floppy install environment -- via common.sh.
+# however, get /etc/profile as well, just in case
+
+. /etc/profile
+. /etc/inst/scripts/common.sh
+. $SBINPKGINST/updebug
+
+TERMDEV=console
+
+[ "$UPDEBUG" = YES ] && set -x
+
+export PATH=:/usr/bin:/etc:/sbin:/usr/sbin:$PATH
+if [ "$TERM" = "AT386" -o "$TERM" = "AT386-M" ]
+then
+	export TERM=${TERM}$T_SUFFIX
+fi
+
+echo "TERM=\"AT386$T_SUFFIX\"" >/etc/default/coterm
+echo "TERM=\"AT386-M$T_SUFFIX\"" >/etc/default/coterm-M
+[ "$T_SUFFIX" = "-mb" ] && echo "MBCONSOLE=yes" >>/etc/default/coterm
+chmod 644 /etc/default/coterm /etc/default/coterm-M
+
+
+RECONFIG_MARKER=/etc/inst/.kern_rebuild
+
+
+[ "$UPDEBUG" = "YES" ] && goany
+
+# The file $RECONFIG_MARKER is created by the boot floppy script inst.
+# It is created if this is an UPGRADE installation AND there is something
+# to "reconfigure" AND the user selected to reconfigure their system.
+
+if [ -f $RECONFIG_MARKER ]
+then
+	menu -r -f $UPGRADE_MSGS/reconfig.chk -o /dev/null >/dev/$TERMDEV </dev/$TERMDEV
+	/sbin/rm $RECONFIG_MARKER
+	/usr/bin/cat $CONF_SAV/cf.d/mtune |
+		/usr/bin/grep -v "^[*#]" |
+		/usr/bin/grep -v "^[ 	]*$" >/tmp/mtune.$$
+
+	while read TOK DFLT MIN MAX
+	do
+		# Check if the tunable exists in the current system
+
+		$CONF/bin/idtune -g $TOK >/dev/null 2>&1
+
+		if [ $? = 0 ]
+		then
+			echo "$TOK\t$DFLT\t$MIN\t$MAX" >>$UPINSTALL/tune.exist
+		else
+			echo "$TOK\t$DFLT\t$MIN\t$MAX" >>$UPINSTALL/tune.addem
+		fi
+
+	done </tmp/mtune.$$
+
+	if [ -f $UPINSTALL/tune.addem ]
+	then
+		setup_reconfig
+	else
+		
+        # If we're still here, check if there are any driver modules to
+	# reconfigure.  Even though this is a simpler test than partitioning
+	# the tunables and checking for new tunables.  We need to do this
+	# test second because the reconfiguration script expects the
+	# tunables to be partitioned already.
+
+		cd $CONF_SAV
+
+		unset RECONFIG
+
+		CNT=0
+		[ -d sdevice.d ] && CNT=`ls -1 sdevice.d | wc -l`
+		[ $CNT != 0 ] && RECONFIG=1
+
+		CNT=0
+		[ -d sfsys.d ] && CNT=`ls -1 sfsys.d | wc -l`
+		[ $CNT != 0 ] && RECONFIG=1
+
+		[ "$RECONFIG" ] && {
+	
+		setup_reconfig
+		}
+	fi
+
+fi
+
+
+[ -f $RECONFIG_MARKER ] && {
+	[ "$UPDEBUG" = "YES" ] && set +x && goany
+
+	# Delete the file we key off of because we don't want to hit
+	# this section again.
+
+	/sbin/rm -f $RECONFIG_MARKER
+
+	unset RETURN_VALUE
+	menu_colors regular
+	menu -r -f $UPGRADE_MSGS/recon.working -o /dev/null >/dev/$TERMDEV </dev/$TERMDEV
+
+	[ "$UPDEBUG" = "YES" ] && set -x
+
+	# First we'll duplicate the /etc/conf tree resulting from the
+	# installation of the Foundation Set.  We're doing this in case
+	# the kernel will NOT build after reconfiguring the old drivers.
+	# This will make it very very easy to "unconfigure" the drivers
+	# in case the kernel will not build when we're done.
+
+	/usr/bin/mkdir $CONF_ORIG 2>/dev/null
+	cd $CONF
+	/usr/bin/find . -print | cpio -pdl $CONF_ORIG >>$UPERR 2>&1
+
+	# Then we break the links of the files that we will modify directly
+	# during the reconfiguration and make copies.
+
+	for i in cf.d/mtune		# ANY MORE ???
+	do
+		[ -f $CONF_ORIG/$i ] && {
+			/sbin/rm -f $CONF_ORIG/$i
+
+			# use cpio -m to preserve own/mod/grp
+
+			echo $i | cpio -pdmu $CONF_ORIG >/dev/null 2>&1
+		}
+	done
+
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	# Now start the reconfiguration process
+
+	cd $CONF_SAV
+	/sbin/rm -f $UPINSTALL/mod_failed
+	/usr/bin/mkdir work >>$UPERR 2>&1
+
+	# Make sure the directories I'm going to key off of exist and
+	# are non-empty
+
+	CNT=0
+	[ -d sdevice.d ] && CNT=`ls -1 sdevice.d | wc -l`
+	[ $CNT != 0 ] && RECONFIG="sdevice.d/*"
+	CNT=0
+	[ -d sfsys.d ] && CNT=`ls -1 sfsys.d | wc -l`
+	[ $CNT != 0 ] && RECONFIG="$RECONFIG sfsys.d/*"
+
+	[ "$RECONFIG" ] &&
+	for i in $RECONFIG
+	do
+		[ "$UPDEBUG" = "YES" ] && goany
+
+		mod=`basename $i`
+		dir=`dirname $i`
+
+# OLD WAY, idcheck now runs 'idconfupdate which
+# royally messes things up...
+#       $CONF/bin/idcheck -p $mod
+#       rc=$?
+#       [ $rc -ge 23 ] && {
+		[ -f $CONF/mdevice.d/$mod ] && {
+
+			# The driver is already installed in the new system.
+
+			/sbin/rm -rf `/usr/bin/find . -name $mod -print`
+
+			continue
+		}
+
+		# We need to install the driver into current system.
+
+		/sbin/rm -rf work/*
+
+		if [ "$dir" = "sdevice.d" ]
+		then
+			/sbin/cp sdevice.d/$mod work/System
+			/usr/bin/grep "^$mod[ 	]" mdevice.d/$mod >work/Master
+		else
+			/sbin/cp sfsys.d/$mod work/Sfsys
+			/sbin/cp mfsys.d/$mod work/Mfsys
+		fi
+
+		[ -f init.d/$mod ] && /sbin/cp init.d/$mod work/Init
+		[ -f rc.d/$mod ] && /sbin/cp rc.d/$mod work/Rc
+		[ -f sd.d/$mod ] && /sbin/cp sd.d/$mod work/Sd
+		[ -f node.d/$mod ] && /sbin/cp node.d/$mod work/Node
+		/sbin/cp pack.d/$mod/* work
+		[ -f work/space.c ] && mv work/space.c work/Space.c
+		[ -f work/stubs.c ] && mv work/stubs.c work/Stubs.c
+
+		cd work
+
+		[ "$UPDEBUG" = "YES" ] && goany
+
+
+		# The idinstall -d is being done for cautionary reasons.
+		# If a driver is currently installed (e.g. 'ip' comes with
+		# stubs.c) idinstall -a will fail.  I could check for just
+		# a stubs.c file and only then execute it -d, but I'm not
+		# sure if there are other cases I may need to handle.  I'd
+		# rather be slow and paranoid than leave a potential hole.
+
+		$CONF/bin/idinstall -d $mod >/dev/null 2>&1
+		$CONF/bin/idinstall -a -e $mod >>$UPERR 2>&1
+		rc=$?
+
+		cd ..
+
+		[ "$rc" != "0" ] && {
+			echo $mod >>$UPINSTALL/mod_failed
+			/sbin/rm -f work/*
+			continue
+		}
+
+		# Now I need to move misc stuff from old pack.d to new pack.d
+
+		mv work/* $CONF/pack.d/$mod >/dev/null 2>&1
+
+		# Do I need to do anything about sync'ing contents file
+		# for a potential pkgrm ??
+	done
+
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	# Now I need to sync tunables.  The work to partition the Version 4
+	# tunables into $UPINSTALL/tune.addem and $UPINSTALL/tune.exist was
+	# done on the boot floppy.
+	# First append the tunables we found to the current mtune file.  For
+	# backwards compatibility, the current idtools still support a driver
+	# package adding tunables to mtune, so by simply appending to the
+	# the existing mtune, we're assured the tunables will get picked up.
+	# Another alternative was to create a new file(s) in mtune.d, but
+	# there is a problem with that--we don't know what tunables belong
+	# to what drivers, so we'd be forced to create a new file (e.g.
+	# mtune.d/upgrade) that had NO corresponding driver.
+	# Appending them to the existing mtune file also eliminates a
+	# potential problem when removing a driver package.  The package's
+	# remove script # can remove the tunables as always.
+	# There is still a problem that needs to be dealt with.  I'll use
+	# the inet package as an example.  We've just appended the Version
+	# 4 inet tunables to the current mtune file.  Then we "upgrade" to
+	# the new inet package.  The pkgadd of the new package results in
+	# inet tunables being added as mtune.d/inet.  Now we have two sets
+	# of potentially conflicting inet tunables.
+	# The solution was to enhance the idtools to support this and have
+	# the values in mtune.d/* supercede the values in cf.d/mtune.  This
+	# will work, but we may be left with obsolete tunables in cf.d/mtune.
+
+	[ -f $UPINSTALL/tune.addem ] &&
+		/usr/bin/cat $UPINSTALL/tune.addem >>$CONF/cf.d/mtune
+
+	# Now we need to tweak the values of the current tunables.
+
+	while read TOKEN CURRENT_SAV MIN_SAV MAX_SAV
+	do
+		[ "$UPDEBUG" = "YES" ] && goany
+
+		# First we need to see if the Version 4 default has been
+		# overriden by a value in the Version 4 stune file.
+
+		/usr/bin/grep "^$TOKEN[ 	]" $CONF_SAV/cf.d/stune >/tmp/_SAV.$$
+
+		[ $? = 0 ] && read JUNK CURRENT_SAV </tmp/_SAV.$$
+
+		# Then we'll get the current information for the new system
+
+		$CONF/bin/idtune -g $TOKEN >/tmp/Dest.$$
+
+		[ $? = 0 ] && read CURRENT DEFAULT MIN MAX JUNK </tmp/Dest.$$
+
+		# If the following string compare is successful, there is
+		# nothing to do, so we can skip all the convert_to_decimal
+		# calls below.  This will speed things considerably.
+
+		[ "$CURRENT_SAV" = "$CURRENT" ] && continue
+
+		# Now we have the following cases:
+		# - The Version 4 value is within the current MIN MAX limits
+		# - The Version 4 value is greater than the current MAX
+		# - The Version 4 value is less than the current MIN
+		# So the first thing we'll do is adjust to current MIN/MAX
+		# The values can be either decimal, octal or hex.  Since the
+		# shell does NOT recognize hex or octal values, they need to
+		# be converted to a common base before comparison.
+		# If there is any problem converting them to decimal, then
+		# I will not try to "update" this particular tunable.
+
+		CONV_CURR_SAV=$(convert_to_decimal $CURRENT_SAV) 2>/dev/null || continue
+		CONV_CURR=$(convert_to_decimal $CURRENT) 2>/dev/null || continue
+		CONV_MAX=$(convert_to_decimal $MAX) 2>/dev/null || continue
+		CONV_MIN=$(convert_to_decimal $MIN) 2>/dev/null || continue
+		[ $CONV_CURR_SAV -gt $CONV_MAX ] && {
+			CONV_CURR_SAV=$CONV_MAX
+			CURRENT_SAV=$MAX
+		}
+		[ $CONV_CURR_SAV -lt $CONV_MIN ] && {
+			CONV_CURR_SAV=$CONV_MIN
+			CURRENT_SAV=$MIN
+		}
+		# Now use idtune to merge the value.  I want to use the
+		# "real" value here rather that the "converted" value.
+		[ $CONV_CURR_SAV -gt $CONV_CURR ] &&
+			$CONF/bin/idtune -f $TOKEN $CURRENT_SAV </dev/$TERMDEV >/dev/$TERMDEV 2>&1
+	done <$UPINSTALL/tune.exist
+
+	[ "$UPDEBUG" = "YES" ] && goany "About to remove /tmp files"
+	/sbin/rm -f /tmp/*.$$
+
+	# Rebuild the kernel with the new modules.
+
+	$CONF/bin/idbuild -B >$UPGRADE_STORE/idbuild.err 2>&1 || {
+		[ "$UPDEBUG" = "YES" ] && goany "FAIL: idbuild"
+
+		# The idbuild failed, first restore original /etc/conf tree.
+		/sbin/rm -rf $CONF
+		mv $CONF_ORIG $CONF
+
+		# set own/mod/grp correctly
+
+		set `/usr/bin/grep "^/etc/conf d " /var/sadm/install/contents`
+
+		[ "$6" ] && {	# Just to be safe
+
+			/usr/bin/chmod $4 $CONF
+			/usr/bin/chown $5 $CONF
+			/usr/bin/chgrp $6 $CONF
+		}
+
+		BUILD_FAILED=YES
+
+		# Non-requirement: clean up /etc/conf.v4 so only relevant
+		# stuff remains.  This includes cf.d/mdevice and
+		# cf.d/[sm]fsys.
+
+		# Requirements state to save everything in $UPGRADE_STORE
+		# if the kernel fails to build.
+
+		cd $CONF_SAV
+		/usr/bin/mkdir -p $UPGRADE_STORE/etc/conf >/dev/null 2>&1
+
+		/usr/bin/find * -print |
+			cpio -pdlmu $UPGRADE_STORE/etc/conf >>$UPERR 2>&1
+
+		menu_colors warn
+
+		[ "$UPDEBUG" = "YES" ] && set +x && goany
+
+		unset RETURN_VALUE
+		menu -f $UPGRADE_MSGS/idbuild.fail -o /dev/null >/dev/$TERMDEV </dev/$TERMDEV
+	}
+
+	[ "$UPDEBUG" = "YES" ] && goany && set -x
+
+	[ "$BUILD_FAILED" != "YES" ] && {
+		# I should deal with mod_failed here by altering message !!
+
+		[ "$UPDEBUG" = "YES" ] && set +x && goany
+
+		unset RETURN_VALUE
+		menu_colors regular
+
+		menu -f $UPGRADE_MSGS/reconfig.aok -o /dev/null >/dev/$TERMDEV </dev/$TERMDEV
+
+		[ "$UPDEBUG" = "YES" ] && set -x
+
+		$CONF/bin/idcpunix >>$UPERR 2>&1
+
+		# reboot system
+		cd /
+		/sbin/umountall > /dev/null 2>&1
+		call uadmin 2 1 #Soft reboot
+	}
+}	# End of "Reconfiguration of Drivers"
+
+cd /
+/sbin/rm -rf $CONF_SAV 1>/dev/null 2>&1 &
+
+[ "$UPDEBUG" = "YES" ] && goany
+
+if pkginfo -i es >/dev/null 2>&1
+then
+	SYS_PUTDEV="range=SYS_RANGE_MAX-SYS_RANGE_MIN state=public mode=static startup=no ual_enable=yes other=\">y\" "
+else
+	SYS_PUTDEV=""
+fi
+
+eval "putdev -a tty00 cdevlist=\"/dev/tty00,/dev/term/00,/dev/tty00s,\
+/dev/tty00h,/dev/term/00s,/dev/term/00h\" desc=\"com1 port\" $SYS_PUTDEV" \
+2>/dev/null
+eval "putdev -a tty01 cdevlist=\"/dev/tty01,/dev/term/01,/dev/tty01s,\
+/dev/tty01h,/dev/term/01s,/dev/term/01h\" desc=\"com2 port\" $SYS_PUTDEV" \
+2>/dev/null
+
+## Some packages, if installed, require work at post-reboot time.
+## Usually this involves running request and postreboot scripts
+## which put up menus. To make the flow of these menus more uniform,
+## work for all packages using winxksh menus must be done before any 
+## package using the old menu tool. Within this order group packages 
+## logically, e.g. put networking together.
+
+## The nics and inet pkgs invoke drivers that *will* write to the
+## console.  They are switched to VT01.
+
+## Begin Network Interface Card section - run niccfg command
+
+do_nics()
+{
+[ -n "$debug" ] && set -x
+	# Multibite may no longer be necessary. These scripts no longer
+	# do things to the screen.
+
+	#setmbterm
+
+	### RD
+	wclose $CURWIN
+	display "$NICS_CONF"
+	###
+
+	{
+        (
+        PKGINST=nics export PKGINST
+        PKG=nics export PKG
+        REQDIR=/var/sadm/pkg/$PKGINST/install
+        sh ${REQDIR}/postinstall 
+        )
+	} < /dev/null >/dev/null
+}
+
+### Begin inet section -- run scripts in /etc/inst/scripts if
+### they exist.
+
+do_inet()
+{
+[ -n "$debug" ] && set -x
+#	setmbterm
+	(
+
+	### RD
+	wclose $CURWIN
+	display "$INET_CONF" 
+	###
+
+	PKGINST=inet export PKGINST
+	REQDIR=/var/sadm/pkg/$PKGINST/install
+	sh $REQDIR/request /tmp/inet.resp 
+	set -a # export all variables created/modified
+	. /tmp/inet.resp
+	sh $REQDIR/postinstall
+	)
+	/sbin/rm -rf /tmp/inet /tmp/inet.resp 1>/dev/null 2>&1
+}
+
+do_nwnet() {
+[ -n "$debug" ] && set -x
+	if [ "$PKGINSTALL_TYPE" = UPGRADE2 ]
+	then
+		#
+		# remove the old nwnet GUI files from package contents
+		#
+		if pkginfo nwnet >/dev/null 2>&1
+		then
+			/usr/sbin/removef nwnet \
+				/usr/X/lib/bitmaps/nwsetup.icon \
+				/usr/X/lib/pixmaps/nwsetup.icon \
+				/usr/X/lib/pixmaps/connect.xpm \
+				/usr/X/lib/pixmaps/noconnect.xpm \
+				/usr/X/bin/nwsetup >/dev/null 2>&1
+			/usr/sbin/removef -f nwnet >/dev/null 2>&1
+		fi
+	fi
+        (
+	### RD
+	wclose $CURWIN
+	display "$NW_CONF"
+	###
+
+        PKGINST=nwnet
+        export PKGINST
+        REQDIR=/var/sadm/pkg/$PKGINST/install
+        set -a # export all variables created/modified
+        sh $REQDIR/postinstall
+        )
+}
+
+[ -d /var/sadm/pkg/nics -o -d /var/sadm/pkg/inet ] && {
+        [ -d /var/sadm/pkg/nics ] &&
+                do_nics
+
+        [ -d /var/sadm/pkg/inet ] &&
+                do_inet
+} 
+
+[ -d /var/sadm/pkg/nwnet ] && do_nwnet
+
+### Begin nis section -- run scripts in /etc/inst/scripts if
+### they exist.
+#
+# NIS section removed - 9/15/97. Coordinated with Gregw - RD
+#
+#[ -d /tmp/nis ] && {
+#	PKGINST=nis export PKGINST
+#	PKG=nis export PKG
+#	REQDIR=/var/sadm/pkg/$PKGINST/install
+	
+	### RD
+#	wclose $CURWIN
+#	display "$NIS_CONF"
+	###
+
+#	echo "\033[00z" > /dev/console
+#	TERM=AT386-ie
+#	export TERM
+#	$DO_88591 && /sbin/pcfont 8859-1
+#	while :
+#	do
+#		(
+#		sh $REQDIR/request /tmp/nis.resp >/dev/$TERMDEV </dev/$TERMDEV
+#		set -a # export all variables created/modified
+#		. /tmp/nis.resp
+#		sh $REQDIR/postinstall >/dev/$TERMDEV </dev/$TERMDEV
+#		)
+#		rc=$?
+#		[ "$rc" != "55" ] && break
+#	done
+#	TERM=AT386
+#	export TERM
+#	/sbin/pcfont
+#	echo "\033[01z" > /dev/console
+#	/sbin/rm -f /tmp/nis.resp 1>/dev/null 2>&1
+#}
+
+### Begin ls package section -- run scripts in /etc/inst/scripts if
+### they exist.
+
+# JAY invokation of 'ls' pkg's request script permanently disabled.
+# Remove sometime.
+[ 0 = 1 ] && {  # [ -f /tmp/ls ] && {
+	
+	### RD
+	wclose $CURWIN
+	display "$LS_CONF"
+	###
+
+	PKGINST=ls export PKGINST
+	PKG=ls export PKG
+	REQDIR=/var/sadm/pkg/$PKGINST/install
+	while :
+	do
+		(
+		sh $REQDIR/request /tmp/ls.resp >/dev/$TERMDEV </dev/$TERMDEV
+		set -a # export all variables created/modified
+		. /tmp/ls.resp
+		sh $REQDIR/postinstall
+		)
+		rc=$?
+		[ "$rc" != "55" ] && break
+	done
+	/sbin/rm -f /tmp/ls.resp 1>/dev/null 2>&1
+}
+# CLEANUP NOTE:  delete the above block after the following code is tested.
+# The 'ls' package 'request' script wrote variable assignments to /tmp/ls.resp.
+# We don't run 'request' anymore, since the ISL 'locale' UI module puts
+# similar variable assignments in the ifile.
+# The back-end "dots in" the ifile,
+# and we call the 'ls' postinstall script as it has always been called.
+#
+# The postinstall script of the 'ls' package calls defadm to create various
+# files under /etc/default/.  For example, postinstall runs the command
+#	defadm locale LANG=$LOCALE
+# which creates the file /etc/default/locale containing the string
+#	LANG=C
+# The usage of defadm is:  defadm <filename in /etc/default> [name=value]...
+#
+# The postinstall script runs most of the defadm commands only if
+# the controlling variable is set; that is, if $LOCALE was unset
+# the defadm command given in the example above would not be run.
+#
+# To determine which of the defadm commands are typically run,
+# I ran each of the defadm commands on an system installed with Gemini 8.2e.
+#
+# Following are variables referenced by that postinstall script,
+# the defadm command in which they are used, and the value I saw when I
+# manually ran the defadm command after installation was complete.
+# (Variables marked * can be derived from the new ISL ifile).
+# (Variables marked ! are not used by postinstall).
+# (Variables marked ? are used by postinstall only if set.)
+#
+#*LOCALE	 defadm locale LANG=$LOCALE			LANG=C
+#*KEYBOARD	 defadm keyboard XKEYBOARD=$KEYBOARD		""
+#?LOC_MAPCHAN 	 defadm keyboard MAPCHAN=$LOC_MAPCHAN		""
+#?LOC_NUMLOCK	 defadm keyboard NUMLOCK=$LOC_NUMLOCK		""
+#?LOC_SHIFTDOWN	 defadm keyboard SHIFTDOWN="$LOC_SHIFTDOWN	""
+#?LOC_TERM	 defadm coterm TERM=$LOC_TERM			TERM=AT386
+#?LOC_M_TERM	 defadm coterm-M TERM=$LOC_M_TERM		TERM=AT386-M
+#?LOC_COFONT	 defadm cofont COFONT=$LOC_COFONT		""
+#?LOC_XMODIFIERS defadm Xim XMODIFIERS=$LOC_XMODIFIERS		""
+#?LOC_MBCONSOLE	 defadm coterm MBCONSOLE=$LOC_MBCONSOLE		""
+#?LOC_KCODESET	 cd /usr/lib/iconv/kmods/$LOC_KCODESET		""
+# 		 /etc/conf/bin/idinstall -k -u ccnv		""
+#*DOALL		 echo DOALL=\"$DOALL\" >> $LSVAR/config		""
+#*LANGUAGE	 echo LANGUAGE=\"$LANGUAGE\" >> ...		""
+#*TERR		 echo TERR=\"$TERR\" >> ...			""
+#*GRAPHICS	 echo GRAPHICS=\"$GRAPHICS\" >> ...		""
+#*CLASSES	 echo CLASSES=\"$CLASSES\" >> ...		""
+#	
+
+[ -f /tmp/ls ] && {
+
+export DOALL=YES
+[ $ALL_LOCALES = 0 ] && DOALL=NO
+
+# JAY following line is an experiment only!
+#export KEYBOARD=NONE
+export LOCALE
+
+export LANGUAGE=${LOCALE%%_*}
+export TERR=${LOCALE##*_}
+export GRAPHICS=YES	# 'ls' request script hard-coded this, too.
+export CLASSES="base xsup build"	# 'ls' request script hard-coded this, too.
+#export LOC_TERM=AT386	# saw this in /etc/default/coterm on an installed system
+#export LOC_m_TERM=AT386-M	# ditto
+#
+#JAY!
+#See 'request' line #220 for method of setting LANGUAGE and TERR.
+#Set here every var set in 'request' func write_exit (line #25).
+#What about the others?  Many seem skippable in postinstall.
+
+export PKGINST=ls	# neither PKGINST
+export PKG=ls		# nor PKG is used *inside* postinstall (could ditch em)
+
+echo LOCALE=$LOCALE	> /isl/ls1.out
+echo KEYBOARD=$KEYBOARD	>> /isl/ls1.out
+echo LOC_MAPCHAN=$LOC_MAPCHAN >> /isl/ls1.out
+echo LOC_NUMLOC=$LOC_NUMLOCK	>> /isl/ls1.out
+echo LOC_SHIFTDOWN=$LOC_SHIFTDOWN >> /isl/ls1.out
+echo LOC_TERM=$LOC_TERM >> /isl/ls1.out
+echo LOC_M_TERM=$LOC_M_TERM >> /isl/ls1.out
+echo LOC_COFONT=$LOC_COFONT >> /isl/ls1.out
+echo LOC_XMODIFIERS=$LOC_XMODIFIERS >> /isl/ls1.out
+echo LOC_MBCONSOLE=$LOC_MBCONSOLE >> /isl/ls1.out
+echo LOC_KCODESET=$LOC_KCODESET >> /isl/ls1.out
+echo DOALL=$DOALL >> /isl/ls1.out
+echo LANGUAGE=$LANGUAGE >> /isl/ls1.out
+echo TERR=$TERR >> /isl/ls1.out
+echo GRAPHICS=$GRAPHICS >> /isl/ls1.out
+echo CLASSES=$CLASSES >> /isl/ls1.out
+
+	sh -x /var/sadm/pkg/$PKGINST/install/postinstall > /isl/ls2.out 2>&1
+}
+
+### Begin dynatext section -- run scripts in /etc/inst/scripts if
+### they exist.  The postinstall script will install dynatext icon.
+
+[ -d /tmp/dynatext ] && {
+
+	### RD
+	wclose $CURWIN
+	display "$DYNA_CONF"
+	###
+
+	PKGINST=dynatext export PKGINST
+	REQDIR=/var/sadm/pkg/$PKGINST/install
+	while :
+	do
+		(
+		# Don't need to run request
+		. $REQDIR/response
+		sh $REQDIR/postinstall >/dev/$TERMDEV </dev/$TERMDEV
+		)
+		rc=$?
+		[ "$rc" != "55" ] && break
+	done
+}
+
+### General upgrade of users; upuser calls desktop upgrade script
+
+[ "$PKGINSTALL_TYPE" = "UPGRADE" -a \
+ -x /usr/sbin/pkginst/upuser ] && \
+     /usr/sbin/pkginst/upuser all 1>$UPGRADE_STORE/desktop.post.out 2>&1
+
+[ "$PKGINSTALL_TYPE" = "UPGRADE2" -a \
+ -x /usr/X/adm/upgrade/dtupgrade_post.sh ] && \
+	/usr/X/adm/upgrade/dtupgrade_post.sh \
+		1>/usr/X/adm/upgrade/desktop.post.out 2>&1
+
+###### Begin mouse section....
+
+# initialize default settings of mouse parameters.
+default_mouse_resp()
+{
+[ -n "$debug" ] && set -x
+	MOUSEBUTTONS=${MOUSEBUTTONS:-2}
+}
+
+# present menu for selecting mouse time. Run mouseadmin -t to
+# test mouse changes. Return result of mouse test or 99 if no
+# mouse selected.
+
+set_mouse_choice () {
+	if [ "$1" = "type" ]
+	then
+		MOUSE_TYPE=$2
+	elif [ "$1" = "reboot" ]
+	then
+		ANSWER=$2
+	fi
+}
+
+check_params () {
+[ -n "$debug" ] && set -x
+	typeset param
+	integer i=1 nparams=$#
+	typeset first=$1
+	[ -z "$first" ] && (( i = nparams ))
+	while (( i < nparams ))
+	do
+		shift
+		if [ "$first" = "$1" ]
+		then
+			msg
+			return 0
+		fi
+		(( i += 1 ))
+	done
+	msg "$USE_CHOICE"
+	return 1
+}
+
+max () {
+[ -n "$debug" ] && set -x
+	integer i=1 maxval=0 nparams=$# arg=$1
+	(( maxval = arg ))
+	while (( i < nparams ))
+	do
+		shift
+		(( arg = $1 ))
+		if (( maxval < arg ))
+		then
+			(( maxval = arg ))
+		fi		
+		(( i += 1 ))
+	done
+	return $maxval
+}	
+
+Select_Mouse ()
+{
+[ -n "$debug" ] && set -x
+	while :
+	do
+		unset RETURN_VALUE
+		[ "${CONFIGED_MSE}" ] && {
+			RETURN_VALUE=$CONFIGED_MSE
+			export RETURN_VALUE
+		}
+
+#		menu_colors regular
+#	menu -f $MSE_MENUS/chkmouse.1 -o /tmp/resp.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+#		. /tmp/resp.$$
+#		ans=`expr ${RETURN_VALUE}`
+
+		display "$MESG1" -above 1 -below 5
+		DISPLAY_WINDOW=$CURWIN
+		open_radio -bg $BLUE -fg $WHITE
+		radio_wid=$RID
+		integer i=0
+		MOUSE_TYPE=0
+		while (( i < ${#MICE[*]} ))
+		do
+			add_radio "${MICE[i]}" \
+				   -entry "set_mouse_choice type $i"  
+			(( i+=1 ))
+		done
+		radio_runparms $radio_wid 4
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+			-above 10 -below 1 -title "$TITLE1"
+		run_radio $radio_wid 0 4
+		footer "$MOUSE_SELECT_FOOTER"
+		input_handler
+		wclose $DISPLAY_WINDOW
+
+		case $MOUSE_TYPE in
+		0)  Serial_Mouse_Port; rc=$?; [ $rc = 0 ] && continue ;;
+		1)  Bus_Mouse_Interrupt_Vector; rc=$?; [ $rc = 0 ] && continue ;;
+		2)  PS2_Mouse; rc=$?; [ $rc = 0 ] && continue ;;
+		3)  unset MOUSEBUTTONS; return 99;; #No mouse
+		*)  return 1;; #Invalid
+		esac
+		(/usr/lib/mousemgr &)
+	#	menu_colors regular
+	#	menu -f $MSE_MENUS/chkmouse.8 -o /dev/null 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+		wclose $DISPLAY_WINDOW
+		display -w "$MESG5" 
+		DISPLAY_WINDOW=$CURWIN
+		footer "$FOOTER_ENTER"
+		input_handler
+		wclose $DISPLAY_WINDOW
+		echo "\033[00z" > /dev/console
+		mouseadmin -hidden -t \
+			< /dev/console 1>/dev/console 2>/dev/console
+		rc=$?
+		echo "\033[01z" > /dev/console
+		return $rc
+	done
+}
+
+# Called from Select_Mouse, set up PS/2 Mouse.
+
+PS2_Mouse()
+{
+[ -n "$debug" ] && set -x
+	typeset retval=1
+	# Make sure IVN 12 is available for use or is already
+	# in use by m320 driver (that's us)
+	IVNUSER=`/etc/conf/bin/idcheck -r -v 12`
+	rc=$?
+	if [ "$rc" != "0" -a "$IVNUSER" != "m320" ]
+	then
+		# IVN 12 in use by other driver. Give 'em choice of
+		# shutdown or selecting another mouse type.
+		/sbin/rm -fr /tmp/ps2mse.$$ 2>/dev/null
+		#unset RETURN_VALUE
+		#MSE_TYP=PS2 export MSE_TYP
+		#menu_colors error
+		#menu -f $MSE_MENUS/chkmouse.5 -o /tmp/ps2mse.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+		#. /tmp/ps2mse.$$
+		
+		display "$PS2_MOUSE_ERROR" -fg $ERROR_FG -bg $ERROR_BG \
+			-border_fg $ERROR_FG -above 1 -below 5
+		DISPLAY_WINDOW=$CURWIN
+		
+		open_radio -bg $BLUE -fg $WHITE
+		radio_wid=$RID
+		integer i=0
+		ANSWER=0
+		while (( i < ${#CHOICES[*]} ))
+		do
+			add_radio "${CHOICES[i]}" \
+				   -entry "set_mouse_choice reboot $i"  
+			(( i+=1 ))
+		done
+		radio_runparms $radio_wid 2
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+			-above 5 -below 1 
+		run_radio $radio_wid 0 2
+		footer "$MOUSE_SELECT_FOOTER"
+		input_handler
+		wclose $DISPLAY_WINDOW
+		
+		if [ "$ANSWER" = "0" ]
+		then
+			return 0 # try a different mouse
+		else
+			# shut system down
+			menu -c 1>/dev/$TERMDEV 2>&1 </dev/$TERMDEV
+			cd /
+			/sbin/umountall > /dev/null 2>&1
+			call uadmin 2 0 #Soft halt
+		fi
+	fi
+
+	# Ask use for # of mouse buttons
+	#unset RETURN_VALUE
+	#menu_colors regular
+	#menu -r -f $MSE_MENUS/chkmouse.4 -o /tmp/ps2mse.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+
+	# This sets MOUSEBUTTONS env variable
+	#. /tmp/ps2mse.$$
+	
+	display "$MESG3" -above 1 -below 5
+	DISPLAY_WINDOW=$CURWIN
+
+	# Find the width of the longest strings
+	integer i fwidth=0
+	(( fwidth = ${#LABEL[2]} + ${#BUTTON_OPT[0]} ))
+	(( i = ${#LABEL[2]} + 2))
+	(( fwidth += 4))		
+
+	place_window -above 3 -below 1 $fwidth 3 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG \
+		     -title "$TITLE3"
+	footer "$MOUSE_INFO_FOOTER"
+
+	open_form
+	fid=$FID
+
+	MOUSEBUTTONS="${BUTTON_OPT[0]}"
+	add_field MOUSEBUTTONS -p "${LABEL[2]}" -ilen 1 -ix $i\
+		  -choice 'choose "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"' \
+		  -exit 'check_params "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"'
+
+	run_form $fid
+	set_hotkey 9 'wclose; retval=0'
+	input_handler
+	wclose $DISPLAY_WINDOW
+	
+	[ "$retval" = "0" ] && return 0
+
+	display "$MOUSE_CONF"
+	DISPLAY_WINDOW=$CURWIN
+	footer
+	[ -f /etc/default/mouse ] &&
+		/usr/bin/grep -v MOUSEBUTTONS /etc/default/mouse > /tmp/mouse.$$
+	[ -n "${MOUSEBUTTONS}" ] && {
+		echo "MOUSEBUTTONS=${MOUSEBUTTONS}" >> /tmp/mouse.$$
+		mv /tmp/mouse.$$ /etc/default/mouse 1>/dev/null 2>&1
+	}
+	/usr/bin/mouseadmin -a console m320 > /dev/null 2>&1
+	return 1
+}
+
+# Called by Select_Mouse; ask for TTY port and # of buttons
+Serial_Mouse_Port ()
+{
+[ -n "$debug" ] && set -x
+	typeset retval=1
+	# Do we have second serial port?
+	SPORT2=Yes
+	/usr/sbin/check_devs -s /dev/tty01
+	rc=$?
+	[ "$rc" != 0 ] && SPORT2=No
+	export SPORT2
+
+	# Ask for port and num. of buttons
+	unset RETURN_VALUE
+	#menu_colors regular
+	#menu -r -f $MSE_MENUS/chkmouse.2  -o /tmp/smse.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+
+	#. /tmp/smse.$$ # set environment variables SPORT, MOUSEBUTTONS and PROTOCOL 
+	display "$MESG2" -above 1 -below 5
+	DISPLAY_WINDOW=$CURWIN
+
+	# Find the width of the longest strings
+	integer i fwidth=0 
+	
+	max "${#LABEL[0]}" "${#LABEL[1]}" "${#LABEL[2]}" 
+	(( fwidth = $? ))
+	(( i = fwidth + 2))
+
+	max "${#PORT_OPT[0]}" "${#PORT_OPT[1]}" \
+	"${#PROTOCOL_OPT[0]}" "${#PROTOCOL_OPT[1]}" \
+	"${#BUTTON_OPT[0]}" "${#BUTTON_OPT[1]}"
+	(( fwidth += $? + 4))		
+
+	place_window -above 10 -below 1 $fwidth 5 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG \
+		     -title "$TITLE2"
+	footer "$MOUSE_INFO_FOOTER"
+	open_form 
+	fid=$FID
+
+	SPORT="${PORT_OPT[0]}"
+	if [ "$SPORT2" = "Yes" ]
+	then
+		add_field SPORT -p "${LABEL[0]}" -ilen 4 -ix $i \
+				-choice 'choose "$SPORT" "${PORT_OPT[0]}" "${PORT_OPT[1]}"' \
+				-exit 'check_params "$SPORT" "${PORT_OPT[0]}" "${PORT_OPT[1]}"'
+	else
+		add_field SPORT -p "${LABEL[0]}" -ilen 4 -ix $i \
+				-exit 'check_params "$SPORT" "${PORT_OPT[0]}"'
+	fi
+
+	PROTOCOL="${PROTOCOL_OPT[0]}"
+	add_field PROTOCOL -p "${LABEL[1]}" -ilen 13 \
+		  -choice 'choose "$PROTOCOL" "${PROTOCOL_OPT[0]}" "${PROTOCOL_OPT[1]}"' \
+		  -exit 'check_params "$PROTOCOL" "${PROTOCOL_OPT[0]}" "${PROTOCOL_OPT[1]}"'
+
+	MOUSEBUTTONS="${BUTTON_OPT[0]}"
+	add_field MOUSEBUTTONS -p "${LABEL[2]}" -ilen 1 \
+		  -choice 'choose "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"' \
+		  -exit 'check_params "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"'
+
+	run_form $fid
+	set_hotkey 9 'wclose; retval=0'
+	input_handler
+	wclose $DISPLAY_WINDOW
+
+	[ "$retval" = "0" ] && return 0
+
+	if [ "${PROTOCOL}" != "Mouse Systems" ]
+	then
+		sed -e 's/int\([ 	]*\)smse_MSC_selected\([ 	]*\)=\([ 	]*\)1;/int\1smse_MSC_selected\2=\30;/' /etc/conf/pack.d/smse/space.c > /tmp/smse_space.c.$$
+	else
+		sed -e 's/int\([ 	]*\)smse_MSC_selected\([ 	]*\)=\([ 	]*\)0;/int\1smse_MSC_selected\2=\31;/' /etc/conf/pack.d/smse/space.c > /tmp/smse_space.c.$$
+	fi
+	mv /tmp/smse_space.c.$$ /etc/conf/pack.d/smse/space.c
+	
+	display "$MOUSE_CONF"
+	DISPLAY_WINDOW=$CURWIN
+	footer
+	[ -f /etc/default/mouse ] &&
+		/usr/bin/grep -v MOUSEBUTTONS /etc/default/mouse > /tmp/mouse.$$
+	[ -n "${MOUSEBUTTONS}" ] && {
+		echo "MOUSEBUTTONS=${MOUSEBUTTONS}" >> /tmp/mouse.$$
+		mv /tmp/mouse.$$ /etc/default/mouse 1>/dev/null 2>&1
+	}
+	if [ "${SPORT}" = "COM1" ]
+	then
+		/usr/bin/mouseadmin -a console tty00 1>/dev/null 2>&1
+	else
+		/usr/bin/mouseadmin -a console tty01 1>/dev/null 2>&1
+	fi
+	return 1
+}
+
+# Called from Select_Mouse. Get bus mouse interrupt vector and
+# num mouse buttons
+Bus_Mouse_Interrupt_Vector ()
+{
+[ -n "$debug" ] && set -x
+	typeset retval=1
+	# see what interrupt vectors are available for the mouse
+	# an IVN is OK if idcheck says it isn't in use or is in
+	# use by "bmse" -- that's us.
+
+	export MSEINT
+	CNT=0
+
+	# strategy is to set CNT to # of IVNs, write each IVN available
+	# to file with IVNs tab-separated, so can be read into
+	# shell variables later.
+
+	IVNUSER=`/etc/conf/bin/idcheck -r -v 9 2>/dev/null`
+	rc=$?
+	> /tmp/bmse.intr
+	if [ "$rc" = 0 -o "${IVNUSER}" = "bmse" ]
+	then
+		echo -n "2${TAB}" >> /tmp/bmse.intr
+		CNT=`expr ${CNT} + 1`
+	fi
+	IVNUSER=`/etc/conf/bin/idcheck -r -v 3 2>/dev/null`
+	rc=$?
+	if [ "$rc" = 0 -o "${IVNUSER}" = "bmse" ]
+	then
+		echo -n "3${TAB}" >> /tmp/bmse.intr
+		CNT=`expr ${CNT} + 1`
+	fi
+	IVNUSER=`/etc/conf/bin/idcheck -r -v 4 2>/dev/null`
+	rc=$?
+	if [ "$rc" = 0 -o "${IVNUSER}" = "bmse" ]
+	then
+		echo -n "4${TAB}" >> /tmp/bmse.intr
+		CNT=`expr ${CNT} + 1`
+	fi
+	IVNUSER=`/etc/conf/bin/idcheck -r -v 5 2>/dev/null`
+	rc=$?
+	if [ "$rc" = 0 -o  "${IVNUSER}" = "bmse" ]
+	then
+		echo -n "5${TAB}" >> /tmp/bmse.intr
+		CNT=`expr ${CNT} + 1`
+	fi
+
+	# read IVN values in bmse.intr into IVN[0]-IVN[3].
+	OIFS=${IFS}
+	IFS=${TAB}
+	read IVN[0] IVN[1] IVN[2] IVN[3] < /tmp/bmse.intr
+	IFS=${OIFS}
+	#export CNT IVN1 IVN2 IVN3 IVN4
+	[ "$CNT" = "0" ] && {
+		# No interrupt vectors available. Must select a mouse type
+		# other than bus mouse. Give user choice of shutdown or
+		# choosing a different type.
+		#unset RETURN_VALUE
+		#MSE_TYP=BUS export MSE_TYP
+		#menu_colors error
+		#menu -f $MSE_MENUS/chkmouse.5 -o /tmp/bmse.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+		#. /tmp/bmse.$$
+		#/sbin/rm -fr /tmp/bmse* 1>/dev/null 2>&1
+		
+		display "$BUS_MOUSE_ERROR" -fg $ERROR_FG -bg $ERROR_BG \
+			-border_fg $ERROR_FG -above 1 -below 5
+		DISPLAY_WINDOW=$CURWIN
+		
+		open_radio -bg $BLUE -fg $WHITE
+		radio_wid=$RID
+		integer i=0
+		ANSWER=0
+		while (( i < ${#CHOICES[*]} ))
+		do
+			add_radio "${CHOICES[i]}" \
+				   -entry "set_mouse_choice reboot $i"  
+			(( i+=1 ))
+		done
+		radio_runparms $radio_wid 2
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+			-above 5 -below 1 
+		run_radio $radio_wid 0 2
+		footer "$MOUSE_SELECT_FOOTER"
+		input_handler
+		wclose $DISPLAY_WINDOW
+		
+		if [ "$ANSWER" = "0" ]
+		then
+			return 0
+		else
+			#menu -c > /dev/$TERMDEV </dev/$TERMDEV
+			cd /
+			/sbin/umountall > /dev/null 2>&1
+			call uadmin 2 0 #Soft halt
+		fi
+	}
+	#unset RETURN_VALUE
+	#menu_colors regular
+	#menu -r -f $MSE_MENUS/chkmouse.3  -o /tmp/bmse.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+
+	#. /tmp/bmse.$$		# pick up shell var MSEINT from form
+	#/sbin/rm -f /tmp/bmse.$$ 1>/dev/null 2>&1
+
+	display "$MESG4" -above 1 -below 5
+	DISPLAY_WINDOW=$CURWIN
+
+	integer i=1 fwidth=0 ivnlen=0
+	
+	# Construct parameter array from IVN array. This is done
+	# because choose reacts unpredictably when passed null parameters
+	IVNSTR="${IVN[0]}"
+	while (( i < CNT ))
+	do
+		[ -n ${IVN[i]} ] && IVNSTR="$IVNSTR ${IVN[i]}"		
+		(( i += 1 ))
+	done
+	
+	# Find the width of the longest strings
+	max "${#LABEL[2]}" "${#LABEL[3]}"
+	(( fwidth = $? ))
+	(( i = fwidth + 2))
+
+	max "${#IVN[0]}" "${#IVN[1]}" "${#IVN[2]}" "${#IVN[3]}" 
+	(( ivnlen=$? ))
+	max "$ivnlen" "${#BUTTON_OPT[0]}" "${#BUTTON_OPT[1]}"
+	(( fwidth += $? + 4))		
+
+	place_window -above 10 -below 1 $fwidth 4 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG \
+		     -title "$TITLE4"
+	footer "$MOUSE_INFO_FOOTER"
+	open_form 
+	fid=$FID
+
+	MSEINT="${IVN[0]}"
+	add_field MSEINT -p "${LABEL[3]}" -ilen $ivnlen \
+		  -choice 'choose $MSEINT $IVNSTR' \
+		  -exit 'check_params "$MSEINT" "${IVN[0]}" "${IVN[1]}" "${IVN[2]}" "${IVN[3]}"'
+
+	MOUSEBUTTONS="${BUTTON_OPT[0]}"
+	add_field MOUSEBUTTONS -p "${LABEL[2]}" -ilen 1 \
+		  -choice 'choose "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"' \
+		  -exit 'check_params "$MOUSEBUTTONS" "${BUTTON_OPT[0]}" "${BUTTON_OPT[1]}"'
+
+	run_form $fid
+	set_hotkey 9 'wclose; retval=0'
+	input_handler
+	wclose $DISPLAY_WINDOW
+
+	[ "$retval" = "0" ] && return 0
+	display "$MOUSE_CONF"
+	DISPLAY_WINDOW=$CURWIN
+	footer
+	[ -f /etc/default/mouse ] &&
+		/usr/bin/grep -v MOUSEBUTTONS /etc/default/mouse > /tmp/mouse.$$
+	[ -n "${MOUSEBUTTONS}" ] && {
+		echo "MOUSEBUTTONS=${MOUSEBUTTONS}" >> /tmp/mouse.$$
+		mv /tmp/mouse.$$ /etc/default/mouse 1>/dev/null 2>&1
+	}
+	/usr/bin/mouseadmin -i $MSEINT -a console bmse > /dev/null 2>&1
+	return 1
+}
+
+what_mouse()
+{
+[ -n "$debug" ] && set -x
+	[ "$UPDEBUG" = "YES" ] && set -x
+
+	# find configured mouse info for upgrade/overlay
+	# the configured mse is set as default in the env. var CONFIGED_MSE
+
+	SD=/etc/conf/sdevice.d
+
+	# First check for bmse in $UPGRADE_STORE, if it exists, use it,
+	# otherwise check for it in /etc/conf/sdevice.d.
+	# After we've been through here once, we NEVER want to use the values
+	# in $UPGRADE_STORE/bmse again, so we need to rm the file.
+
+	BMSE=$UPINSTALL/bmse
+	[ -f $BMSE ] || BMSE=/etc/conf/sdevice.d/bmse
+
+	typeset OIFS=${IFS}
+	IFS=$TAB
+	read xx MSE < /usr/lib/mousetab
+	IFS=${OIFS}
+
+	case $MSE in
+	bmse)
+		[ -f $BMSE ] || {
+			logmsg "bmse in /usr/lib/mousetab, but $SD/bmse missing"
+			return
+		}
+
+		/usr/bin/grep "^bmse" $BMSE >/tmp/bmse 2>/dev/null
+		/sbin/rm -f $UPGRADE_STORE/bmse
+
+		[ -f /tmp/bmse ] || {
+			logmsg "$SD/bmse corrupted"
+			return
+		}
+
+		read Dev Conf Unit Ipl Type MSEINT SIOA EIOA SCMA ECMA </tmp/bmse
+
+		[ "$Conf" = N ] && {
+			logmsg "bmse not configured in $SD/bmse"
+			return
+		}
+
+		[ -z "$MSEINT" ] || {
+			[ "$MSEINT" = 9 ] && MSEINT=2	# postinstall script will change it to 9
+			CONFIGED_MSE=2; export CONFIGED_MSE
+		}
+		;;
+	m320)	# PS/2 mouse
+		CONFIGED_MSE=3; export CONFIGED_MSE
+		;;
+	tty00|tty01)
+		CONFIGED_MSE=1; export CONFIGED_MSE
+		export SPORT
+		SMS_PORT=0
+		[ $MSE = tty01 ] && {
+			SPORT=COM2;
+			SMS_PORT=1
+		}
+		export MSE
+		;;
+	esac
+	[ -s /etc/default/mouse ] && . /etc/default/mouse
+	export MOUSEBUTTONS
+}
+
+#main body of mouse section
+
+wclose $CURWIN
+blue_and_clear
+$SILENT_INSTALL && pfmt -s nostd -g base.pkg:55 "Setting up the Mouse.\n" 2>&1
+
+# If there's a mousemgr already running, this one will just exit silently.
+# Start mousemgr in a subshell so that the wait in bye_bye() will not wait
+# for it.
+(/usr/lib/mousemgr &)
+
+while :
+do
+	default_mouse_resp
+	[ -f /usr/lib/mousetab ] && what_mouse
+	[ "$UPDEBUG" = YES ] && goany
+	# deconfigure existing mouse
+	LC_ALL=C mouseadmin 1>/dev/null 2>&1 <<-EOF
+		r
+		console
+		u
+		EOF
+	$SILENT_INSTALL && {
+		typeset MOUSE_ARG=""
+		if [ "$MOUSE_TYPE" = "BUS" ]
+		then
+			MOUSE_ARG="-i $MOUSE_IRQ"
+		fi
+		/usr/bin/mouseadmin $MOUSE_ARG -a console $MOUSE_TYPE > /dev/null 2>&1
+		break
+	}
+	Select_Mouse
+	case $? in
+	0) # success
+		unset RETURN_VALUE
+		#menu_colors regular
+		#menu -r -f $MSE_MENUS/chkmouse.6 -o /tmp/resp.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+		display "$SUCCESS" 
+		DISPLAY_WINDOW=$CURWIN
+		footer
+		# Allow screen to be displayed for a couple seconds
+		sleep 2
+		wclose $DISPLAY_WINDOW
+		break
+		;;
+	99) # no mouse
+		footer
+		break
+		;;
+	*)  # failure
+		unset RETURN_VALUE
+		#menu_colors warn
+		#menu -r -f $MSE_MENUS/chkmouse.7 -o /tmp/resp.$$ 2>/dev/null > /dev/$TERMDEV </dev/$TERMDEV
+		#. /tmp/resp.$$
+		#ans=`expr ${RETURN_VALUE}`
+
+		display "$MOUSE_TEST_ERROR" -fg $ERROR_FG -bg $ERROR_BG \
+			-border_fg $ERROR_FG -above 1 -below 5
+		DISPLAY_WINDOW=$CURWIN
+		
+		open_radio -bg $BLUE -fg $WHITE
+		radio_wid=$RID
+		integer i=0
+		ANSWER=0
+		while (( i < ${#CHOICES[*]} ))
+		do
+			add_radio "${CHOICES[i]}" \
+				   -entry "set_mouse_choice reboot $i"  
+			(( i+=1 ))
+		done
+		radio_runparms $radio_wid 2
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+			-above 5 -below 1 
+		run_radio $radio_wid 0 2
+		footer "$MOUSE_SELECT_FOOTER"
+		input_handler
+		wclose $DISPLAY_WINDOW
+		
+		if [ "$ANSWER" = "1" ]
+		then
+			#menu -c > /dev/$TERMDEV </dev/$TERMDEV
+			cd /
+			/sbin/umountall > /dev/null 2>&1
+			call uadmin 2 0 #Soft halt
+		fi
+		;;
+	esac
+done
+
+# make certain the last mouse screen is cleared 
+#menu -c >/dev/$TERMDEV </dev/$TERMDEV
+
+# save user response re: number of mouse buttons
+[ -f /etc/default/mouse ] &&
+	/usr/bin/grep -v MOUSEBUTTONS /etc/default/mouse > /tmp/mouse.$$
+[ -n "${MOUSEBUTTONS}" ] && {
+	echo "MOUSEBUTTONS=${MOUSEBUTTONS}" >> /tmp/mouse.$$
+	mv /tmp/mouse.$$ /etc/default/mouse 1>/dev/null 2>&1
+}
+
+#[ 0 = 1 ] && {		# JAY, scrap these funcs
+
+### Begin addusers section -- prompt for user acct info, root, user password
+
+# Add a login ID ($1) to the packaging tool admin file specified by $2
+# This is so that the owner account created here receives mail from
+# the packaging tools.
+
+Add_Owner_To_Pkg() {
+[ -n "$debug" ] && set -x
+	MAILID=$1
+	FILE=$2
+	# Bail out if arguments not valid...
+	[ ! -f ${FILE} ] && return
+	[ "${MAILID}" = "" ] && return
+	[ "${MAILID}" = "root" ] && return # root always configured
+
+	# look for construct mail=<list of logins separated by spaces>
+	# And then look for user ID $MAILID within that list
+	# Either the pattern " <ID> " is in $2 or the pattern
+	# " <ID>$" (where $ is end of line) is in the file.
+	GREP1=`/usr/bin/grep "^mail=" ${FILE} | /usr/bin/grep " ${MAILID} "`
+	GREP2=`/usr/bin/grep "^mail=" ${FILE} | /usr/bin/grep " ${MAILID}$"`
+	if [ "${GREP1}" = "" -a "${GREP2}" = "" ]
+	then
+		# add the user to the list
+		FNAME=/tmp/.mailtoid$$
+		/usr/bin/sed \/\^mail\/s/\$\/" ${MAILID}"\/ < ${FILE} > ${FNAME}
+		# Use cp to maintain perms on $FILE
+		/sbin/cp ${FNAME} ${FILE}
+		/sbin/rm -f ${FNAME} 1>/dev/null 2>&1
+	fi
+	# otherwise user was already in the list
+}
+
+Get_Root_Passwd ()
+{
+[ -n "$debug" ] && set -x
+#echo ROOT_PW_ENCRYPTED=$ROOT_PW_ENCRYPTED, ROOT_PASSWD=$ROOT_PASSWD.
+#echo ROOT_PW_ENCRYPTED=$ROOT_PW_ENCRYPTED, ROOT_PASSWD=$ROOT_PASSWD. > /isl/ROOT_PASSWD
+	/usr/bin/passwd -d root
+
+	# ROOT_PW_ENCRYPTED is set by the 'password' UI module.
+	# If this variable is not set, we assume Compaq has somehow set
+	# the unencrypted ifile variable ROOT_PASSWD.
+	#
+	[ -z "$ROOT_PW_ENCRYPTED" ] && {
+		print "$ROOT_PASSWD\n$ROOT_PASSWD" |
+			/usr/bin/passwd.stdin root 2> /dev/null
+		return 0
+	}
+
+	#setpasswd /usr/bin/passwd.stdin -e root $ROOT_PW_ENCRYPTED
+	/usr/bin/passwd.stdin -e $ROOT_PW_ENCRYPTED root
+}
+
+Get_User_Passwd ()
+{
+[ -n "$debug" ] && set -x
+	/usr/bin/passwd -d ${LOGIN}
+
+	LOGIN=$1
+#echo LOGIN=$LOGIN, OWNER_PASSWD=$OWNER_PASSWD, OWNER_PW_ENCRYPTED=$OWNER_PW_ENCRYPTED.
+#echo LOGIN=$LOGIN, OWNER_PASSWD=$OWNER_PASSWD, OWNER_PW_ENCRYPTED=$OWNER_PW_ENCRYPTED. > /isl/OWNER_PASSWD
+	# OWNER_PW_ENCRYPTED is set by the 'owner' UI module.
+	# If this variable is not set, we assume Compaq has somehow set
+	# the unencrypted ifile variable OWNER_PASSWD.
+	#
+	[ -z "$OWNER_PW_ENCRYPTED" ] && {
+		print "$OWNER_PASSWD\n$OWNER_PASSWD" |
+			/usr/bin/passwd.stdin $LOGIN 2> /dev/null
+		return 0
+	}
+
+	#setpasswd /usr/bin/passwd.stdin -e ${LOGIN} $OWNER_PW_ENCRYPTED
+	/usr/bin/passwd.stdin -e $OWNER_PW_ENCRYPTED ${LOGIN}
+}
+
+do_oam()
+{
+[ -n "$debug" ] && set -x
+	# JAY, who creates askAboutOAM ?
+	# JAY, without that file, this func never asks for sysadm password,
+	# which is fine since the 'owner' UI module doesn't do that either.
+	# JAY keep this chunk?
+	[ -f /etc/inst/scripts/askAboutOAM ] || return 0
+	$SILENT_INSTALL && {
+		# This code will not be executed as long as oam is
+		# not installed during a silent installation.
+		print "$ROOT_PASSWD\n$ROOT_PASSWD" |
+			/usr/bin/passwd.stdin sysadm 2> /dev/null
+		return 0
+	}
+	DIR=/etc/inst/locale/${LANG}/menus/oam
+	[ ! -f ${DIR}/menu.oam ] && DIR=/etc/inst/locale/C/menus/oam
+	#  Invoke the menu that informs user that the password will be required
+	#  for the sysadm user.
+	menu_colors regular
+	menu -f ${DIR}/menu.oam -o /dev/null > /dev/console 2> /dev/null
+
+	#  In all cases, reset the sysadm user's password and get a new one.
+	#  Also, check to make sure passwd executed correctly and reinvoke
+	#  if necessary.
+	/usr/bin/passwd -d sysadm
+	DONE=0
+
+	while [ "${DONE}" = "0" ]
+	do
+		setpasswd /usr/bin/passwd sysadm
+		if [ $? = 0 ]
+		then
+			DONE=1
+		fi
+	done
+}
+
+# addusers main()
+
+export DESKTOP_PRESENT=false
+[ -s /var/sadm/pkg/desktop/pkginfo ] && DESKTOP_PRESENT=true
+
+# AUTOMERGE is set to "yes" forcibly because using pkgadd in inst
+# causes AUTOMERGE to be set to Yes. This version of Gemini does not
+# support upgrades. Take out the following line if you want upgrades.
+
+export AUTOMERGE="No"
+
+
+# If they chose to not merge their system files, then the /etc/passwd
+# file we just installed will contain NO logins, so we're forced to
+# set up a user account and we're also going to require a root password.
+# If they chose AUTOMERGE=Yes, then we need to do something special for
+# an UPGRADE.
+
+[ "$AUTOMERGE" = "Yes" ] && {
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	# If it's an overlay, they're already set up.
+
+	[ "$PKGINSTALL_TYPE" = "OVERLAY" -o "$PKGINSTALL_TYPE" = "UPGRADE2" ] && bye_bye
+
+	[ "$UPDEBUG" = "YES" ] && goany
+
+	# If the desktop metaphor package is not installed, we don't
+	# need to identify anyone as the owner
+
+	$DESKTOP_PRESENT || bye_bye
+}
+
+# For either auto or custom installs, user created as desktop owner
+# if desktop software installed.
+
+# Default to Motif desktop environment
+export DESKTOP=${DESKTOP:-MOTIF}
+
+
+
+
+# Set LC_CTYPE to the system default LANG value, defined
+# in /etc/default/locale.  Save and restore original (boot-floppy)
+# value of LANG. (This is not done if the system locale is Japanese,
+# because multibyte characters corrupt the menus.)
+
+OLANG=$LANG
+eval `defadm locale LANG 2>/dev/null`
+[ "$LANG" != "ja" ] && {
+	LC_CTYPE=$LANG
+	export LC_CTYPE
+}
+LANG=$OLANG
+
+
+
+
+while :
+do
+	[ "$UPDEBUG" = "YES" ] && goany && set +x
+
+	# When the following section is hit, the form comes back up with
+	# the fields filled in with the same values the user just entered
+	# except we reset the USERNUM to "".
+	# It would also be nice to have the current field be the USERNUM
+	# field, BUT that may be asking for too much.
+
+	[ -d /var ] || /usr/bin/mkdir /var
+	HOMEDIR=/var
+	[ -d /home ] && HOMEDIR=/home
+	HOMEARG=$HOMEDIR/$USERID
+	USER_SHELL=/usr/bin/sh
+	[ -s /var/sadm/pkg/cmds/pkginfo ] && USER_SHELL=/usr/bin/ksh
+
+	# If all we're really doing is defining an owner for the case
+	# of an upgrade and /etc/passwd has been updated with existing
+	# accounts, then we don't need to add $USERID as a user here
+	# and we may not need to create a desktop for the user below.
+
+	display "$OWNER_CONF"
+	DISPLAY_WINDOW=$CURWIN
+
+	/usr/sbin/useradd -u $USERNUM -s $USER_SHELL -c "$USERNAME" -d $HOMEARG -m $USERID > /dev/null 2>&1
+
+	Get_User_Passwd $USERID
+
+	# What if you're set up as a user, and then remove the package ??
+	# This is a general question, NOT up_n_over related.
+
+	# JAY move this chunk to 'owner' UI module?  
+	# Are all these /usr/X binaries available at the time 'owner' runs?
+# 	$DESKTOP_PRESENT && {
+# JTB: Vince and I (and others) think that the dtadd... stuff is
+# no longer used.  Should delete this section if that is confirmed.
+#
+#		[ "$DESKTOP" != "NONE" ] && {
+#			# just to be safe, and prevent warnings
+#
+#			[ "$PKGINSTALL_TYPE" = "OVERLAY" -o \
+#				"$PKGINSTALL_TYPE" = "UPGRADE2" ] &&
+#				/usr/X/adm/dtdeluser $USERID >/dev/null 2>&1
+#
+#			[ -f /usr/X/desktop/LoginMgr/Users/$USERID ] || {
+#				# User does not have desktop dirs yet; create 
+#				# them.  (If UPGRADE=YES, user may have
+#				# existing desktop.)
+#				#
+#				# If the DESKTOP chosen is MOTIF then we need
+#				# to use the -m option to dtadduser
+#
+#				unset MARG
+#				[ "$DESKTOP" = "MOTIF" ] && MARG=-m
+#				# LOCALE cannot be set when dtadduser is run. We 
+#				# unset it now for SILENT_INSTALL since the ifiles 
+#				# variables, which include LOCALE, are exported.
+#				$SILENT_INSTALL && {
+#					LOCALE_SAVE=$LOCALE 
+#					unset LOCALE
+#				}
+#				/usr/X/adm/dtadduser $MARG $USERID
+#				$SILENT_INSTALL && { 
+#					LOCALE=$LOCALE_SAVE
+#					export LOCALE 
+#				}
+#			}
+#		}
+#
+#		/usr/X/adm/make-owner $USERID
+# JTB: make-owner is now part of scoadmin stuff
+# 	}
+	/usr/lib/scoadmin/account/make-owner $USERID > /dev/null 2>&1
+
+	# Update "mail=root" entry in the package tools
+	# administration files so that mail is sent to
+	# the login ID just specified.
+
+	for tfile in /var/sadm/install/admin/*
+	do
+		Add_Owner_To_Pkg $USERID $tfile
+	done
+
+	[ "$AUTOMERGE" != "Yes" ] && Get_Root_Passwd
+	/usr/lib/scoadmin/account/make-owner root > /dev/null 2>&1
+
+	break
+done
+
+do_oam
+
+[ -s /usr/lib/dstime/jobno ] && {
+	at -r $(</usr/lib/dstime/jobno)
+	rm -f /usr/lib/dstime/jobno
+}
+(cd /usr/lib/dstime; ./dst_sched)
+
+# necessary in case a locale with diff font needs is selected in the 
+# Language Supplement install
+# /sbin/loadfont
+#
+
+# Set up console for OpenServer style multiscreen on the
+# first 8 function keys.
+#
+sacadm -a -p contty -t ttymon -c /usr/lib/saf/ttymon -v `ttyadm -V` > /dev/null 2>&1
+
+for i in 2 3 4 5 6 7 8
+do
+	pmadm -a -p contty -s $i -S login -fu -v `ttyadm -V` \
+	      -m "`ttyadm -d /dev/vt0$i -l console -s /usr/bin/shserv -p \"Login (vt0$i): \"`" > /dev/null 2>&1
+done
+
+# Display eval licenses and unlicensed packages
+
+function display_pkg_lic {
+[ -n "$debug" ] && set -x
+	integer y=1 width=72 height=8 lines=0 i=0
+	typeset line PKGS
+
+	if [ -f $1 ]
+	then
+		display "$2" -above 1 -below 8
+		DISPLAY_WIN=$CURWIN
+		place_window $width $height -above 16 -below 1
+		while read line
+		do
+			PKGS[$lines]="$line"
+			(( lines += 1 ))
+		done < $1
+
+		(( lines > 0 )) && footer "$CONT_MSG"
+		while (( i < lines ))
+		do
+			wgotoxy $CURWIN 1 $y
+			wprintf $CURWIN "%3d. ${PKGS[i]}" $((i+1))
+			(( y += 1 ))
+			if (( y == height-1 ))
+			then
+				call getkey
+				wclear $CURWIN
+				y=1
+			fi
+			(( i += 1 ))
+		done
+		if (( y != 1 ))
+		then
+			call getkey
+		fi
+		wclose $DISPLAY_WIN
+		wclose
+	fi
+}
+				
+wclose $DISPLAY_WIN
+display_pkg_lic /var/adm/log/eval "$EVAL_NOTICE"
+display_pkg_lic /var/adm/log/nolic "$NOLIC_NOTICE"
+
+bye_bye

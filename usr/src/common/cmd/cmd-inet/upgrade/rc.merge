@@ -1,0 +1,120 @@
+#ident	"@(#)rc.merge	1.2"
+
+#
+# when upgrading UnixWare from 1.1 to 2.0 this script will 
+# fold in the changes made to the /etc/inet/rc.inet file in to
+# the new file /etc/inet/config. This script will only transfer
+# changes made regarding /usr/sbin/route and /usr/sbin/in.routed.
+# 
+
+#
+# there are five (5) variables that are set in /usr/sbin/pkginst/up_merge
+# script that could be used in this script:
+# ROOT - root directory
+# FILENAME - name of the file, full path without ROOT
+# UP_ORIG - root directory of the original 1.1 volitile files
+# UP_USER - root directory of the volitile files currently on the system
+# MERGEDFILE - full path of the merged file
+#
+
+RET_CODE=0
+NEW=${ROOT}/etc/inet
+ORIGINAL=${UP_ORIG}
+CHANGED=${UP_USER}
+
+#
+# merge the /etc/inet/rc.inet iff file has been changed...
+#
+diff ${ORIGINAL}/${FILENAME}  ${CHANGED}/${FILENAME} >/dev/null 2>&1
+if [ $? -ne 0 ]
+then
+#
+#start /usr/sbin/in.routed with the same args as before...
+#
+rdl=`egrep -c "^[	 ]*(/usr/sbin/)?in.routed[	 ]" ${CHANGED}/${FILENAME}`
+case $rdl in
+0)	;;
+
+1)
+	egrep "^[	 ]*(/usr/sbin/)?in.routed[	 ]*-q[	 ]*" ${CHANGED}/${FILENAME} >/dev/null 2>&1
+	if [ "$?" != "0"  ]
+	then
+#
+# retreive the original routed line and remove any comments at the end...
+#
+		line=`egrep "^[	 ]*(/usr/sbin/)?in.routed[	 ]" ${CHANGED}/${FILENAME}`
+		line2=`echo ${line} | awk ' {
+			if (index($0,"#") > 0 )
+		       		printf("%s\n",substr($0,1,index($0,"#")-1))
+			else
+			        printf("%s\n",$0) } '`
+
+#
+# remove the default entry from /etc/inet/config...
+#
+		egrep -v "^[	 ]*4b:/usr/sbin/in.routed:/usr/sbin/in.gated:Y::-q:" ${NEW}/config >/tmp/TMP.config
+#
+# add the new entry to config...
+#
+		echo ${line2} | awk '{ printf("4b:/usr/sbin/in.routed:/usr/sbin/in.gated:Y::%s", $2)
+		for (i = 3; i <= NF; i++)
+		printf(" %s",$i) 
+		printf(":\n") }' >>/tmp/TMP.config
+		cat /tmp/TMP.config  >${NEW}/config
+		rm /tmp/TMP.config
+	fi ;;
+		
+
+*)	
+	RET_CODE=1;;
+
+esac
+
+
+#
+# make sure we get all the "route [options]  add" lines 
+# into the /etc/inet/config file
+#
+
+rdl=`egrep "^[	 ]*(/usr/sbin/)?route[	 ]+(-[a-zA-Z0-9]+[ 	]+)*add[	 ]*" ${CHANGED}/${FILENAME} | wc -l`
+case $rdl in
+0) ;;
+
+*)
+#
+# retreive the original route entries...
+# and remove any comments at the end of each entry...
+#
+	egrep "^[	 ]*(/usr/sbin/)?route[	 ]+(-[a-zA-Z0-9]+[ 	]+)*add[	 ]*" ${CHANGED}/${FILENAME} >/tmp/TMP.config
+	awk '{ 
+	if (index($0,"#") != 0)
+		printf("%s\n",substr($0,1,index($0,"#")-1)) 
+	else
+		printf("%s\n",$0) 
+	}' /tmp/TMP.config >/tmp/TMP.config2 ;
+#
+# add each entry to the config file...
+#
+	awk '{ 
+	printf("4c:/usr/sbin/route::y::%s",$2)
+	for (i = 3; i <= NF; i++)
+	printf(" %s",$i) 
+	printf(":\n") }' /tmp/TMP.config2 >/tmp/TMP.config ;
+	egrep -v "^[	 ]*4c:/usr/sbin/route::y::add*" ${NEW}/config >/tmp/TMP.config2 ;
+	cat /tmp/TMP.config >>/tmp/TMP.config2 ;
+	cat /tmp/TMP.config2  >${NEW}/config ;
+	rm /tmp/TMP.config /tmp/TMP.config2 ;;
+esac
+	
+fi
+	
+#
+# we want to keep the $NEW/rc.inet the same...we just updated the 
+# $NEW/config to match the $CHANGED/${FILENAME} script...
+# so...we just copy the $NEW/rc.inet to $MERGEDFILE so that the
+# upgrade script will copy it back to $NEW/rc.inet...
+# this is just so that the upgrade script has a file to copy...
+#
+cp ${NEW}/rc.inet ${MERGEDFILE}
+
+exit ${RET_CODE}

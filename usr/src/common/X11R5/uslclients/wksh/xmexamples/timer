@@ -1,0 +1,57 @@
+#!/usr/bin/wksh -motif
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:xmexamples/timer	1.2"
+
+
+# A simple stopwatch script
+
+function update_time {
+	typeset -Z2 SEC
+	let CURTIME=SECONDS-STARTTIME
+	let MIN=CURTIME/60
+	let SEC=CURTIME%60
+	sv $TXT labelString:"$MIN:$SEC"
+}
+function clock_update {
+	if [ "$STOPPED" != true ]
+	then 
+		update_time
+		XtAddTimeOut $2 1000 "clock_update $1 $2"
+	fi
+}
+function stop_clock {
+	if [ $STOPPED = false ]
+	then 
+	     STOPPED=true; 
+	     SAVE_TIME=$SECONDS
+	     sv $STOP labelString:START
+	else 
+	     STOPPED=false; 
+	     SECONDS=SAVE_TIME
+	     sv $STOP labelString:STOP
+	     clock_update $TXT $TOPLEVEL
+	fi
+}
+
+STOPPED=false
+ai TOPLEVEL stopwatch StopWatch -fn 12x24 "$@"
+
+cmw RC rc rowColumn $TOPLEVEL orientation:vertical
+cmw TXT TXT label $RC labelString:"00:00"
+cmw CMDS cmds rowColumn $RC orientation:horizontal
+addbuttons -w $CMDS \
+		QUIT QUIT "exit 0" \
+		RESET RESET 'STARTTIME=$SECONDS; update_time' \
+		STOP STOP  stop_clock
+STARTTIME=$SECONDS
+XtAddTimeOut $TOPLEVEL 1000 "clock_update $TXT $TOPLEVEL"
+rw $TOPLEVEL
+ml

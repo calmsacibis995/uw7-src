@@ -1,0 +1,1156 @@
+/*
+ *	@(#) 68800bc.xgi 11.1 97/10/22
+ *
+ * Copyright (C) 1991-1993 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* ************************************************************************* *
+ *                                                                           *
+ *                      ATI.68800BC.8514A.1280x1024-256-74-ati68875          *
+ *                      ATI.68800BC.8514A.1280x1024-256-70-ati68875          *
+ *                      ATI.68800BC.8514A.1280x1024-256-60-ati68875          *
+ *                      ATI.68800BC.8514A.1280x1024-256-87                   *
+ *                      ATI.68800BC.8514A.1024x768-256-76                    *
+ *                      ATI.68800BC.8514A.1024x768-256-72                    *
+ *                      ATI.68800BC.8514A.1024x768-256-70                    *
+ *                      ATI.68800BC.8514A.1024x768-256-60                    *
+ *                      ATI.68800BC.8514A.1024x768-256-87                    *
+ *                      ATI.68800BC.8514A.800x600-256-76                     *
+ *                      ATI.68800BC.8514A.800x600-256-72                     *
+ *                      ATI.68800BC.8514A.800x600-256-60                     *
+ *                      ATI.68800BC.8514A.800x600-256-56                     *
+ *                      ATI.68800BC.8514A.640x480-256-72                     *
+ *                      ATI.68800BC.8514A.640x480-256-60                     *
+ *                                                                           *
+ * ************************************************************************* */
+
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1280x1024-256-74-ati68875 "1280x1024 256-color 74Hz, ATI 68875 DAC"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1280;
+	PIXHEIGHT	= 1024;
+	COMMENT         =
+"Your card must have 2 Meg of RAM,
+and an ATI 68875 or compatible DAC
+for this mode to work.";
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x02E8, 0x00D5);	/* h_total				*/
+	outw(0x06E8, 0x009F);	/* h_disp				*/
+	outw(0x0AE8, 0x00A3);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0012);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x084B);	/* v_total				*/
+	outw(0x16E8, 0x07FF);	/* v_disp				*/
+	outw(0x1AE8, 0x07FF);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x001E);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x00A0);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x01);	/*  input_clk_sel			*/
+	out(0x02EA, 0x09);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0110);	/* ext_ge_config: 8bpp mux		*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x01);		/* pixel_delay=0, blank_adjust=1	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AEE, 0x0E21);	/* clock_sel: 135.00 MHz		*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x00A0);	/* ge_pitch				*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x00);	/*  input_clk_sel			*/
+	out(0x02EA, 0x00);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x0C);		/* pixel_delay=3, blank_adjust=0	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1280x1024-256-70-ati68875 "1280x1024 256-color 70Hz, ATI 68875 DAC"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1280;
+	PIXHEIGHT	= 1024;
+	COMMENT         =
+"Your card must have 2 Meg of RAM,
+and an ATI 68875 or compatible DAC
+for this mode to work.";
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x02E8, 0x00D2);	/* h_total				*/
+	outw(0x06E8, 0x009F);	/* h_disp				*/
+	outw(0x0AE8, 0x00A9);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x000E);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0851);	/* v_total				*/
+	outw(0x16E8, 0x07FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0800);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0005);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x00A0);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x01);	/*  input_clk_sel			*/
+	out(0x02EA, 0x09);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0110);	/* ext_ge_config: 8bpp mux		*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x01);		/* pixel_delay=0, blank_adjust=1	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AEE, 0x0E05);	/* clock_sel: 126.00 MHz		*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x00A0);	/* ge_pitch				*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x00);	/*  input_clk_sel			*/
+	out(0x02EA, 0x00);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x0C);		/* pixel_delay=3, blank_adjust=0	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1280x1024-256-60-ati68875 "1280x1024 256-color 60Hz, ATI 68875 DAC"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1280;
+	PIXHEIGHT	= 1024;
+	COMMENT         =
+"Your card must have 2 Meg of RAM,
+and an ATI 68875 or compatible DAC
+for this mode to work.";
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x02E8, 0x00D6);	/* h_total				*/
+	outw(0x06E8, 0x009F);	/* h_disp				*/
+	outw(0x0AE8, 0x00A9);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x002E);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0852);	/* v_total				*/
+	outw(0x16E8, 0x07FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0800);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0025);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x00A0);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x01);	/*  input_clk_sel			*/
+	out(0x02EA, 0x09);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0110);	/* ext_ge_config: 8bpp mux		*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x01);		/* pixel_delay=0, blank_adjust=1	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AEE, 0x0A29);	/* clock_sel: 110.00 MHz		*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x00A0);	/* ge_pitch				*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	outw(0x7AEE, 0x2010);	/* ext_ge_config: 8bpp hi DAC addr	*/
+
+	out(0x02ED, 0x00);	/*  input_clk_sel			*/
+	out(0x02EA, 0x00);	/* output_clk_sel			*/
+	out(0x02EB, 0x1D);	/* mux-ctl				*/
+
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	in(r0, 0x92EF);		/* r_misc_cntl + 1			*/
+	and(r0, 0xF0);
+	or(r0,  0x0C);		/* pixel_delay=3, blank_adjust=0	*/
+	out(0x7EEF, r0);	/* misc_cntl + 1			*/
+
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1280x1024-256-87 "1280x1024 256-color interlaced 87Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1280;
+	PIXHEIGHT	= 1024;
+	COMMENT         =
+"Your card must have 2 Meg of RAM
+for this mode to work.";
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x00C7);	/* h_total				*/
+	outw(0x06E8, 0x009F);	/* h_disp				*/
+	outw(0x0AE8, 0x00A9);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x000A);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x08F8);	/* v_total				*/
+	outw(0x16E8, 0x07FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0861);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x000A);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x00A0);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x062D);	/* clock_sel: 80.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x00A0);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0033);	/* enable CRTC, interlaced		*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1024x768-256-76 "1024x768 256-color 76Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x00A2);	/* h_total				*/
+	outw(0x06E8, 0x007F);	/* h_disp				*/
+	outw(0x0AE8, 0x0087);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x000B);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x064A);	/* v_total				*/
+	outw(0x16E8, 0x05FF);	/* v_disp				*/
+	outw(0x1AE8, 0x060B);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0004);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0080);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x062D);	/* clock_sel: 80.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0080);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1024x768-256-72 "1024x768 256-color 72Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x00A1);	/* h_total				*/
+	outw(0x06E8, 0x007F);	/* h_disp				*/
+	outw(0x0AE8, 0x0082);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0032);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0649);	/* v_total				*/
+	outw(0x16E8, 0x05FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0602);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0026);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0080);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0639);	/* clock_sel: 75.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0080);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1024x768-256-70 "1024x768 256-color 70Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x00A6);	/* h_total				*/
+	outw(0x06E8, 0x007F);	/* h_disp				*/
+	outw(0x0AE8, 0x0083);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0016);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0643);	/* v_total				*/
+	outw(0x16E8, 0x05FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0601);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0008);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0080);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0639);	/* clock_sel: 75.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0080);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1024x768-256-60 "1024x768 256-color 60Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x00A7);	/* h_total				*/
+	outw(0x06E8, 0x007F);	/* h_disp				*/
+	outw(0x0AE8, 0x0085);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0008);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x063B);	/* v_total				*/
+	outw(0x16E8, 0x05FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0600);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0004);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0080);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x053D);	/* clock_sel: 65.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0080);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   1024x768-256-87 "1024x768 256-color interlaced 87Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x009D);	/* h_total				*/
+	outw(0x06E8, 0x007F);	/* h_disp				*/
+	outw(0x0AE8, 0x0081);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0016);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0660);	/* v_total				*/
+	outw(0x16E8, 0x05FF);	/* v_disp				*/
+	outw(0x1AE8, 0x0600);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0008);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0080);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x031D);	/* clock_sel: 44.90 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0080);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0033);	/* enable CRTC, interlaced		*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   800x600-256-76 "800x600 256-color 76Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x0086);	/* h_total				*/
+	outw(0x06E8, 0x0063);	/* h_disp				*/
+	outw(0x0AE8, 0x006D);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0028);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0565);	/* v_total				*/
+	outw(0x16E8, 0x04AB);	/* v_disp				*/
+	outw(0x1AE8, 0x04FA);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0024);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0070);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0515);	/* clock_sel: 56.64 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0070);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   800x600-256-72 "800x600 256-color 72Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x0082);	/* h_total				*/
+	outw(0x06E8, 0x0063);	/* h_disp				*/
+	outw(0x0AE8, 0x006A);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x000F);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0537);	/* v_total				*/
+	outw(0x16E8, 0x04AB);	/* v_disp				*/
+	outw(0x1AE8, 0x04F8);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0006);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0070);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0411);	/* clock_sel: 50.35 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0070);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   800x600-256-60 "800x600 256-color 60Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x0083);	/* h_total				*/
+	outw(0x06E8, 0x0063);	/* h_disp				*/
+	outw(0x0AE8, 0x0068);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0010);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x04E3);	/* v_total				*/
+	outw(0x16E8, 0x04AB);	/* v_disp				*/
+	outw(0x1AE8, 0x04B0);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0004);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0070);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0331);	/* clock_sel: 39.91 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0070);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   800x600-256-56 "800x600 256-color 56Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x007F);	/* h_total				*/
+	outw(0x06E8, 0x0063);	/* h_disp				*/
+	outw(0x0AE8, 0x0066);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0009);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x04E0);	/* v_total				*/
+	outw(0x16E8, 0x04AB);	/* v_disp				*/
+	outw(0x1AE8, 0x04B0);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0002);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0070);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x030D);	/* clock_sel: 36.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0070);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   640x480-256-72 "640x480 256-color 72Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 640;
+	PIXHEIGHT	= 480;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x006A);	/* h_total				*/
+	outw(0x06E8, 0x004F);	/* h_disp				*/
+	outw(0x0AE8, 0x0052);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x0025);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x040B);	/* v_total				*/
+	outw(0x16E8, 0x03BF);	/* v_disp				*/
+	outw(0x1AE8, 0x03D4);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0023);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0050);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0225);	/* clock_sel: 32.00 MHz			*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0050);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */
+
+VENDOR ATI         "ATI"
+ MODEL  68800BC       "Ultra Pro or Ultra Plus - Early 92"
+  CLASS  8514A       "8514A"
+   MODE   640x480-256-60 "640x480 256-color 60Hz"
+
+    PORT(VGA,EFF);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 640;
+	PIXHEIGHT	= 480;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	outw(0x5AEE, 0x0001);	/* select shadow set 1			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0002);	/* select shadow set 2			*/
+	outw(0x46EE, 0x0000);	/* unlock all parameters		*/
+	outw(0x5AEE, 0x0000);	/* select shadow set 0			*/
+
+	outw(0x22E8, 0x0043);	/* reset CRTC				*/
+	outw(0x4AE8, 0x0001);	/* disable passthrough			*/
+
+	outw(0x02E8, 0x0063);	/* h_total				*/
+	outw(0x06E8, 0x004F);	/* h_disp				*/
+	outw(0x0AE8, 0x0052);	/* h_sync_strt				*/
+	outw(0x0EE8, 0x002C);	/* h_sync_wid				*/
+
+	outw(0x12E8, 0x0418);	/* v_total				*/
+	outw(0x16E8, 0x03BF);	/* v_disp				*/
+	outw(0x1AE8, 0x03D6);	/* v_sync_strt				*/
+	outw(0x1EE8, 0x0022);	/* v_sync_wid				*/
+
+	outw(0x26EE, 0x0050);	/* crt_pitch				*/
+	outw(0x2AEE, 0x0000);	/* crt_offset_lo			*/
+	outw(0x2EEE, 0x0000);	/* crt_offset_hi			*/
+
+	outw(0x62EE, 0x0000);	/* horz_overscan			*/
+	outw(0x66EE, 0x0000);	/* vert_overscan			*/
+
+	outw(0x4AEE, 0x0251);	/* clock_sel: 25.175 MHz		*/
+
+	out(0x02EC, 0x00);	/* set color 0 to black			*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);	/* mask dac to 0 for now		*/
+
+	outw(0x6EEE, 0x0000);	/* ge_offset_lo				*/
+	outw(0x72EE, 0x0000);	/* ge_offset_hi				*/
+	outw(0x76EE, 0x0050);	/* ge_pitch				*/
+	outw(0x7AEE, 0x0010);	/* ext_ge_config: 8bpp 			*/
+
+	outw(0x22E8, 0x0023);	/* enable CRTC				*/
+    }
+
+    PROCEDURE SetText
+    {
+	outw(0x4AE8, 0x0000);	/* enable passthrough			*/
+	out(0x02EA, 0xFF);	/* unmask dac				*/
+    }
+
+/* ===================================================== */

@@ -1,0 +1,23 @@
+#ident	"@(#)request	1.2"
+
+SCRIPTS=/usr/sbin/pkginst
+. $SCRIPTS/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+MENU_RESP=$1
+
+PKGINSTALL_TYPE=NEWINSTALL
+export PKGINSTALL_TYPE
+
+$SCRIPTS/chkpkgrel
+case $? in
+	0) PKGINSTALL_TYPE=NEWINSTALL  ;;
+	2) PKGINSTALL_TYPE=OVERLAY  ;;
+	4) PKGINSTALL_TYPE=UPGRADE  ;;
+	*) ;;
+esac
+
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${MENU_RESP}
+
+exit 0
+

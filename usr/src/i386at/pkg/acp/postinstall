@@ -1,0 +1,355 @@
+#ident	"@(#)pkg.acp:postinstall	1.2.8.1"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ -f "${REQDIR}/inst/locale/${LOCALE}/${PKGMSG}" -a \
+	-d "/usr/lib/locale/${LOCALE}/LC_MESSAGES" ]
+then
+	[ -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ] || \
+	ln -s ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		/usr/lib/locale/${LOCALE}/LC_MESSAGES
+fi
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && {
+	set -x
+	goany
+}
+
+cleanup_exit() {
+	# $1 is the exit code
+	# clean up any tmp files created by upnover tools and then exit.
+
+	[ "$UPDEBUG" = YES ] && goany "cleanup_exit $1 $PKGINST"
+
+	[ "$PKGINST" ] || PKGINST=acp
+	$SCRIPTS/up_cleanup "$PKGINST"
+	exit 	$1
+}
+
+
+# install a module.  $1 is the module name
+
+do_install() {
+	ERR=/tmp/${1}.err
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if
+		[ -f ${1}.Mo ]
+	then
+		mv ${1}.Mo Modstub.o
+	fi
+	if
+		[ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if
+		[ -f ${1}.St ]
+	then
+		mv ${1}.St Stubs.c
+	fi
+	if
+		[ -f ${1}.Mt ]
+	then
+		mv ${1}.Mt Mtune
+	fi
+	if
+		[ -f ${1}.Dt ]
+	then
+		mv ${1}.Dt Dtune
+	fi
+	if
+		[ -f ${1}.Ma ]
+	then
+		mv ${1}.Ma Master
+	fi
+	if
+		[ -f ${1}.Sy ]
+	then
+		sed "${SEDCMD1}" ${1}.Sy >System
+		rm -rf ${1}.Sy
+	fi
+	if
+		[ -f ${1}.No ]
+	then
+		mv ${1}.No Node
+	fi
+
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	if
+		[ "$?" = "0" ] || [ "$?" = "8" ] 
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+		ret=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST}  -u ${1} > ${ERR} 2>&1
+		ret=$?
+	fi
+
+	if [ ${ret} != "0" ]
+	then
+			message -d `pfmt -s nostd -g ${PKGMSG}:1 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR} 2>&1`
+			cleanup_exit ${FAILURE}
+	fi
+	#rm -rf ${ERR}
+}
+
+turnoff () {
+cd /etc/conf/sdevice.d
+for i in $*
+do
+if [ -f $i ]
+then
+ed $i << END > /dev/null 2>&1
+1,\$s/	Y	/	N	/
+w
+w
+q
+END
+fi
+done
+}
+
+turnon () {
+cd /etc/conf/sdevice.d
+for i in $*
+do
+if [ -f $i ]
+then
+ed $i << END > /dev/null 2>&1
+1,\$s/	N	/	Y	/
+w
+w
+q
+END
+fi
+done
+}
+
+#main 
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:2 " The Installable Driver feature has been removed. The %s cannot be installed." ${NAME} 2>&1`
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+trap '' 1 2 3 5 15
+rm -f $TMP > /dev/null 2>&1
+
+
+turnon intmap
+
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+# If $UPGFILE exists, dot it in. This is where the value for
+# $NSCO is whether or not the request script was run.
+
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=${UPGRADE_STORE}/${PKGINST}.env
+
+[ -f  $UPGFILE ] && . $UPGFILE
+
+[ "$UPDEBUG" = YES ] && goany
+
+############# End UPGRADE AND OVERLAY #######################
+
+# sco_pt.install uses idtune, since may not have reboot since NSU
+# we generate the temporary mtune just in case.
+
+# create temporary /etc/conf/cf.d/mtune; it's blown away
+# below after we're done playing w/the tuneables....
+# do not clobber mtune if it exists already
+MTUNEORG=/usr/tmp/mtune.$$
+if [ -f /etc/conf/cf.d/mtune ]
+then
+        cp /etc/conf/cf.d/mtune $MTUNEORG
+        cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+else
+        cat /etc/conf/mtune.d/* > /etc/conf/cf.d/mtune
+fi
+
+#
+# call the sco pseudo terminal installation script to install 'NSCO' 
+# SCO devices onto the regular USL pseudo terms (ptm, pts, ptem). It
+# will update the ptm, pts, ptem 'id' files, do putdevs and install
+# a RC script to 'autopush' ptem/ldterm on the slave side.
+#
+
+/sbin/sh /var/sadm/pkg/acp/install/sco_pt.install $NSCO
+
+# if mtune existed restore it, else remove temp /etc/conf/cf.d/mtune
+if [ -f $MTUNEORG ]
+then
+        cp $MTUNEORG /etc/conf/cf.d/mtune
+        rm -f $MTUNEORG
+else
+        rm -f /etc/conf/cf.d/mtune 2>/dev/null 1>/dev/null
+fi
+
+cd /var/sadm/pkg/${PKG}/install
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall ]
+then
+	message -d ${NOTOOLS}
+	cleanup_exit $FAILURE
+fi
+
+# install modules
+# any modules installed here should have the /tmp files removed in the
+# removef loop below.
+#
+for module in XENIX consem devadp i286x isocket osocket sp v3compat xnamfs xout
+do
+	cd /tmp/${module}
+	do_install ${module}
+done
+
+# rebuild for changes to take effect
+
+TMP=/tmp/acp.$$
+${CONFBIN}/idbuild 2>>${TMP}
+if
+	[ "$?" -ne "0" ]
+then
+	pfmt -s nostd -g ${PKGMSG}:4 "An error has occurred during the rebuild of the UNIX System.\nErrors have been written to the file %s\n" ${TMP} 2>&1
+	cleanup_exit ${FAILURE}
+fi
+
+rm -f ${TMP} 1>/dev/null 2>/dev/null
+
+# Remove temporary files in /tmp/${module} from the contents database
+
+rm -f /tmp/MOD_FILES
+for module in XENIX consem devadp i286x isocket osocket sp v3compat xnamfs xout
+do
+	echo "/tmp/${module}/${module}_atup.Dr\n\
+/tmp/${module}/${module}_mp.Dr\n\
+/tmp/${module}/${module}.Dr\n\
+/tmp/${module}/${module}.Mo\n\
+/tmp/${module}/${module}.Sp\n\
+/tmp/${module}/${module}.Ma\n\
+/tmp/${module}/${module}.Sy\n\
+/tmp/${module}/${module}.St\n\
+/tmp/${module}/${module}.Mt\n\
+/tmp/${module}/${module}.Dt\n\
+/tmp/${module}/${module}.No\n\
+/tmp/${module}" >> /tmp/MOD_FILES
+done
+
+removef ${PKGINST} - < /tmp/MOD_FILES 2>/dev/null
+rm -f /tmp/MOD_FILES
+
+# change group to dos and grp perms to rw for /dev/*dsk/[01]s5
+
+if [ -b /dev/dsk/[01]s5 ]
+then chgrp dos /dev/dsk/[01]s5
+     chmod g+rw /dev/dsk/[01]s5
+fi
+if [ -c /dev/rdsk/[01]s5 ]
+then chgrp dos /dev/rdsk/[01]s5
+     chmod g+rw /dev/rdsk/[01]s5
+fi
+
+if [ -b /dev/dsk/1s0 ]
+then
+	for j in 0 1 2 3 4 5 6
+	do
+		ln -s /dev/dsk/1s${j} /dev/hd1${j} > /dev/null 2>&1
+	done
+	for j in 0 1 2 3 4 5 6
+	do
+		ln -s /dev/rdsk/1s${j} /dev/rhd1${j} > /dev/null 2>&1
+	done
+
+	# Enhanced Application Compatibility Support
+	ln /dev/dsk/1s0 /dev/hd1a > /dev/null 2>&1
+	ln /dev/dsk/1s0 /dev/u0 > /dev/null 2>&1
+	ln /dev/dsk/1s1 /dev/u1 > /dev/null 2>&1
+	ln /dev/dsk/1s2 /dev/u2 > /dev/null 2>&1
+
+	ln /dev/rdsk/1s0 /dev/rhd1a > /dev/null 2>&1
+	# End Enhanced Application Compatibility Support
+
+fi
+if [ -b /dev/dsk/f1t ]
+then
+	ln /dev/dsk/f1t /dev/install1 > /dev/null 2>&1
+	ln /dev/rdsk/f1t /dev/rinstall1 > /dev/null 2>&1
+
+	ln /dev/dsk/f1d8dt /dev/fd148ds8 > /dev/null 2>&1
+	ln /dev/dsk/f1d9dt /dev/fd148ds9 > /dev/null 2>&1
+	ln /dev/dsk/f1d9dt /dev/fd148 > /dev/null 2>&1
+	ln /dev/rdsk/f1d8dt /dev/rfd148ds8 > /dev/null 2>&1
+	ln /dev/rdsk/f1d9dt /dev/rfd148ds9 > /dev/null 2>&1
+	ln /dev/rdsk/f1d9dt /dev/rfd148 > /dev/null 2>&1
+	ln /dev/dsk/f13ht /dev/fd1135ds18 > /dev/null 2>&1
+	ln /dev/dsk/f13ht /dev/fd196ds18 > /dev/null 2>&1
+	ln /dev/dsk/f13ht /dev/dsk/f1q18dt > /dev/null 2>&1
+	ln /dev/dsk/f13dt /dev/fd1135ds9 > /dev/null 2>&1
+	ln /dev/dsk/f13dt /dev/fd196ds9 > /dev/null 2>&1
+	ln /dev/dsk/f13dt /dev/dsk/f1q9dt > /dev/null 2>&1
+	#ln /dev/dsk/f1d8dt /dev/fd148ss8 > /dev/null 2>&1
+	ln /dev/dsk/f1d8dt /dev/dsk/f1d8t > /dev/null 2>&1
+	#ln /dev/dsk/f1d9dt /dev/fd148ss9 > /dev/null 2>&1
+	ln /dev/dsk/f1d9dt /dev/dsk/f1d9t > /dev/null 2>&1
+
+	ln /dev/dsk/f1q15dt /dev/fd196ds15 > /dev/null 2>&1
+	ln /dev/dsk/f1q15dt /dev/fd196 > /dev/null 2>&1
+	ln /dev/rdsk/f1q15dt /dev/rfd196ds15 > /dev/null 2>&1
+	ln /dev/rdsk/f1q15dt /dev/rfd196 > /dev/null 2>&1
+	ln /dev/rdsk/f1d9dt /dev/rfd148 > /dev/null 2>&1
+	ln /dev/rdsk/f13ht /dev/rfd1135ds18 > /dev/null 2>&1
+	ln /dev/rdsk/f13ht /dev/rfd196ds18 > /dev/null 2>&1
+	ln /dev/rdsk/f13ht /dev/rdsk/f1q18dt > /dev/null 2>&1
+	ln /dev/rdsk/f13dt /dev/rfd1135ds9 > /dev/null 2>&1
+	ln /dev/rdsk/f13dt /dev/rfd196ds9 > /dev/null 2>&1
+	ln /dev/rdsk/f13dt /dev/rdsk/f1q9dt > /dev/null 2>&1
+	#ln /dev/rdsk/f1d8dt /dev/rfd148ss8 > /dev/null 2>&1
+	ln /dev/rdsk/f1d8dt /dev/rdsk/f1d8t > /dev/null 2>&1
+	#ln /dev/rdsk/f1d9dt /dev/rfd148ss9 > /dev/null 2>&1
+	ln /dev/rdsk/f1d9dt /dev/rdsk/f1d9t > /dev/null 2>&1
+
+	# Enhanced Application Compatibility Support
+	ln /dev/dsk/f15d9 /dev/sctfdl129 > /dev/null 2>&1
+	ln /dev/fd148 /dev/sctfdl1 > /dev/null 2>&1
+	ln /dev/fd196 /dev/sctfdm1 > /dev/null 2>&1
+	ln /dev/dsk/f15h /dev/sctfdm129 > /dev/null 2>&1
+	# Enhanced Application Compatibility Support
+
+fi
+
+rm -f $TMP
+
+# Create the dtruntime.so.1 lib from the pieces
+cat /usr/X/lib/dtruntime.ab /usr/X/lib/dtruntime.ac /usr/X/lib/dtruntime.ad >> /usr/X/lib/dtruntime.so.1
+installf ${PKGINST} /usr/X/lib/dtruntime.so.1 f 0644 bin bin
+installf -f ${PKGINST}
+
+for tmpXlib in dtruntime.ab dtruntime.ac dtruntime.ad
+do
+	echo "/usr/X/lib/${tmpXlib}"
+done >> /tmp/X_FILES
+removef ${PKGINST} - < /tmp/X_FILES 2>/dev/null
+removef -f ${PKGINST} 2>/dev/null
+rm -f /tmp/X_FILES
+ 
+${SCRIPTS}/pkgmrgconf "${PKGINST}" "$AUTOMERGE" "$NAME"
+
+# clean up any tmp files created by upnover tools
+cleanup_exit 10

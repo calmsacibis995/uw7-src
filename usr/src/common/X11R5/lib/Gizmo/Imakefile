@@ -1,0 +1,93 @@
+/**/#ident	"@(#)Gizmo:Imakefile	1.26.1.5"
+
+#if Release5
+#define DoNormalLib	NormalLibGizmo
+#define DoSharedLib	SharedLibGizmo
+#define DoDebugLib	DebugLibGizmo
+#define DoProfileLib	ProfileLibGizmo
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+
+#else
+
+#define DynamicLibraryObjectRule()                                      @@\
+.c.o:                                                                   @@\
+                $(CC) -c -KPIC $(CFLAGS) $<
+
+#define SharedLibraryTarget(libname,objlist,dependlib,otherlib)         @@\
+lib/**/libname/**/.so:: objlist dependlib                               @@\
+        $(RM) lib/**/libname/**/.so                                     @@\
+        $(CC) $(YFLAGS) -G objlist -o lib/**/libname/**/.so -h lib/**/libname/**/.so.1 $(SHLIBFLAGS) dependlib otherlib
+
+#endif
+
+    INCLUDES = -I$(LIBSRC) -I$(XOLLIBSRC)
+    DTLIBSRC = $(LIBSRC)/Dt
+   DTILIBSRC = $(USLCLIENTSRC)/libDtI
+
+    INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTLIBSRC) -I$(DTILIBSRC)
+     LIBNAME = Gizmo
+         LIB = lib$(LIBNAME).so
+
+        SRCS = \
+               FileGizmo.c   \
+               BaseWGizmo.c  \
+               ChoiceGizm.c  \
+               ListGizmo.c   \
+               InputGizmo.c  \
+               LabelGizmo.c  \
+               MenuGizmo.c   \
+               ModalGizmo.c  \
+               TimeGizmo.c   \
+               NumericGiz.c  \
+               PopupGizmo.c  \
+	       STextGizmo.c  \
+	       SpaceGizmo.c  \
+               Gizmos.c
+
+OBJS = $(SRCS:.c=.o)
+HEADERS = $(SRCS:.c=.h)
+
+#if Release5
+LibraryObjectRule()
+
+	/* Define targets to build and install shared library */
+#if DoSharedLib
+#  if DoNormalLib
+SharedLibraryTarget($(LIBNAME),$(SOGIZMOREV),$(OBJS),shared,..)
+#    if UslLocalityTuning
+FurSharedLibraryTarget($(LIBNAME),$(SOGIZMOREV),$(OBJS),shared,..)
+#    endif
+#  else		/* !DoNormalLib */
+SharedLibraryTarget($(LIBNAME),$(SOGIZMOREV),$(OBJS),.,.)
+#    if UslLocalityTuning
+FurSharedLibraryTarget($(LIBNAME),$(SOGIZMOREV),$(OBJS),.,.)
+#    endif
+#  endif	/* DoNormalLib */
+InstallSharedLibrary($(LIBNAME),$(SOGIZMOREV),$(USRLIBDIR))
+InstallFurLibrary($(LIBNAME),$(SOGIZMOREV),$(USRLIBDIR))
+#endif		/* DoSharedLib */
+
+	/* Define targets to build and install normal library */
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+	/* Define targets to build and install profiled library */
+#if DoProfileLib
+ProfiledLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME)_p,$(USRLIBDIR))
+#endif
+
+#else /* Release5 */
+
+all::	libGizmo.so
+DynamicLibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(OBJS),,)
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+InstallMultiple($(HEADERS),$(INCROOT)/Gizmo)
+InstallMsgCatalog(gizmo)
+
+DependTarget()

@@ -1,0 +1,171 @@
+#ident	"@(#)R5Xlib:Ximp/Imakefile	1.15"
+
+/**/#	Copyright (c) 1990, 1991, 1992 UNIX System Laboratories, Inc.
+/**/#	Copyright (c) 1988, 1989, 1990 AT&T
+/**/#	  All Rights Reserved
+
+/**/#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+/**/#	UNIX System Laboratories, Inc.
+/**/#	The copyright notice above does not evidence any
+/**/#	actual or intended publication of such source code.
+
+
+#define DoNormalLib NormalLibX
+#define DoSharedLib SharedLibX
+#define DoDebugLib DebugLibX
+#define DoProfileLib ProfileLibX
+#include <Library.tmpl>
+
+#ifndef MotifBC
+#define MotifBC NO
+#endif
+
+#if Malloc0ReturnsNull
+        DEFINES = -DMALLOC_0_RETURNS_NULL
+#endif
+
+   CONN_DEFINES = ConnectionFlags
+#ifdef MITPATH
+     EDB_DEFINES = -DERRORDB=\"$(USRLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(USRLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(USRLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(NLSDIR)\"
+#else /* this is needed due to USL's cross env builds */
+     EDB_DEFINES = -DERRORDB=\"$(XWINLIBDIR)/XErrorDB\"
+     KDB_DEFINES = -DKEYSYMDB=\"$(XWINLIBDIR)/XKeysymDB\"
+     CMS_DEFINES = -DXCMSDB=\"$(XWINLIBDIR)/Xcms.txt\"
+     NLS_DEFINES = -DXNLSPATHDEFAULT=\"$(XWINLIBDIR)/nls\"
+#endif
+#if MotifBC
+      BC_DEFINES = -DMOTIFBC
+#endif
+   INSTALLFLAGS = $(INSTINCFLAGS)
+       LINTLIBS =
+
+EXTRA_INCLUDES = -I..
+EXTRA_DEFINES = -DSTREAMSCONN
+
+XFILESEARCHPATHDEFAULT = XFileSearchPathDefault
+SRCH_DEFINES = -DXFILESEARCHPATHDEFAULT=\"$(XFILESEARCHPATHDEFAULT)\"
+LIBNAME = Ximp
+
+HEADERS = \
+	XIMProto.h \
+	Ximplc.h
+
+SRCS = \
+	XimpCT.c \
+	XimpCallbk.c \
+	XimpConv.c \
+	XimpCrFS.c \
+	XimpDefCnv.c \
+	XimpDrStr.c \
+	XimpEUC.c \
+	XimpExten.c \
+	XimpIC.c \
+	XimpICG.c \
+	XimpICS.c \
+	XimpIM.c \
+	XimpLCUtil.c \
+	XimpLCd.c \
+	XimpLkup.c \
+	XimpLocal.c \
+	XimpMCT.c \
+	XimpMDrS.c \
+	XimpMEsc.c \
+	XimpMExt.c \
+	XimpMPer.c \
+	XimpMPrTxt.c \
+	XimpMTxtPr.c \
+	XimpParser.c \
+	XimpPrTxt.c \
+	XimpTxtPr.c \
+	XimpRm.c \
+	XimpSJIS.c \
+	XimpTxtEsc.c \
+	XimpTxtExt.c \
+	XimpTxtPer.c \
+	XimpWCT.c \
+	XimpWDrS.c \
+	XimpWEsc.c \
+	XimpWExt.c \
+	XimpWPer.c \
+	XimpWPrTxt.c \
+	XimpWTxtPr.c \
+	XimpXConv.c \
+	Ximpint.c
+
+OBJS = \
+	XimpCT.o \
+	XimpCallbk.o \
+	XimpConv.o \
+	XimpCrFS.o \
+	XimpDefCnv.o \
+	XimpEUC.o \
+	XimpExten.o \
+	XimpIC.o \
+	XimpICG.o \
+	XimpICS.o \
+	XimpIM.o \
+	XimpLCUtil.o \
+	XimpLCd.o \
+	XimpLkup.o \
+	XimpLocal.o \
+	XimpMCT.o \
+	XimpMDrS.o \
+	XimpMEsc.o \
+	XimpMExt.o \
+	XimpMPer.o \
+	XimpMPrTxt.o \
+	XimpMTxtPr.o \
+	XimpParser.o \
+	XimpRm.o \
+	XimpSJIS.o \
+	XimpWCT.o \
+	XimpWDrS.o \
+	XimpWEsc.o \
+	XimpWExt.o \
+	XimpWPer.o \
+	XimpWPrTxt.o \
+	XimpWTxtPr.o \
+	XimpXConv.o \
+	Ximpint.o
+
+
+#if DoNormalLib
+#undef ObjectCompile
+#define ObjectCompile(options) $(RM) $@			@@\
+	$(CC) -c $(CFLAGS) options -DARCHIVE $*.c
+#endif
+
+LibraryObjectRule()
+
+SpecialLibObjectRule(XimpCallbk.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XimpLkup.o,$(ICONFIGFILES),$(CONN_DEFINES))
+SpecialLibObjectRule(XimpLCUtil.o,$(ICONFIGFILES),$(SRCH_DEFINES))
+
+#if DoSharedLib
+#if DoNormalLib
+
+SharedLibraryTarget_a($(LIBNAME),$(SOXLIBREV),$(OBJS),-L../$(XLIBSRC)/Xsi -ldummy,shared,..)
+#else
+SharedLibraryTarget($(LIBNAME),$(SOXLIBREV),$(OBJS),.,.)
+#endif
+
+InstallSharedLibrary($(LIBNAME),$(SOXLIBREV),$(USRLIBDIR))
+
+all::
+
+install::
+	$(INSTALL) $(INSTLIBFLAGS) libXimp.so.$(SOXLIBREV) $(USRLIBDIR);
+
+#endif /* DoSharedLib */
+
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+DependTarget()
+
+NormalLintTarget($(SRCS))

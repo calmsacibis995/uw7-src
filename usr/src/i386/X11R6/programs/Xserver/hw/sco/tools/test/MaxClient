@@ -1,0 +1,103 @@
+#!/bin/ksh
+#
+#	@(#)MaxClient	11.1	11/21/97	16:11:55
+#
+#	Copyright (C) The Santa Cruz Operation, 1997.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+#	MaxClient [count]
+#
+#	Check X server to find maximum number of client connections.
+#	When given [count] will only attempt that many connections.
+#	Default is 120
+#
+#	Will work on resolutions as low as 320x200
+#
+#	Expects to have DISPLAY set properly in the shell environment
+#
+####################################################################
+#
+#	subroutines
+#
+DeadProcess() {
+	echo "Have DeadProcess" $0
+}
+#
+#
+KillAndCount() {
+	echo "\nCleaning up.  Counting successful connections."
+	KilledOK=0
+	while [ $ClientCount -gt 0 ]; do
+		kill -1 ${PID[$ClientCount]} 2> /dev/null > /dev/null
+		if [ $? -eq 0 ]; then
+		{
+				KilledOK=`expr $KilledOK + 1`
+		}; fi
+		ClientCount=`expr $ClientCount - 1`
+	done
+echo "Connected "$KilledOK" clients successfully."
+	exit
+}
+#
+#
+trap "DeadProcess" CHLD
+trap "KillAndCount" 1 2 3 15
+#
+#
+PATH=/usr/bin/X11:$PATH
+if [ -z "$DISPLAY" ]; then {
+	echo "MaxClient expects you to have a DISPLAY setting."
+	echo "e.g.: DISPLAY=:0"
+	exit 0
+} fi
+
+ClientCount=0
+LineCount=0
+MaxCount=120
+if [ "$1" -gt 0 ]; then {
+	MaxCount=$1
+};fi
+echo "Attempting $MaxCount connections."
+#
+#	y loop spaces xlogos every 20 pixels down the screen for 10 rows
+#
+#        1  2  3  4  5   6   7   8   9  10
+for y in 2 22 42 62 82 102 122 142 162 182
+do
+#	x loop spaces xlogos every 20 pixels across the screen for 16 columns
+#		 1  2  3  4  5   6   7   8   9  10  11  12  13  14  15  16
+	for x in 2 22 42 62 82 102 122 142 162 182 202 222 242 262 282 302
+	do
+		Status=0
+		if [ "$Status" -eq 0 ]; then
+		{ 
+			ClientCount=`expr $ClientCount + 1`
+			LineCount=`expr $LineCount + 1`
+			if [ "$LineCount" -eq 16 ]; then {
+				echo " $ClientCount"
+				LineCount=0
+			} else {
+				echo " $ClientCount\c"
+			}; fi
+#			echo "xlogo -geo 16x16+$x+$y\t\c"
+			xlogo -geo 16x16+$x+$y 2> /dev/null &
+			PID[$ClientCount]=$!
+			Status=$?
+			sleep 1
+			if [ $ClientCount -ge $MaxCount ]; then {
+				Status=1
+			}; fi
+#			echo "Client "$ClientCount" status "$Status" PID[$ClientCount] " ${PID[$ClientCount]}
+		}
+		fi
+		if [ "$Status" -ne 0 ]; then {
+		KillAndCount
+		}; fi
+	done
+done
+#
+#
+#	Allright, now get rid of all those clients
+#
+KillAndCount

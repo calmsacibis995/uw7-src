@@ -1,0 +1,40 @@
+#!/sbin/sh
+#ident	"@(#)ls.prep	15.1"
+
+while read pline
+do
+	i=`echo $pline | cut -f6 -d:`
+	lname=`echo $pline | cut -f1 -d:`
+	echo $lname | egrep -v "^[[:alnum:]]" 2>&1 > /dev/null
+	if [ $? != 0 ]
+	then
+		continue
+	fi
+	if [ -r $i/.Xdefaults ]
+	then
+		LOC=`grep "\*xnlLanguage" $i/.Xdefaults | cut -f2`
+		if [ ! -z "$LOC" ]
+		then
+			echo "$lname	$i	$LOC"
+		fi
+		continue
+	fi
+	if [ -r $i/.profile ]
+	then
+		LOC=`grep "LANG=" $i/.profile | cut -f1 | cut -f2 -d=`
+		if [ ! -z "$LOC" ]
+		then
+			echo "$lname	$i	$LOC"
+		fi
+		continue
+	fi
+	if [ -r $i/.login ]
+	then
+		LOC=`grep "setenv LANG" $i/.login | cut -f3`
+		if [ ! -z "$LOC" ]
+		then
+			echo "$lname	$i	$LOC"
+		fi
+		continue
+	fi
+done < /etc/passwd

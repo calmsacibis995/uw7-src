@@ -1,0 +1,51 @@
+/**/#ident	"@(#)r5extensions:lib/xtest/Imakefile	1.2"
+
+XCOMM $XConsortium: Imakefile,v 1.2.1.1 92/09/09 15:38:45 rws Exp $
+#ifndef NormalLibXTest
+#define NormalLibXTest YES
+#endif
+#define DoNormalLib NormalLibXTest
+#define DoSharedLib SharedLibXTest
+#define DoDebugLib DebugLibXTest
+#define DoProfileLib ProfileLibXTest
+#include <Library.tmpl>
+
+#ifdef RsArchitecture
+REQUIREDLIBS = $(EXTENSIONSRC)/lib/libXext.a $(XLIBSRC)/libX11.a
+#endif
+
+INCLUDES = -I$(TOP) -I$(XLIBSRC) -I../../include
+
+SRCS = XTest.c
+OBJS = XTest.o
+
+LINTLIBS = $(LINTXLIB)
+
+LibraryObjectRule()
+
+#if DoSharedLib
+#if DoNormalLib
+SharedLibraryTarget(Xtst,$(SOXTESTREV),$(OBJS),shared,..)
+#else
+SharedLibraryTarget(Xtst,$(SOXTESTREV),$(OBJS),.,.)
+#endif
+InstallSharedLibrary(Xtst,$(SOXTESTREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+NormalLibraryTarget(Xtst,$(OBJS))
+InstallLibrary(Xtst,$(USRLIBDIR))
+#endif
+#if DoProfileLib
+ProfiledLibraryTarget(Xtst,$(OBJS))
+InstallLibrary(Xtst_p,$(USRLIBDIR))
+#endif
+#if DoDebugLib
+DebuggedLibraryTarget(Xtst,$(OBJS))
+#endif
+
+LintLibraryTarget(Xtst,$(SRCS))
+InstallLintLibrary(Xtst,$(LINTLIBDIR))
+
+DependTarget()
+
+NormalLintTarget($(SRCS))

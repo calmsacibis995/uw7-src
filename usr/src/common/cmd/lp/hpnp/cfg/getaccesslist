@@ -1,0 +1,154 @@
+#!/bin/ksh
+#ident	"@(#)getaccesslist	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+
+while [ 0 ] 
+do
+	WASADDR=0
+        echo  ""
+  	echo "Enter access list network number, host name or"  
+  	echo "IP address (optional): $NL"  
+	read -r ALLOWLIST
+	if [ -z "$ALLOWLIST" ]
+	then
+	  echo ""
+	  echo "No access list entry created."
+	  exit 2
+	fi
+	if [ "$ALLOWLIST" = "q" ]
+	then	
+	  exit 1
+	fi
+	if [ "$ALLOWLIST" = "?" ]
+	then
+	  echo ""
+          echo "Enter a network number (example: 15.0.0.0), a subnet number"
+	  echo "(example: 15.1.1.0), a host name, or a host IP address"
+          echo "(example: 15.1.1.1)."
+	  echo ""
+          echo "If you press <return> without providing a value, you will be"
+	  echo "prompted with \"Do you want to add another access list entry?\""
+	  echo ""
+	  $QUITHELP
+	  continue
+	fi
+	LOOKUPALLOWLIST="`gethostaddr $ALLOWLIST`"
+        WASADDR=$?
+        if [ $WASADDR -eq 1 ]
+        then
+	  echo $LOOKUPALLOWLIST | \
+			egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' >/dev/null
+          if [ $? -eq 1 ]
+          then
+            echo ""
+            echo "$ALLOWLIST is not a valid address."
+	    continue
+	  fi
+        fi
+	if [ -z "$LOOKUPALLOWLIST" ]
+	then
+	  echo ""
+	  echo "$ALLOWLIST: unknown host"
+	else
+	  onlyoneaddr "$ALLOWLIST" "$LOOKUPALLOWLIST"
+	  RETCODE=$?
+	  ALLOWLIST="`cat -- $TMP/ONEADDR`"
+	  rm -f -- "$TMP/ONEADDR"
+	  if [ $RETCODE -eq 1 ]
+	  then
+	    exit 1
+	  fi
+	  if [ -z "$ALLOWLIST" ]
+	  then
+	    echo ""
+	    echo "No access list entry created."
+	  else
+	    break
+	  fi
+        fi
+done
+
+NETNUM="$ALLOWLIST"
+ADDRMASK=""
+
+#
+# If address does not end in .0, assume it is a host.
+#
+VAL="`echo $NETNUM | awk -F. '{print $4 }`"
+DEFADDRMASK=""
+if [ "$VAL" != "0" ]
+then
+   DEFADDRMASK="255.255.255.255"
+fi
+
+if [ $WASADDR -eq 1 ]
+then
+  while [ 0 ] 
+  do
+        echo  ""
+	if [ -z "$DEFADDRMASK" ]
+        then
+    	  echo "Enter access list address mask: $NL"  
+  	  read -r ADDRMASK
+	else
+    	  echo "Enter access list address mask (default=$DEFADDRMASK): $NL"  
+  	  read -r ADDRMASK
+	  if [ -z "$ADDRMASK" ]
+	  then
+	    ADDRMASK=$DEFADDRMASK
+	  fi
+        fi
+	if [ -z "$ADDRMASK" ]
+	then
+	  continue
+	fi
+  	if [ "$ADDRMASK" = "q" ]
+  	then	
+  		exit 1
+  	fi
+  	if [ "$ADDRMASK" = "?" ]
+  	then
+  	  echo ""
+	  echo "The address mask is a mask of bits used in the access list check."
+	  echo "For a network number, the mask is the network mask or subnet mask"
+          echo "given in dot notation.  An example is 255.0.0.0.  For a host, the"
+	  echo "address mask is 255.255.255.255.  The address mask 0.0.0.0 is"
+	  echo "not allowed."
+	  echo ""
+	  $QUITHELP
+  	  continue
+  	fi
+  	echo $ADDRMASK | egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' > /dev/null
+  	if [ $? -ne 0  -o "$ADDRMASK" = "0.0.0.0" ]
+  	then
+                echo ""
+  		echo "Invalid address mask.  An example of a valid address mask"
+                echo "is 255.0.0.0.  For a host, the address mask would be"
+                echo "255.255.255.255.  The address mask 0.0.0.0 is not allowed."
+  	else
+  		break
+  	fi
+  done
+fi
+
+if [ "$ADDRMASK" = "255.255.255.255" ]
+then
+  echo $NETNUM > "$TMP/ALLOWLIST"
+else
+  echo $NETNUM $ADDRMASK > "$TMP/ALLOWLIST"
+fi
+
+exit 0

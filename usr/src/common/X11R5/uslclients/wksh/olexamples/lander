@@ -1,0 +1,253 @@
+#!/usr/bin/wksh -openlook
+
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/lander	1.5.1.1"
+
+
+#
+# Luner lander simulation
+# Major Variables:
+#
+# X,Y		The X and Y coordinates, in hundredths
+# A		The current angle, 0 to 7, 0 being upright the rest clockwise.
+# SIN,COS	For ease of calculation, arrays of sin() and cos() values, in
+#		hundredths for each of the angles 0 through 7
+# HV, VV	Horizontal velocity and Vertical velocity
+# FUEL		Amount of Fuel remaining
+# THRUST	The current thrust setting, which is the amount of fuel
+# 		that burns per time period
+# THRUSTFACTOR	Each unit of fuel, when burned provides this much thrust.
+#
+# SHIP		Widget handle of the ship icon
+#
+# NOTES:  For each angle $A, 0 through 7, there is a pixmap called
+#	  landerF$A.xpm that has a picture of a lander at that angle
+#	  with fire coming out of the tailpipe, and lander$A.xpm that
+#	  is a lander with no fire.
+
+#
+# Initialize standard variables
+#
+
+typeset -i FUEL=0 THRUST=0
+
+init_vars() {
+	SCREENHEIGHT=300
+	SCREENWIDTH=500
+
+        let X=SCREENWIDTH*100
+        let Y=0
+        HV=-250
+        VV=0
+        A=1
+        set -A SIN 100 70 0 -70 -100 -70 0 100
+        set -A COS 0 70 100 70 0 -70 -100 -70
+        WEIGHT=100000
+        FUEL=50000
+        GRAVITY=1
+        THRUSTFACTOR=3000       # one kilo of fuel provides this much thrust
+	STATE=0
+	PIXHEIGHT=32
+	EXPLODESTATE=0
+	let ALT=SCREENHEIGHT-PIXHEIGHT
+}
+
+start_game() {
+	init_vars
+	sv $THRWID sliderValue:0
+	sv $THRTXT string:0%
+	sv $THRWID sensitive:true sliderValue:0
+	XtPopup $CON GrabNone
+	XtPopup $PANEL GrabNone
+	XtAddTimeOut $TOPLEVEL 1000 move_lander
+	XtAddTimeOut $TOPLEVEL 1000 display_panel
+	XtAddTimeOut $TOPLEVEL 1000 flash_lander
+}
+
+gameover() {	# $1 is either "WON" or "LOST"
+	XtPopdown $CON
+	XtPopdown $PANEL
+	if [ "$GAMEOVER" = "" ]
+	then
+		cps GAMEOVER go noticeShell $TOPLEVEL
+		addbuttons $GAMEOVER_CA Yes start_game No "exit 0"
+	fi
+	if [ "$2" != "" ]
+	then
+	sv $GAMEOVER_TA string:"
+You $1! Your score is $2.  Try Again?
+"
+	else
+	sv $GAMEOVER_TA string:"
+You $1!  Try Again?
+"
+	fi
+	XtPopup $GAMEOVER GrabNone
+}
+
+display_panel() {
+        sv $FUELGAUGE sliderValue:$FUEL
+        if [ $FUEL -lt 10000 ]
+        then sv $FUELGAUGE foreground:$FGCOLOR
+        fi
+
+        sv $HVELWID string:"$HV"
+        sv $VVELWID string:"$VV"
+        sv $ALTWID string:"$ALT"
+
+        XtAddTimeOut $TOPLEVEL 1500 display_panel
+}
+
+flash_lander() {
+	if [ "$ALT" = 0 ]
+	then return
+	fi
+	let 'STATE=!STATE'
+	T=500
+	if [ "$STATE" -eq 0 -o "$THRUST" -eq 0 ]
+	then
+		sv $SHIP backgroundPixmap:$PIX/lander$A.xpm
+	else
+		sv $SHIP backgroundPixmap:$PIX/landerF$A.xpm
+	fi
+	XtAddTimeOut $TOPLEVEL 750 flash_lander
+}
+
+explode_ship() {
+	let EXPLODESTATE=EXPLODESTATE+1
+	if [ $EXPLODESTATE -gt 7 ]
+	then 
+		gameover LOST
+		return
+	fi
+	let mod=EXPLODESTATE%2
+	sv $SHIP backgroundPixmap:$PIX/expl.xpm
+	if [ $mod -eq 0 ]
+	then mw $SHIP
+	else umw $SHIP
+	fi
+	XtAddTimeOut $TOPLEVEL 200 explode_ship
+}
+
+display_lander() {  # X Y HV VV
+        sv $SHIP x:$1 y:$2
+        if [ $X -lt 0 -o $Y -lt 0 ]
+        then umw $SHIP
+        else mw $SHIP
+        fi
+	if [ $ALT -eq 0 ]
+	then
+		if [ $HV -gt 5 -o $VV -gt 30 -o $A != 0 ]
+		then
+			XtAddTimeOut $TOPLEVEL 200 explode_ship
+		else
+			gameover WON $FUEL
+		fi
+	fi
+}
+
+move_lander() {
+	if [ "$ALT" = 0 ]
+	then return;
+	fi
+
+        if [ "$FUEL" -le 0 ]
+        then FUEL=0
+             THRUST=0
+             sv $THRWID sensitive:false sliderValue:0
+        else
+                gv $THRWID sliderValue:THRUST
+                let FUEL=FUEL-THRUST
+                if [ $FUEL -lt 0 ]
+                then FUEL=0
+                fi
+        fi
+
+        let 'HV=HV+(COS['$A']*THRUST*THRUSTFACTOR)/(WEIGHT+FUEL)/100'
+        let 'VV=VV+GRAVITY-(SIN['$A']*THRUST*THRUSTFACTOR)/(WEIGHT+FUEL)/100'
+        let X=X+HV
+        let Y=Y+VV
+	let SX=X/100
+	let SY=Y/100
+	let 'ALT=SCREENHEIGHT-SY-PIXHEIGHT'
+	if [ "$ALT" -le 0 ]
+	then ALT=0
+	fi
+
+        display_lander $SX $SY $HV $VV
+        XtAddTimeOut $TOPLEVEL 750 move_lander
+}
+
+rotate() { # direction, +1 or -1
+        let A=A+$1
+        if [ $A -lt 0 ]
+        then A=7
+        elif [ $A -gt 7 ]
+        then A=0
+        fi
+}
+
+PIX=$WKSHLIBDIR/pixmaps
+
+init_vars
+
+oi TOPLEVEL lander lander -openlook "$@"
+
+gv $TOPLEVEL depth:depth
+if [ "$depth" = "" -o "$depth" = 1 ]
+then echo "Sorry, lander doesn't work well on monochrome monitors"
+	FGCOLOR=white
+else
+	FGCOLOR=red
+fi
+
+cmw CA ca controlArea $TOPLEVEL layoutType:fixedcols sameSize:none \
+	hSpace:0 vSpace:0
+
+cmw BB bb bulletinBoard $CA width:$SCREENWIDTH height:$SCREENHEIGHT \
+	layout:ignore backgroundPixmap:$PIX/bigblue.xpm
+cmw MOON bb bulletinBoard $CA width:$SCREENWIDTH height:50 \
+	backgroundPixmap:$PIX/moonsurf.xpm
+
+cps CON control topLevelShell $BB
+cmw F f form $CON
+cmw THRSTR s staticText $F string:THRUST
+cmw THRWID s slider $F `rightof $THRSTR 5` orientation:horizontal width:150
+acb $THRWID sliderMoved 'gv $THRWID sliderValue:v; sv $THRTXT string:$v%'
+cmw THRTXT s staticText $F `rightof $THRWID 5` string:"000% " recomputeSize:false
+cmw ROTSTR s staticText $F `under $THRSTR 10` string:ROTATE
+cmw CLOCKW clock oblongButton $F `rightof $ROTSTR 5; under $THRSTR 10` label:"clkwise"
+acb $CLOCKW select "rotate 1"
+cmw CCLOCKW counter oblongButton $F `rightof $CLOCKW 5; under $THRSTR 10` \
+        label:"cntr-clkwise"
+acb $CCLOCKW select "rotate -1"
+
+cps PANEL panel topLevelShell $BB
+cmw PF f form $PANEL
+cmw tmp s staticText $PF string:"FUEL REMAINING:"
+cmw FUELGAUGE g gauge $PF `rightof $tmp 10` width:100 sliderMax:$FUEL \
+        tickUnit:percent ticks:25 orientation:horizontal
+
+cmw tmp s caption $PF `under $tmp 10` label:"Hor Vel:"
+cmw HVELWID s staticText $tmp string:"100"
+cmw tmp s caption $PF `under $tmp 10` label:"Ver Vel:"
+cmw VVELWID s staticText $tmp string:"0"
+cmw tmp s caption $PF `under $tmp 10` label:"Altitude:"
+cmw ALTWID s staticText $tmp string:"0"
+
+cmw SHIP s staticText $BB width:32 height:32 recomputeSize:false \
+        x:$X y:$Y string:"" backgroundPixmap:$PIX/lander.xpm
+
+rw $TOPLEVEL
+
+start_game
+
+ml

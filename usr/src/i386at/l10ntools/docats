@@ -1,0 +1,92 @@
+:
+#	@(#) docats 25.1 95/02/13 
+#
+#	Copyright 1995 The Santa Cruz Operation, Inc
+#		  All Rights Reserved
+#
+# Build and install localized message catalogues.
+#
+# Usage: docats [-a component_name] [-d cat_dir] all|install|clean|clobber
+#
+
+CPNTOPT=-a
+GENCAT=/usr/bin/gencat
+MKCATDEFS=$TOOLS/usr/bin/mkcatdefs
+NLSLIB=$ROOT/$MACH/usr/lib/locale
+NLSSRC=$ROOT/$MACH/usr/lib/locale.src
+USAGE="[-a component_name] [-d cat_dir] all|install|clean|clobber"
+
+usage() {
+	echo "Usage: $progname" $USAGE >&2
+	exit 1
+}
+
+progname=`basename $0`
+while getopts a:d: option
+do
+	case $option in
+	a)	COMPONENT=$OPTARG;;
+	d)	CAT_DIR=$OPTARG;;
+	*)	usage;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+[ $# -lt 1 ] && usage
+
+action=$1
+case "$action" in
+	all|install|clean|clobber);;
+	*)	echo "$progname: invalid action $action"
+		usage;;
+esac
+
+[ -n "$CAT_DIR" ] && {
+	[ -d "$CAT_DIR" ] || {
+		echo "$progname: $CAT_DIR must be a directory" >&2
+		exit 1
+	}
+	cd $CAT_DIR
+	[ $? -ne 0 ] && {
+		echo "$progname: unable to change directory to $CAT_DIR" >&2
+		exit 1
+	}
+}
+
+CWD=`pwd`
+[ -z "$COMPONENT" ] && CPNTOPT=
+
+for language in *
+do
+	[ -d "$CWD/$language" ] || continue
+	cd $CWD/$language
+	[ $? -ne 0 ] && {
+		echo "$progname: unable to change directory to $CWD/$language" >&2
+		continue
+	}
+	for gen in *.gen
+	do
+		[ -f "$gen" ] || continue
+		CATNAME=`basename $gen .gen`
+		case "$action" in
+		all|install)
+			CATDIR=$NLSLIB/$language/LC_MESSAGES/$COMPONENT
+			SRCDIR=$NLSSRC/$language/LC_MESSAGES/$COMPONENT
+			$MKCATDEFS -h $CPNTOPT $COMPONENT $CATNAME $gen > temp
+			$GENCAT $CATNAME.cat  < temp
+			[ -d $CATDIR ] || mkdir -p $CATDIR
+			[ -d $SRCDIR ] || mkdir -p $SRCDIR
+			echo "\tcp" $language/$CATNAME.cat $CATDIR
+			cp $CATNAME.cat $CATDIR
+			echo "\tcp" $language/$CATNAME.cat.m $CATDIR
+			cp $CATNAME.cat.m $CATDIR
+			echo "\tcp" $language/$gen $SRCDIR
+			cp $gen $SRCDIR
+			;;
+		clean|clobber)
+			rm -f $CATNAME.cat
+			;;
+		esac
+	done
+done
+exit 0

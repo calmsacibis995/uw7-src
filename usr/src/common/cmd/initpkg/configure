@@ -1,0 +1,295 @@
+#!/sbin/sh
+#ident	"@(#)initpkg:common/cmd/initpkg/configure	1.11"
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+usage()
+{
+pARG=`gettxt "$CAT:81" "protocol"`
+dARG=`gettxt "$CAT:82" "device"`
+OARG=`gettxt "$CAT:83" "protocol specific opts"`
+USAGE="
+$0 [-i] [-p <$pARG> -d <$dARG> [-d <$dARG>...]]
+$0 [-p <$pARG> -d <$dARG>] [-O \"$OARG\"]
+$0 [-r -d <$dARG>] [-r -p <$pARG>] [-r -p <$pARG> -d <$dARG>]"
+pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+exit 1
+}
+
+NETDRV=/etc/confnet.d/netdrivers
+NETINFO=/usr/sbin/netinfo
+dvc=
+prot=
+int_flg=0
+rm_flg=0
+
+uid=`expr "\`id\`" : '[^=]*=\([^(]*\)(.*'`
+if [ "$uid" -ne 0 ]
+then
+	pfmt -l $LABEL -s error -g $CAT:84 "must be super-user\n"
+	exit 1
+fi
+
+mail_msg() {
+(echo "Subject: \c";
+pfmt -s nostd -g $CAT:85 "network configuration\n" 2>&1 ;
+pfmt -s nostd -g $CAT:86 "Your system does not contain a single networking board and a single protocol\nfor automatic configuration set up. Please run /etc/confnet.d/configure -i\nto set up the configuration.\n\n" 2>&1 ) | /bin/mail root
+}
+
+# this routine sets up config if there is only 1 device
+# and 1 protocol
+auto_config() {
+if [ ! -s $NETDRV ]
+then	exit 1
+fi
+map_prot=`$NETINFO -l proto`
+map_prot_cnt=`echo "$map_prot" | wc -w | sed  -e 's/     //'`
+unmap_prot=`$NETINFO -u -l proto`
+unmap_prot_cnt=`echo "$unmap_prot" | wc -w | sed  -e 's/     //'`
+if [ "$map_prot_cnt" -eq 0 -a "$unmap_prot_cnt" -eq 0 ]
+then	exit 1
+fi
+dvc=`$NETINFO -l dev`
+d_cnt=`echo "$dvc" | wc -w | sed  -e 's/     //'`
+if [ "$d_cnt" -ne 1 ]
+then	
+		mail_msg
+		exit 1
+fi
+
+ttl_prots=`expr $unmap_prot_cnt + $map_prot_cnt`
+if [ "$ttl_prots" -ne 1 ]
+then	mail_msg
+	exit 1
+fi
+
+if [ "$unmap_prot_cnt" -eq 1 ]
+then	prot=$unmap_prot
+else	if [ "$map_prot_cnt" -eq 1 ]
+	then	exit 0
+	else	
+		mail_msg
+		exit 1
+	fi
+fi
+
+if [ ! -x /etc/confnet.d/$prot/configure ]
+then	exit 1
+fi
+/etc/confnet.d/$prot/configure -d "$dvc"
+}
+
+# set up configuration interactively
+int_config() {
+# -i -p <prot> -d <dvc>
+if [ "$prot" != "" -a $d_cnt -eq 1 ]
+then	
+	if [ ! -x /etc/confnet.d/$prot/configure ]
+	then	pfmt -l $LABEL -s error -g $CAT:87 "%s specific configure command missing\n\n" $prot 2>&1
+		exit 1
+	fi
+	/etc/confnet.d/$prot/configure -i -d $dvc
+else	
+	# -i -p <prot> -d <dvc> [-d <dvc>]...
+	if [ "$prot" != "" -a $d_cnt -gt 1 ]
+	then	
+		dvc_list=
+		set -- ${dvc}
+		for i in $*
+		do
+			dvc_list="$dvc_list -d $1"
+			shift
+		done
+		if [ ! -x /etc/confnet.d/$prot/configure ]
+		then    pfmt -l $LABEL -s error -g $CAT:87 "%s specific configure command missing\n\n" $prot 2>&1
+			exit 1
+		fi
+		/etc/confnet.d/$prot/configure -i ${dvc_list}
+	else	
+		# no device or protocol specified
+		$NETINFO -l dev > /tmp/dlist.$$
+		if [ ! -s /tmp/dlist.$$ ]
+		then	pfmt -l $LABEL -s error -g $CAT:88 "There is no network device available on your system.\n" 2>&1
+			exit 1
+		fi
+		plist1=`echo \`$NETINFO -l proto\``
+		plist2=`echo \`$NETINFO -u -l proto\``
+		protlist=`echo "$plist1" "$plist2"`
+		
+		if [ -z "$protlist" ]
+		then	pfmt -l $LABEL -s error -g $CAT:89 "There is no network protocol available on your system.\n" 2>&1
+			exit 1
+		fi
+
+		num_dvc=`cat /tmp/dlist.$$|wc -l`
+
+		for i in `echo $protlist`
+		do
+			larg=`gettxt "$CAT:90" "These are the device(s) available on your system:"`
+			parg=`pfmt -s nostd -g $CAT:91 "Type the number of the device(s) to be configured with %s" $i 2>&1`
+			dvc=`ckitem -m $num_dvc -l "$larg" -p "$parg" \`cat /tmp/dlist.$$\` || exit $?`
+			if [ $? = 3 ]
+			then	
+				continue
+			else
+				dvc_list=
+				for j in `echo $dvc`
+				do
+					dvc_list="$dvc_list -d $j"
+				done
+				if [ ! -x /etc/confnet.d/$i/configure ]
+				then    pfmt -l $LABEL -s info -g $CAT:87 "%s specific configure command missing\n\n" $i 2>&1
+					continue
+				fi
+				/etc/confnet.d/$i/configure -i ${dvc_list}
+			fi
+		done
+		rm -f /tmp/dlist.$$
+	fi
+fi		
+}
+
+rm_config() {
+if [ "$prot" != "" -a "$dvc" = "" ]
+then
+	if [ ! -x /etc/confnet.d/$prot/configure ]
+	then	pfmt -l $LABEL -s error -g $CAT:87 "%s specific configure command missing\n\n" $prot 2>&1
+		exit 1
+	fi
+	/etc/confnet.d/$prot/configure -r
+else
+	if [ "$prot" = "" -a "$dvc" != "" ]
+	then	
+		for i in `echo $dvc`
+		do
+			map_prot=`$NETINFO -d $i`
+			if [ "$map_prot" = "" ]
+			then	pfmt -l $LABEL -s info -g $CAT:92 "no mapping protocol for %s\n" $i 2>&1
+		     		continue
+			fi
+			for j in `echo $map_prot`
+			do
+				if [ ! -x /etc/confnet.d/$j/configure ]
+				then    pfmt -l $LABEL -s info -g $CAT:87 "%s specific configure command missing\n\n" $j 2>&1
+					continue
+				fi
+				eval /etc/confnet.d/$j/configure -r -d $i
+			done
+		done
+	else
+		# both prot and dvc specified
+		if [ ! -x /etc/confnet.d/$prot/configure ]
+		then    pfmt -l $LABEL -s error -g $CAT:87 "%s specific configure command missing\n\n" $prot 2>&1
+			exit 1
+		fi
+		for i in `echo $dvc`
+		do
+			/etc/confnet.d/$prot/configure -r -d $dvc
+		done
+	fi			
+fi
+}
+			
+while getopts id:p:rO: i
+do
+	case $i in
+	i)
+		if [ $rm_flg -eq 1 ]
+		then
+			usage
+		fi
+		int_flg=1
+		;;
+	r)
+		if [ $int_flg -eq 1 ]
+		then
+			usage
+		fi
+		rm_flg=1
+		;;
+	d)	
+		dvc="$dvc $OPTARG"
+		;;
+	p)	
+		prot=$OPTARG
+		;;
+	O)
+		args="$OPTARG"
+		break
+		;;
+	\?)
+		usage
+		;;
+	esac
+done
+num_args=$OPTIND
+
+# command invoked with no args
+if [ $num_args -eq 1 ]
+then	auto_config
+else
+	d_cnt=`echo "$dvc" | wc -w | sed  -e 's/     //'`
+	if [ "$args" != "" ]
+	then	if [ $int_flg -ne 0 -o $rm_flg -ne 0 ]
+		then
+			usage
+		fi
+	fi
+	
+	# -p <prot> -d <dvc> [-O "<args>"]
+	if [ $int_flg -eq 0 -a $rm_flg -eq 0 ]
+	then	
+		if [ $d_cnt -eq 1 -a "$prot" != "" ]
+		then	
+			$NETINFO -l dev | grep $dvc > /dev/null
+			if [ $? != 0 ]
+			then	pfmt -l $LABEL -s error -g $CAT:93 "%s not on your system. Configuration aborted.\n" $dvc 2>&1
+				exit 1
+			else
+				eval /etc/confnet.d/$prot/configure -d $dvc $args
+			fi
+		else	
+			usage
+		fi
+	else
+		if [ $int_flg -eq 1 ]
+		then	
+			if [ "$prot" = "" -a "$dvc" = "" ]
+			# -i with no other opt
+			then	int_config
+			# -i -p <prot> -d <dvc> [-d dvc]...
+			else	if [ "$prot" != "" -a $d_cnt -ge 1 ]
+				then	int_config
+				else
+					usage
+				fi
+			fi
+		else
+			# command invoked with -r
+			if [ $rm_flg -ne 1 ]
+			then
+				usage
+			fi
+			if [ "$dvc" = "" -a "$prot" = "" ]
+			then
+				usage
+			fi
+					
+			rm_config
+			
+		fi
+	fi
+fi

@@ -1,0 +1,28 @@
+#ident	"@(#)Text.start	1.2"
+#ident	"$Header$"
+
+################################################################################
+#
+#	Module Name: Text.start
+#
+#	Functional Description: This Text displays status of start task
+#			
+################################################################################
+title="Start the Keymaster Daemon"
+
+#	This should work, but doesn't... in the mean time... use the if
+#text=`run -n $TFADMIN /usr/sbin/keymaster -s $ARG1; regex -v $RET
+text=`if [ "x" != "x${TFADMIN}" ];
+	then run -n ${TFADMIN} /usr/sbin/keymaster -s $F1;
+	else run -n /usr/sbin/keymaster -s $F1;
+	fi; regex -v $RET
+	'^0$'	"\n\tKeymaster daemon successfully started."
+	'^.*$'	"\n\tKeymaster daemon not started."`
+
+`readfile $INTFBASE/display.msg | message -s`
+
+begrow=any
+begcol=any
+
+rows=3
+columns=50

@@ -1,0 +1,225 @@
+XCOMM $XConsortium: Imakefile /main/18 1996/01/16 16:08:36 kaleb $
+
+
+
+
+
+XCOMM $XFree86: xc/programs/Xserver/hw/xfree86/common/Imakefile,v 3.27 1996/01/16 11:00:57 dawes Exp $
+
+
+
+#include <Server.tmpl>
+
+#ifdef i386MachArchitecture
+        KBD = xf86KbdMach
+#else
+# ifdef i386BsdArchitecture
+        KBD = xf86KbdBSD
+# else
+#  ifdef LinuxArchitecture
+        KBD = xf86KbdLnx
+#  else
+        KBD = xf86Kbd
+#  endif
+# endif
+#endif
+
+#if BuildXKB
+     XKBDDXSRC = xf86XKB.c
+     XKBDDXOBJ = xf86XKB.o
+#endif
+
+  XCONFIGSRC = xf86Config
+ XCONFIGFILE = XF86Config
+
+#if BuildXInputExt
+ XF86_XINPUT_SRC = xf86Xinput.c
+ XF86_XINPUT_OBJ = xf86Xinput.o
+# if JoystickSupport
+    JOYSTICK_SRC = xf86Jstk.c
+    JOYSTICK_OBJ = xf86Jstk.o
+# endif
+# if WacomSupport
+       WACOM_SRC = xf86Wacom.c
+       WACOM_OBJ = xf86Wacom.o
+# endif
+# if ElographicsSupport
+ ELOGRAPHICS_SRC = xf86Elo.c
+ ELOGRAPHICS_OBJ = xf86Elo.o
+# endif
+#endif
+
+SERVERSRCS = \
+	XF86_SVGA.c \
+	XF86_VGA16.c \
+	XF86_Mono.c \
+	XF86_S3.c \
+	XF86_8514.c \
+	XF86_Mach8.c \
+	XF86_Mach32.c \
+	XF86_Mach64.c \
+	XF86_P9000.c \
+	XF86_AGX.c \
+	XF86_W32.c \
+	XF86_I128.c
+
+SRCS =	\
+	$(XCONFIGSRC).c \
+	xf86IniExt.c \
+	xf86MIniExt.c \
+	xf86Cursor.c \
+	xf86Events.c \
+	xf86Init.c \
+	xf86Init_m.c \
+	xf86Io.c \
+	xf86Lock.c \
+	xf86_Mouse.c \
+	xf86_Option.c \
+	$(KBD).c \
+	$(XF86_XINPUT_SRC) \
+	$(JOYSTICK_SRC) \
+	$(WACOM_SRC) \
+	$(ELOGRAPHICS_SRC) \
+	$(XKBDDXSRC) \
+	$(SERVERSRCS)
+
+OBJS = \
+	$(XCONFIGSRC).o \
+	xf86Cursor.o \
+	xf86Events.o \
+	xf86Io.o \
+	xf86Lock.o \
+	xf86_Mouse.o \
+	$(XF86_XINPUT_OBJ) \
+	$(JOYSTICK_OBJ) \
+	$(WACOM_OBJ) \
+	$(ELOGRAPHICS_OBJ) \
+	$(XKBDDXOBJ) \
+	$(KBD).o
+
+OFILES = \
+	xf86Init.o \
+	xf86Init_m.o \
+	xf86IniExt.o \
+	xf86MIniExt.o \
+	xf86_Option.o
+
+   INCLUDES = -I. -I.. -I$(XF86OSSRC) -I$(SERVERSRC)/mfb -I$(SERVERSRC)/mi \
+              -I$(SERVERSRC)/include -I$(SERVERSRC)/os \
+              -I$(INCLUDESRC) -I$(EXTINCSRC)
+
+     OSNAME = OSName
+   OSVENDOR = OSVendor
+  OSNAMEDEF = -DOSNAME='"$(OSNAME)"' -DOSVENDOR='"$(OSVENDOR)"'
+CONSDEFINES = XFree86ConsoleDefines
+
+    DEFINES = $(XCONFIGDEFINES) $(CONSDEFINES)
+
+#if XF86MonoServer
+VGA2BUILD = -DBUILD_VGA2
+#endif
+#if XF86VGA16Server
+VGA16BUILD = -DBUILD_VGA16
+#endif
+#if XF86MonoDualServer
+VGA2MONOBUILD = -DBUILD_VGA2_MONO
+#endif
+#if XF86VGA16DualServer
+VGA16MONOBUILD = -DBUILD_VGA16_MONO
+#endif
+
+XF86SCREENFLAGS = $(VGA2BUILD) $(VGA16BUILD) $(VGA2MONOBUILD) $(VGA16MONOBUILD)
+
+all:: $(OFILES)
+
+#ifdef BuildXInputExt
+SpecialObjectRule(xf86Xinput.o,xf86Xinput.c $(ICONFIGFILES),$(XINPUT_DEVICES))
+#endif
+SpecialObjectRule($(XCONFIGSRC).o,$(XCONFIGSRC).c,'-DSERVER_CONFIG_FILE="$(LIBDIR)/$(XCONFIGFILE)"')
+SpecialObjectRule(xf86Init.o,xf86Init.c $(ICONFIGFILES),$(OSNAMEDEF) $(EXT_DEFINES))
+SpecialCObjectRule(xf86Events,$(ICONFIGFILES),$(EXT_DEFINES))
+#if XF86SVGAServer
+SpecialObjectRule(XF86_SVGA.o,XF86_SVGA.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_SVGA.o
+#endif
+#if XF86VGA16Server
+SpecialObjectRule(XF86_VGA16.o,XF86_VGA16.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_VGA16.o
+#endif
+#if XF86MonoServer
+SpecialObjectRule(XF86_Mono.o,XF86_Mono.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_Mono.o
+#endif
+#if XF86S3Server
+SpecialObjectRule(XF86_S3.o,XF86_S3.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_S3.o
+#endif
+#if XF86I8514Server
+SpecialObjectRule(XF86_8514.o,XF86_8514.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_8514.o
+#endif
+#if XF86Mach8Server
+SpecialObjectRule(XF86_Mach8.o,XF86_Mach8.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_Mach8.o
+#endif
+#if XF86Mach32Server
+SpecialObjectRule(XF86_Mach32.o,XF86_Mach32.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_Mach32.o
+#endif
+#if XF86Mach64Server
+SpecialObjectRule(XF86_Mach64.o,XF86_Mach64.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_Mach64.o
+#endif
+#if XF86P9000Server
+SpecialObjectRule(XF86_P9000.o,XF86_P9000.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_P9000.o
+#endif
+#if XF86AGXServer
+SpecialObjectRule(XF86_AGX.o,XF86_AGX.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_AGX.o
+#endif
+#if XF86W32Server
+SpecialObjectRule(XF86_W32.o,XF86_W32.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_W32.o
+#endif
+#if XF86I128Server
+SpecialObjectRule(XF86_I128.o,XF86_I128.c $(ICONFIGFILES),$(XF86SCREENFLAGS))
+all:: XF86_I128.o
+#endif
+
+ObjectFromSpecialSource(xf86Init_m,xf86Init,$(OSNAMEDEF) $(EXT_DEFINES) -DXF86MONOVGA)
+ObjectFromSpecialSource(xf86IniExt,$(SERVERSRC)/mi/miinitext,$(EXT_DEFINES))
+ObjectFromSpecialSource(xf86MIniExt,$(SERVERSRC)/mi/miinitext,$(EXT_DEFINES) -UPEXEXT -UXIE)
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(xf86,$(OBJS))
+
+LinkFile(XF86_Mach8.c,Mach8.c)
+LinkFile(XF86_Mach32.c,Mach32.c)
+LinkFile(XF86_Mach64.c,Mach64.c)
+
+InstallLinkKitLibrary(xf86,$(LINKKITDIR)/lib)
+InstallLinkKitNonExecFile(xf86Init.o,$(LINKKITDIR)/lib)
+InstallLinkKitNonExecFile(xf86Init_m.o,$(LINKKITDIR)/lib)
+InstallLinkKitNonExecFile(xf86.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(xf86ExtInit.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(xf86Priv.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(xf86Procs.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(xf86_Option.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(xf86_Option.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(xf86_Config.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(compiler.h,$(LINKKITDIR)/include)
+InstallLinkKitNonExecFile(XF86_SVGA.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_VGA16.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_Mono.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_S3.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_8514.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_Mach8.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_Mach32.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_Mach64.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_P9000.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_AGX.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_W32.c,$(LINKKITDIR))
+InstallLinkKitNonExecFile(XF86_I128.c,$(LINKKITDIR))
+
+DependTarget()

@@ -1,0 +1,184 @@
+            extended ISA verify support in Gemini netcfg.
+                          version 11.1
+
+
+General
+-------
+ODI drivers do not have a verify routine
+DLPI drivers could have a verify routine but this document only
+applies to MDI drivers
+
+
+Actions required by vendors
+---------------------------
+Enhanced ISA autodetect is only useful if you can read and/or write
+certain ISA parameter settings from the firmware
+
+Do implemented enhanced ISA autodetect support, you must do two things:
+1) add an ISAVERIFY line to your bcfg file
+2) add the support code to your driver's xxx_verify routine.
+
+The ISAVERIFY parameter indicates what capabilities the board has
+for reading and writing specific ISA parameters to NVRAM/EEPROM located on the
+board.    If the parameter is read-only then you don't need to list
+it in the ISAVERIFY parameter.
+
+How do I add these to the bcfg file?
+
+In your .bcfg file, in the #DRIVER: section,
+
+add a line:
+
+ISAVERIFY="READIOADDR READIRQ READMEMADDR READDMA
+           WRITEIOADDR WRITEIRQ WRITEMEMADDR WRITEDMA"
+
+You don't have to list all of these parameters -- only the capability
+of your card.
+
+Custom-oriented parameters which are read from the firmware
+(wait-states, media type, media speed, etc.) are added in a different
+manner, to be discussed later.
+
+
+How to I implement ISA autodetect in my device driver?
+
+You will need to a call a new MDI library routine called
+mdi_AT_verify.  its function prototype lives in <sys/mdi.h>:
+
+extern int mdi_AT_verify(rm_key_t rm_key, int *getset,
+                         ulong_t *sioa, ulong_t *eioa, int *vector,
+                         ulong_t *scma, ulong_t *ecma, int *dmac);
+
+mdi_AT_verify returns 0 for success else an error number.
+
+rm_key indicates the affected key.
+getset indicates how this routine is being called and affects the
+remaining parameters:
+
+When getset is set to MDI_ISAVERIFY_GET your driver should retrieve
+ISA parameters from NVRAM/EEPROM and call mdi_AT_verify a second time
+with an argument of MDI_ISAVERIFY_GET_REPLY, passing in the values
+you just read
+
+When getset is set to MDI_ISAVERIFY_SET your driver should set
+NVRAM/EEPROM according to the values in vector, scma, ecma, and dmac.
+If vector is -1 then it doesn't need to be changed
+If dma is -1 then it doesn't need to be changed
+If scma and ecma are -1 then they don't need to be changed
+If sioa and eioa are -1 then they don't need to be changed
+
+vector indicates the IRQ
+scma and ecma indicate the starting and ending memory address
+dmac indicates the DMA 
+
+Set the parameter to NULL lif it isn't applicable to your firmware.
+In the example below, we don't use DMA, so we set this parameter to NULL
+in the call to mdi_AT_verify.
+
+Example:
+--------
+
+in your xxx_verify routine, you should ensure the machine has an ISA
+bus:
+
+if ((mdi_bustypes() & CM_BUS_ISA) == 0) {
+   cmn_err(CE_CONT,"!xxx_verify: no ISA bus in the machine\n");
+   return(ENODEV);
+}
+
+Next, retrieve CM_IOADDR from the resmgr:
+
+   cm_range_t   range;
+   struct cm_args   cm_args;
+
+   cm_args.cm_key = key; /* passed in as argument to your xxx_verify routine */
+   cm_args.cm_n = 0;
+   cm_args.cm_param = CM_IOADDR;
+   cm_args.cm_val = &range;
+   cm_args.cm_vallen = sizeof(struct cm_addr_rng);
+
+   if (cm_getval(&cm_args) != 0) {
+      cmn_err(CE_WARN, "wdn_verify: no IOADDR for key 0x%x\n", key);
+      return(ENODEV);
+   }
+
+Now determine if your board's hardware is at this I/O address.  return EINVAL
+or ENODEV if no board is found.
+
+If you do find your board at this address, use something like the following:
+
+   int getset;
+   int vector, dma;
+   ulong_t scma, ecma, sioa, eioa;
+
+   getset = MDI_ISAVERIFY_UNKNOWN;   /* must set to this initially */
+   err = mdi_AT_verify(key, &getset, &sioa, &eioa, &vector, 
+                                     &scma, &ecma, &dmac);
+   if (err) {
+      cmn_err(CE_WARN,"xxx_verify: mdi_AT_verify key=%d failed\n",key);
+      return(ENODEV);
+   }
+   if (getset == MDI_ISAVERIFY_GET) {
+      /* retrieve firmware parameters for ndcfg */
+      vector = <you read from I/O address or NULL if not readable>
+      dma = <you read from I/O address or NULL if not readable>
+            (for our example we'll set dma to NULL in call to mdi_AT_verify)
+      scma = <you read from I/O address or NULL if not readable>
+      ecma = <you read from I/O address or NULL if not readable>
+      sioa = <same as IOADDR from resmgr>
+      eioa = <ending byte that your driver uses-don't set this 1 byte too big!>
+
+      In addition, if your .bcfg file has CUSTOM parameters (i.e.
+      cable type, link integrity, buffer usage, etc., you must read these
+      from the firmware and set the same parameter in the resmgr that
+      is specified in the .bcfg file.  Use the key provided to your verify
+      routine.
+
+      getset = MDI_ISAVERIFY_GET_REPLY;
+      err = mdi_AT_verify(key, &getset, &sioa, &eioa, &vector, 
+                                        &scma, &ecma, NULL);
+      if (err != 0) {
+         cmn_err(CE_CONT,"xxx_verify: mdi_AT_verify returned %d",err);
+         return(ENODEV);
+      }
+      return(0);
+   } else if (getset == MDI_ISAVERIFY_SET) {
+
+      program NVRAM/EEPROM with the values indicated by vector, sioa, eioa,
+      scma, ecma, and dmac.   Note that the range sioa-eioa may be different
+      than the range given by CM_IOADDR in the resmgr.  If it is, the user
+      wants to change the existing I/O address that the board is using
+      to the new address returned from mdi_AT_verify.  You can call
+      cmn_err to indicate to the user if there are any problems.
+
+      If vector is -1 then it doesn't need to be changed
+      If dma is -1 then it doesn't need to be changed
+      If scma and ecma are -1 then they don't need to be changed
+      If sioa and eioa are -1 then they don't need to be changed
+
+      If any .bcfg file used by your driver uses CUSTOM parameters then
+      don't forget to look for it in the resmgr too and program the firmware
+      accordingly.  However, since you don't know _which_ .bcfg file the
+      user is manipulating, don't fail if the parameter isn't found in
+      the resmgr -- call cmn_err(CE_CONT telling the user the default setting
+      you are assuming.
+
+      Note:  if your init routine calls cm_AT_putconf then you must call
+             cm_AT_putconf again here to indicate the new board settings.  See
+             the e3D driver for an example.  Use the later of:
+             - current firmware settings
+             - modified setting from mdi_AT_verify
+             in the call to cm_AT_putconf.  
+
+      return(0);    /* to indicate success to ndcfg */
+   } else if (getset == MDI_ISAVERIFY_TRADITIONAL) {
+      /* the dcu is invoking us.  just confirm that the hardware is
+       * present at the io address indicated CM_IOADDR
+       * return 0 if found else ENODEV.
+       */
+   } else {
+      cmn_err(CE_WARN, "wdn_verify: unknown mode %d\n",getset);
+      return(ENODEV);
+   }
+   /* NOTREACHED */
+}  /* end your your xxx_verify routine */

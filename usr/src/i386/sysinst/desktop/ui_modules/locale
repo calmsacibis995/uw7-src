@@ -1,0 +1,207 @@
+#!/sbin/sh
+#ident "@(#)locale	15.1	97/12/19"
+
+# locale UI module
+
+# todo:
+# -	The prompt for related-countries/all-countries is
+#	currently disabled.  If this turns out to be the truly
+#	desired design, then the choose_install function
+#	(and the $message2 variable in locale.txtstrings)
+#	and all code dealing with ALL_LOCALES can be deleted.
+#	Also, $message2, $item1 and $item2 in locale.txtstrings are unneeded.
+# -	The message line is now being used to display
+#		Current locale:  <text of currently selected item>
+#	so everything related to $desc_window can be deleted.
+#	Also, $message1 in locale.txtstrings is unneeded.
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func	# common.rc invokes this if skip_lang is True
+{
+	LOCALE=`ivar get LOCALE`
+	[ -z "$LOCALE" ] && ivar set LOCALE C
+}
+
+. /isl/ui_modules/common.rc
+
+################################################################################
+
+function choose_locale
+{
+[ -n "$debug" ] && set -x
+func=choose_locale
+	[ -n "$r2" ] && destroy_radio $r2
+
+# JAY, can delete these 2 line and those commented-out in make_current 
+#place_window 76 3 -above 2 -below 3
+#desc_window=$CURWIN
+
+	open_radio # -exit choose_install
+	r1=$RID
+
+	num=${#locale[*]}
+	selected=0
+	radio_select=0
+	radio_elements=0
+	n=-1
+	while (( ( n += 1 ) < num )) ; do
+		l="${locale[n]%%:*}"
+		[[ " $z " = *" all_locales "* ]] ||
+		[[ " $z " = *" $l "* ]] && {
+			[ "$l" = "$LOCALE" ] && {
+				selected=$n
+				radio_select=$radio_elements
+			}
+			add_radio "${locale[n]##*:}" -entry "make_current $l $n"
+			(( radio_elements += 1 ))
+		}
+	done	
+
+	place_window 70 10  -above 3 #-below 0
+	window_id=$CURWIN
+	set_hotkey  1 "save_exit HELP"
+	set_hotkey  9 "save_exit PREV"
+	set_hotkey 10 "save_exit NEXT"
+	run_radio $r1 $radio_select 8
+#	msg "$message1"
+}
+
+function make_current
+{
+	LOCALE=$1; selected=$2
+	msg "$current_is:  ${locale[selected]##*:}"
+#	wclear  $desc_window
+#	wgotoxy $desc_window 1 1
+#	wprintf $desc_window "$current_is: ${locale[selected]##*:}"
+}
+
+function choose_install
+{
+[ -n "$debug" ] && set -x
+func=choose_install
+	destroy_radio $r1
+	open_radio -exit choose_locale
+	r2=$RID
+	add_radio "$item1" -entry "ALL_LOCALES=0"
+	add_radio "$item2" -entry "ALL_LOCALES=1"
+	place_window 60 4  -above 6
+	window_id=$CURWIN
+	set_hotkey  1 "save_exit HELP"
+	set_hotkey  9 "save_exit PREV"
+	set_hotkey 10 "save_exit NEXT"
+	run_radio $r2 $ALL_LOCALES 2
+	msg "$message2"
+}
+
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+func=save_exit
+	# $LOCALE will be set to something like fr_CH;
+	# the back-end of the installation will use this value
+	# to create the file /etc/default/locale with the 
+	# following entry:
+	#      LANG=fr_CH
+	#
+	ivar set LOCALE "$LOCALE"
+
+	# $LOCALE_CODESET is used by the 'keyboard' UI module
+	# to determine the set of keyboards to present to the user.
+	#
+	x=${locale[selected]%:*}
+	LOCALE_CODESET="${x#*:}"
+	ivar set LOCALE_CODESET "$LOCALE_CODESET"
+	ivar set MAPCHAN cons.$LOCALE_CODESET.dk	# This file comes from Donald P.
+
+	# $ALL_LOCALES is 1 if all locales should be loaded.
+	# $ALL_LOCALES is 0 if only "related" locales should be loaded.
+	#
+	ivar set ALL_LOCALES "$ALL_LOCALES"	# will the back-end need this?
+
+	# Related locales are those that share the same language
+	# or country as $LOCALE.
+	# So for the example of LOCALE=fr_CH and ALL_LOCALES=0,
+	# $LOCALE_LANGS is set to the list
+	#	C_C.C english_us.88591 fr_CH.88591 de_CH.88591 
+	#	it_CH.88591 fr_FR.88591 fr_BE.88591 fr_CA.88591
+	# from which the ISL back-end will create the file /etc/default/lang 
+	# with the following entries:
+	#	LANG=C_C.C
+	#	LANG=english_us.88591
+	#	LANG=fr_CH.88591
+	#	LANG=de_CH.88591
+	#	LANG=it_CH.88591
+	#	LANG=fr_FR.88591
+	#	LANG=fr_BE.88591
+	#	LANG=fr_CA.88591
+	#
+	langs="C_C.C english_us.C"
+	for x in "${LOCALE#*_}" "${LOCALE%_*}" ; do  # lang & country of locale
+		#[ -z "$x" ] && continue
+		[ -z "$x" ] && [ "$ALL_LOCALES" = 0 ] && continue
+		n=-1
+		# If ALL_LOCALES==1, we run the following loop exactly once
+		# to spew all the locales in /etc/default/lang format.
+		while (( ( n += 1 ) < num )) ; do
+			l="${locale[n]%%:*}"
+			#[[ $l != *$x* ]]	&& continue
+			#[[ $langs =  *$l* ]]	&& continue
+			[ "$ALL_LOCALES" = 0 ] && {
+				[[ $l != *$x* ]]	&& continue
+				[[ $langs =  *$l* ]]	&& continue
+			}
+			langs="$langs $l"
+			y=${locale[n]%:*}
+			case "${y#*:}" in
+				88591)	i=88591; ;;
+				88592)	i=88592; ;;
+				88595)	i=88595; ;;
+				88597)	i=88597; ;;
+				88599)	i=88599; ;;
+				*)	i=C;	 ;;
+			esac
+			langs="$langs.$i"
+		done
+		[ "$ALL_LOCALES" = 1 ] && break
+	done
+	ivar set LOCALE_LANGS "$langs"	# new contents of /etc/default/lang
+
+	ivar set help_topic locale	# Just in case $1 == HELP
+
+	ii_exit $1
+}
+
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+LOCALE=`ivar get LOCALE`
+[ "$LOCALE" = "" ] && LOCALE=C
+
+ALL_LOCALES=`ivar get ALL_LOCALES`
+[ "$ALL_LOCALES" = "" ] && ALL_LOCALES=0
+
+ZONE=`ivar get ZONE`
+[ "$ZONE" = "" ] && ZONE=0
+if [ -r /etc/inst/locale/$LANG/menus/zone.txtstrings ] ; then
+	. /etc/inst/locale/$LANG/menus/zone.txtstrings
+else
+	ii_exit DIE
+fi
+z=" ${zone[ZONE]##*:} "	# get the list of locales for the chosen zone
+
+#
+# Let the user choose one
+#
+display "$prompt" -above 1 -below 6
+choose_locale
+footer "$keys"
+input_handler
+save_exit NEXT	# should never get here

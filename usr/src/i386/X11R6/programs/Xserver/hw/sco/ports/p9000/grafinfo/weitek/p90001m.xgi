@@ -1,0 +1,837 @@
+/*
+ * @(#) p90001m.xgi 11.1 97/10/22
+ *
+ * Copyright (C) 1991 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M        "P9000 1MB VRAM"
+  CLASS  P9000          "P9000"
+   MODE   640x480-256-60   "640x480 256-color 60Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 640;
+    PIXHEIGHT   = 480;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00563000;
+    HRZT        = 0x000000C7;
+    HRZSR       = 0x00000017;
+    HRZBR       = 0x00000021;
+    HRZBF       = 0x000000C1;
+    VRTT        = 0x0000020C;
+    VRTSR       = 0x00000001;
+    VRTBR       = 0x00000019;
+    VRTBF       = 0x000001F9;
+    VCLK        = 0x0045A8BC;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+ 
+        or( r0, 0x10 );         /* Output comes from P9000 */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+        or( r0, 0x80 );         /* Output comes from VGA */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/*******************************************************************/
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M         "P9000 1MB VRAM"
+  CLASS  P9000         "P9000"
+   MODE   640x480-256-72 "640x480 256-color 72Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 640;
+    PIXHEIGHT   = 480;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00563000;
+    HRZT        = 0x000000CF;
+    HRZSR       = 0x00000005;
+    HRZBR       = 0x00000025;
+    HRZBF       = 0x000000C5;
+    VRTT        = 0x00000208;
+    VRTSR       = 0x00000003;
+    VRTBR       = 0x0000001F;
+    VRTBF       = 0x000001FF;
+    VCLK        = 0x004BD8B5;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+ 
+        or( r0, 0x10 );         /* Output comes from P9000 */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/*******************************************************************/
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M         "P9000 1MB VRAM"
+  CLASS  P9000         "P9000"
+   MODE   800x600-256-56   "800x600 256-color 56Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 800;
+    PIXHEIGHT   = 600;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00587000;
+    HRZT        = 0x000000FD;
+    HRZSR       = 0x0000001D;
+    HRZBR       = 0x00000033;
+    HRZBF       = 0x000000FB;
+    VRTT        = 0x00000278;
+    VRTSR       = 0x00000004;
+    VRTBR       = 0x0000001B;
+    VRTBF       = 0x00000273;
+    VCLK        = 0x004F54A1;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        
+        or( r0, 0x10 );         /* Output comes from P9000 */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/*******************************************************************/
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M         "P9000 1MB VRAM"
+  CLASS  P9000         "P9000"
+   MODE   800x600-256-72   "800x600 256-color 72Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 800;
+    PIXHEIGHT   = 600;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00587000;
+    HRZT        = 0x00000103;
+    HRZSR       = 0x0000001B;
+    HRZBR       = 0x0000002B;
+    HRZBF       = 0x000000F3;
+    VRTT        = 0x0000029A;
+    VRTSR       = 0x00000006;
+    VRTBR       = 0x0000001D;
+    VRTBF       = 0x00000275;
+    VCLK        = 0x0045AC3D;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        
+        /* OR in the bits for horizontal and vertical polarity */
+        /* $$$NOTE these bits are resolution dependent */
+
+        or( r0, 0x20 );         /* HP = positive */
+
+        or( r0, 0x10 );         /* Output comes from P9000 */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/*******************************************************************/
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M         "P9000 1MB VRAM"
+  CLASS  P9000         "P9000"
+   MODE   1024x768-256-70 "1024x768 256-color 70Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00603000;
+    HRZT        = 0x0000014B;
+    HRZSR       = 0x00000021;
+    HRZBR       = 0x00000045;
+    HRZBF       = 0x00000145;
+    VRTT        = 0x00000326;
+    VRTSR       = 0x00000006;
+    VRTBR       = 0x00000023;
+    VRTBF       = 0x00000323;
+    VCLK        = 0x004ED093;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        
+        or( r0, 0x10 );         /* Output comes from P9000 */
+        or( r0, 0x20 );         /* HP = positive */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+        or( r0, 0x80 );         /* Output comes from VGA */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/*******************************************************************/
+
+VENDOR WEITEK         "Weitek"
+ MODEL  P90001M         "P9000 1MB VRAM"
+  CLASS  P9000         "P9000"
+   MODE   1024x768-256-80 "1024x768 256-color 80Hz"
+
+MEMORY(0xC0000000,0x400000);        /*  Base Address, Length        */
+
+DATA
+    {
+    XDRIVER     = "p9000";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    SYSCONFIG   = 0x00603000;
+    HRZT        = 0x00000151;
+    HRZSR       = 0x00000021;
+    HRZBR       = 0x00000047;
+    HRZBF       = 0x00000147;
+    VRTT        = 0x00000324;
+    VRTSR       = 0x00000006;
+    VRTBR       = 0x00000023;
+    VRTBF       = 0x00000323;
+    VCLK        = 0x00533018;
+    MEMSIZE     = 0;
+    RAMWRITE    = 0x03C8;
+    PALDATA     = 0x03C9;
+    SRCTL       = 0x1E4;
+    OEM         = 0;   /* 0 = Weitek */
+    }
+
+PROCEDURE  InitDac /* (NO ARGS) */
+    {
+        out( 0x43C6, 0x82 );    /* comreg0  */
+        out( 0x03C8, 0x01 );    /* ramwrite */
+        out( 0x83C6, 0x00 );    /* comreg3  */
+        out( 0x83C8, 0x40 );    /* comreg1  */
+        out( 0x83C9, 0x32 );    /* comreg2  */
+        out( 0x03C6, 0xFF );    /* pixelmsk */
+    }
+                          
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        
+        /* OR in the bits for horizontal and vertical polarity */
+        /* $$$NOTE these bits are resolution dependent */
+
+        or( r0, 0x20 );         /* HP = positive */
+
+        or( r0, 0x10 );         /* Output comes from P9000 */
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+/* now we need to select an external freqency */
+
+        in( r0, 0x3cc );
+        or( r0, 0xC   );
+        out( 0x3c2, r0 );
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+   	out ( 0x43C6,  0x080 );
+   	out ( 0x03C8,  0x001 );
+   	out ( 0x83C6,  0x000 );
+   	out ( 0x83C8,  0x000 );
+   	out ( 0x83C9,  0x000 );
+
+/* first we need to unlock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        out( 0x3c5, r0 );
+        out( 0x3c5, r0 );
+        in( r0, 0x3c5 );
+        and( r0, 0xdf );
+        out( 0x3c5, r0 );
+
+/* VGA registers are unlocked, read current value of VSR */
+
+        out( 0x3c4, 0x12 );
+        in( r0, 0x3c5 );
+        and( r0, 0xef );
+        
+ 
+        /* now write the value back out */
+        
+        out( 0x3c5, r0 );
+
+/* re-lock the VGA Extended registers */
+
+        out( 0x3c4, 0x11 );
+        in( r0, 0x3c5 );
+        or( r0, 0x20 );         /* locking code */
+        out( 0x3c5, r0 );
+
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }

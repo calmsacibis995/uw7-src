@@ -1,0 +1,41 @@
+#ident	"@(#)pkg.ihvkit:request	1.1.1.1"
+
+trap 'exit 3' 15
+OUTPUT=$1
+> ${OUTPUT}
+
+SCRIPTS=/usr/sbin/pkginst
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+# First, make sure that we're running some version of UW2.X or more
+
+if [ `uname -v | /bin/cut -d . -f1` -ge 2 ]
+then
+	message -d `pfmt -s nostd -g ${PKGMSG}:1 "The %s package must be loaded onto a system running UnixWare 2.X.\nExamples of valid loads are 2.01, 2.02, and 2.1." "${PKGINST}" 2>&1`
+	exit 3
+fi
+
+# Now, run the standard checks required for installation setup.  Case 4
+#	can't exist, since there was no 1.1 'ihvkit'.
+
+$SCRIPTS/chkpkgrel
+case $? in
+	0) # No previous version exists
+		PKGINSTALL_TYPE=NEWINSTALL
+		;;
+	2) # Installing same version as current
+		PKGINSTALL_TYPE=OVERLAY
+		;;
+	6) # This is attempt to upgrade from UW 2.01
+		PKGINSTALL_TYPE=UPGRADE2
+		;;
+	*) # Unknow return code, or invalid version
+		message -d `pfmt -s nostd -g ${PKGMSG}:3 "The current installed version of %s could not be identified!\nYou must remove the %s package before re-installing!" "${PKGINST}" "${PKGINST}" 2>&1`
+		exit 3
+		;;
+esac
+
+exit 0

@@ -1,0 +1,394 @@
+XCOMM $XConsortium: Imakefile.LK /main/5 1995/09/04 19:49:48 kaleb $
+XCOMM $XFree86: xc/programs/Xserver/hw/xfree86/LinkKit/Imakefile.LK,v 3.26 1995/07/15 15:02:11 dawes Exp $
+/*
+ * Server Makefile for LinkKit
+ */
+
+#ifndef InstallXserverSetUID
+#define InstallXserverSetUID NO
+#endif
+#define InstallServerSetUID InstallXserverSetUID
+
+#include <Server.tmpl>
+
+#define PreFbLibs $(DIX) $(OS) $(FONT)
+#define BarePostFbLibs $(MFB) $(MI)
+#define PostFbLibs BarePostFbLibs $(EXTENSIONS)
+#define NoMfbBarePostFbLibs $(MI)
+#define NoMfbPostFbLibs NoMfbBarePostFbLibs $(EXTENSIONS)
+
+#define MFBBareLibs PreFbLibs BarePostFbLibs
+#define NoMFBBareLibs PreFbLibs NoMfbBarePostFbLibs
+#define MFBLibs PreFbLibs PostFbLibs
+#define NoMFBLibs PreFbLibs NoMfbPostFbLibs
+#define CFBLibs PreFbLibs $(CFB) PostFbLibs
+#define CFB8Libs PreFbLibs $(CFB8) PostFbLibs
+#define CFB16Libs PreFbLibs $(CFB16) PostFbLibs
+#define CFB32Libs PreFbLibs $(CFB32) PostFbLibs
+
+#if BuildPexExt
+         PEXLIBS = lib/libdidipex.a \
+                   lib/libdiswapex.a \
+                   lib/libdiobpex.a \
+                   lib/libdidipex.a \
+                   lib/libddpex4.a \
+                   lib/libddpex3.a \
+                   lib/libddpexs.a \
+                   lib/libddpex2.a \
+                   lib/libddpex1.a \
+		   lib/libospex.a 
+#endif
+#if BuildXInputExt
+      XINPUTEXT = lib/libxinput.a
+#endif
+#if BuildXIE
+      XIEEXT = lib/libdixie.a lib/libmixie.a 
+#endif
+#if BuildXKB
+      XKBEXT = lib/libxkb.a
+#endif
+#if BuildLBX
+      LBXEXT = lib/liblbx.a lib/liblbxutil.a
+#endif
+#ifdef SiteExtensionLibs
+     SITEEXTS = SiteExtensionLibs
+#endif
+
+      OTHEREXTS = lib/libext.a $(XKBEXT) $(XINPUTEXT) $(XIEEXT) \
+                  $(LBXEXT) $(SITEEXTS)
+     EXTENSIONS = $(OTHEREXTS) $(PEXLIBS)
+         XAULIB = lib/libXau.a
+       XDMCPLIB = lib/libXdmcp.a
+        BSDEMUL = lib/libXbsd.a
+            MFB = lib/libmfb.a
+            CFB = lib/libcfb.a lib/libcfb16.a lib/libcfb32.a
+           CFB8 = lib/libcfb.a
+          CFB16 = lib/libcfb.a lib/libcfb16.a
+          CFB32 = lib/libcfb.a lib/libcfb32.a
+#if BuildLBX
+             OS = lib/liboslbx.a $(XAULIB) $(XDMCPLIB)
+            DIX = lib/libdixlbx.a
+#else
+             OS = lib/libos.a $(XAULIB) $(XDMCPLIB)
+            DIX = lib/libdix.a
+#endif
+             MI = lib/libmi.a
+           FONT = lib/libfont.a
+#if NeedLibGcc
+         GCCLIB = -lgcc
+#endif
+#ifdef ServerExtraSysLibs
+   EXTRASYSLIBS = ServerExtraSysLibs
+#endif
+        SYSLIBS = MathLibrary Krb5Libraries $(EXTRASYSLIBS) $(GCCLIB)
+           CBRT = lib/libcbrt.a
+
+       INCLUDES = -Iinclude -Iinclude/X11 -Idrivers
+
+  SCREENDEFINES = $(VGA2BUILD) $(VGA2MONOBUILD) $(VGA16BUILD) $(VGA16MONOBUILD)
+        DEFINES = $(SCREENDEFINES) $(EXT_DEFINES)
+
+  XF86INIT = $(XF86COMSRC)/xf86Init.o $(XF86CONFIGSRC)/xf86IniExt.o
+ XF86MINIT = $(XF86COMSRC)/xf86Init_m.o $(XF86CONFIGSRC)/xf86MIniExt.o
+XF86CONFIG = $(XF86CONFIGSRC)/xf86_Option.o
+XF86COMLIB = $(XF86COMSRC)/LibraryTargetName(xf86)
+ XF86OSLIB = $(XF86OSSRC)/LibraryTargetName(xf86_os)
+ XF86HWLIB = $(XF86HWSRC)/LibraryTargetName(xf86_hw)
+  XF86LIBS = $(XF86INIT) $(XF86CONFIG) $(XF86COMLIB) $(XF86HWLIB) $(XF86OSLIB)
+ XF86MLIBS = $(XF86MINIT) $(XF86CONFIG) $(XF86COMLIB) $(XF86HWLIB) $(XF86OSLIB)
+
+#ifndef LynxOSArchitecture
+all:: xf86IniExt.o xf86MIniExt.o
+#else
+all:: xf86IniExt.o xf86MIniExt.o main.o
+
+main.o : $(DIX)
+	$(RM) $@
+	ar x $(DIX) $@
+#endif
+
+LinkFile(xf86IniExt.c,miinitext.c)
+LinkFile(xf86MIniExt.c,miinitext.c)
+SpecialCObjectRule(miinitext,$(ICONFIGFILES),NullParameter)
+SpecialCObjectRule(xf86IniExt,$(ICONFIGFILES),-DXFREE86)
+SpecialCObjectRule(xf86MIniExt,$(ICONFIGFILES),-DXFREE86 -UPEXEXT -UXIE)
+
+XCOMM 		  Build rule blocks, add one for each server
+XCOMM 
+XCOMM The ALL definitions that used to be here have been folded into the
+XCOMM build blocks.
+XCOMM 
+XCOMM If a server needs mfb, its build block should have a line like:
+XCOMM MFBDIR = mfb
+XCOMM Similarly, its build block should have:
+XCOMM CFB8DIR  = cfb   (if the servr needs 8 bit cfb)
+XCOMM CFB16DIR = cfb16 (16 bit cfb)
+XCOMM CFB32DIR = cfb32 (32 bit cfb)
+XCOMM 
+XCOMM If a server does not need all of the above components, simply
+XCOMM omit the relevant lines from the build block.
+XCOMM 
+XCOMM Additional ddx directories can be split across three variables:
+XCOMM DDXDIR1, DDXDIR2, and DDXDIR3.  Most servers only use DDXDIR1,
+XCOMM but if two servers can be built on a platform then DDXDIR1 is
+XCOMM typically set to the ddx directories that are shared by both
+XCOMM servers, DDXDIR2 is the directories unique to one of the servers,
+XCOMM and DDXDIR3 is the directories unique to the other server.
+XCOMM 
+XCOMM If these guidelines are followed, a make at the top of the server
+XCOMM tree should result in each subdirectory being built only once,
+XCOMM even if multiple servers that share subdirectories are being built.
+XCOMM It was possible to get this result with the old SUBDIRSn scheme
+XCOMM (from which the current scheme is derived), but it became very
+XCOMM difficult to attain with the advent of the Virtual framebuffer server
+XCOMM (Xvfb), which can be built on any platform and thus interacted strongly
+XCOMM with SUBDIRSn.  The current scheme made accomodating Xvfb a snap,
+XCOMM and should in general be easier to maintain.
+
+
+#if XF86SVGAServer
+XCOMM
+XCOMM XFree86 SVGA Server
+XCOMM
+DDXDIR1 = $(VGADRIVERSRC)
+XF86SVGASUBDIRS = $(VGADRIVERSRC)
+XF86SVGAOBJS = XF86_SVGA.o vga256Conf.o
+XF86SVGALIBS = $(VGADRIVERSRC)/libdriver256.a $(DRIVERSRC)/libvga256.a \
+               $(XF86LIBS) CFBLibs
+XF86SVGASYSLIBS = $(SYSLIBS)
+VGADRIVERS = XF86SvgaDrivers
+ConfigTargetNoDepend(vga256Conf,$(ICONFIGFILES),cvga256.sh,$(VGADRIVERS))
+XF86_SVGA.o: XF86_SVGA.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_SVGA,$(XF86SVGASUBDIRS),$(XF86SVGAOBJS),$(XF86SVGALIBS),$(XF86SVGASYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_SVGA
+#endif
+#endif	/* XF86SVGAServer */
+
+
+#if XF86VGA16Server
+XCOMM
+XCOMM XFree86 VGA 16 color Server
+XCOMM
+DDXDIR2 = $(VGA16DRIVERSRC)
+VGA16BUILD = -DBUILD_VGA16
+#if XF86VGA16DualServer
+DDXDIR4 = $(MONODRIVERSRC)
+VGA16MONOBUILD = -DBUILD_VGA16_MONO
+XF86VGA16MONOOBJS = monoConf.o
+XF86VGA16MONOLIBS = $(MONODRIVERSRC)/libmonodrv.a $(DRIVERSRC)/libmono.a
+XF86VGA16MONODIRS = $(MONODRIVERSRC)
+#endif
+XF86VGA16SUBDIRS = $(VGA16DRIVERSRC) $(XF86VGA16MONODIRS)
+XF86VGA16OBJS = XF86_VGA16.o vga16Conf.o \
+                $(DRIVERSRC)/vga16misc.o $(XF86VGA16MONOOBJS)
+XF86VGA16LIBS = $(VGA16DRIVERSRC)/libdriver16.a $(DRIVERSRC)/libvga16.a \
+                $(XF86VGA16MONOLIBS) $(XF86MLIBS) NoMFBBareLibs $(OTHEREXTS)
+XF86VGA16SYSLIBS = $(SYSLIBS)
+VGA16DRIVERS = XF86Vga16Drivers
+ConfigTargetNoDepend(vga16Conf,$(ICONFIGFILES),cvga16.sh,$(VGA16DRIVERS))
+XF86_VGA16.o: XF86_VGA16.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_VGA16,$(XF86VGA16SUBDIRS),$(XF86VGA16OBJS),$(XF86VGA16LIBS),$(XF86VGA16SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_VGA16
+#endif
+#endif	/* XF86VGA16Server */
+
+
+#if XF86W32Server
+XCOMM
+XCOMM XFree86 W32 Server
+XCOMM
+XF86W32OBJS = XF86_W32.o w32Conf.o
+XF86W32LIBS = $(DRIVERSRC)/libw32.a $(DRIVERSRC)/libw32cfb.a $(DRIVERSRC)/libw32.a $(DRIVERSRC)/libw32asm.a $(XF86LIBS) CFB8Libs
+XF86W32SYSLIBS = $(SYSLIBS)
+W32DRIVERS = XF86W32Drivers
+ConfigTargetNoDepend(w32Conf,$(ICONFIGFILES),confw32.sh,$(W32DRIVERS))
+XF86_W32.o: XF86_W32.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_W32,$(XF86W32SUBDIRS),$(XF86W32OBJS),$(XF86W32LIBS),$(XF86W32SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_W32
+#endif
+#endif
+
+#if XF86MonoServer
+XCOMM
+XCOMM XFree86 Monochrome VGA Server
+XCOMM
+DDXDIR3 = $(VGA2DRIVERSRC)
+VGA2BUILD = -DBUILD_VGA2
+#if XF86MonoDualServer
+DDXDIR4 = $(MONODRIVERSRC)
+VGA2MONOBUILD = -DBUILD_VGA2_MONO
+XF86MONOMONOOBJS = monoConf.o
+XF86MONOMONOLIBS = $(MONODRIVERSRC)/libmonodrv.a $(DRIVERSRC)/libmono.a
+XF86MONOMONODIRS = $(MONODRIVERSRC)
+#endif
+XF86MONOSUBDIRS = $(VGA2DRIVERSRC) $(XF86MONOMONODIRS)
+XF86MONOOBJS = XF86_Mono.o vga2Conf.o \
+               $(DRIVERSRC)/vga2misc.o $(XF86MONOMONOOBJS)
+XF86MONOLIBS = $(VGA2DRIVERSRC)/libdriver2.a $(DRIVERSRC)/libvga2.a \
+               $(XF86MONOMONOLIBS) $(XF86MLIBS) NoMFBBareLibs $(OTHEREXTS)
+XF86MONOSYSLIBS = $(SYSLIBS)
+VGA2DRIVERS = XF86Vga2Drivers
+ConfigTargetNoDepend(vga2Conf,$(ICONFIGFILES),confvga2.sh,$(VGA2DRIVERS))
+XF86_Mono.o: XF86_Mono.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_Mono,$(XF86MONOSUBDIRS),$(XF86MONOOBJS),$(XF86MONOLIBS),$(XF86MONOSYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_Mono
+#endif
+#endif	/* XF86MonoServer */
+
+#if XF86Vga16DualServer || XF86MonoDualServer
+MONODRIVERS = XF86MonoDrivers
+ConfigTargetNoDepend(monoConf,$(ICONFIGFILES),confmono.sh,$(MONODRIVERS))
+#endif
+
+#if XF86S3Server
+XCOMM
+XCOMM XFree86 S3 Server
+XCOMM
+DDXDIR5 = $(S3DRIVERSRC)
+XF86S3SUBDIRS = $(S3DRIVERSRC)
+XF86S3OBJS = XF86_S3.o s3Conf.o $(S3DRIVERSRC)/mmio_928/mmio_928.o $(S3DRIVERSRC)/s3_generic/s3_generic.o
+XF86S3LIBS = $(DRIVERSRC)/libs3.a $(DRIVERSRC)/libs3mmio.a $(XF86LIBS) CFBLibs lib/libxf86cache.a
+XF86S3SYSLIBS = $(SYSLIBS)
+S3DRIVERS = XF86S3Drivers
+ConfigTargetNoDepend(s3Conf,$(ICONFIGFILES),confS3.sh,$(S3DRIVERS))
+XF86_S3.o: XF86_S3.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_S3,$(XF86S3SUBDIRS),$(XF86S3OBJS),$(XF86S3LIBS),$(XF86S3SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_S3
+#endif
+#endif	/* XF86S3Server */
+
+
+#if XF86I8514Server
+XCOMM
+XCOMM XFree86 8514 Server
+XCOMM
+XF868514OBJS = XF86_8514.o
+XF868514LIBS = $(DRIVERSRC)/lib8514.a $(XF86LIBS) CFB8Libs lib/libxf86cache.a
+XF868514SYSLIBS = $(SYSLIBS)
+XF86_8514.o: XF86_8514.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_8514,$(XF868514SUBDIRS),$(XF868514OBJS),$(XF868514LIBS),$(XF868514SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_8514
+#endif
+#endif	/* XF86I8514Server */
+
+
+#if XF86Mach8Server
+XCOMM
+XCOMM XFree86 Mach8 Server
+XCOMM
+XF86MACH8OBJS = XF86_Mach8.o
+XF86MACH8LIBS = $(DRIVERSRC)/libmach8.a $(XF86LIBS) CFB8Libs lib/libxf86cache.a
+XF86MACH8SYSLIBS = $(SYSLIBS)
+XF86_Mach8.o: XF86_Mach8.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_Mach8,$(XF86MACH8SUBDIRS),$(XF86MACH8OBJS),$(XF86MACH8LIBS),$(XF86MACH8SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_Mach8
+#endif
+#endif	/* XF86Mach8Server */
+
+
+#if XF86Mach32Server
+XCOMM
+XCOMM XFree86 Mach32 Server
+XCOMM
+XF86MACH32OBJS = XF86_Mach32.o
+XF86MACH32LIBS = $(DRIVERSRC)/libmach32.a $(XF86LIBS) CFB16Libs lib/libxf86cache.a
+XF86MACH32SYSLIBS = $(SYSLIBS)
+XF86_Mach32.o: XF86_Mach32.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_Mach32,$(XF86MACH32SUBDIRS),$(XF86MACH32OBJS),$(XF86MACH32LIBS),$(XF86MACH32SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_Mach32
+#endif
+#endif	/* XF86Mach32Server */
+
+
+#if XF86Mach64Server
+XCOMM
+XCOMM XFree86 Mach64 Server
+XCOMM
+XF86MACH64OBJS = XF86_Mach64.o
+XF86MACH64LIBS = $(DRIVERSRC)/libmach64.a $(XF86LIBS) CFBLibs
+XF86MACH64SYSLIBS = $(SYSLIBS)
+XF86_Mach64.o: XF86_Mach64.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_Mach64,$(XF86MACH64SUBDIRS),$(XF86MACH64OBJS),$(XF86MACH64LIBS),$(XF86MACH64SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_Mach64
+#endif
+#endif	/* XF86Mach64Server */
+
+
+#if XF86P9000Server
+XCOMM
+XCOMM XFree86 P9000 Server
+XCOMM
+XF86P9000OBJS = XF86_P9000.o
+XF86P9000LIBS = $(DRIVERSRC)/libp9000.a $(XF86LIBS) CFBLibs
+XF86P9000SYSLIBS = $(SYSLIBS)
+XF86_P9000.o: XF86_P9000.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_P9000,$(XF86P9000SUBDIRS),$(XF86P9000OBJS),$(XF86P9000LIBS),$(XF86P9000SYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_P9000
+#endif
+#endif	/* XF86P9000Server */
+
+#if XF86AGXServer
+XCOMM
+XCOMM XFree86 AGX Server
+XCOMM
+XF86AGXOBJS = XF86_AGX.o
+XF86AGXLIBS = $(DRIVERSRC)/libagx.a $(XF86LIBS) CFBLibs
+XF86AGXSYSLIBS = $(SYSLIBS)
+XF86_AGX.o: XF86_AGX.c $(ICONFIGFILES)
+SetUIDServerTarget(XF86_AGX,$(XF86AGXSUBDIRS),$(XF86AGXOBJS),$(XF86AGXLIBS),$(XF86AGXSYSLIBS))
+#ifndef ServerToInstall
+#define ServerToInstall XF86_AGX
+#endif
+#endif	/* XF86AGXServer */
+
+#if XnestServer
+XCOMM
+XCOMM Server with Xlib-based ddx
+XCOMM
+#ifndef LynxOSArchitecture
+XNESTOBJS = miinitext.o
+#else
+XNESTOBJS = miinitext.o main.o
+#endif
+XNESTDIRS =
+XNEST = lib/libxnest.a
+XNESTLIBS = $(DIX) $(OS) $(FONT) $(XNEST) $(MI) $(EXTENSIONS)
+XNESTSYSLIBS = ClientLibDir $(XLIB) $(XNEST) $(SYSLIBS)
+ServerTarget(Xnest,$(XNESTDIRS),$(XNESTOBJS),$(XNESTLIBS),$(XNESTSYSLIBS))
+#endif /* XnestServer */
+
+CFBDIRS = $(CFB8DIR) $(CFB16DIR) $(CFB32DIR)
+DDXDIRS = $(DDXDIR1) $(DDXDIR2) $(DDXDIR3) $(DDXDIR4) $(DDXDIR5) $(DDXDIR6)
+SUBDIRS = $(STDDIRS) $(MFBDIR) $(CFBDIRS) $(DDXDIRS)
+
+#ifdef ServerToInstall
+install::
+	-(cd $(DESTDIR)$(BINDIR); $(RM) X; $(LN) ServerToInstall X)
+#endif
+
+/* Only these servers have subdirs */
+#if XF86SVGAServer || XF86MonoServer || XF86VGA16Server || XF86S3Server
+
+#define IHaveSubdirs
+
+DependSubdirs($(SUBDIRS))
+MakeLintLibSubdirs($(SUBDIRS))
+LintSubdirs($(SUBDIRS))
+
+ForceSubdirs($(DEPDIRS) $(SUBDIRS))
+
+#else
+
+DependTarget()
+
+#endif

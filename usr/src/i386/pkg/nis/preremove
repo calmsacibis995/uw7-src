@@ -1,0 +1,66 @@
+#ident	"@(#)preremove	1.2"
+#ident  "$Header$"
+
+PKGMSG=${PKGINST}.pkg
+
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+savemv()
+{
+	trap "" 1 2 3 15
+	mv -f $1 $2 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		pfmt -s error -g ${PKGMSG}:4 "Unable to create %s\n" $2
+	fi
+	trap 1 2 3 15
+}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+#
+# shut NIS down
+#
+if [ -f /etc/init.d/nis ]; then
+	sh /etc/init.d/nis stop
+fi
+
+#
+# remove tcpip_nis.so from /etc/netconfig
+#
+grep tcpip_nis /etc/netconfig > /dev/null 2>&1
+if [ $? = 0 ]; then
+        ed - /etc/netconfig << EOF > /dev/null 2>&1
+g/\/usr\/lib\/tcpip_nis\.so\,/s///g
+g/\,*\/usr\/lib\/tcpip_nis\.so/s///g
+w
+q
+EOF
+fi
+
+
+/usr/bin/rm -rf /usr/lib/ns.so
+/usr/bin/rm -rf /usr/lib/ns.so.1
+
+if [ -d /var/yp/binding ]; then
+	rm -rf /var/yp/binding/*
+fi
+
+rm -rf /var/yp/*.time /var/yp/*.log
+rm -rf /var/yp/aliases
+rm -rf /var/yp/Makefile
+rm -rf /var/yp/YPMAPS
+rm -rf /var/yp/update*
+
+d=`domainname`
+if [ -n "$d" ]; then
+	if [ -d /var/yp/$d ]; then
+		rm -rf /var/yp/$d
+	fi
+fi

@@ -1,0 +1,124 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxmkboot.sh	1.3 5/2/97 16:42:22 - cmd.vxvm:unixware/support/vxmkboot.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxmkboot.sh	1.3"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+: ${VOL_SCRIPTS_DIR:-$VOLROOT_DIR/usr/lib/vxvm/bin}
+PATH=/usr/lib/vxvm/bin:/usr/sbin:/sbin:/usr/bin
+[ -n "$VOLROOT_DIR" -o -n "$VOL_SCRIPTS_DIR" ] && {
+	PATH=$VOL_SCRIPTS_DIR:$VOLROOT_DIR/usr/sbin:$PATH
+}
+export PATH
+
+progname=vxmkboot
+
+# This changes are to put the binary generation in the unix tree
+# boot_prog=/etc/vxfdboot
+# fd_dev=/dev/rdsk/f0t
+#
+boot_prog=/etc/hdboot
+fd_dev=/dev/rdsk/f0
+
+short_use=`progname="$progname" egettxt \
+		"Usage:	$progname [-b boot-prog] [path]" vxvmshm:518`
+long_use=`progname="$progname" egettxt \
+"Usage:	$progname [-b boot-prog] [path]
+
+  -b boot_prog	specify a boot program (default is /etc/hdboot)
+
+<path> is the path to the device where the boot program	is to
+be written. Default is /etc/rdsk/f0t." vxvmshm:519`
+
+usage()
+{
+	echo $short_use >&2
+	exit 1
+}
+
+long_usage()
+{
+	echo "$long_use" >&2
+	exit 1
+}
+
+doit()
+{
+	[ ! -z "$VOL_VERBOSE" ] && echo "! $*" >&2
+	"$@"
+}
+
+while getopts :b:h c
+do
+	case $c in
+		b)	boot_prog=$OPTARG;;
+		?)	long_usage ;;
+	esac
+done
+
+shift `expr $OPTIND - 1`
+
+[ $# -gt 1 ] && usage
+
+[ $# -eq 1 ] && fd_dev=$1
+
+if [ ! -c "$fd_dev" ];
+then
+	progname="$progname" fd_dev="$fd_dev" egettxt \
+		"$progname: $fd_dev is not a character device" vxvmshm:64
+	echo ""
+fi
+
+if [ ! -r "$boot_prog" ];
+then
+	progname="$progname" boot_prog="$boot_prog" egettxt \
+		"$progname: $boot_prog is not a readable file" vxvmshm:62
+	echo ""
+	usage
+fi
+
+#The origina dd line was for the vxfdboot. Let us build the vxfdboot
+#from it's components here now..
+#doit dd if=$boot_prog of=$fd_dev bs=512 conv=sync
+
+#ensure that $fd_dev is okay (floppy is inserted)
+
+doit mkdir /tmp/odm
+doit mkfs -F bfs $fd_dev 2844
+doit mount -F bfs $fd_dev /tmp/odm
+doit cp /stand/mip /stand/sip /stand/boot /tmp/odm
+doit umount /tmp/odm
+doit dd if=$boot_prog of=${fd_dev}t bs=18k
+
+if [ $? -ne 0 ];
+then
+	echo ""
+	progname="$progname" \
+	boot_prog="$boot_prog" \
+	fd_dev="$fd_dev" egettxt \
+"$progname: An error occurred while writing $boot_prog
+to the device $fd_dev. The floppy may be bad or may not
+be writable.  It is probably not usable as
+an emergency boot floppy." vxvmshm:66
+	exit 1
+fi
+
+exit 0

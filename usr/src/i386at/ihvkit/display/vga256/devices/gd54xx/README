@@ -1,0 +1,166 @@
+#ident	"@(#)ihvkit:display/vga256/devices/gd54xx/README	1.2"
+
+This driver is provided as a reference source on using the existing
+"libvga256.so.2", if you have a similar hardware.
+
+For example, if you have a new 'XYZ' video card, which is super-VGA
+compatible card which has only 'screen to screen' hardware support:
+
+To write a driver for this hardware to support X in a UnixWare
+environment, you need to write the following 5 functions:
+
+	- DM_Initialize		; entry point called by the X server
+	- init_xyz		; initialize a required mode
+	- restore_xyz		; restore to the previous mode
+	- selectpage_xyz	; select the 64K segmented page
+	- ScreenToScreen 	; hardware screen-to-screen support function
+
+"DM_Initialize" is the entry point for any video driver. This is the
+only function known (directly) to the "X server".  All other functions
+in the video driver are accessed indirectly through the "SIFunctions"
+data structure.
+
+When "DM_Initialize" returns, all function pointers are initialized.
+
+"init_xyz" is called at startup time and also every time when X is
+vt-switched back.
+
+"restore_xyz" is called while exiting from X or switching to another
+vt (or console)
+
+"ScreenToScreen" is called for any screen to screen operations.
+
+
++---------------------------+
+| Step by Step Instructions |
++---------------------------+
+
+1. Execute the command:
+
+	mkdir ../xyz #(i.e., /usr/src/ihvkit/display/vga256/devices/xyz)
+
+2. Execute the commands:
+
+	cd /usr/src/ihvkit/display/vga256/devices/gd54xx
+	cp * ../xyz
+	cd ../xyz
+
+3. Edit Imakefile and Makefile:
+
+	- Change the references from 'gd54xx' to 'xyz'.
+
+4. Edit init.c file:
+
+	- Replace the body of gd54xx_selectpage to handle 'xyz' selectpage.
+	- Replace the body of gd54xx_init function with appropriate mode
+	  initializing code.
+	- Replace the body of gd54xx_restore function to restore
+	  the saved modes.
+
+5. Make and install the library, by running the commands:
+
+	make
+        cp xyz_256.so.2 /usr/X/lib/display
+
+6. Preparing to test a mode:
+
+	- Execute the command:
+
+		mv gd54xx.256dat xyz.256dat
+
+	- Edit xyz.256dat to make sure the data corresponds to the supported
+          modes (See init.c for data).
+
+	- Execute the command:
+
+		mv gd54xx.cfg xyz.cfg
+
+	- Edit xyz.cfg to change all occurrences of the string "gd54xx"
+		to "xyz" and make sure the data corresponds to the
+		supported modes.
+
+	- Execute the command:
+
+		mv gd54xx.vinfo xyz.vinfo
+
+	- Edit xyz.vinfo and change all occurrences of the string "gd54xx"
+          to "xyz".
+
+	- Execute the commands:
+
+		cp xyz.cfg xyz.vinfo xyz.256dat /usr/X/lib/display
+		cd /usr/X/lib/display
+
+        - Log in as root from the console, with the graphical login
+          disabled.
+
+7. To test a mode:
+
+NOTE:  For the following instructions to apply, the resident
+operating system should be UnixWare 2.x or UnixWare 1.1.1
+(that is, Update 5).
+
+- If the resident OS is UnixWare 1.1.1, execute the commands:
+
+	cd /usr/X/lib/display
+	./setvgamode -vinfo xyz.vinfo
+
+- If the resident OS is UnixWare 2.0 or later, execute the
+  commands:
+
+	cd /usr/X/lib/display
+	./setvideomode -vinfo xyz.vinfo
+
+- Another possibility for testing the mode is to execute the
+  commands:
+
+	cd /usr/X/lib/display
+	X -config xyz.cfg &
+
+NOTE:  At this point, except for initializing modes, everything
+is handled by libvga256.so.2 in software. 
+
+8. Now, add hardware functions:
+
+- Replace the body of the "gd54xx_ss_bitblt" routine with the
+  appropriate code to handle 'xyz' screen-to-screen operations.
+
+- In "xyz_init" function, make sure the following line is uncommented:
+
+	/* pfuncs->si_ss_bitblt = gd54xx_ss_bitblt */
+
+- All the possible hardware functions are left in this pkg for
+  reference but these functions are not mapped.
+
+9. How to make 'setvideomode' recognize the new driver:
+
+The 'setvideomode' utility reads the information about the supported
+vendors from "/usr/X/lib/display/VendorInfo" file.  You can also
+specify a different "vendor info" file by using the "-vinfo" option.
+For example:
+
+	setvideomode -vinfo gd54xx.vinfo
+
+
+The file, "gd54xx.vinfo" (or VendorInfo) is a plain ASCII text file.
+Please study the different fields carefully. The mode data file is
+"gd54xx.256dat". You can modify the fields, but make sure the 
+appropriate files are present in "/usr/X/lib/display" directory.
+
+For example, to create a new vendor info and mode data files for the
+new "xyz" driver:
+
+	cp gd54xx.vinfo xyz.vinfo
+
+Now, edit "xyz.vinfo" and change the descriptions and other fields
+accordingly:
+
+	VENDOR_LIB = xyz.so.1
+	CONFIGFILE = xyz.dat
+	...
+
+	DESCRIPTION = "XYZ from ABC Inc"
+	...
+
+Make sure "xyz.so.1" and "xyz.dat" are present in the
+"/usr/X/lib/display/" directory.

@@ -1,0 +1,55 @@
+#ident	"@(#)dtadmin:nfs/Imakefile	1.32.1.7"
+/**/#copyright	"%c%"
+
+/**/#  Flags used when debugging.  
+/**/#  Compile with these flags then
+/**/#  Set run-time environment variable DEBUG_NFS=1 and
+/**/#  MEMUTIL= 0, 1, 2, or 3 (for different debug modes).
+
+/**/#  CDEBUGFLAGS = -g -DDEBUG_NFS -DMEMUTIL
+/**/#  LDOPTIONS   = -g
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+         SRCS = \
+		main.c menu.c remoteProp.c p3open.c localAdv.c  \
+		utilities.c getfolder.c container.c mount.c delete.c \
+		verify.c sharetab.c share.c local.c localDel.c status.c \
+		notice.c update.c file.c lookup.c prop.c resolv.c
+
+         OBJS = \
+		main.o menu.o remoteProp.o p3open.o localAdv.o  \
+		utilities.o getfolder.o container.o mount.o delete.o \
+		verify.o sharetab.o share.o local.o localDel.o status.o \
+		notice.o update.o file.o lookup.o prop.o resolv.o
+
+       HEADERS = \
+		nfs.h text.h remoteProp.h verify.h local.h sharetab.h \
+		notice.h utilities.h helpinfo.h help.h common.h prop.h \
+		client.h
+
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+      DTILIBSRC = $(DTCLIENTSLIB)
+         DTILIB = $(DTILIBSRC)/libDtI.so
+          DTLIB = $(DTLIBSRC)/libDt.so
+     DTADMINSRC = $(USLCLIENTSRC)/dtadmin
+     DTAMLIBSRC = $(DTADMINSRC)/dtamlib
+        DTAMLIB = $(DTAMLIBSRC)/libdtam.a
+    GIZMOLIBSRC = $(LIBSRC)/Gizmo
+       GIZMOLIB = $(GIZMOLIBSRC)/libGizmo.so
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTILIBSRC) -I$(GIZMOLIBSRC) -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = $(DTILIB) $(DTLIB) $(GIZMOLIB) $(DTAMLIB) XolClientLibs 
+        DEPLIBS = $(DTILIB) $(DTLIB) $(GIZMOLIB) $(DTAMLIB) XolClientDepLibs
+
+  SYS_LIBRARIES =   -lgen -lsocket -lresolv
+
+CC = LD_RUN_PATH=/usr/lib/X11 $(PFX)cc
+
+ComplexProgramTarget(File_Sharing)
+InstallMsgCatalog(filesharing)
+InstallMultiple(nfs,$(DESKTOPDIR)/PackageMgr)
+InstallMultiple(nfs.cdb,$(USRLIBDIR)/classdb)
+InstallDesktopClient($(BINDIR)/File_Sharing,$(DESKTOPDIR)/Admin_Tools/Networking/File_Sharing)

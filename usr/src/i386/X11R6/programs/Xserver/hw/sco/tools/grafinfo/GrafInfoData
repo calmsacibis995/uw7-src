@@ -1,0 +1,174 @@
+#!/bin/ksh
+#
+#	@(#)GrafInfoData	11.1	11/21/97	15:44:55
+#
+#	/usr/lib/X11/testtools/GrafInfoData - extract modes from grafinfo
+#	- files, also uses the script: /usr/lib/X11/testtools/GrafInfoHCH
+#
+#	- note possible arguments below, output is to stdout
+#	- expects to be run from /
+#	- as it wants to examine ./usr/lib/grafinfo
+#	- (or anywhere there exists ./usr/lib/grafinfo)
+#
+UsageMessage() {
+cat << _EOF_
+usage:	$ProgName [-h -hch -grafdev -xdrivers -grafcards -all]
+	-h - display this help message
+	-hch - create only Hardware Compatibility Guide listing
+	-grafdev - create grafdev listing ordered by grafinfo file name
+	-xdrivers - create grafdev listing ordered by XDriver.o name
+	-grafcards - create listing of video cards supported
+	-all - create all four listings, default is no listing
+	    1.  Hardware Compatibility Guide listing.
+	    2.  grafdev style listing ordered by grafinfo file name.
+	    3.  grafdev style listing ordered by XDriver name.
+	    4.  Simple listing of graphics cards supported.
+_EOF_
+	exit -1
+}
+
+ParseArgs() {
+	while [ ! -z "$*" ]
+	do {
+		case $1 in
+			-h)
+				UsageMessage
+				;;
+			-hch)
+				HCH="Yes"
+				;;
+			-grafdev)
+				MODES="Yes"
+				;;
+			-xdrivers)
+				DRIVERS="Yes"
+				;;
+			-grafcards)
+				CARDS="Yes"
+				;;
+			-all)
+				HCH="Yes"
+				MODES="Yes"
+				DRIVERS="Yes"
+				CARDS="Yes"
+				;;
+			*)
+				InputFile=$1
+				;;
+		esac
+		shift
+	}
+	done
+}	#	ParseArgs()
+
+CleanUp ()
+{
+	rm -f $tmpf
+	exit $1
+}
+
+trap 'echo "Caught signal, exiting ... " ; CleanUp 1' 1 2 3 15
+
+FileNames() {
+	find ./usr/lib/grafinfo -follow -name "*.tmpl" -print
+	find ./usr/lib/grafinfo -follow -name "*.xgi" -print
+}	#	FileNames()
+
+ModesProlog() {
+cat << _EOF_
+Format of listing:		`date`
+
+vendor.xgifile_name.class.resolution - XDriver.o name
+
+This format is identical to what you would find for
+entries in /usr/lib/grafinfo/grafdev
+(without the " - XDriver.o name" comment)
+
+_EOF_
+
+}	#	ModesProlog()
+
+ModeList() {
+
+	for Fname in $*
+	do
+	awk \
+	'
+	BEGIN {
+		CRDONE=0
+	}
+	{
+		if ( match ( $1, "VENDOR" ) ) {
+				printf "%s.", $2
+				CRDONE=0
+		}
+		if ( match ( $1, "MODEL" ) ) {
+				printf "%s.", $2
+				CRDONE=0
+		}
+		if ( match ( $1, "CLASS" ) ) {
+				printf "%s.", $2
+				CRDONE=0
+		}
+		if ( (length($1) == 4) && match ( $1, "MODE" ) ) {
+				printf "%s", $2
+				CRDONE=0
+		}
+		if ( match ( $1, "XDRIVER" ) ) {
+				printf " | %s\n", $3
+				CRDONE=1
+		}
+	}
+	END {
+		if ( CRDONE == 0 )
+			printf "\n"
+	}
+	' $Fname
+	done | tr "[A-Z]" "[a-z]" | sed -e "s/\"//g" -e "s/;//g"
+}	#	ModeList()
+
+############################################################################
+#	main script begins here
+############################################################################
+HCH="No"
+DRIVERS="No"
+MODES="No"
+CARDS="No"
+ProgName=`basename $0`
+ParseArgs $*
+tmpf=/tmp/GrafDevTmpF$$
+FileNames | sort > $tmpf
+
+if [ "$HCH" = "Yes" ]; then {
+	cat $tmpf | xargs /usr/lib/X11/testtools/GrafInfoHCH
+} fi
+
+if [ "$DRIVERS" = "Yes" ]; then {
+	ModesProlog
+cat << _EOF_
+This listing sorted by XDriver.o name
+___________________________________________________________________________
+_EOF_
+	ModeList `cat $tmpf` | sort +2
+} fi
+
+if [ "$MODES" = "Yes" ]; then {
+	ModesProlog
+cat << _EOF_
+This listing sorted by grafinfo file name
+___________________________________________________________________________
+_EOF_
+	ModeList `cat $tmpf` | sort
+} fi
+
+if [ "$CARDS" = "Yes" ]; then {
+	echo "================== Supported graphics cards ================="
+	cat $tmpf | xargs /usr/lib/X11/testtools/GrafInfoHCH | \
+	grep "^[^	 ]" | \
+	grep -v "Format of listing:" | grep -v "Card Vendor identification" | \
+	grep -v "^_____________________" | sort -f
+
+} fi
+
+CleanUp 0
+

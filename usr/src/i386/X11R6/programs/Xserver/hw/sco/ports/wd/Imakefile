@@ -1,0 +1,201 @@
+/*
+ * @(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/*
+ *
+ *	S000	Wed Jun 24 12:48:34 PDT 1992	mikep@sco.com
+ *	- Change zenith to zds
+ *	S001	Tue Jul 14 10:35:48 PDT 1992	mikep@sco.com
+ *	- Remove Dell.  They only use the 90C30.  Added DEC.
+ *	S002	Tue Jul 14 10:56:47 PDT 1992	mikep@sco.com
+ *	- Remove DEC
+ *	S003	Wed Dec 16 13:46:43 PST 1992	buckm@sco.com
+ *	- Get rid of wdLine and wdSeg.
+ *	S004	Tue Feb 09 20:11:21 PST 1993	buckm@sco.com
+ *	- Add wdFont, wdTileStip,
+ *	  wdImage{15,16,24} wdRectOps{15,16,24}.
+ *      S005    Thu Apr 15    edb@sco.com
+ *      - Add wdFont24
+ *      S006    Thu 22-Apr-1993 edb@sco.com
+ *      - Add wdFillRct24 and wdTileStip
+ *      S007    Thu 27-May-1993 edb@sco.com
+ *      - Add wdDrwGlyph.c wdDrwGlyph24.c
+ *      S008    Fri 01-Oct-1993 toma@sco.com
+ *      - changed GRAFDIR to /usr/lib/grafinfo so that 
+ *        InstallGrafFile copies grafinfo file to the correct place. 
+ *	S009	Tue Jan 31 17:27:45 PST 1995 brianm@sco.com
+ *	- added in the grafinfo directory information.
+ */
+
+#include <Server.tmpl>
+
+WD31_GRAFINFO=./grafinfo/wd/wd90c31.xgi
+
+SRCS =	wdCmap.c wdCursor.c wdData.c wdGC.c \
+	wdInit.c wdScreen.c wdWin.c \
+	wdRectOps.c wdRectOps15.c wdRectOps16.c wdRectOps24.c \
+        wdFillSp.c wdFont.c wdFont24.c wdGlyph.c wdDrwGlyph.c wdDrwGlyph24.c \
+	wdImage.c wdImage15.c wdImage16.c wdImage24.c \
+	wdRegDump.c wdFillRct.c wdTileStip.c wdBres.c \
+        wdFillRct24.c wdTileStip24.c
+
+OBJS =	wdCmap.o wdCursor.o wdData.o wdGC.o \
+	wdInit.o wdScreen.o wdWin.o \
+	wdRectOps.o wdRectOps15.o wdRectOps16.o wdRectOps24.o \
+        wdFillSp.o wdFont.o wdFont24.o wdGlyph.o  wdDrwGlyph.o wdDrwGlyph24.o \
+	wdImage.o wdImage15.o wdImage16.o wdImage24.o \
+	wdRegDump.o wdFillRct.o wdTileStip.o wdBres.o \
+        wdFillRct24.o wdTileStip24.o
+
+       DDXLIBS = libwd.a
+       ASTGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/ast
+       INTELGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/intel
+       DIAMONDGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/diamond
+       WDGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/wd
+       ZENITHGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/zds
+       SNIGRAFDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/sni
+       OLIVETTIDIR=$(DESTDIR)$(USRLIBDIR)/grafinfo/olivetti
+
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(wd,$(OBJS))
+SharedXDriverTarget(wd,6.0,$(OBJS),shared,..)
+LintLibraryTarget(wd,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(wd,$(DDXLIBS))
+
+#else /* USLArchitecture */
+
+USRLIBDIR=$(DESTDIR)/usr/lib
+GRAFDIR=/usr/lib/grafinfo
+
+#STD_DEFINES = ServerDefines -DDEBUG
+#   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+#         -I$(SERVERSRC)/ddx/mfb   -I$(SERVERSRC)/ddx/mi \
+#	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(INCLUDESRC)
+   INCLUDES = -I. -I$(SERVERSRC)/ddx/nfb -I$(SERVERSRC)/ddx/cfb \
+        -I$(SERVERSRC)/ddx -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+        -I$(SERVERSRC)/ddx/mi -I$(SERVERSRC)/sys/common \
+        -I$(SERVERSRC)/ddx/mfb -I$(SERVERSRC)/ddx/ports/gen -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+     ASM_INCLUDES = -I.
+    ASMDEBUGFLAGS = 
+      ASM_DEFINES = 
+         ASMFLAGS = $(ASMDEBUGFLAGS) $(ASM_DEFINES) $(ASM_INCLUDES)
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(wd,$(OBJS))
+ProfiledLibraryTarget(wd,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(wd,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+ProfiledLibraryTarget(wd,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+NormalAsmObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(wd,$(OBJS))
+LintLibraryTarget(wd,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(wd,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+install::
+	$(MKDIRHIER) $(ASTGRAFDIR)
+	$(MKDIRHIER) $(INTELGRAFDIR)
+	$(MKDIRHIER) $(ZENITHGRAFDIR)
+	$(MKDIRHIER) $(WDGRAFDIR)
+	$(MKDIRHIER) $(SNIGRAFDIR)
+	$(MKDIRHIER) $(DIAMONDGRAFDIR)
+	$(MKDIRHIER) $(OLIVETTIDIR)
+	rm -f  $(ASTGRAFDIR)/wd90c31.xgi
+	rm -f  $(INTELGRAFDIR)/wd90c31.xgi
+	rm -f  $(ZENITHGRAFDIR)/wd90c31.xgi
+	rm -f  $(WDGRAFDIR)/wd90c31.xgi
+	rm -f  $(SNIGRAFDIR)/wd90c31.xgi
+	sed -e 's/vendorName/AST/g' -e 's/vendorPrompt/AST Power Premium/g' \
+	        < $(WD31_GRAFINFO) > $(ASTGRAFDIR)/wd90c31.xgi
+	sed -e 's/vendorName/INTEL/g' -e 's/vendorPrompt/Intel/g' \
+	        < $(WD31_GRAFINFO) > $(INTELGRAFDIR)/wd90c31.xgi
+	sed -e 's/vendorName/ZDS/g' -e 's/vendorPrompt/Zenith Data Systems/g' \
+	        < $(WD31_GRAFINFO) > $(ZENITHGRAFDIR)/wd90c31.xgi
+	sed -e 's/vendorName/WD/g' -e 's/vendorPrompt/Western Digital/g' \
+	        < $(WD31_GRAFINFO) > $(WDGRAFDIR)/wd90c31.xgi
+	sed -e 's/vendorName/SNI/g' -e 's/vendorPrompt/SNI/g' \
+		-e 's/"90C31"/"Ergo II"/g' \
+	        < $(WD31_GRAFINFO) > $(SNIGRAFDIR)/wd90c31.xgi
+	chmod 0444 $(ASTGRAFDIR)/wd90c31.xgi \
+		$(INTELGRAFDIR)/wd90c31.xgi \
+		$(ZENITHGRAFDIR)/wd90c31.xgi \
+		$(WDGRAFDIR)/wd90c31.xgi \
+		$(SNIGRAFDIR)/wd90c31.xgi
+
+InstallGrafFile(grafinfo/olivetti,m300-30.xgi,olivetti)
+InstallGrafFile(grafinfo/toshiba,wd90c24.xgi,toshiba)
+InstallGrafFile(grafinfo/diamond,ss24x.xgi,diamond)
+InstallGrafFile(grafinfo/wd,wd90c24.xgi,wd)
+InstallGrafFile(grafinfo/ibm,wd90c24.xgi,ibm)
+
+DependTarget()
+
+AsmFromC::
+	$(CC) -c $(CFLAGS) -Fa wdImage.c wdBres.c

@@ -1,0 +1,117 @@
+#ident	"@(#)dtadmin:userad/scripts/olsetvar	1.10"
+#copyright	"%c%"
+
+Prefix="UX:`/usr/bin/basename $0`"
+ProgramName=`/usr/bin/basename $0`
+. ${XWINHOME:-/usr/X}/adm/dtuser.msgs
+
+if [ "$1" = "" -o "$2" = "" ]
+then
+        MSG=`$GETTXT $TXT_olsetvar`
+        printf "$MSG\n" $ProgramName >& 2
+	exit 1
+fi
+
+VAR=$1
+VALUE=$2
+if [ "$3" != "" ]
+then
+	LOGIN=$3
+elif [ "$LOGNAME" != "" ]
+then
+	LOGIN=$LOGNAME
+else
+        MSG=`$GETTXT $TXT_NoLogname`
+        printf "\n$MSG\n" $Prefix $LOGNAME >& 2
+	exit 2
+fi
+
+#
+# Now will validate login
+#
+
+VALIDATE=0
+NISUSER=0
+# First check if user is a NIS user.
+PLUSPASS=`/usr/bin/grep "^+$LOGIN:" /etc/passwd 2>/dev/null`
+if [ "$?" = 0 ]
+then
+NISUSER=1
+NISPASS=`/usr/bin/ypmatch $LOGIN passwd 2>/dev/null`
+      if [ "$?" != 0 ]
+      then
+      MSG=`$GETTXT $TXT_NoNisInfo`
+      printf "\n\t$MSG\n" >& 2
+      exit 1
+      fi
+PASS=`echo $NISPASS | /usr/bin/cut -d: -f1,6 2>/dev/null`
+else
+PASS=`/usr/bin/grep "^$LOGIN:" /etc/passwd | /usr/bin/cut -d: -f1,6 2>/dev/null`
+fi
+for ENTRY in $PASS
+do
+        FIRST=`echo $ENTRY | /usr/bin/cut -d: -f1`
+        # Strip "+" from NIS entries
+        TEST=`echo $FIRST | /usr/bin/sed -e "s/^+//"`
+        if [ "$LOGIN" = "$TEST" ]
+    	then
+    	        VALIDATE=1
+                LOGINDIR=`echo $ENTRY | /usr/bin/cut -d: -f2`
+             	break
+  	fi
+done
+
+if [ "$NISUSER" = "1" ]
+then
+   LOCALHOME=`echo $PLUSPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+   if [ -n "$LOCALHOME" ]
+   then
+   LOGINDIR=$LOCALHOME
+   fi
+fi
+
+if [ "$VALIDATE" = "0" ]
+then
+        MSG=`$GETTXT $TXT_BadLoginId`
+        printf "\n\t$MSG\n" $Prefix >& 2
+	exit 1
+fi
+if [ "$LOGINDIR" = "" ]
+then
+        MSG=`$GETTXT $TXT_MissingHome`
+        printf "\n\t$MSG\n" $Prefix $USER >& 2
+	exit 1
+fi
+
+#
+# Found the home directory, now see if .olsetup there, then modify it
+#
+
+if [ ! -r $LOGINDIR -o ! -w $LOGINDIR -o ! -x $LOGINDIR ]
+then
+        MSG=`$GETTXT $TXT_AccessHome`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 1
+fi
+
+cd $LOGINDIR
+
+if [ ! -r .olsetup -o ! -w .olsetup ]
+then
+        MSG=`$GETTXT $TXT_Noolsetup`
+        printf "\n$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 1
+fi
+
+/usr/bin/ed .olsetup >/dev/null <<!
+g/^$VAR=/d
+1i
+$VAR=$VALUE export $VAR	#!@ Do not edit this line !@
+.
+w
+q
+!
+
+/usr/bin/chmod 0644   .olsetup 2> /dev/null
+/usr/bin/chown $LOGIN .olsetup 2> /dev/null
+exit 0

@@ -1,0 +1,495 @@
+#******************************************************************************
+#                                main
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)main	11.1	10/22/97	12:39:02
+#	@(#) main 12.6 96/02/20 
+#
+# Copyright (C) 1995-1997 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+#
+#cmdtrace on [open /tmp/vidtrace w]
+# uncomment the line above to get a tcl trace ... will run very slow!
+#
+
+#==========================================================================
+# UpdateDevices --
+#       Updates the device configuration.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc UpdateDevices {} \
+{
+   set columns 0
+   set maindeviceitems [BuildScreenList DEVICE_SCREEN columns]
+
+   # reset the list with items
+   set devicelist [VxGetVar [GetMainDialogID] devicelist]
+   VtListSetItem $devicelist -itemList $maindeviceitems
+}
+
+
+#==========================================================================
+# ProcessMainScreenStippling --
+#       Handles main screen button stippling.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ProcessMainScreenStippling {} \
+{
+   global screenList screenIndex
+   set dialog [GetMainDialogID]
+
+   # if we lock, mainscreen -defaultCallback doesn't activate well
+   #VtLock
+   set addbtn [VxGetVar $dialog addbtn]
+   set modifybtn [VxGetVar $dialog modifybtn]
+   set removebtn [VxGetVar $dialog removebtn]
+   set lab1 [VxGetVar $dialog lab1]
+
+   # disallow access if viewonly
+   if {[IsViewOnly]} {
+      VtSetSensitive $addbtn off
+      VtSetSensitive $modifybtn off
+      VtSetSensitive $removebtn off
+      # jump focus to the main drawn list
+      VtSetFocus [VxGetVar $dialog dlist]
+   } else {
+      # always selectable
+      VtSetSensitive $addbtn on
+
+      set type {}
+      set elem [lindex $screenList $screenIndex]
+      keylget elem TYPE type
+
+      if {($type == "CARD") \
+	|| ($type == "MONITOR") \
+	|| ($type == "RESOLUTION")} {
+         VtSetSensitive $removebtn on
+         VtSetSensitive $modifybtn on
+         # first time thru (GetSave==0) - focus on modify btn
+         VtSetFocus $modifybtn
+      } elseif {$type == "NOTHING"} {
+         VtSetSensitive $removebtn off
+         VtSetSensitive $modifybtn off
+         # first time thru (GetSave==0) - focus on modify btn
+         VtSetFocus $addbtn
+      }
+   }
+   # focus on OK - after first modification has been completed
+   # in charm you can hit return all the way through
+   if {[GetSave]} {
+         VtSetFocus [VtGetValues $dialog -ok]
+   }
+   set cardcnt [GetTotalCards]
+   VtSetValues $lab1 -label \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_MAIN_LIST_TOP $cardcnt]
+   #VtUnLock -once
+}
+
+
+#==========================================================================
+# WmCloseCB --
+#       If the Window Manager close button is selected, this routine is 
+#	called.  Treat as if cancel was selected from main screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc WmCloseCB {cbs} \
+{
+   MainScreenCCB $cbs
+}
+
+
+#==========================================================================
+# MainListCB --
+#       Callback to update the main list screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MainListCB {cbs} \
+{
+   global screenIndex
+
+   set widget [keylget cbs widget]
+   set screenIndex [DoGetDrawnListSelection $screenIndex $widget]
+   ProcessMainScreenStippling
+   UpdateDevices
+}
+
+
+#==========================================================================
+# MainDefaultCallbackCB --
+#       Called when double click occurs on drawn list in Main screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MainDefaultCallbackCB {cbs} \
+{
+   global screenList screenIndex
+
+   if {[IsViewOnly]} {
+      # don't let em do anything
+      VtUnLock -once
+      return
+   }
+   set dlist [keylget cbs widget]
+   set elem [lindex $screenList $screenIndex]
+   keylget elem TYPE type
+   #echo type: $type, curIndex: $curIndex
+   if {($type == "NOTHING") || ($type == {})} {
+	AddCheckCB $cbs
+   } else {
+	ModifyCheckCB $cbs
+   }
+}
+
+
+#==========================================================================
+# MainScreenOKCB --
+#       Callback for the mainscreen OK button and WmCloseCB button.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MainScreenOKCB {cbs} \
+{
+   global OK FAIL
+
+   if {(! [IsViewOnly]) && ([GetSave])} {
+      Update
+   } else {
+      Exit $OK
+   }
+}
+
+
+#==========================================================================
+# MainScreenCCB --
+#       Callback for the mainscreen Cancel button.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MainScreenCCB {cbs} \
+{
+   global OK FAIL
+
+   set dialog [keylget cbs dialog]
+   if {(! [IsViewOnly]) && ([GetSave])} {
+      set cancelfn [VtFormDialog $dialog.cancelfn \
+   	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE] \
+	-okLabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_YES] \
+	-okCallback MainScreenOKCB \
+	-applyLabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NO] \
+	-applyCallback "Exit $OK" \
+	-cancelCallback "VxEndFormCB"]
+      VtSetFocus [VtGetValues $cancelfn -ok]
+      set lab [VtLabel $cancelfn.lab \
+	-labelLeft \
+      	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MODIFY]]
+      VtShow $cancelfn
+      MainLoop
+   } else {
+      Exit $OK
+   }
+}
+
+
+#==========================================================================
+# DeviceListCB --
+#       Don't allow selections in device list.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc DeviceListCB {cbs} \
+{
+   set widget [keylget cbs widget]
+   VtListDeselectItem $widget -all
+   InfoMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_LIST_READONLY]
+   MainLoop
+}
+
+#==========================================================================
+# DisplayMainScreen --
+#       Fill out and then display the main form.
+#
+# Parameters:
+#	ap - top level name returned from open connection
+# Returns: none
+#--------------------------------------------------------------------------
+proc DisplayMainScreen {ap} \
+{
+   global screenIndex appvals
+   global MOTIFWIDTH MOTIFHEIGHT CHARMWIDTH CHARMHEIGHT
+   global CHARM_MAINLIST_COLS CHARM_MAINDEVLIST_COLS MOTIF_MAXLIST_COLS
+
+   set titlestr {}
+   if $appvals(onlocalhost) {
+   set videotitle \
+"[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE] [SaHostExtractSystemName $appvals(localhost)] (local host)"
+   } else {
+   set videotitle \
+"[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE] [SaHostExtractSystemName $appvals(managedhost)] (remote host)"
+   }
+   if {[IsViewOnly]} {
+      set viewonlystr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_VIEWONLYSTR2]
+      set titlestr "$videotitle $viewonlystr"
+   } else {
+      set titlestr $videotitle
+   }
+
+   set mainfn [VtFormDialog $ap.mainfn \
+	-title $titlestr \
+	-wmDecoration ALL \
+	-wmCloseCallback WmCloseCB \
+	-wmShadowThickness 0 \
+	-MOTIF_width $MOTIFWIDTH -MOTIF_height $MOTIFHEIGHT \
+	-CHARM_width $CHARMWIDTH -CHARM_height $CHARMHEIGHT \
+	-resizable 0 \
+	-ok -okCallback MainScreenOKCB \
+        -cancel -cancelCallback MainScreenCCB \
+	-cancelButton CANCEL \
+	-defaultButton OK \
+        -help]
+
+   SetMainDialogID $mainfn
+
+   # Uncomment the VtShow below if you wish to see main screen being built.
+   #VtShow $mainfn
+   #sleep 2
+
+   set lab1 [VtLabel $mainfn.lab1 \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_MAIN_LIST_TOP \
+		[GetTotalCards]]]
+
+   if {[IsCharm]} {
+      set columns $CHARM_MAINLIST_COLS
+   } else {
+      set columns $MOTIF_MAXLIST_COLS
+   }
+
+   if {[IsViewOnly]} {
+	# Can't do anything - tell them why.
+	set helpstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_VIEWONLYSTR1]
+   } else {
+	set helpstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_DLIST]
+   }
+   # postpone actual list until later.
+   set list {}
+   set dlist [DrawChainTree $mainfn.dlist \
+	MainListCB \
+	MainDefaultCallbackCB \
+	$list \
+	$columns \
+	$helpstr]
+
+   set lab2 [VtLabel $mainfn.lab2 \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_MAIN_LIST_BOTTOM]]
+
+   # -CHARM_scrollBar 1 prevents VtList grow/shrink
+   set devicelist [VtList $mainfn.devicelist \
+	-CHARM_columns $CHARM_MAINDEVLIST_COLS -CHARM_rows 6 \
+	-MOTIF_columns $MOTIF_MAXLIST_COLS -MOTIF_rows 6 \
+	-CHARM_scrollBar 1 \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_DEVICELIST] \
+	-callback DeviceListCB]
+
+   set statusbar [SaStatusBar $mainfn.statusbar 1]
+
+   set rc [VtRowColumn $mainfn.rc \
+	-topSide $lab1 \
+	-leftSide NONE \
+	-rightSide FORM \
+	-bottomSide NONE]
+
+   set addbtn [VtPushButton $rc.addbtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MAIN_ADD] \
+	-shortHelpCallback SaShortHelpCB \
+	-shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_ADD] \
+	-autoLock AddCheckCB \
+        -callback AddCheckCB]
+        VtSetSensitive $addbtn off
+   set modifybtn [VtPushButton $rc.modifybtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MAIN_MOD] \
+	-shortHelpCallback SaShortHelpCB \
+	-shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_MOD] \
+	-autoLock ModifyCheckCB \
+        -callback ModifyCheckCB]
+        VtSetSensitive $modifybtn off
+   set removebtn [VtPushButton $rc.removebtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MAIN_REM] \
+	-shortHelpCallback SaShortHelpCB \
+	-shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_REM] \
+	-autoLock Remove \
+        -callback Remove]
+        VtSetSensitive $removebtn off
+#   set hostbtn [VtPushButton $rc.hostbtn \
+#	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MAIN_HOST] \
+#	-shortHelpCallback SaShortHelpCB \
+#	-shortHelpString \
+#		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MAIN_HOST] \
+#        -callback SaOpenHostCB]
+#        VtSetSensitive $hostbtn on
+
+   if {[IsCharm]} {
+   	VtSetValues $dlist -rightSide $rc
+   } else {
+   	VtSetValues $dlist -bottomSide 40 -rightSide $rc
+   }
+   set tablist [list $dlist $rc $devicelist]
+   VtSetValues $mainfn -tabList $tablist
+
+   VtSetValues $devicelist -bottomSide $statusbar -rightSide $rc
+   VtSetValues $statusbar -topSide NONE -rightSide FORM
+
+   # save off id's into main dialog for later retrieval
+   VxSetVar $mainfn dlist $dlist
+   VxSetVar $mainfn devicelist $devicelist
+   VxSetVar $mainfn addbtn $addbtn
+   VxSetVar $mainfn modifybtn $modifybtn
+   VxSetVar $mainfn removebtn $removebtn
+   VxSetVar $mainfn lab1 $lab1
+   VxSetVar $mainfn statusbar $statusbar
+   VtShowDialog $mainfn
+}
+
+
+#==========================================================================
+# LoadMainScreen --
+#       Load up the main screen with list data.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadMainScreen {} \
+{
+   global screenIndex
+   global CHARM_MAINLIST_COLS MOTIF_MAXLIST_COLS
+
+   set columns 0
+   if {[IsCharm]} {
+      set columns $CHARM_MAINLIST_COLS
+   } else {
+      set columns $MOTIF_MAXLIST_COLS
+   }
+   set dlist [VxGetVar [GetMainDialogID] dlist]
+   ReDrawChainTree $dlist [BuildScreenList MAIN_SCREEN columns] $columns
+   VtDrawnListSelectItem $dlist -position [expr $screenIndex+1]
+
+   # stipple out buttons and draw device list
+   ProcessMainScreenStippling
+   UpdateDevices
+}
+
+#======================================================================
+# ParseCommandLine
+#   
+# Deal with command line parameters.
+# Uses vtcl (e.g. sysadm.tlib) getopt like getopt(C)
+#------------------------------------------------------------------------------
+proc ParseCommandLine {} {
+	global argv argc opterr optind appvals
+
+	# scan for commandline flags
+	set optString	""
+	set argc [llength $argv]
+	set opterr 0
+	while {[set opt [getopt $argc $argv $optString]] != -1} {
+		switch $opt {
+			{?} {
+				Usage; Exit 1
+			}
+		}
+	}
+
+	# process commandline arguments
+	set optCount [expr "$argc - $optind"]
+
+	# take managed host name as a command line argument
+	if {$appvals(openhost)} {
+		if {$optCount} {
+			set appvals(managedhost) [lindex $argv $optind]
+			incr optCount -1
+		}
+	} 
+
+	if {$optCount > 0} {
+		Usage; Exit 1
+	}
+}
+
+#==========================================================================
+# main --
+#	Initiate the environment, display main screen and get things rolling.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc main {} \
+{
+   global errorInfo PROGNAME appvals argv0 argv
+
+   SetTrap
+   SetViewAccess
+   if {$PROGNAME == "vidsetup"} {
+	Vidsetup
+   }
+
+   set appvals(localhost) [SaHostGetLocalName]
+   set appvals(managedhost) $appvals(localhost)
+   set appvals(onlocalhost) 0	;# command line argument may change this below
+
+   # Collect command line options
+   ParseCommandLine
+
+   if { $appvals(localhost) == $appvals(managedhost) } {
+	set appvals(onlocalhost) 1
+   } else {
+	SetViewOnly 1
+   }
+
+   BuildDocHook
+   set ap [VtOpen VidconfGUI [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_HELPBOOK]]
+   VtSetAppValues $ap -columnValue MAXIMUM -errorCallback ErrorCB
+
+   SetCharm [VtInfo -charm]
+   DisplayMainScreen $ap
+
+   # The errorCallback 'ErrorCB' is not available until VtMainLoop 
+   # is entered the first time - filter processable internal errors.
+
+   set ret [catch {InitLists} errstr]
+   if {$ret != 0} {
+      if {$errstr == "MAINLOOP"} { 
+         # A processable internal vidconfGUI error occurred.
+         # We tried to jump to MainLoop but landed here.  ErrorCB
+         # isn't available yet.  Now really jump to MainLoop and 
+         # display the error dialog that is pending.
+         VtMainLoop
+      } else {
+         # some other error occurred, pass it on
+         error $errstr $errorInfo
+      }
+   }
+   VtMainLoop
+}

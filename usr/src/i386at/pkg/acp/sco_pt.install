@@ -1,0 +1,261 @@
+#ident	"@(#)pkg.acp:sco_pt.install	1.6"
+#ident	"$Header$"
+
+
+# 
+# this script adds SCO pseudo terminals on to the regular USL
+# pseudo terminals. It is invoked with the number of SCO pseudo terminal
+# master-slave pairs desired. It is designed to be called normally
+# by the ACP installation package, however it is also included in the
+# NSU package, because an overlay of NSU with different number of
+# regualar pseudo terminals could overwrite into the SCO range. Additionally,
+# entering with zero SCONUM will remove SCO pseudo terms. (except for
+# device database entries, since need to know how many there were). (called by
+# 'preremove' or by NSU postinstall before ACP is in)
+#
+# The SCO pseudo terminals are actually supported by the regular USL
+# pseudo terminal driver. This is done by adding a range of minors 
+# after the regular ones that will have SCO semantics. (pairs of
+# endpoints instead of a 'clone' master. Also ptem and ldterm are autopushed)
+# This is administered by two
+# 'idtune-able' parameters  NUMREGPT and NUMSCOPT. The regular pseudo
+# terminals reside in the minor range  0->'NUMREGPT-1' and SCO terminals
+# in the range NUMREGPT->'NUMREGPT+NUMSCOPT-1'. 
+#
+# in this script we will make the nodes, put device database entries in,
+# add an RC script/autopush file, and make an attempt to set the 'sdevice.d'
+# files  correctly. It is assumed that the regular PT is installed at this 
+# point and has a valid number in NUMREGPTS
+#
+# for PTM we will be upgrading the system, nodes, rc and mtune (via idtune)
+# files. for PTS the system and nodes file and PTEM we will simply
+# upgrade the system file.
+#
+# this script does not do an idbuild. therefore it should be called before
+# the script that is calling it does its itbuild
+#
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f "${REQDIR}/inst/locale/${LOCALE}/${PKGMSG}" -a \
+	-d "/usr/lib/locale/${LOCALE}/LC_MESSAGES" ]
+   then
+	ln -s ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		/usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+#
+# if we enter with no param or it is negative assume we are to configure
+# zero devices
+#
+
+if [ -z "$1" -o "$1" -lt 0 ]
+then
+	PTNUM=0
+else
+	PTNUM=$1
+fi
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+# update a module.  $1 is the module name, $2 is files to update
+
+do_update() {
+	[ "$UPDEBUG" = YES ] && set -x
+	ERR=/tmp/${1}.err
+
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Mfsys Sfsys Rc Node Space.c Mtune"
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if
+		[ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if
+		[ -f ${1}.Ma ]
+	then
+		grep -v "^[\*#]ident" ${1}.Ma > Master
+		rm -rf ${1}.Ma
+	fi
+	if
+		[ -f ${1}.Sy ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sy |
+			sed "${SEDCMD1}"  > System
+		rm -rf ${1}.Sy
+	fi
+	if
+		[ -f ${1}.Mf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mf > Mfsys
+		rm -rf ${1}.Mf
+	fi
+	if
+		[ -f ${1}.Sf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sf |
+			sed "${SEDCMD2}" > Sfsys
+		rm -rf ${1}.Sf
+	fi
+	if
+		[ -f ${1}.No ]
+	then
+		grep -v "^[\*#]ident" ${1}.No > Node
+		rm -rf ${1}.No
+	fi
+	if
+		[ -f ${1}.Rc ]
+	then
+		grep -v "^[\*#]ident" ${1}.Rc > Rc
+		rm -rf ${1}.Rc
+	fi
+	if
+		[ -f ${1}.Mt ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mt > Mtune
+		rm -rf ${1}.Mtune
+	fi
+	
+	#
+	# do not use the -P option since we want the files to remain
+	# owned by NSU. (the 'rc.d' file will be removed by hand
+	# 
+
+	${CONFBIN}/idinstall -u  ${2} ${1} > ${ERR} 2>&1
+	RET=$?
+	rm -rf ${IDCOMPS}
+	if [ ${RET} != 0 ]
+	then
+		message -d `pfmt -s nostd -g ${PKGMSG}:51 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR} 2>&1`
+			exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+#
+# all work done in the acp temp directory, (may not have one if called from
+# NSU)
+#
+
+TMPDIR=/tmp/pt
+
+if [ ! -d $TMPDIR ]
+then
+	mkdir $TMPDIR
+fi
+cd $TMPDIR
+
+#
+# If security is installed already set the default security info. 
+# IF it isn't installed the 'ES' package will set up some security defaults
+#
+
+if pkginfo -i es >/dev/null 2>&1
+then
+	USR_PUTDEV="range=SYS_RANGE_MAX-SYS_RANGE_MIN state=pub_priv
+		mode=static ual_enable=y other=>y startup=y
+		startup_level=USER_LOGIN startup_owner=root>rw-
+		startup_group=other>rw- startup_other=>rw-"
+else
+	USR_PUTDEV=""
+fi
+export USR_PUTDEV
+
+#
+# need to know number of regPT entries.
+#
+set - `${CONFBIN}/idtune -g NUMREGPT`
+NUMREGPT=$1
+TOTPT=`expr $NUMREGPT + $PTNUM`
+
+#
+# Setup the # of devices in the systems file. Note: this is really not
+# required since the Mtune params take their place, but just in
+# case someone checks these files lets keep them up to date.
+#
+
+for MODULE in ptm pts ptem
+do
+	cp /etc/conf/sdevice.d/${MODULE} ${MODULE}.Sy
+	line=`grep "^$MODULE[	 ]" $MODULE.Sy 2>/dev/null`
+	set - $line
+	DEFAULT=$3
+	ed - $MODULE.Sy 1>/dev/null 2>&1 <<-!
+		/^$MODULE[ 	]/
+		s/$DEFAULT/$TOTPT/
+		.
+		w
+	!
+done
+
+#
+# remove ttyp and ptyp (SCO pseudo term) devices from nodes file if they
+# were there.
+#
+
+grep -v "ttyp" /etc/conf/node.d/pts > pts.No
+grep -v "ptyp" /etc/conf/node.d/ptm > ptm.No
+
+#
+# setup SCO devices. on both PTM and PTS sides.
+# start minors at end of Regular ones.
+#
+SCOMIN=$NUMREGPT
+TEMP=0
+until
+	[ "$TEMP" -eq "$PTNUM" ]
+do
+	echo "pts	ttyp${TEMP}	c	${SCOMIN}" >> pts.No
+	echo "ptm	ptyp${TEMP}	c	${SCOMIN}" >> ptm.No
+	/sbin/putdev -a ptyp${TEMP} cdevlist=/dev/ptyp${TEMP},/dev/ttyp${TEMP} \
+	   desc="SCO pseudo terminal pair ${TEMP}" $USR_PUTDEV > /dev/null 2>&1
+	TEMP=`expr $TEMP + 1`
+	SCOMIN=`expr $SCOMIN + 1`
+done
+
+#
+# if we are installing any sco entries (PTNUM>0) then add in the sco.ap
+# and rc.d script after putting in the correct node range in sco.ap.
+#
+
+if [ "${PTNUM}" -gt 0 ]
+then
+	set `grep pts /etc/conf/mdevice.d/pts | grep -v ident`
+	> /etc/ap/sco.ap
+	echo "   $6    ${NUMREGPT}        `expr ${NUMREGPT} + ${PTNUM} - 1`        ptem ldterm" >> /etc/ap/sco.ap	
+	installf ${PKGINST} /etc/ap/sco.ap f 0444 root sys 2 NULL NULL >/dev/null 2>&1 
+	> ptm.Rc
+	echo "if [ ! -f /tmp/.scopty ]" >> ptm.Rc
+	echo "then" >> ptm.Rc
+	echo "\t>/tmp/.scopty" >> ptm.Rc
+	echo "\t/sbin/autopush -f /etc/ap/sco.ap" >> ptm.Rc
+	echo "fi" >> ptm.Rc
+else
+	${CONFBIN}/idinstall -P ${PKGINST} -d  -r ptm  >/dev/null 2>&1
+fi
+
+#
+# set the SCO tunable
+#
+
+${CONFBIN}/idtune -f NUMSCOPT ${PTNUM}
+
+#
+# We need to update the system file, nodes file and add an rc to PTM, 
+# update the system and nodes file PTS. and just the system file for PTEM
+#
+
+do_update ptm -snr
+do_update pts -sn
+do_update ptem -s
+
+

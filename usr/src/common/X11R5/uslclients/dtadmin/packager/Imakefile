@@ -1,0 +1,82 @@
+/**/#ident      "@(#)Imakefile	15.1	98/03/04"
+/**/#copyright  "%c%"
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+SCOADMINDIR = $(ROOT)/$(MACH)/usr/lib/scoadmin/appinst
+SUBDIRS = sets_plus
+
+         SRCS = \
+		RTileGizmo.c \
+		PackageMgr.c \
+		SWGizmo.c \
+		add.c \
+		custom.c \
+		delete.c \
+		filter.c \
+		lists.c \
+		main.c \
+		pkg.c \
+		property.c \
+		register.c \
+		scompat.c \
+		stat.c \
+		xwinhome.c
+
+         OBJS = \
+		PackageMgr.o \
+		RTileGizmo.o \
+		SWGizmo.o \
+		add.o \
+		custom.o \
+		delete.o \
+		filter.o \
+		lists.o \
+		main.o \
+		pkg.o \
+		property.o \
+		register.o \
+		scompat.o \
+		stat.o \
+		xwinhome.o
+
+      HEADERS = \
+		RTileGizmo.h \
+		SWGizmo.h \
+		packager.h\
+		pkg.h \
+		pkg_msgs.h
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+    GIZMOLIBSRC = $(LIBSRC)/Gizmo
+      DTILIBSRC = $(DTCLIENTSLIB)
+     DTAMLIBSRC = ../dtamlib
+         DTILIB = $(DTILIBSRC)/libDtI.so
+          DTLIB = $(DTLIBSRC)/libDt.so
+       GIZMOLIB = $(GIZMOLIBSRC)/libGizmo.so
+        DTAMLIB = $(DTAMLIBSRC)/libdtam.a
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTILIBSRC) -I$(GIZMOLIBSRC) -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = $(DTAMLIB) $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientLibs
+        DEPLIBS = $(DTAMLIB) $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientDepLibs
+
+  SYS_LIBRARIES = -lgen -lm
+
+CC = LD_RUN_PATH=/usr/lib/X11 $(PFX)cc
+
+ComplexProgramTarget(PackageMgr)
+
+InstallNonExecFile(activate.scoadmin,$(SCOADMINDIR)/appinst.obj)
+
+InstallNamedNonExec(NLS/en/title,title,$(SCOADMINDIR)/appinst.obj/C)
+
+InstallMultiple(dtexec,$(DTADMDIR))
+
+InstallDesktopClient($(BINDIR)/PackageMgr,$(DESKTOPDIR)/Admin_Tools/App_Installer)
+MakeSubdirs($(SUBDIRS))
+
+InstallMsgCatalog(dtpkg)
+
+InstallMsgCatalog(dtexec)
+

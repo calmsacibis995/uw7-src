@@ -1,0 +1,990 @@
+#
+#	ident @(#) cf.plan 11.1 97/12/04 
+#
+#############################################################################
+#
+#	Copyright (c) 1997 The Santa Cruz Operation, Inc.. 
+#		All Rights Reserved. 
+#
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF 
+#		THE SANTA CRUZ OPERATION INC.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+#
+#############################################################################
+#
+#	Test Plan for sendmail.cf file
+#
+
+
+This tests the sendmail.cf file.  Basically, sendmail is executed in
+test mode:
+	- Using flags -bv -d21.1, and specifying an address to process on
+	  the command line, sendmail will send to stdout what each ruleset
+	  rewrites the address as, and, if the address is deliverable, what
+	  the resulting ruleset 0 triple is (mailer, host, recipient address).
+
+	- Using the -bt flag, and providing sendmail with a list of
+	  ruleset/address pairs will provide debug output which shows what
+	  the ruleset re-writes the address to.
+
+The test script then just saves the sendmail stdout, and examines it 
+to ensure that results were as expected.
+
+Currently, three areas are tested:
+	*  Execution of domain table rules, to ensure that various
+   	   forms of addresses are being parsed correctly by the
+   	   the domain table.
+
+	*  Resolution of an address to the correct mail channel.
+   	   Only default mail channels (local, SMTP, UUCP, Badhost, Baduser)
+   	   are considered.
+
+	*  Test of the check_rcpt ruleset.
+
+For domain table address re-writing, the following forms of addresses
+are tested:
+	internet style addr		user@domain
+	UUCP style addr			domain!user
+	multiple-hop UUCP style addr	domain!domain!user
+	source route addr		<@foo.com:user@boo.com>
+	%-hack addr			user%foo.com%bar.com		
+	%-hack in local part		user%foo.com%bar.com@spam.com
+	!@ hybrid addr			foo!bar!user@spam.com
+
+Four test versions of sendmail.cf are used.  To reproduce these
+test files starting with the default cf file:
+cf_chans
+	- Enable the domain table.
+	- Add UUCP channel.
+	- Give Badhost channel forwarding host badhost.foo.com.
+	- Add Baduser channel, with forwarding host baduser.foo.com.
+cf_domain
+	- Enable the domain table.
+cf_default
+	- Just need to start with default cf file (the test script
+	  modifies it as needed).
+cf_virt
+	- Add the Multihome channel.
+
+Setup and Execution:
+1) Make sure the test machine has networking configured and DNS.
+
+2) The env variable TESTDIR may be set to the directory in which the test
+   script "cf" will exist and be run, and where input and output files
+   for "cf" will exist.  If TESTDIR is not set in your env, the script will
+   by default set it to the current working directory.  The following files
+   are expected to exist in $TESTDIR:
+        $TESTDIR/testfiles/cf_chans
+        $TESTDIR/testfiles/cf_domain
+
+3) Set env variable PROGDIR to the directory in which the sendmail
+   binary exists.  If PROGDIR is not set in your env, this script
+   will by default set it to /usr/lib.
+
+4) Run the script "cf" as root.  Test results will be sent to stdout.
+   Before the test cases are run, the script will ask you for the following:
+
+	- You will need to enter a fully qualified hostname (other than
+	  the local host) which is known to DNS, which has at least 2 dots--
+	  i.e. something with at least one sub-domain, like "foo.sco.com",
+	  which can be successfully resolved with nslookup.
+	  
+	- You will need to enter a an IP address that is NOT known to
+	  DNS-- i.e. one which cannot be resolved with nslookup.
+
+
+-------------------------------------------------------------------------------
+The following test cases are for domain table address re-writing.
+Each test case lists
+	- the domain table map entry being tested
+	- addresses tested
+	- expected ruleset 3 results
+-------------------------------------------------------------------------------
+
+cf_dmntab_1
+-----------
+Test address re-writing for a simple domain table entry of type
+	foo.bar.com spam.spaz.com
+
+a) test:	testuser@foo.bar.com
+   expected:	testuser < @ spam . spaz . com . >
+b) test:	foo.bar.com!testuser
+   expected:	testuser < @ spam . spaz . com . >
+c) test:	foo.bar.com!final.hop.com!testuser
+   expected:	final . hop . com ! testuser < @ spam . spaz . com . >
+d) test:	<@foo.bar.com,@spoo,@boo:testuser@final>
+   expected:	< @ spam . spaz . com . > : @ spoo : @ boo : testuser @ final	
+e) test:	testuser%fiffle%spiffle%foo.bar.com
+   expected:	testuser % fiffle % spiffle < @ spam . spaz . com . >
+f) test:	testuser%fiffle%spiffle@foo.bar.com
+   expected:	testuser % fiffle % spiffle < @ spam . spaz . com . > 
+g) test:	fiffle!spiffle!testuser@foo.bar.com
+   expected:	fiffle ! spiffle ! testuser < @ spam . spaz . com . >
+		
+
+cf_dmntab_2
+-----------
+Test domain table with entry of type
+	.fo.fum.com  spam.com gw1.com gw2.com
+*without* partial domain matching.
+
+a) test:	testuser@fo.fum.com
+   expected:	< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com
+b) test:	fo.fum.com!testuser
+   expected:	< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com
+c) test:	fo.fum.com!ho.hum.com!testuser
+   expected:	<@gw1.com.> : @gw2.com : ho.hum.com!testuser@spam.com
+d) test:	<@fo.fum.com,@spoo,@boo:testuser@final>
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:@spoo:@boo:testuser@final
+e) test:	testuser%fiffle%spiffle%fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:testuser%fiffle%spiffle@spam.com
+f) test:	testuser%fiffle%spiffle@fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:testuser%fiffle%spiffle@spam.com
+g) test:	fiffle!spiffle!testuser@fo.fum.com
+   expected:	<@gw1.com.> : @gw2.com : fiffle!spiffle!testuser@spam.com
+
+cf_dmntab_3
+-----------
+Test domain table with entry of type
+	.fo.fum.com  spam.com gw1.com gw2.com
+*with* partial domain matching.
+
+a) test:	testuser@fee.fi.fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:testuser@fee.fi.fo.fum.com
+b) test:	fee.fi.fo.fum.com!testuser
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:testuser@fee.fi.fo.fum.com
+c) test:	fee.fi.fo.fum.com!ho.hum.com!testuser
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:ho.hum.com!testuser@fee.fi.fo.fum.com
+d) test:	<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final>
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:@fee.fi.fo.fum.com:@spoo:@boo:testuser@final
+e) test:	testuser%fiffle%spiffle%fee.fi.fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:testuser%fiffle%spiffle@fee.fi.fo.fum.com
+f) test:	testuser%fiffle%spiffle@fee.fi.fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:testuser%fiffle%spiffle@fee.fi.fo.fum.com
+g) test:	fiffle!spiffle!testuser@fee.fi.fo.fum.com
+   expected:	<@gw1.com.>:@gw2.com:@spam.com:fiffle!spiffle!testuser@fee.fi.fo.fum.com
+		
+cf_dmntab_4
+-----------
+Test domain table with entry of type
+	.fo.fum.com  spam.com gw1.com gw2.com
+with a local address (should remain unchanged), and with a remote
+address where domain is not in the table (should remain unchanged).
+
+a) test:	testuser
+   expected:	testuser
+b) test:	testuser@foo.bar.com
+   expected:	testuser<@foo.bar.com.>
+
+cf_dmntab_5
+-----------
+Test domain table with map entry of type
+	[123.456.789.10]        spam.com gw1.com gw2.com
+
+test:		testuser@[123.456.789.10]
+expected:	< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com
+
+cf_dmntab_6
+-----------
+Test domain table with map entry of type
+	[123.456.789.10]        spam.com [$UNKNOWNIP] gw2.com
+where $UNKNOWNIP is an ip address unknown to DNS.
+
+test:		testuser@[123.456.789.10]
+expected:	< @ [ $UNKNOWNIP ] . > : @ gw2 . com : testuser @ spam . com
+
+cf_dmntab_7
+-----------
+Test domain table with map entry of type
+	[123.456.789.10]        spam.com [$REALIP] gw2.com
+where $REALIP is an ip address unknown to DNS.
+
+test:		testuser@[123.456.789.10]
+expected:	< @ $REALHOST . > : @ gw2 . com : testuser @ spam . com
+
+
+-----------------------------------------------------------------------------
+The following are similar to the test cases above, except we ensure that
+the correct mailer was picked, and that the address was rewritten
+appropriately for that mailer.
+
+Each test case lists
+	- the domain table map entry being tested
+	- addresses tested
+	- expected ruleset 0 triple of mailer, host, and user (recipient
+	  address)
+-----------------------------------------------------------------------------
+
+cf_chn_1
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		testuser@foo.bar.com
+	New hostname (spam.spaz.com) is NOT known to DNS, so should
+	resolve to the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: testuser@spam.spaz.com
+
+	
+
+cf_chn_2
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		testuser@foo.bar.com
+	New hostname $REALHOST is known to DNS, so should resolve to
+	the SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: testuser@${REALHOST}
+
+cf_chn_3
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address tested:
+		testuser@foo.bar.com
+	New hostname $UUCPHOST is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!testuser
+
+cf_chn_4
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		foo.bar.com!testuser
+	New hostname (spam.spaz.com) is NOT known to DNS, so should resolve
+	to the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: testuser@spam.spaz.com
+
+cf_chn_5
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		foo.bar.com!testuser
+	New hostname $REALHOST is known to DNS, so should resolve to
+	the SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: testuser@${REALHOST}
+
+cf_chn_6
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		foo.bar.com!testuser
+	New hostname $UUCPHOST is in the uucp Systems file database, so
+	should resolve to UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!testuser
+
+cf_chn_7
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		foo.bar.com!ho.hum.com!testuser
+	New hostname (spam.spaz.com) is NOT known to DNS, so should resolve
+	to badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: ho.hum.com!testuser@spam.spaz.com
+
+cf_chn_8
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		foo.bar.com!ho.hum.com!testuser
+	New hostname $REALHOST is known to DNS, so should resolve to
+	SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: ho.hum.com!testuser@${REALHOST}
+
+cf_chn_9
+--------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		foo.bar.com!ho.hum.com!testuser
+	New hostname $UUCPHOST is in the uucp Systems file database, so
+	should resolve to UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!ho.hum.com!testuser
+
+cf_chn_10
+---------
+	Test domain map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		<@foo.bar.com,@spoo,@boo:testuser@final.com>
+	New hostname (spam.spaz.com) is NOT known to DNS, so should
+	resolve to badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @spam.spaz.com,@spoo,@boo:testuser@final.com
+
+cf_chn_11
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		<@foo.bar.com,@spoo,@boo:testuser@final.com>
+	New hostname $REALHOST is known to DNS, so should resolve to
+	SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@spoo,@boo:testuser@final.com
+
+cf_chn_12
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		<@foo.bar.com,@spoo,@boo:testuser@final.com>
+	New hostname $UUCPHOST is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!spoo!boo!final.com!testuser
+
+cf_chn_13
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		testuser%fiffle.com%spiffle.com%foo.bar.com
+	New hostname (spam.spaz.com) is NOT known to DNS, so should resolve
+	to the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: testuser%fiffle.com%spiffle.com@spam.spaz.com
+
+cf_chn_14
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		testuser%fiffle.com%spiffle.com%foo.bar.com
+	New hostname ($REALHOST) is known to DNS, so should resolve to
+	the SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: testuser%fiffle.com%spiffle.com@${REALHOST}
+
+
+cf_chn_15
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		testuser%fiffle.com%spiffle.com%foo.bar.com
+	New hostname ($UUCPHOST) is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!testuser%fiffle.com%spiffle.com
+
+cf_chn_16
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	spam.spaz.com
+	with address:
+		fiffle.com!spiffle.com!testuser@foo.bar.com
+	New hostname (spam.spaz.com) is NOT known to DNS, so should resolve
+	to the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: BADHOST
+	expected user	: fiffle.com!spiffle.com!testuser@spam.spaz.com
+
+
+cf_chn_17
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$REALHOST
+	with address:
+		fiffle.com!spiffle.com!testuser@foo.bar.com
+	New hostname ($REALHOST) is known to DNS, so should resolve to the
+	SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: fiffle.com!spiffle.com!testuser@${REALHOST}
+
+cf_chn_18
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		fiffle.com!spiffle.com!testuser@foo.bar.com
+	New hostname ($UUCPHOST) is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!fiffle.com!spiffle.com!testuser
+
+cf_chn_19
+---------
+	Test map entry (no partial domain matching):
+		foo.bar.com	$UUCPHOST
+	with address:
+		fiffle.com!spiffle.com!testuser@foo.bar.com
+	New hostname ($UUCPHOST) is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!fiffle.com!spiffle.com!testuser
+
+cf_chn_20
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		testuser@fo.fum.com
+	(which is NOT a partial domain match).
+	New hostname (gw1.com) is NOT known to DNS, so should resolve to
+	the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com:testuser@spam.spaz.com
+
+cf_chn_21
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		testuser@fo.fum.com
+	(which is NOT a partial domain match)
+	New hostname $REALHOST is known to DNS, so should resolve to the
+	SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com:testuser@spam.spaz.com
+
+
+cf_chn_22
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		testuser@fo.fum.com
+	(which is NOT a partial domain match)
+	New hostname $UUCPHOST is in the uucp Systems file database, so
+	should resolve to the UUCP channel.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!testuser
+
+cf_chn_23
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fo.fum.com!testuser
+	(which is NOT a partial domain match)
+	New hostname (gw1.com) is NOT known to DNS, so should resolve to
+	the badhost channel.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com:testuser@spam.spaz.com
+
+cf_chn_24
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fo.fum.com!testuser
+	(which is NOT a partial domain match)
+	New hostname $REALHOST is known to DNS, so should resolve to
+	the SMTP channel.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com:testuser@spam.spaz.com
+
+
+cf_chn_25
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fo.fum.com!testuser
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!testuser
+
+cf_chn_26
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fo.fum.com!ho.hum.com!testuser
+	(which is NOT a partial domain match)
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com:ho.hum.com!testuser@spam.spaz.com
+
+cf_chn_27
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fo.fum.com!ho.hum.com!testuser
+	(which is NOT a partial domain match)
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com:ho.hum.com!testuser@spam.spaz.com
+
+cf_chn_28
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fo.fum.com!ho.hum.com!testuser
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!ho.hum.com!testuser
+
+
+cf_chn_29
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		<@fo.fum.com,@spoo,@boo:testuser@final.com>
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com,@spoo,@boo:testuser@final.com
+
+cf_chn_30
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		<@fo.fum.com,@spoo,@boo:testuser@final.com>
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com,@spoo,@boo:testuser@final.com
+
+cf_chn_31
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		<@fo.fum.com,@spoo,@boo:testuser@final.com>
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!spoo!boo!final.com!testuser
+
+
+cf_chn_32
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fo.fum.com
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com:testuser%fiffle.com%spiffle.com@spam.spaz.com
+
+cf_chn_33
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fo.fum.com
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com:testuser%fiffle.com%spiffle.com@spam.spaz.com
+
+cf_chn_34
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fo.fum.com
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!testuser%fiffle.com%spiffle.com
+
+cf_chn_35
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fo.fum.com
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com:fiffle.com!spiffle.com!testuser@spam.spaz.com
+
+cf_chn_36
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fo.fum.com
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com:fiffle.com!spiffle.com!testuser@spam.spaz.com
+
+cf_chn_37
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fo.fum.com
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fiffle.com!spiffle.com!testuser
+
+cf_chn_38
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		testuser@fee.fi.fo.fum.com
+ 	(partial domain match).
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com
+
+cf_chn_39
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		testuser@fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com
+
+cf_chn_40
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		testuser@fee.fi.fo.fum.com
+ 	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser
+
+cf_chn_41
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fee.fi.fo.fum.com!testuser
+	(partial domain match).
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com
+
+cf_chn_42
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fee.fi.fo.fum.com!testuser
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com
+
+cf_chn_43
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fee.fi.fo.fum.com!testuser
+	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser
+
+cf_chn_44
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fee.fi.fo.fum.com!ho.hum.com!testuser
+	(partial domain match)
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com:ho.hum.com!testuser@fee.fi.fo.fum.com
+
+cf_chn_45
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fee.fi.fo.fum.com!ho.hum.com!testuser
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com:ho.hum.com!testuser@fee.fi.fo.fum.com
+
+cf_chn_46
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fee.fi.fo.fum.com!ho.hum.com!testuser
+	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!ho.hum.com!testuser
+
+cf_chn_47
+---------
+	Test map entry (no partial domain matching):
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+	(partial domain match).
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com,@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com
+
+cf_chn_48
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com,@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com
+
+cf_chn_49
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!spoo!boo!final.com!testuser
+
+cf_chn_50
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com:testuser%fiffle.com%spiffle.com@fee.fi.fo.fum.com
+
+cf_chn_51
+--------- 
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com:testuser%fiffle.com%spiffle.com@fee.fi.fo.fum.com
+
+cf_chn_52
+--------- 
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser%fiffle.com%spiffle.com
+
+cf_chn_53
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com gw1.com gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname (gw1.com) is NOT known to DNS.
+
+	expected mailer	: badhost
+	expected host	: $BADHOST
+	expected user	: @gw1.com,@gw2.com,@spam.spaz.com:fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+
+cf_chn_54
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname ($REALHOST) is known to DNS.
+
+	expected mailer	: SMTP
+	expected host	: $REALHOST
+	expected user	: @${REALHOST},@gw2.com,@spam.spaz.com:fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+
+cf_chn_55
+---------
+	Test map entry:
+		.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+	with address:
+		fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+	(partial domain match).
+	New hostname ($UUCPHOST) is in the uucp Systems file database.
+
+	expected mailer	: UUCP
+	expected host	: $UUCPHOST
+	expected user	: ${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!fiffle.com!spiffle.com!testuser
+
+cf_chn_56
+---------
+	Test resolution to baduser channel with address of a user which does
+	not exist on this machine.
+
+	expected mailer	: baduser
+	expected host	: $BADUSER
+	expected user	: $UNKUSER
+
+cf_chn_57
+---------
+	Test that if nameserver is unreachable, remote address resolves to
+	baduser nameservice delay channel (baduser with no forwarding host).
+	(Uses default configuration file)
+
+	expected mailer	: baduser
+	expected host	: $REALHOST
+	expected user	: user@$REALHOST
+
+
+-----------------------------------------------------------------------------
+The following test cases are for the sendmail check_rcpt ruleset,
+which prevents spammers from using your machine as a relay.  Basically,
+check_rcpt checks recipient and sender addresses during the smtp
+dialog, and can accept or refuse mail.
+-----------------------------------------------------------------------------
+
+cf_chkrcpt_1
+------------
+	If check_rcpt is disabled (C macro is null), then ensure
+	all addresses yield "ok" result.
+
+cf_chkrcpt_2
+------------
+	With check_rcpt enabled (C macro is non-null), no virtual domains
+	(V macro is null), and no trusted map file, ensure the following:
+	- if recipient is a local address, result is "ok"
+	- if recipient address has hostname which is the local host,
+	  then result is "ok"
+	- if recipient address is remote, and connecting host is remote,
+	  then result is error
+
+cf_chkrcpt_3
+------------
+	With check_rcpt enabled (C macro is non-null), virtual domains map
+	enabled (V macro is non-null and the virtual domains map exists),
+	and a trusted map file exists, ensure the following:
+	- if recipient is local address, result is ok
+	- if recipient is address where hostname is the local host, result is ok
+	- if recipient address is remote, but the hostname is a virtual
+	  domain, and connecting host is remote, then result is "ok"
+	- if recipient address is remote, and connecting host is remote but
+	  a trusted host, then result is "ok"
+	- if recipient address is remote, and connecting host is remote,
+	  then result is error

@@ -1,0 +1,77 @@
+#ident	"@(#):mksyshead	16.1	97/11/08"
+#ident "$Header$"
+#
+#	Install UNIX System 'sys' header files
+#
+echo "START `basename $0` `date`"
+trap `rm -f /tmp/utsrules;exit 1` 1 2 3 15
+trap `rm -f /tmp/librules;exit 1` 1 2 3 15
+trap `rm -f /tmp/cmdrules;exit 1` 1 2 3 15
+
+
+Root=$1
+Mach=$2
+Work=$3
+
+#
+# Find a reasonable vpp to use
+#
+VPP=${Root}/usr/src/${Work}/cmd/vpp/vpp
+if [ ! -x ${VPP} ]; then
+	VPP=${TOOLS}/usr/bin/vpp
+	if [ ! -x ${VPP} ]; then
+		VPP=vpp
+	fi
+fi
+
+#
+#	we don't have an env, yet, so copy
+#	kernel, lib, & cmd  rulefiles and
+#	edit to use hostmake and install
+#       command
+ed uts/uts.rulefile <<X
+1,\$s|^MAKE[	 ]=.*|MAKE = make|
+1,\$s|^INS[	 ]=.*|INS = /etc/install|
+1,\$s|^VPP[	 ]=.*|VPP = $VPP|
+w /tmp/utsrules
+q
+X
+
+ed cmd/sgs/xenv/i386/librules <<X
+1,\$s|^MAKE[	 ]=.*|MAKE = make|
+1,\$s|^INS[	 ]=.*|INS = /etc/install|
+1,\$s|^MACH[	 ]=.*|MACH = i386at|
+1,\$s|^VPP[	 ]=.*|VPP = $VPP|
+w /tmp/librules
+q
+X
+
+ed cmd/sgs/xenv/i386/cmdrules <<X
+1,\$s|^MAKE[	 ]=.*|MAKE = make|
+1,\$s|^INS[	 ]=.*|INS = /etc/install|
+1,\$s|^MACH[	 ]=.*|MACH = i386at|
+w /tmp/cmdrules
+q
+X
+ROOT=${Root} ; export ROOT
+MACH=${Mach} ; export MACH
+MACH=i386at; export MACH
+UTSRULES=/tmp/utsrules
+UTSDEPEND=/dev/null
+LIBRULES=/tmp/librules
+CMDRULES=/tmp/cmdrules
+export UTSDEPEND UTSRULES LIBRULES CMDRULES
+
+cd ${Root}/usr/src/${Work}/uts
+
+make -f unix.mk headinstall
+
+
+rm -f ${UTSRULES}
+
+rm -f ${LIBRULES}
+
+rm -f ${CMDRULES}
+
+echo "ENDED `basename $0` `date`"
+exit 0

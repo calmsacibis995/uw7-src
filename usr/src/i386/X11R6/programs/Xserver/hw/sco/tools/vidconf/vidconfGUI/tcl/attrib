@@ -1,0 +1,2138 @@
+#******************************************************************************
+#                                attrib
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#) attrib 55.2 96/06/27 
+#
+# Copyright (C) 1995-1996 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+#==========================================================================
+# GetVendor --
+#       Return the vendor from the given list.
+#
+# Parameters: 
+#	list - originating from either a ttyList or a videoList element
+# Returns: 
+#	vendor - the vendor or {}
+#--------------------------------------------------------------------------
+proc GetVendor {list} \
+{
+   set vendor {}
+
+   keylget list "VENDOR" vendor
+   return $vendor
+}
+
+
+#==========================================================================
+# GetVendorPr --
+#       Return the vendor prompt string for a given vendor and model.
+#
+# Parameters: 
+#	vendor - holds the VENDOR name
+#	model - holds the MODEL name
+# Returns: 
+#	vendorpr - the vendor prompt string or {}
+#--------------------------------------------------------------------------
+proc GetVendorPr {vendor model} \
+{
+   set vendorpr {}
+   set vendorlist [GetVideoElement $vendor.$model]
+
+   keylget vendorlist "VENDORPR" vendorpr
+   return $vendorpr
+}
+
+
+#==========================================================================
+# GetCurVendor --
+#       Return the vendor in curList stored at index 0.
+#
+# Parameters: none
+# Returns: 
+#	the vendor corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurVendor {} \
+{
+   global curList
+
+   set adapter {}
+   set vendor {}
+   set adapter [lindex $curList 0]
+   keylget adapter VENDOR vendor
+
+   return $vendor
+}
+
+
+#==========================================================================
+# GetTTYVendor --
+#       Return the vendor given a tty index into ttyList.  For 
+#	ttys configured as multiheaded, adapter index is > 0.
+#
+# Parameters: 
+#	tty - ttyList index
+#	adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	the vendor corresponding to the given ttyList index
+#--------------------------------------------------------------------------
+proc GetTTYVendor {tty adapter} \
+{
+   return [GetVendor [lindex [GetTTYElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetTMPVendor --
+#       Return the vendor given a tty index into tmpttyList.  For 
+#	ttys configured as multiheaded, adapter index is > 0.
+#
+# Parameters: 
+#	tty - tmpttyList index
+#	adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	the vendor corresponding to the given tmpttyList index
+#--------------------------------------------------------------------------
+proc GetTMPVendor {tty adapter} \
+{
+   return [GetVendor [lindex [GetTMPElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetVideoVendor --
+#       Return the vendor for a given vendormodel index into videoList.
+#
+# Parameters: 
+#	vendormodel - VENDOR and MODEL names index into videoList
+# Returns:
+#	the vendor corresponding to the given videoList index.
+#--------------------------------------------------------------------------
+proc GetVideoVendor {vendormodel} \
+{
+   return [GetVendor [GetVideoElement $vendormodel]]
+}
+
+
+#==========================================================================
+# GetVendorModelPr --
+#       Returns the vendor and model prompt strings given a vendor
+#	and model.
+#
+# Parameters:
+#       vendor - holds the VENDOR name
+#       model - holds the MODEL name
+# Returns:
+#	vendormodelPr - vendor model prompt string.
+#--------------------------------------------------------------------------
+proc GetVendorModelPr {vendor model} \
+{
+   return "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+}
+
+
+#==========================================================================
+# GetCurVendorModelPr --
+#       Returns the vendor and model prompt strings for the current
+#	vendor and model.
+#
+# Parameters: none
+# Returns:
+#	vendormodelPr - vendor model prompt string.
+#--------------------------------------------------------------------------
+proc GetCurVendorModelPr {} \
+{
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+
+   return "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+}
+
+
+#==========================================================================
+# GetModel --
+#       Return the model from the given list.
+#
+# Parameters:
+#	list - originating from either a ttyList or a videoList element
+# Returns: 
+#	model - the model or {}
+#--------------------------------------------------------------------------
+proc GetModel {list} \
+{
+   set model {}
+
+   keylget list "MODEL" model
+   return $model
+}
+
+
+#==========================================================================
+# GetModelPr --
+#       Return the model prompt string for a given vendor and model.
+#
+# Parameters:
+#       vendor - holds the VENDOR name
+#       model - holds the MODEL name
+# Returns: 
+#	modelpr - the model prompt string or {}
+#--------------------------------------------------------------------------
+proc GetModelPr {vendor model} \
+{
+   set modelpr {}
+   set modellist [GetVideoElement $vendor.$model]
+
+   keylget modellist "MODELPR" modelpr
+   return $modelpr
+}
+
+
+#==========================================================================
+# GetCurModel --
+#       Return the model in curList stored at index 0.
+#
+# Parameters: none
+# Returns: 
+#	the model corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurModel {} \
+{
+   global curList
+
+   set adapter {}
+   set model {}
+   set adapter [lindex $curList 0]
+   keylget adapter "MODEL" model
+
+   return $model
+}
+
+
+#==========================================================================
+# GetTTYModel --
+#       Return the model given a tty index into ttyList.  For
+#       ttys configured as multiheaded, adapter index is > 0.
+#
+# Parameters:
+#       tty - ttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns:
+#	the model corresponding to the given ttyList index
+#--------------------------------------------------------------------------
+proc GetTTYModel {tty adapter} \
+{
+   return [GetModel [lindex [GetTTYElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetTMPModel --
+#       Return the model given a tty index into tmpttyList.  For
+#       ttys configured as multiheaded, adapter index is > 0.
+#
+# Parameters:
+#       tty - tmpttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns:
+#	the model corresponding to the given tmpttyList index
+#--------------------------------------------------------------------------
+proc GetTMPModel {tty adapter} \
+{
+   return [GetModel [lindex [GetTMPElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetVideoModel --
+#       Return the model for a given vendormodel index into videoList.
+#
+# Parameters: 
+#	vendormodel - VENDOR and MODEL names index into videoList
+# Returns:
+#       the model corresponding to the given videoList index.
+#--------------------------------------------------------------------------
+proc GetVideoModel {vendormodel} \
+{
+   return [GetModel [GetVideoElement $vendormodel]]
+}
+
+
+#==========================================================================
+# GetClass --
+#       Return the class from the given list.
+#
+# Parameters: 
+#	list - originating from either a ttyList or a videoList element
+# Returns:
+#	class - the class or {}
+#--------------------------------------------------------------------------
+proc GetClass {list} \
+{
+   set class {}
+
+   keylget list "CLASS" class
+   return $class
+}
+
+
+#==========================================================================
+# GetClassPr --
+#       Return the class prompt string from the given list.
+#
+# Parameters: 
+#	reslist - a single resolution list containing the class information
+# Returns: 
+#	classpr - the class prompt or {}
+#--------------------------------------------------------------------------
+proc GetClassPr {reslist} \
+{
+   set classpr {}
+
+   keylget reslist "CLASSPR" classpr
+   return $classpr
+}
+
+
+#==========================================================================
+# GetCurClass --
+#       Return the class in curList at the current index.
+#
+# Parameters: none
+# Returns: 
+#	the class corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurClass {} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set class {}
+   set adapter [lindex $curList $curIndex]
+   keylget adapter "CLASS" class
+
+   return $class
+}
+
+
+#==========================================================================
+# GetTTYClass --
+#       Return the class for a given tty.  For ttys configured as
+#	multiheaded, adapter index is > 0.
+#
+# Parameters:
+#	tty - ttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	the class for the given tty or {}
+#--------------------------------------------------------------------------
+proc GetTTYClass {tty adapter} \
+{
+   return [GetClass [lindex [GetTTYElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetTMPClass --
+#       Return the class for a given tty.  For ttys configured as
+#	multiheaded, adapter index is > 0.
+#
+# Parameters:
+#	tty - tmpttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	the class for the given tty or {}
+#--------------------------------------------------------------------------
+proc GetTMPClass {tty adapter} \
+{
+   return [GetClass [lindex [GetTMPElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetMode --
+#       Return the mode from the given list.
+#
+# Parameters:
+#	list - originating from either a ttyList or a videoList element
+# Returns: 
+#	mode - the mode or {}
+#--------------------------------------------------------------------------
+proc GetMode {list} \
+{
+   set mode {}
+
+   keylget list "MODE" mode
+   return $mode
+}
+
+
+#==========================================================================
+# GetModePr --
+#       Return the mode prompt string from the given list.
+#
+# Parameters: 
+#	reslist - a single resolution list containing the mode information
+# Returns: 
+#	modepr - the mode prompt string or {}
+#--------------------------------------------------------------------------
+proc GetModePr {reslist} \
+{
+   set modepr {}
+
+   keylget reslist "MODEPR" modepr
+   return $modepr
+}
+
+
+#==========================================================================
+# GetCurMode --
+#       Return the mode in curList at the current index.
+#
+# Parameters: none
+# Returns: 
+#	the mode corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurMode {} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set mode {}
+   set adapter [lindex $curList $curIndex]
+   keylget adapter "MODE" mode
+
+   return $mode
+}
+
+
+#==========================================================================
+# GetTTYMode --
+#       Return the mode for a given tty.  For ttys configured as 
+#	multiheaded, adapter index is > 0.
+#
+# Parameters:
+#       tty - ttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns:
+#	the mode for the given tty or {}
+#--------------------------------------------------------------------------
+proc GetTTYMode {tty adapter} \
+{
+   return  [GetMode [lindex [GetTTYElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetTMPMode --
+#       Return the mode for a given tty.  For ttys configured as 
+#	multiheaded, adapter index is > 0.
+#
+# Parameters:
+#       tty - tmpttyList index
+#       adapter - usually 0 unless tty is multiheaded
+# Returns:
+#	the mode for the given tty or {}
+#--------------------------------------------------------------------------
+proc GetTMPMode {tty adapter} \
+{
+   return  [GetMode [lindex [GetTMPElement $tty] $adapter]]
+}
+
+
+#==========================================================================
+# GetResolutions --
+#       Return a resolutions list for a given vendor and model.
+#
+# Parameters: 
+#	vendor - holds the VENDOR name
+#	model - holds the MODEL name
+# Returns: 
+#	reslist - list containing resolutions that correspond to 
+#	the VENDOR and MODEL or {}
+#--------------------------------------------------------------------------
+proc GetResolutions {vendor model} \
+{
+   set reslist {}
+   set CMCList {}
+
+   set CMCList [GetVideoElement $vendor.$model]
+
+   keylget CMCList "RESOLUTIONS" reslist
+   return $reslist
+}
+
+
+#==========================================================================
+# GetClassModePr --
+#       Returns the class and mode prompt strings for a given 
+#	resolutions list.  Walks through the resolutions lists
+#	until both the CLASS and MODE keys match.
+#
+# Parameters: 
+#	class - the CLASS name
+#	mode - the MODE name
+#	reslist - list containing all resolutions that correspond to 
+#	          the vendor and model for that class and mode.
+# Returns: 
+#	list containing the class and mode prompt strings
+#--------------------------------------------------------------------------
+proc GetClassModePr {class mode reslist} \
+{
+   set classpr {}
+   set modepr {}
+
+   foreach res $reslist {
+      set chkclass {}
+      set chkmode {}
+
+      keylget res "CLASS" chkclass
+      keylget res "MODE" chkmode
+      if {($class == $chkclass) && ($mode == $chkmode)} {
+         keylget res "CLASSPR" classpr
+         keylget res "MODEPR" modepr
+	 if {$classpr != ""} {
+	    return [format "%s %s" $classpr $modepr]
+	 } else {
+	    # sometimes CLASS == "" in grafinfo files.
+	    return $modepr
+	 }
+      }
+   }
+   # couldn't find the class and mode in reslist
+   return {}
+}
+
+
+#==========================================================================
+# GetMonVendor --
+#       Return the monvendor given a vendor and model index into 
+#	monList.
+#
+# Parameters: 
+#	vmindex - vendor.model index into monList
+# Returns: 
+#	monvendor - the monvendor or {}
+#--------------------------------------------------------------------------
+proc GetMonVendor {vmindex} \
+{
+   set monvendor {}
+   set monlist [GetMonElement $vmindex]
+
+   keylget monlist "MONVENDOR" monvendor
+   return $monvendor
+}
+
+
+#==========================================================================
+# GetCurMonVendor --
+#       Return the monvendor in curList stored at index 1.
+#
+# Parameters: none
+# Returns: 
+#	the monvendor corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurMonVendor {} \
+{
+   global curList
+
+   set adapter {}
+   set monvendor {}
+   set adapter [lindex $curList 1]
+   keylget adapter "MONVENDOR" monvendor
+
+   return $monvendor
+}
+
+
+#==========================================================================
+# GetMonModel --
+#       Return the monmodel given a vendor and model index into
+#	monlist.
+#
+# Parameters:
+#	vmindex - vendor.model index into monList
+# Returns:
+#       monmodel - the monmodel or {}
+#--------------------------------------------------------------------------
+proc GetMonModel {vmindex} \
+{
+   set monmodel {}
+   set monlist [GetMonElement $vmindex]
+
+   keylget monlist "MONMODEL" monmodel
+   return $monmodel
+}
+
+
+#==========================================================================
+# GetCurMonModel --
+#       Return the monmodel in curList stored at index 1.
+#
+# Parameters: none
+# Returns: 
+#	the monmodel corresponding to the current index
+#--------------------------------------------------------------------------
+proc GetCurMonModel {} \
+{
+   global curList
+
+   set adapter {}
+   set monmodel {}
+   set adapter [lindex $curList 1]
+   keylget adapter "MONMODEL" monmodel
+
+   return $monmodel
+}
+
+
+#==========================================================================
+# GetMonDescription--
+#       Returns the description string for a given monvendor and
+#	monmodel.
+#
+# Parameters: 
+#	monvendor - the MONVENDOR name
+#	monmodel - the MONMODEL name
+# Returns: 
+#	description - the description string or "Monitor Not Configured"
+#--------------------------------------------------------------------------
+proc GetMonDescription {monvendor monmodel} \
+{
+   set description [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOMONITOR]
+   set monitor [GetMonitorElement $monvendor.$monmodel]
+
+   keylget monitor "DESCRIPTION" description
+   return $description
+}
+
+
+#==========================================================================
+# GetCurMonDescription --
+#       Return the monitor description for the current monvendor
+#	and monmodel in curList stored at index 1.
+#
+# Parameters: none
+# Returns:
+#	desc - monitor description
+#--------------------------------------------------------------------------
+proc GetCurMonDescription {} \
+{
+   set monvendor [GetCurMonVendor]
+   set monmodel [GetCurMonModel]
+
+   return [GetMonDescription $monvendor $monmodel]
+}
+
+
+#==========================================================================
+# GetCurTTYSHEAD --
+#       Return the TTYSHEAD entry in curList stored at curIndex.
+#	One TTYSHEAD entry per resolution.
+#
+# Parameters: none
+# Returns: 
+#	the TTYSHEAD found in curList or {}
+#--------------------------------------------------------------------------
+proc GetCurTTYSHEAD {} \
+{
+   global curList curIndex
+
+   set ttyshead {}; set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylget adapter "TTYSHEAD" ttyshead
+
+   return $ttyshead
+}
+
+
+#==========================================================================
+# GetTTYIndexes --
+#       Return the configured ttyList indexes if flag is {}.  
+#	Return all configured ttyList indexes if flag != {}.
+#	Because some ttyList elements might not be configured,
+#	we do not want to return their indexes.  This could 
+#	happen if only one tty is configured.
+#	
+# Parameters: 
+#	flag - return configured indexes if {}, otherwise return all
+#	      indexes
+# Returns: 
+#	indexes - ttyList indexes or {} if ttyList is empty
+#--------------------------------------------------------------------------
+proc GetTTYIndexes {flag} \
+{
+   global ttyList
+
+   set indexes {}
+   foreach tty [array names ttyList] {
+	if {($flag == {}) && ($ttyList($tty) == {})} {
+	   continue
+	}
+	lappend indexes $tty
+   }
+   return $indexes
+}
+
+
+#==========================================================================
+# IsCharm --
+#       Determine if we are using CHARM or not.
+#
+# Parameters: none
+# Returns:
+#	returns 1 if charm is being used, 0 otherwise
+#--------------------------------------------------------------------------
+proc IsCharm {} \
+{
+   global CHARM
+
+   return $CHARM
+}
+
+
+#==========================================================================
+# SetCharm --
+#       Set CHARM flag to true (1) if we are running under CHARM,
+#	false (0) otherwise.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCharm {flag} \
+{
+   global CHARM
+
+   set CHARM $flag
+}
+
+
+#==========================================================================
+# IsMultiscreens --
+#       Returns true if ttys passed in are all of the ttys which denote
+#	the Multiscreens.  False otherwise.
+#
+# Parameters:
+#	ttys - ttyList indexs
+# Returns:
+#--------------------------------------------------------------------------
+proc IsMultiscreens {ttys} \
+{
+   if {![string compare [lsort $ttys] [lsort [GetTTYIndexes all]]]} {
+      return 1
+   }
+   return 0
+}
+
+
+#==========================================================================
+# IsTMPEmpty --
+#       Returns true if tmpttyList is empty (No video adapters are 
+#	configured).  False otherwise.
+#
+# Parameters: none
+# Returns:
+#--------------------------------------------------------------------------
+proc IsTMPEmpty {} \
+{
+   if {[GetTMPIndexes {}] == {}} {
+	return 1
+   } 
+   return 0
+}
+
+
+#==========================================================================
+# IsTTYEmpty --
+#       Returns true if ttyList is empty (No video adapters are 
+#	configured).  False otherwise.
+#
+# Parameters: none
+# Returns:
+#--------------------------------------------------------------------------
+proc IsTTYEmpty {} \
+{
+   if {[GetTTYIndexes {}] == {}} {
+	return 1
+   } 
+   return 0
+}
+
+
+#==========================================================================
+# IsViewOnly --
+#	Returns true if running as VIEWONLY, false otherwise.
+#       
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc IsViewOnly {} \
+{
+   global VIEWONLY
+
+   return $VIEWONLY
+}
+
+
+#==========================================================================
+# SetViewOnly --
+#       Set VIEWONLY global flag to 0 if the user is root, 1 otherwise.
+#	Defaults to 1 == regular user.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetViewOnly {flag} \
+{
+   global VIEWONLY
+
+   set VIEWONLY $flag
+}
+
+
+#==========================================================================
+# SetViewAccess --
+#       Set the view access flag (VIEWONLY) depending on the user ID.
+#	If the user isn't root, only allow viewing of configuration.
+#	If it is root (VIEWONLY == 0), allow full access.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetViewAccess {} \
+{
+   set user [id user]
+   if {$user == "root"} {
+      SetViewOnly 0
+   } else {
+	if { [catch "exec /sbin/tfadmin -t vidconfGUI" ret] == 0 } {
+        	SetViewOnly 0
+      	} else {
+      		SetViewOnly 1
+	}
+   }
+}
+
+
+#==========================================================================
+# GetTTYElement --
+#       Return the requested ttyList element at a given tty index.
+#	
+# Parameters: 
+#	tty - ttyList index
+# Returns:
+#	the ttyList element at that index or {}
+#--------------------------------------------------------------------------
+proc GetTTYElement {tty} \
+{
+   global ttyList
+
+   if {[info exists ttyList($tty)]} {
+      return $ttyList($tty)
+   }
+   return {}
+}
+
+
+#==========================================================================
+# SetTTYElement --
+#       Set an element in ttyList.
+#	
+# Parameters:
+#	tty - ttyList index
+#	adapters - the adapter(s) configured to that tty
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTTYElement {tty adapters} \
+{
+   global ttyList
+
+   set ttyList($tty) $adapters
+}
+
+
+#==========================================================================
+# GetVideoElement --
+#       Return the videoList element for a given vendor and model 
+#	index.
+#	
+# Parameters: 
+#	vendormodel - the VENDOR and MODEL names joined by a .
+# Returns:
+#	the videoList element for a given vendor and model index or {}
+#--------------------------------------------------------------------------
+proc GetVideoElement {vendormodel} \
+{
+   global videoListMap videoList
+
+   if {([info exists videoListMap($vendormodel)]) && \
+       ([info exists videoList($videoListMap($vendormodel))])} {
+	 return $videoList($videoListMap($vendormodel))
+   }
+   return {}
+}
+
+
+#==========================================================================
+# GetMonitorElement --
+#       Return the monitorList element for a given mon vendormodel 
+#	index.
+#	
+# Parameters: 
+#	vendormodel - the MONVENDOR and MONMODEL names joined by a .
+# Returns: 
+#	the monitorList element for a given mon vendor and model 
+#	index or {}
+#--------------------------------------------------------------------------
+proc GetMonitorElement {vendormodel} \
+{
+   global monitorListMap monitorList
+
+   if {[info exists monitorListMap($vendormodel)]} {
+       if {[info exists monitorList($monitorListMap($vendormodel))]} {
+	 return $monitorList($monitorListMap($vendormodel))
+       }
+   }
+   return {}
+}
+
+
+#==========================================================================
+# GetComment --
+#       Returns the class and mode prompt strings for a given 
+#	resolutions list.  Walks through the resolutions lists
+#	until both the CLASS and MODE keys match.
+#
+# Parameters: 
+#	class - the CLASS name
+#	mode - the MODE name
+#	reslist - list containing all resolutions that correspond to 
+#	          the vendor and model for that class and mode.
+# Returns: 
+#	list containing the comment string or {}
+#--------------------------------------------------------------------------
+proc GetComment {class mode reslist} \
+{
+   set comment {}
+   foreach res $reslist {
+      set chkclass {}
+      set chkmode {}
+
+      keylget res "CLASS" chkclass
+      keylget res "MODE" chkmode
+      if {($class == $chkclass) && ($mode == $chkmode)} {
+         keylget res "COMMENT" comment
+	 return $comment
+      }
+   }
+   # if class and mode aren't in reslist, (better be) then return nothing
+   return {}
+}
+
+
+#==========================================================================
+# GetVidsetup --
+#       Return the VIDSETUP string for a given vendor and model.
+#
+# Parameters:
+#	vendor - holds the VENDOR name
+#	model - holds the MODEL name
+# Returns:
+#	vidsetup - the VIDSETUP string or {}
+#--------------------------------------------------------------------------
+proc GetVidsetup {vendor model} \
+{
+   set vidsetup {}
+   set vidsetuplist [GetVideoElement $vendor.$model]
+
+   keylget vidsetuplist "VIDSETUP" vidsetup
+   return $vidsetup
+}
+
+
+#==========================================================================
+# GetVidscript --
+#       Return the VIDSCRIPT string for a given vendor and model.
+#
+# Parameters: 
+#	vendor - holds the VENDOR name
+#	model - holds the MODEL name
+# Returns: 
+#	vidscript - the VIDSCRIPT string or {}
+#--------------------------------------------------------------------------
+proc GetVidscript {vendor model} \
+{
+   set vidscript {}
+   set vidscriptlist [GetVideoElement $vendor.$model]
+
+   keylget vidscriptlist "VIDSCRIPT" vidscript
+   return $vidscript
+}
+
+
+#==========================================================================
+# GetVendorModels --
+#       Return each of the models for a specific vendor in sorted order.
+#
+# Parameters: 
+#	vendor - index into array
+# Returns:
+#	models - list holding each of the models for vendor.
+#--------------------------------------------------------------------------
+proc GetVendorModels {vendor} \
+{
+   global videoVendorList
+
+   set models {}
+   if {[info exists videoVendorList($vendor)]} {
+      foreach modelfile [lsort $videoVendorList($vendor)] {
+         lappend models $modelfile
+      }
+   }
+   return $models
+}
+
+
+#==========================================================================
+# GetNewVendorModel --
+#       Determine the new model name and return it or return the old 
+#	model name if it wasn't deleted.
+#
+#	When a vidscript is run, it may remove the model (filename.xgi)
+#	and create new ones or it may simply update the current model
+#	with new information.  In the later case, simply return the 
+#	model.  In the first case, it is more complicated.  Walk through
+#	the new list of models (videoModelList($vendor)) and find the 
+#	first one that appears in this list but not in the old models 
+#	list.
+#
+# Parameters:
+#	vendor - current vendor name
+#	model - current model name
+#	oldmodels - list of old models prior to running the vidscript
+# Returns:
+#	model - the new model file name
+#--------------------------------------------------------------------------
+proc GetNewVendorModel {vendor model oldmodels} \
+{
+   global videoVendorList GRAFINFO
+
+   set newmodels [GetVendorModels $vendor]
+
+   # if the model was deleted, find the first new one that was created
+   if {![file exists $GRAFINFO/$vendor/$model.xgi]} {
+      foreach newmodelname [lsort $newmodels] {
+         set match 0
+         foreach oldmodelname [lsort $oldmodels] {
+	   if {![string compare $newmodelname $oldmodelname]} {
+	      #echo Found a match $newmodelname, $oldmodelname
+	      #echo Discarding $newmodelname.
+	      set match 1
+	      break
+	   } 
+	   # XXX - what if newmodelname is exhausted without finding one 
+	   # and the old model file was deleted? What error should be returned?
+	   # del'ing out of n9gxi script causes this problem.
+         }
+	 if {! $match} {
+	    #echo "Found a non-match: $newmodelname"
+	    set model $newmodelname
+	    break
+	 }
+      }
+   } 
+   return $model
+}
+
+
+#==========================================================================
+# GetMonIndexes --
+#       Return all monList indexes.
+#
+# Parameters: none
+# Returns: 
+#	indexes - monList indexes or {} if monList does not exist or is empty
+#--------------------------------------------------------------------------
+proc GetMonIndexes {} \
+{
+   global monList
+
+   set indexes {}
+   if {[info exists monList]} {
+      foreach mon [array names monList] {
+	 lappend indexes $mon
+      }
+   }
+   return $indexes
+}
+
+
+#==========================================================================
+# GetMonElement --
+#       Return the requested monList element at a given mon index.
+#	
+# Parameters: 
+#	vmindex - vendor.model index into monList
+# Returns:
+#	the monList element at that index
+#--------------------------------------------------------------------------
+proc GetMonElement {vmindex} \
+{
+   global monList
+
+   if {[info exists monList($vmindex)]} {
+      return $monList($vmindex)
+   }
+   return {}
+}
+
+
+#==========================================================================
+# SetMonElement --
+#       Set an element in monList.
+#	
+# Parameters:
+#	vmindex - vendor.model index into monList
+#	element - monvendor and monmodel used to index into monitorListMap
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetMonElement {index element} \
+{
+   global monList
+
+   set monList($index) $element
+}
+
+
+#==========================================================================
+# SetCurVendor --
+#       Set vendor in curList at all indexes.  All vendors should be 
+#	the same since we are only dealing with one card.
+#
+# Parameters:
+#	vendor - the vendor to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurVendor {vendor} \
+{
+   global curList curIndex
+
+   set len [llength $curList]
+   # walk through all VENDORs setting vendor
+   for {set cnt 0} {$cnt < $len} {incr cnt} {
+      set adapter [lindex $curList $cnt]
+      keylset adapter "VENDOR" $vendor
+      set curList [lreplace $curList $cnt $cnt $adapter]
+   }
+}
+
+
+#==========================================================================
+# SetCurModel --
+#       Set model in curList at all indexes.  All models should be 
+#	the same since we are only dealing with one card.
+#
+# Parameters:
+#	model - the model to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurModel {model} \
+{
+   global curList curIndex
+
+   set len [llength $curList]
+   # walk through all MODELS setting model
+   for {set cnt 0} {$cnt < $len} {incr cnt} {
+      set adapter [lindex $curList $cnt]
+      keylset adapter "MODEL" $model
+      set curList [lreplace $curList $cnt $cnt $adapter]
+   }
+}
+
+
+#==========================================================================
+# SetCurDescription --
+#       Set the video card description in curList stored at index 0.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurDescription {} \
+{
+   global curList
+
+   set adapter {}; set desc {}
+   set vendor {}; set model {}
+
+   set adapter [lindex $curList 0]
+   keylget adapter "VENDOR" vendor
+   keylget adapter "MODEL" model
+
+   set desc "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+
+   keylset adapter "DESCRIPTION" $desc
+   set curList [lreplace $curList 0 0 $adapter]
+}
+
+
+#==========================================================================
+# SetCurClass --
+#       Set class in curList at the current index.
+#
+# Parameters:
+#	class - the class to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurClass {class} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylset adapter "CLASS" $class
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurMode --
+#       Set mode in curList at the current index.
+#
+# Parameters:
+#	mode - the mode to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurMode {mode} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylset adapter "MODE" $mode
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurResDescription --
+#       Set the resolution description in curList at the current index.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurResDescription {} \
+{
+   global curList curIndex
+
+   set adapter {}; set resdesc {}
+   set vendor {}; set model {}
+   set class {}; set mode {}
+
+   set adapter [lindex $curList $curIndex]
+   keylget adapter "VENDOR" vendor
+   keylget adapter "MODEL" model
+   keylget adapter "CLASS" class
+   keylget adapter "MODE" mode
+
+   set resdesc [GetClassModePr $class $mode [GetResolutions $vendor $model]]
+   keylset adapter "DESCRIPTION" $resdesc
+
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurMonVendor --
+#       Set monvendor in curList at the current index.
+#
+# Parameters:
+#	monvendor - the monvendor to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurMonVendor {monvendor} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylset adapter "MONVENDOR" $monvendor
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurMonModel --
+#       Set monmodel in curList at the current index.
+#
+# Parameters:
+#	monmodel - the monmodel to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurMonModel {monmodel} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylset adapter "MONMODEL" $monmodel
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurMonDescription --
+#       Set the monitor description in curList at the current index.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurMonDescription {} \
+{
+   global curList curIndex
+
+   set adapter {}; set mondesc {}
+   set monvendor {}; set monmodel {}
+
+   set adapter [lindex $curList $curIndex]
+   keylget adapter "MONVENDOR" monvendor
+   keylget adapter "MONMODEL" monmodel
+
+   set mondesc [GetMonDescription $monvendor $monmodel]
+   keylset adapter "DESCRIPTION" $mondesc
+
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetCurTTYSHEAD --
+#       Set TTYSHEAD in curList at the current index.
+#
+# Parameters:
+#	ttyshead - list of {tty head} pairs to set into TTYSHEAD
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetCurTTYSHEAD {ttyshead} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set adapter [lindex $curList $curIndex]
+   keylset adapter "TTYSHEAD" $ttyshead
+   set curList [lreplace $curList $curIndex $curIndex $adapter]
+}
+
+
+#==========================================================================
+# SetSave --
+#       Set the SAVE flag to indicate we should save on exit OK.
+#	Suggest that they select OK to update their system.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetSave {} \
+{
+   global SAVE
+
+   if {$SAVE != "1"} {
+      InfoMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SAVE_OK]
+   }
+   set SAVE 1
+}
+
+
+#==========================================================================
+# GetSave --
+#       Return the SAVE flag status.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc GetSave {} \
+{
+   global SAVE
+
+   return $SAVE
+}
+
+
+#==========================================================================
+# SetTTYValid--
+#       Set VALID flag in ttyList(tty) at head position to value 
+#	of vflag.
+#
+# Parameters:
+#	vflag - 1 == VALID, 0 = INVALID
+#	tty - tty index into ttyList
+#	head - multihead position into ttyList
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTTYValid {tty head vflag} \
+{
+   set adapters {}
+   set adapters [GetTTYElement $tty]
+   set elem [lindex $adapters $head]
+   keylset elem "VALID" $vflag
+   SetTTYElement $tty [lreplace $adapters $head $head $elem]
+}
+
+
+#==========================================================================
+# GetTTYValid--
+#       Return the VALID flag status in ttyList(tty) at head position.
+#
+# Parameters:
+#	tty - tty index into ttyList
+#	head - multihead position into ttyList
+# Returns: 
+#	valid - holding VALID flag status or {}
+#--------------------------------------------------------------------------
+proc GetTTYValid {tty head} \
+{
+   set adapters {}; set valid {}
+   set adapters [GetTTYElement $tty]
+   set elem [lindex $adapters $head]
+   keylget elem "VALID" valid
+
+   return $valid
+}
+
+
+#==========================================================================
+# GetListSelection --
+#       Return the value of the select position from the list 
+#	minus 1.  If nothing was selected, reselect at index+1
+#	and return the same index passed in.
+#
+# Parameters:
+#	widget - 'name' of the list widget to check
+#	index - index prior to selection.
+# Returns:
+#	the position of the selection minus 1 or current index
+#--------------------------------------------------------------------------
+proc GetListSelection {widget index} \
+{
+   set newIndex ""
+
+   set newIndex [VtListGetSelectedItem $widget]
+   # xm_vtcl - old version (5.0.2 & earlier) returns "", new version returns 0.
+   if {($newIndex != "") && ($newIndex != 0)} {
+      # got a new index
+      return [expr $newIndex-1]
+   } else {
+      # probably reselected a selected list item, reselect it
+      VtListSelectItem $widget -position [expr $index+1]
+   }
+   return $index
+}
+
+
+#==========================================================================
+# DoGetDrawnListSelection --
+#       Return the value of the select position from the drawn list 
+#	minus 1.  If nothing was selected, reselect at index+1
+#	and return the same index passed in.
+#	XXX - update with new routine or simplify
+#
+# Parameters:
+#	index - index prior to selection.
+#	widget - 'name' of the list widget to check
+# Returns:
+#	the position of the selection minus 1 or current index
+#--------------------------------------------------------------------------
+proc DoGetDrawnListSelection {index widget} \
+{
+   set newIndex ""
+
+   set newIndex [VtDrawnListGetSelectedItem $widget -byPositionList]
+   # xm_vtcl - old version (5.0.2 & earlier) returns "", new version returns 0.
+   if {($newIndex != "") && ($newIndex != 0)} {
+      # got a new index
+      return [expr $newIndex-1]
+   } else {
+      # probably reselected a selected list item, reselect it
+      VtDrawnListSelectItem $widget -position [expr $index+1]
+   }
+   return $index
+}
+
+
+#==========================================================================
+# GetMainDialogID --
+#       Return the main dialog id.
+#
+# Parameters: none
+# Returns: 
+#	dialogid - the main dialog id
+#--------------------------------------------------------------------------
+proc GetMainDialogID {} \
+{
+   global DIALOGID
+
+   return $DIALOGID
+}
+
+
+#==========================================================================
+# SetMainDialogID --
+#       Set the main dialog id.
+#
+# Parameters:
+#	dialogid - dialog id to set
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetMainDialogID {dialogid} \
+{
+   global DIALOGID
+
+   set DIALOGID $dialogid
+}
+
+
+#==========================================================================
+# GetTTYHeadLen --
+#       Return the number of heads given a tty index into ttyList.
+#
+# Parameters: 
+#	tty - ttyList index
+# Returns: 
+#	the number of heads for a given ttyList index
+#--------------------------------------------------------------------------
+proc GetTTYHeadLen {tty} \
+{
+   return [llength [GetTTYElement $tty]]
+}
+
+
+#==========================================================================
+# GetTMPHeadLen --
+#       Return the number of heads given a tty index into tmpttyList.
+#
+# Parameters: 
+#	tty - tmpttyList index
+# Returns: 
+#	the number of heads for a given tmpttyList index
+#--------------------------------------------------------------------------
+proc GetTMPHeadLen {tty} \
+{
+   return [llength [GetTMPElement $tty]]
+}
+
+
+#==========================================================================
+# GetTTYDescription--
+#       Returns the description string for a given head at tty index.
+#
+# Parameters: 
+#	tty - ttyList index
+#	adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	description - the description string or "Not Configured"
+#--------------------------------------------------------------------------
+proc GetTTYDescription {tty adapter} \
+{
+   set vendor [GetTTYVendor $tty $adapter]
+   set model [GetTTYModel $tty $adapter]
+   set class [GetTTYClass $tty $adapter]
+   set mode [GetTTYMode $tty $adapter]
+
+   set vendormodelPr "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   set classmodePr [GetClassModePr $class $mode [GetResolutions $vendor $model]]
+   return [format "%s %s" $vendormodelPr $classmodePr]
+}
+
+
+#==========================================================================
+# GetTMPDescription--
+#       Returns the description string for a given head at tty index.
+#
+# Parameters: 
+#	tty - tmpttyList index
+#	adapter - usually 0 unless tty is multiheaded
+# Returns: 
+#	description - the description string or "Not Configured"
+#--------------------------------------------------------------------------
+proc GetTMPDescription {tty adapter} \
+{
+   set vendor [GetTMPVendor $tty $adapter]
+   set model [GetTMPModel $tty $adapter]
+   set class [GetTMPClass $tty $adapter]
+   set mode [GetTMPMode $tty $adapter]
+
+   set vendormodelPr "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   set classmodePr [GetClassModePr $class $mode [GetResolutions $vendor $model]]
+   return [format "%s %s" $vendormodelPr $classmodePr]
+}
+
+
+#==========================================================================
+# GetCurDescription--
+#       Return the current description string in curList stored at 
+#	index 0.
+#
+# Parameters: none
+# Returns: 
+#	description - the current description string
+#--------------------------------------------------------------------------
+proc GetCurDescription {} \
+{
+   global curList curIndex
+
+   set adapter {}
+   set vendor {}; set model {}; set class {}; set mode {}
+   set vendormodelPr {}; set classmodePr {}
+
+   set adapter [lindex $curList 0]
+   # DESCRIPTION holds vendormodelPr already
+   keylget adapter DESCRIPTION vendormodelPr
+
+   # now get class and mode prompt
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set class [GetCurClass]
+   set mode [GetCurMode]
+
+   set classmodePr \
+	[GetClassModePr $class $mode [GetResolutions $vendor $model]]
+
+   return [format "%s %s" $vendormodelPr $classmodePr]
+}
+
+
+#==========================================================================
+# InitTMPList --
+#       Initialize tmpttyList array with ttyList elements.
+#	Also remove curList if it exists.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InitTMPList {} \
+{
+   global tmpttyList curList
+
+   if {[info exists tmpttyList]} {
+      unset tmpttyList
+   }
+   foreach tty [GetTTYIndexes all] {
+      SetTMPElement $tty [GetTTYElement $tty]
+   }
+
+   if {[info exists curList]} {
+      unset curList
+   }
+
+   #echo "\ntmpttyList array contains =================="
+   #foreach tty [lsort [GetTMPIndexes all]] {
+      #echo "tmpttyList($tty) ==\n[GetTMPElement $tty]\n"
+   #}
+}
+
+
+#==========================================================================
+# SaveTMPList --
+#       Save the contents of the tmpttyList array to ttyList.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SaveTMPList {} \
+{
+   global tmpttyList
+
+   foreach tty [GetTMPIndexes all] {
+      SetTTYElement $tty [GetTMPElement $tty]
+   }
+   #Display ttyList
+}
+
+
+#==========================================================================
+# GetTMPIndexes --
+#       Return the configured tmpttyList indexes if flag is {}.  
+#	Return all configured tmpttyList indexes if flag != {}.
+#	Because some tmpttyList elements might not be configured,
+#	we do not want to return their indexes.  This could 
+#	happen if only one tty is configured.
+#	
+# Parameters: 
+#	flag - return configured indexes if {}, otherwise return all
+#	      indexes
+# Returns: 
+#	indexes - tmpttyList indexes or {} if tmpttyList is empty
+#--------------------------------------------------------------------------
+proc GetTMPIndexes {flag} \
+{
+   global tmpttyList
+
+   set indexes {}
+   foreach tty [array names tmpttyList] {
+	if {($flag == {}) && ($tmpttyList($tty) == {})} {
+	   continue
+	}
+	lappend indexes $tty
+   }
+   return $indexes
+}
+
+
+#==========================================================================
+# SetTMPElement --
+#       Set an element in tmpttyList.
+#	
+# Parameters:
+#	tty - tmpttyList index
+#	adapters - the adapter(s) configured to that tty
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTMPElement {tty adapters} \
+{
+   global tmpttyList
+
+   set tmpttyList($tty) $adapters
+}
+
+
+#==========================================================================
+# GetTMPElement --
+#       Return the requested tmpttyList element at a given tty index.
+#	
+# Parameters: 
+#	tty - tmpttyList index
+# Returns:
+#	the tmpttyList element at that index or {}
+#--------------------------------------------------------------------------
+proc GetTMPElement {tty} \
+{
+   global tmpttyList
+
+   if {[info exists tmpttyList($tty)]} {
+      return $tmpttyList($tty)
+   }
+   return {}
+}
+
+
+#==========================================================================
+# IsHelpTopic --
+#       Check hook file - is help available for a given topicstring.
+#	
+#	Look through this applications hook file for a hard topic
+#	link that matches topicstring.
+#
+#	Returns true (1) if help exists for topicstring, false (0) otherwise.
+#
+#	Typically topicstring will be vendor.model (ibm.vga) returned 
+#	from a video point and pick list selection or mon_vendor.mon_model
+#	returned from a monitor point and pick list selection.
+#
+#
+# Parameters:
+#	topicstring - some string to search hook file for.
+# Returns:
+#       true (1) if help exists, false (0) otherwise
+#--------------------------------------------------------------------------
+proc IsHelpTopic {topicstring} \
+{
+   global HELPDIR HELPBOOK HOOKFILE
+
+   set hookfile $HELPDIR/$HOOKFILE
+   #echo hookfile: $hookfile
+
+   set errstr [CheckFile $hookfile]
+   if {$errstr != ""} {
+      #echo Error: $errstr
+      return 0
+   }
+
+   # look through each line checking for a match of topicstring
+   set MATCH 0
+   for_file line $hookfile {
+      set line [string trim [lindex $line 0]]
+      if {[string compare $line $topicstring] == 0} {
+         #echo "Match: $line and $topicstring.\n"
+	 # for_file won't allow a return 1 here - use a break and a variable.
+	 set MATCH 1
+	 break
+      }
+	
+   }
+   return $MATCH
+}
+
+
+#==========================================================================
+# SetFocusAddOK --
+#	Set the focus to the OK button in the Add screen if the
+#	Add screen has been completed.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetFocusAddOK {} \
+{
+   if {[VxGetVar [GetMainDialogID] SCREENTYPE] == "ADD_SCREEN"} {
+      if {[IsCompleteAdd]} {
+         set addfn [VxGetVar [GetMainDialogID] SUBFORMID]
+	 VtSetFocus [VtGetValues $addfn -ok]
+      }
+   } 
+}
+
+
+#==========================================================================
+# IsCompleteAdd --
+#	Returns true if both the monitor and resolution entries 
+#	have been configured in the Add screen.
+#
+# Parameters: none
+# Returns:
+#       Returns true if Add screen has been completed. False otherwise.
+#--------------------------------------------------------------------------
+proc IsCompleteAdd {} \
+{
+   global curIndex
+
+   if {([GetCurMonVendor] != {}) && ([GetCurMonModel] != {})} {
+      set tmpIndex $curIndex
+      # 1st resolution (and only resolution in add) at position 2
+      set curIndex 2
+      if {([GetCurMode] != {}) && ([GetCurClass] != {})} {
+         set curIndex $tmpIndex
+         return 1
+      }
+   }
+   return 0
+}
+
+
+#==========================================================================
+# SetTotalCards --
+#       Set the total number of cards.
+#
+# Parameters:
+#	value - value to set total number of cards to.
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTotalCards {value} \
+{
+   global TOTALCARDS
+
+   set TOTALCARDS $value
+}
+
+
+#==========================================================================
+# GetTotalCards --
+#       Get the total number of cards currently installed.
+#
+# Parameters: none
+# Returns:
+#	TOTALCARDS - total number of cards currently installed.
+#--------------------------------------------------------------------------
+proc GetTotalCards {} \
+{
+   global TOTALCARDS
+
+   return $TOTALCARDS
+}
+
+
+#==========================================================================
+# SetScreenType --
+#       Set the SCREENTYPE in the Main Dialog Form to the value passed in.
+#
+# Parameters:
+#	screentype - screen type to set SCREENTYPE to.
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetScreenType {screentype} \
+{
+   VxSetVar [GetMainDialogID] SCREENTYPE $screentype
+}
+
+
+#==========================================================================
+# GetScreenType --
+#       Return the current SCREENTYPE stored in the Main Dialog Form.
+#
+# Parameters: none
+# Returns:
+#	
+#--------------------------------------------------------------------------
+proc GetScreenType {} \
+{
+   return [VxGetVar [GetMainDialogID] SCREENTYPE]
+}
+
+
+#==========================================================================
+# GetTMPCardList --
+#       Builds a list of all cards currently configured in tmpttyList
+#	excluding the current card (you are working on now).  The card
+#	list only contains the VENDOR and MODEL strings.  It does not
+#	contain the CLASS and MODE strings.
+#	
+# Parameters:
+#	fkey - optional parameter - causes the return of all 
+#		VENDOR/MODEL/CLASS/MODE strings at the tty device.
+# Returns: none
+#--------------------------------------------------------------------------
+proc GetTMPCardList {{fkey -1}} \
+{
+   set cardlist ""
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+
+   if {$fkey != -1} {
+	# retrieve descriptions for this fkey only
+	set ttylist $fkey
+	# include VENDOR/MODEL and CLASS/MODE information
+	set curdesc [GetCurDescription]
+   } else {
+	# retrieve descriptions for all configured fkeys
+	# get VENDOR/MODEL information only - ignore CLASS/MODE information
+	set ttylist [lsort [GetTMPIndexes {}]]
+	set curdesc "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   }
+
+   foreach tty $ttylist {
+      # for each multiheaded entry at that tty
+      set hlen [GetTMPHeadLen $tty]
+      for {set hcnt 0} { $hcnt < $hlen } { incr hcnt } {
+         set tmpvendor [GetTMPVendor $tty $hcnt]
+         set tmpmodel [GetTMPModel $tty $hcnt]
+	 if {$fkey != -1} {
+	    # include VENDOR/MODEL and CLASS/MODE information
+	    set tmpdesc [GetTMPDescription $tty $hcnt]
+	 } else {
+		set tmpdesc \
+          "[GetVendorPr $tmpvendor $tmpmodel] [GetModelPr $tmpvendor $tmpmodel]"
+	 }
+         #echo curdesc: $curdesc, tmpdesc: $tmpdesc
+         if {$curdesc != $tmpdesc} {
+            # make sure it isn't stored already
+            if {[lsearch $cardlist $tmpdesc] == -1} {
+                lappend cardlist $tmpdesc
+            }
+         }
+      }
+   }
+   return $cardlist
+}
+
+
+#==========================================================================
+# SetTTYString --
+#       Set tty to map to the string that respresents it.
+#
+# Parameters:
+#	tty - tty to map
+#	ttystring - string that represents tty (could be the same as tty).
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTTYString {tty ttystring} \
+{
+   global ttyString
+
+   set ttyString($tty) $ttystring
+}
+
+
+#==========================================================================
+# GetTTYString --
+#       Given a tty, return the string represents it.
+#
+# Parameters:
+#	tty - tty to map
+# Returns:
+#	ttystring - string that represents tty (could be the same as tty).
+#--------------------------------------------------------------------------
+proc GetTTYString {tty} \
+{
+   global ttyString
+
+   if {[info exists ttyString($tty)]} {
+      #echo ttyString($tty): $ttyString($tty)
+      return $ttyString($tty)
+   }
+}
+
+
+#==========================================================================
+# SetColumnFudge --
+#       Use a fudge factor in MOTIF lists.
+#
+#	The -columnValue char unit used by default is 'n' (AVERAGE).
+#	This creates lists which are too narrow.  Using 'w' (MAXIMUM) 
+#	is too wide.  Adjust the size so the width looks good but 
+#	isn't too wide.  
+#
+#	BUGS: Strings with all capitals may be truncated.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetColumnFudge {cols} \
+{
+   global MOTIFCOLVALOFFSET CHARMCOLVALOFFSET
+
+   if {[IsCharm]} {
+      return [expr $cols+$CHARMCOLVALOFFSET]
+   } else {
+      return [expr ($cols+$MOTIFCOLVALOFFSET)/2]
+   }
+}
+
+
+#==========================================================================
+# SetMaxPPLCols --
+#       Sets up the maximum columns in a point and pick list.
+#
+# Parameters:
+#	vcols - current number of columns to check against.
+# Returns:
+#	vcols - maximum # of ppl cols if needed
+#--------------------------------------------------------------------------
+proc SetMaxPPLCols {vcols} \
+{
+   global MOTIFMAXPPLCOLS CHARMMAXPPLCOLS
+
+   if {[IsCharm]} {
+      set MAXPPLCOLS $CHARMMAXPPLCOLS
+   } else {
+      set MAXPPLCOLS $MOTIFMAXPPLCOLS
+   }
+   if {$vcols > $MAXPPLCOLS} {
+      return $MAXPPLCOLS
+   }
+   return $vcols
+}
+
+
+#==========================================================================
+# GetOptions --
+#       Return the setting of the given option.
+#
+# Parameters:
+#	option - the array index corresponding to the option.
+# Returns:
+#	the value of the option - 0, 1 or string or {} if not set.
+#--------------------------------------------------------------------------
+proc GetOptions {option} \
+{
+   global Option
+
+   if {[info exists Option($option)]} {
+	return $Option($option)
+   } else {
+	return {}
+   }
+}
+
+
+#==========================================================================
+# SetOption --
+#       Set program option to value.
+#
+# Parameters:
+#	option - the array index corresponding to the option.
+#	value - value to set
+# Returns:
+#	the value of the option - 0, 1 or string or {} if not set.
+#--------------------------------------------------------------------------
+proc SetOption {option value} \
+{
+   global Option
+
+   if {![info exists Option($option)]} {
+	return 0
+   } else {
+        set Option($option) $value
+	return 1
+   }
+}
+
+
+#==========================================================================
+# IsInteractive --
+#       Determine if we are running interactive (charm/motif) or 
+#	non-interactive (commandline mode).
+#
+# Parameters: none
+# Returns:
+#	1 - interactive, 0 - non-interactive
+#--------------------------------------------------------------------------
+proc IsInteractive {} \
+{
+   global INTERACTIVE
+
+   return $INTERACTIVE
+}
+
+
+#==========================================================================
+# SetDefaultConfiguration --
+#       Set the default video configuration for GRAFDEV and GRAFMON.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetDefaultConfiguration {} \
+{
+   global GRAFDEV GRAFMON DEFADAPTER DEFMONITOR IBMVGA
+   global OK FAIL
+
+   set errstr [CheckFile $IBMVGA]
+   if {$errstr != ""} {
+      set warnstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_INVALID1]
+      if {![IsInteractive]} {
+	  set warnstr [format "%s\n%s" \
+		$warnstr \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_CHANGE1 \
+		   [list [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE]]]]
+      }
+   } else {
+      set warnstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_INVALID2]
+      if {![IsInteractive]} {
+	  set warnstr [format "%s\n%s" \
+		$warnstr \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_CHANGE2 \
+		   [list [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE]]]]
+      }
+   }
+   if {[IsViewOnly]} {
+      FatalErrMesg \
+	[format "%s\n%s" \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_INVALID1] \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOT_ROOT]] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+	$FAIL
+   } else {
+      WarnMesg [GetMainDialogID] $warnstr
+   }
+
+   system "cp $GRAFDEV $GRAFDEV.bak"
+   system "cp $GRAFMON $GRAFMON.bak 2> /dev/null"
+   system "> $GRAFDEV"
+   system "> $GRAFMON"
+   # Don't save DEFADAPTER to GRAFDEV because DEFADAPTER does not exist
+   # Leave empty
+   if {$errstr == ""} {
+      foreach tty [lsort [GetTTYIndexes all]] {
+	system "echo \"$tty:$DEFADAPTER\" >> $GRAFDEV"
+      }
+   }
+   system "echo \"$DEFMONITOR\" >> $GRAFMON"
+}
+

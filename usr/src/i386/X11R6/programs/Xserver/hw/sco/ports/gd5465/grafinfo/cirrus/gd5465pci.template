@@ -1,0 +1,60 @@
+VENDOR CIRRUS "Cirrus Logic"
+ MODEL  GD5465PCI "GD5465 PCI"
+  CLASS  GD5465VGA       ""
+   MODE   @WIDTH@x@HEIGHT@-@COLORS@-@VHZ@ "@WIDTH@x@HEIGHT@ @COLORS@-color @VHZ@Hz @EXTRA@"
+
+    MEMORY(@FRAMEBUFFER@, 0x02000000); /* 32M */
+    MEMORY(REGS,@REGISTERS@, 0x8000); /* 32K register bank */
+    PORT(0x80);		/* Reserved port - used for timing */
+    PORT(VGA);
+
+    DATA
+    {
+	VBIOSOPTS   = 0x8;
+	VIDSETUP = "/usr/X11R6.1/lib/vidconf/scripts/gd5465pci";
+	XDRIVER     = "gd5465";
+	VISUAL      = "PseudoColor";
+	DEPTH       = @DEPTH@;
+	PIXWIDTH    = @WIDTH@;
+	PIXHEIGHT   = @HEIGHT@;
+    }
+
+    PROCEDURE  SetGraphics
+    {
+	r0 = 0x12@ALH@@MAXRES@;		/* AH AL */
+	r1 = 0x@BHH@@BHL@a4;		/* BH BL */
+	r2 = 0x@CHH@@CHL@00;    	/* CH CL */
+	int10(r0, 3);
+
+	out(0x3c4, 0x15);	/* a little magic from NT driver */
+	in(r63, 0x3c5);		
+	and(r63, 0xDF);		
+	out(0x3c4, 0x15);
+	out(0x3c5, r63);
+
+	r0 = 0x4F02;
+	r1 = 0x80@MODENUM@;	/* clear screen in BIOS */
+	int10(r0, 2);
+    }
+
+    PROCEDURE SetText
+    {
+	r0 = 0x0003;
+	int10(r0, 1);
+    }
+
+    PROCEDURE InstalledMemory
+    {
+	r0 = 0x1200;
+	r1 = 0x0085;
+	int10(r0, 2);
+    }
+
+    PROCEDURE GetScreenPitch
+    {
+	r0 = 0x4f06;
+	r1 = 0x0001;
+	int10(r0, 2);
+	set(r0, r1);
+    }
+

@@ -1,0 +1,281 @@
+#ident	"@(#)xenv:i386/pted.native	1.1.6.26"
+#
+#	i386 native pathedit
+#
+#
+#	This script is called by master pathedit when building native
+#	iAPX386 SGS. The format of the call is
+#		pted.native <machine>
+#	where machine is i386.
+#
+
+# 
+# Function mkadir: attempts to make the directory structure specified
+# in $1.  Since the -p flag to make is not present on older systems,
+# it may be necessary to create intermediate directories.  The
+# function creates the directories by tricking the shell into using
+# recursion.
+#
+
+__SGS=$1	# What we want to build
+__ROOT=$2	# Root of source
+__TOOLS=$3	# Base of Tools (xenv)
+__MACH=$4	# Machine we are building for
+__WORK=$5	
+__PFX=$6	# Prefix of tools we are using
+
+_MACH=${__MACH}
+_CPU=${__PFX}
+
+XLIB=${__TOOLS}/usr/ccs/lib
+XULIB=${__TOOLS}/usr/lib
+NLIB=${__ROOT}/${__MACH}/usr/ccs/lib
+NULIB=${__ROOT}/${__MACH}/usr/lib
+export XLIB XULIB NLIB NULIB
+
+mkadir() {
+	dir=`dirname $1`
+	if [ ! -d $dir ] 
+	then
+		(mkadir $dir) 
+		mkdir $1
+	elif [ ! -d $1 ]
+	then
+		mkdir $1
+	fi
+}
+
+BASE=${__ROOT}/${__MACH}
+
+cont="T"
+echo "Do you want the SGS built with the default parameters? (y or n): \c"
+while [ "$cont" = "T" ]
+do
+	x=`line`
+	if [ "$x" = "y" ]
+	then
+		stdparam="T"
+		cont="F"
+	elif [ "$x" = "n" ]
+	then
+		stdparam="F"
+		cont="F"
+	else
+		echo "Please type 'y' or 'n': \c"
+	
+	fi
+done
+
+if [ "$stdparam" = "T" ]
+then
+	__CBIN=/usr/ccs/bin
+	__CCBIN=/usr/ccs/bin
+	__CLIB=/usr/ccs/lib
+	__CCLIB=/usr/ccs/lib
+	__USRLIB=/usr/lib
+	__INC=/usr/include
+	__CCINC=/usr/include/CC
+	__ETC=/etc
+	__LPASS=.
+	__MAC=
+	__PREFIX=
+	__OWN=bin
+	__GRP=bin
+	__LIBSGS=
+else
+
+	echo "Enter absolute directory for run-time binaries:  \c"
+	x=`line`
+	__CBIN=${x:=/usr/ccs/bin}
+	__CCBIN=$__CBIN
+
+	echo "Enter absolute directory for run-time libraries:  \c"
+	x=`line`
+	__CLIB=${x:=/usr/ccs/lib}
+	__CCLIB=$__CLIB
+
+	echo "Enter absolute directory for run-time usr libraries:  \c"
+	x=`line`
+	__USRLIB=${x:=/usr/lib}
+
+	echo "Enter absolute directory for header files:  \c"
+	x=`line`
+	__INC=${x:=/usr/include}
+	__CCINC=$__INC/CC
+
+	echo "Enter absolute directory for etc files:  \c"
+	x=`line`
+	__ETC=${x:=/etc}
+
+	echo "Enter location of cross lint1, lint2:  \c"
+	x=`line`
+	__LPASS=${x:=/usr/ccs/lib}
+
+	echo "Enter generic prefix for names:  \c"
+	__PREFIX=`line`
+
+	echo "Enter owner of executables:  \c"
+	x=`line`
+	__OWN=${x:=bin}
+
+	echo "Enter group of executables:  \c"
+	x=`line`
+	__GRP=${x:=bin}
+fi
+
+
+__PROOT=""
+__INCDIR=/tmp
+__TMPDIR=/var/tmp
+__DBO=RBO
+__ARCH=AR32WR
+__CPP=$__LIBDIR/cpp
+
+(mkadir $BASE/$__CBIN)
+(mkadir $BASE/$__CLIB)
+(mkadir $BASE/$__USRLIB)
+(mkadir $BASE/$__CLIB/libp)
+(mkadir $BASE/$__INC)
+(mkadir $BASE/$__INC/sys)
+(mkadir $BASE/$__ETC)
+
+echo "\n These parameters are used for your SGS:"
+echo "CCSBIN:		$__CBIN"
+echo "CCSLIB:		$__CLIB"
+echo "USRLIB:		$__USRLIB"
+echo "USRINC:		$__INC"
+echo "INC:		$__INC"
+echo "ETC:		$__ETC"
+echo "LPASS:		$__LPASS"
+echo "PREFIX:		$__PREFIX"
+echo "OWN:		$__OWN"
+echo "GRP:		$__GRP"
+
+echo "Do you want the SGS built with these parameters (y or n):"
+x=`line`
+if [ "$x" != "y" ]
+then
+	echo "run pathedit again."
+	exit
+fi
+
+cp paths.h ../../inc/i386/paths.h
+cp sgs.h ../../inc/i386/sgs.h
+chmod 0644 ../../inc/i386/paths.h ../../inc/i386/sgs.h
+echo "\n ******** Making paths.h ********"
+ed - ../../inc/i386/paths.h <<!
+1,\$s|SGS|$__PREFIX|g
+1,\$s|I386BINDIR|$__CBIN|
+1,\$s|I386CCBINDIR|$__CCBIN|
+1,\$s|I386LIBDIR|$__CLIB|
+1,\$s|I386CCLIBDIR|$__CCLIB|
+1,\$s|I386LIBPATH|$__CLIB:$__USRLIB|
+1,\$s|I386INCDIR|$__INC|
+1,\$s|I386CCINCDIR|$__CCINC|
+1,\$s|I386TMPDIR|$__TMPDIR|
+1,\$s|I386CPP|$__CPP|
+1,\$s|I386LDROOT||
+w
+q
+!
+echo "\n ******** Making sgs.h ********"
+
+ed - ../../inc/i386/sgs.h <<Y
+g|SGS|s|".*"|"$__PREFIX"|
+w
+q
+Y
+
+if [ -s ../../sgs.mk ]
+then
+	chmod 0644 ../../sgs.mk
+fi
+echo "\n ******** Making global makefile ********"
+chmod 0644 ../../sgs.mk.${_CPU}
+_RP=`pwd`
+ed - ../../sgs.mk.${_CPU} <<X
+1,\$s|^RP[	 ]*=.*|RP = $_RP|
+w ../../sgs.mk
+q
+X
+
+__LEX="\$(PFX)lex -l${__TOOLS}/usr/ccs/lib/lex/ncform"
+__YACC="\$(PFX)yacc -P${__TOOLS}/usr/ccs/lib/yaccpar"
+
+echo "\n ******** Making sgs rulefile (sgsrules) ********"
+__LINK_MODE=
+chmod 0644 sgs-rules
+ed - ./sgs-rules <<X
+1,\$s|^ARCH[	 ]*=.*|ARCH = $__ARCH|
+1,\$s|^CC[	 ]*=.*|CC = \$(PFX)cc -Xa|
+1,\$s|^CCSBIN[	 ]*=.*|CCSBIN = \$(ROOT)/\$(MACH)/usr/ccs/bin|
+1,\$s|^CCSLIB[	 ]*=.*|CCSLIB = \$(ROOT)/\$(MACH)/usr/ccs/lib|
+1,\$s|^CPU[	 ]*=.*|CPU = $_CPU|
+1,\$s|^DBO[	 ]*=.*|DBO = $__DBO|
+1,\$s|^DFLTCLIB[	 ]*=.*|DFLTCLIB = /usr/ccs/lib|
+1,\$s|^DFLTINC[	 ]*=.*|DFLTINC = /usr/include|
+1,\$s|^GLOBALINC[	 ]*=.*|GLOBALINC =|
+1,\$s|^GRP[	 ]*=.*|GRP = $__GRP|
+1,\$s|^INC[	 ]*=.*|INC = \$(TOOLS)/usr/include|
+1,\$s|^LEX[	 ]*=.*|LEX = $__LEX|
+1,\$s|^LIBELF[	 ]*=.*|LIBELF = \$(SGSBASE)/libelf/\$(CPU)/libelf.a|
+1,\$s|^LIBDWARF2[	 ]*=.*|LIBDWARF2 = \$(SGSBASE)/libdwarf2/\$(CPU)/libdwarf2.a|
+1,\$s|^LIBLD[	 ]*=.*|LIBLD = \$(SGSBASE)/libld/\$(CPU)/libld.a|
+1,\$s|^LIBSGS[	 ]*=.*|LIBSGS =|
+1,\$s|^LINK_MODE[	 ]*=.*|LINK_MODE = $__LINK_MODE|
+1,\$s|^LPASS[	 ]*=.*|LPASS = \$(TOOLS)/usr/ccs/lib|
+1,\$s|^MACH[	 ]*=.*|MACH = $_MACH|
+1,\$s|^NATIVE[	 ]*=.*|NATIVE = yes|
+1,\$s|^OWN[	 ]*=.*|OWN = $__OWN|
+1,\$s|^PFX[	 ]*=.*|PFX = $__PFX|
+1,\$s|^SGS[	 ]*=.*|SGS =|
+1,\$s|^TINC[	 ]*=.*|TINC = \$(TOOLS)/usr/include|
+1,\$s|^TOOLS[	 ]*=.*|TOOLS = $__TOOLS|
+1,\$s|^USRLIB[	 ]*=.*|USRLIB = \$(ROOT)/\$(MACH)/usr/lib|
+1,\$s|^USRINC[	 ]*=.*|USRINC = \$(ROOT)/\$(MACH)/usr/include|
+1,\$s|^YACC[	 ]*=.*|YACC = $__YACC|
+w ./sgsrules
+q
+X
+
+echo "\n ******** Making sgs library rulefile (sgs.l.rules) ********"
+cat sgsrules >sgs.l.rules
+ed - sgs.l.rules <<X
+1,\$s|^CC[	 ]*=.*|CC = \$(PFX)cc -Xa -D_EFTSAFE -DCALL_TZSET |
+\$,\$a
+.c.o:
+	$(CC) $(CFLAGS) $(DEFLIST) -c $<
+.
+w
+q
+X
+
+echo "\n ******** Making native Command Rulefile (cmdrules) ********"
+chmod 0644 cmdrules
+cp cmdrules $BASE/$__CLIB/cmdrules
+
+echo "\n ******** Making native Library Rulefile (librules) ********"
+chmod 0644 librules
+cp librules $BASE/$__CLIB/librules
+
+echo "\n ******** Changing Make makefile ********"
+chmod 0644 ../../../make/make.mk
+ed - ../../../make/make.mk <<X
+1,\$s|^include.*|include \$(CMDRULES)|
+w
+q
+X
+
+echo "\n ******** Adjusting lint command ********"
+chmod 0644 ../../alint/common/lint
+ed - ../../alint/common/lint <<X
+1,\$s|^\(LPASS=\${_CCSLIB:-\).*}|\\1/usr/ccs/lib}|
+1,\$s|^\(LLDIR=\${_CCSLIB:-\).*}|\\1/usr/ccs/lib}|
+w
+q
+X
+
+echo "\n ******** Setting proper version of elftypes.h *******"
+rm -f ../../inc/common/sys/elftypes.h
+cp ../../inc/common/sys/etype_I386.h ../../inc/common/sys/elftypes.h
+#

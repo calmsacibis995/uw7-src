@@ -1,0 +1,45 @@
+#ident	"@(#)wksh:xmwksh.rc	1.4"
+
+if [ "$_HOLDENV_" ]
+then 
+	ENV=$_HOLDENV_
+	if [ -r "$ENV" ]
+	then 
+		# the following prevents recursive calls to this program
+		XMWKSH_RECUR_PREVENT="xmwksh.rc called by $$"
+		if [ "$XMWKSH_ARGS" != "$XMWKSH_RECUR_PREVENT" ]
+		then
+			FIRSTENVCHAR=`echo "$ENV" | cut -c1`
+			if [ "$FIRSTENVCHAR" = "/" ]
+			then
+				XMWKSH_ARGS="$XMWKSH_RECUR_PREVENT" . "$ENV"
+			else
+				# not an absolute path; must be relative
+				# to the current directory, so add "./" to
+				# make sure it's found
+				XMWKSH_ARGS="$XMWKSH_RECUR_PREVENT" . ./"$ENV"
+			fi
+			unset XMWKSH_ARGS 
+		fi
+		unset XMWKSH_RECUR_PREVENT
+	fi
+
+else
+	unset ENV
+fi
+unset _HOLDENV_
+if [ ! "$WKSHPS1" ]
+then WKSHPS1="[WKSH] $PS1" export WKSHPS1
+fi
+PS1="$WKSHPS1"
+if [ ! "$WKSHFPATH" ]
+then 
+	if [ "$FPATH" ]
+	then WKSHFPATH="$FPATH:$WKSHLIBDIR/xmfuncs"
+	else WKSHFPATH="$WKSHLIBDIR/xmfuncs"
+	fi
+	export WKSHFPATH
+fi
+FPATH="$WKSHFPATH"
+WKSHAPI=MOTIF export WKSHAPI
+call wk_libinit

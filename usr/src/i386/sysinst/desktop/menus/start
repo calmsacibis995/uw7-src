@@ -1,0 +1,359 @@
+#!/usr/bin/winxksh
+#ident	"@(#)start	15.1"
+
+function do_stty
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	INTR=$(stty -a)
+	INTR=${INTR#*intr = }
+	INTR=${INTR%%;*}
+	if [ "$INTR" = DEL ]
+	then
+		INTR='^?'
+	elif [ "$INTR" = '<undef>' ]
+	then
+		INTR='^@'
+	fi
+	stty intr '^@'
+}
+
+function get_serial
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	until [ -s /tmp/serial.save ]
+	do
+		ask_serno
+		input_handler
+	done
+	. /tmp/serial.save
+	[ "$SerialID" = "$PatchSerial" ] && SID_MODE=true
+}
+
+function get_boot2
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset first
+	if [ "$FLOP2_IMAGE" = "/dev/rdsk/f0t" ]
+	then
+		first=true
+	else
+		first=false
+	fi
+	while :
+	do
+		$first && {
+			display -w "$FLOP2_PROMPT"
+			input_handler
+			first=false
+		}
+		[ "$FLOP2_IMAGE" = "/cd-rom/.extras.d/fboot2" ] || {
+		  display "$FLOP2_READ"
+		  footer "$GENERIC_WAIT_FOOTER"
+		  cpio -ic -I $FLOP2_IMAGE && FLOP_LABEL=$(</tmp/flop.label)	
+		  if [ "$FLOP_LABEL" != "${REL_FULLNAME} Boot Floppy 2" ]
+		  then
+			footer
+			wclose $CURWIN
+			display -w "$FLOP2_ERR" -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			continue
+		  fi
+		}
+		print -u2 About to read Boot Floppy 2
+		cpio -icduDZ -I ${FLOP2_IMAGE%t} || {
+			footer
+			wclose $CURWIN
+			display -w "$FLOP2_ERR" -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			continue
+		}
+		[ "$FLOP2_IMAGE" = "/cd-rom/.extras.d/fboot2" ] || {
+			footer
+			wclose $CURWIN
+		}
+		break
+	done
+	unset -f get_boot2
+	unset FLOP2_PROMPT FLOP2_ERR FLOP2_READ
+}
+
+function make_devs
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset vals
+	typeset b_value b_base b_dir
+
+	set -A CHAR_DISK_NODES -- $(/etc/scsi/bmkdev)
+	for b_value in ${CHAR_DISK_NODES[*]}
+	do
+		b_base=${b_value##*/}
+		b_dir=${b_value%/rdsk/${b_base}}
+		vals="$vals ${b_dir}/dsk/${b_base}"
+	done
+	set -A BLOCK_DISK_NODES $vals
+}
+
+function find_intl_txt
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+        LANGDEP_SCRIPTS=/etc/inst/locale/${LANG}/menus
+        [ -d $LANGDEP_SCRIPTS ] || {
+        	if [ -d /cd-rom/.extras.d/locale/${LANG} ]
+                then
+                	LANGDEP_SCRIPTS=/cd-rom/.extras.d/locale/${LANG}
+                        [ -d /etc/inst/locale/${LANG} ] || mkdir -p /etc/inst/locale/${LANG}
+                        call symlink $LANGDEP_SCRIPTS /etc/inst/locale/${LANG}/menus
+                        call symlink $LANGDEP_SCRIPTS/dcu.d /etc/dcu.d/locale/${LANG}
+                else
+                       #Default to C locale.
+                        LANGDEP_SCRIPTS=$C_SCRIPTS
+                fi
+       }
+}
+
+function do_non_interactive
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	if [ "${KEYBOARD}" = "NONE" ]
+	then
+		echo "KEYBOARD=\"\"" > /etc/default/keyboard
+	else
+		/usr/bin/kb_remap -k $KEYBOARD vt00 vt01
+		echo "KEYBOARD=$KEYBOARD" > /etc/default/keyboard
+	fi
+
+	# Double check validity of key for UnixWare product.
+       	eval PRODUCT_NAME=\$${SET_NAME}_name
+        get_smart_key
+        eval ${PRODUCT_ID}_KEY=$ActKey
+	eval ${PRODUCT_ID}_SerialID=$SerialID
+
+	umountall > /dev/null 2>&1
+	msg
+	clean_ramd 1
+	useanswers
+	footer
+	return 0
+}
+
+function do_interactive
+{
+	typeset _t
+
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset loop_cnt=1 MED_CONFIRM_WIN CORRECT_MEDIUM
+	unset RESET
+
+	/usr/bin/getbootparms >>/stand/boot
+	rm -f /usr/bin/getbootparms
+
+	display -w "$Welcome"
+	footer "$WELCOME_FOOTER"
+	input_handler
+	footer
+	if [ -n "$PROMPTKEYB" ]
+	then
+		keyboard
+		input_handler
+	fi
+	$BACK_END_MANUAL && {
+                eval PRODUCT_NAME=\$${SET_NAME}_name
+		eval PRODUCTS=\$${PRODUCT_ID}_PRODUCTS
+		get_smart_key
+        	eval ${PRODUCT_ID}_KEY=$ActKey
+		eval ${PRODUCT_ID}_SerialID=$SerialID
+	}
+	umountall > /dev/null 2>&1
+	input_handler
+
+	get_serial
+
+	while :
+	do
+		floppy2 $loop_cnt		#ask for IHVHBA drivers if any
+		input_handler
+		$BACK_END_MANUAL && break
+		make_devs
+		minimum_hw && break 	#check if h/w config is o.k
+		(( loop_cnt += 1 ))
+	done
+
+	$BACK_END_MANUAL && {
+		place_window  $Floppy2WaitCols $Floppy2WaitLines
+		_t="$CURWIN"
+		wprintf $CURWIN "$Floppy2Wait"
+		footer "$GENERIC_WAIT_FOOTER"
+		load_CD_hbaflop
+		load_CD_hbaboot
+		footer
+		wclose $_t
+		dcuprompt 1
+		make_devs
+		minimum_hw	# Never returns if fails, since SILENT_INSTALL
+				# is always false at this point (by definition)
+	}
+
+	clean_ramd 1
+	rm -rf /etc/conf/hbamod.d
+	rm -f /etc/conf/mod.d/*
+	[ -d /.extra.d ] || mkdir /.extra.d
+	sh_mount -F memfs -o swapmax=3000000,rootmode=01777,sfp=65535 /memfs /.extra.d \
+		> /dev/null 2>&1
+	[ -f /tmp/ii.parms ] && {
+		. /tmp/ii.parms
+		[ "${II_FAILED}" = "YES" ] && > /tmp/ii.parms
+	}
+	# Prompt for Network or Media installation.
+	# (if ii.parms does not exist yet or if it does exist and the
+	#  previous attempt to do Network install failed, do this prompt.
+	#  If the previous attempt to configure for network install was OK,
+	#  then we maintain all configuration.
+	while :
+	do
+		ii_choice
+		input_handler
+		. /tmp/ii.parms
+		eval display \"\$CONFIRM_${SEC_MEDIUM_TYPE}\"
+		MED_CONFIRM_WIN=$CURWIN
+		confirm_medium
+		input_handler
+		wclose $MED_CONFIRM_WIN
+		$CORRECT_MEDIUM && break
+	done
+	if [ "${SEC_MEDIUM_TYPE}" = "tcp" -o "${SEC_MEDIUM_TYPE}" = "spx" ]
+	then
+		# setup for network install
+		netinst
+	else
+		# initialize secondary medium (tape, cdrom, diskette)
+		get_${SEC_MEDIUM_TYPE}
+	fi
+	/sbin/modadmin -U s5 2>/dev/null
+	rm -f /etc/conf/fsmod.d/s5
+	/sbin/modadmin -U dosfs 2>/dev/null
+	rm -f /etc/conf/fsmod.d/dosfs
+
+	allinit
+	PLATFORM_SAVE=$PLATFORM
+	prep_for_nond
+	if [ -z "$NODE" ] || [ "$NOND" != "yes" ]
+	then
+		case "$SEC_MEDIUM_TYPE" in
+		tcp | spx)
+			#we've already asked for the node name in netinst
+			;;
+		*)
+			asknodename center
+			input_handler
+			;;
+		esac
+	fi
+	asktime center
+	input_handler
+	msg
+	display -w "$PKG_INFO"
+	footer "$WELCOME_FOOTER"
+	input_handler
+	while :
+	do
+		main
+		input_handler
+		[ -z "$RESET" ] || break
+		useanswers && break
+	done
+	return 0
+}
+
+#
+#main()  start
+#
+
+exec 2>/tmp/stderr
+
+[ -n "$SH_VERBOSE" ] && set -x
+typeset -x SILENT_INSTALL=false
+typeset -x FLOP2_IMAGE=/dev/rdsk/f0t
+tab="	"
+nl="
+"
+
+do_stty
+. $SCRIPTS/funcrc
+. $SCRIPTS/initrc
+. $SCRIPTS/tools
+rm -f $SCRIPTS/initrc $SCRIPTS/tools
+if [ -s $SCRIPTS/smart ]
+then
+	FLOP2_IMAGE=/cd-rom/.extras.d/fboot2
+	smart || {
+		#
+		# No need to run the choose_lang program when installing
+		# Japanese because it is on a CD by itself.
+		#
+		[ "$LANG" = "ja" ] || {
+			Color_Console
+			[ "$TERM" = "ANSI" ] || {
+				export TERMINFO=/cd-rom/.extras.d/terminfo
+				TERM=${TERM%-ie}
+			}
+			export CHOOSE_LANG_PATH=/cd-rom/.extras.d/screen.d
+			if /cd-rom/.extras.d/tools/choose_lang
+			then
+				. /lang.output
+				call unlink /lang.output
+			else
+				LANG=C
+				LC_CTYPE=C
+			fi
+			unset CHOOSE_LANG_PATH TERMINFO
+			[ "$TERM" = "ANSI" ] || TERM=${TERM}-ie
+		}
+		find_intl_txt
+	}
+	call unlink $SCRIPTS/smart
+fi
+call unlink /smartmsg1
+
+$SILENT_INSTALL || . $LANGDEP_SCRIPTS/txtstrings
+. $LANGDEP_SCRIPTS/config
+. $SCRIPTS/winrc
+
+if [ -n "$Continued_String" ]
+then
+	call strdup "Continued_String=$Continued_String"
+	call -c putenv $_RETX
+fi
+if [ -n "$PageUp_String" ]
+then
+	call strdup "PageUp_String=$PageUp_String"
+	call -c putenv $_RETX
+fi
+if [ -n "PageDown_String" ]
+then
+	call strdup "PageDown_String=$PageDown_String"
+	call -c putenv $_RETX
+fi
+
+#
+# If Japanese, need to setup multibyte console driver.
+# Do Color_Console before Japanese setup, but after other setup.
+#
+if [ "$LANG" = "ja" ]
+then
+	Color_Console
+	/usr/bin/kb_remap -l $LANG vt00 vt01
+else
+	/usr/bin/kb_remap -f 88591
+	Color_Console
+fi
+. $SCRIPTS/scr_init boot
+[ "$FLOP2_IMAGE" = "/dev/rdsk/f0t" ] && {
+	[ -s /usr/bin/ls ] || get_boot2
+}
+unset FLOP2_IMAGE
+if $SILENT_INSTALL
+then
+	do_non_interactive
+else
+	do_interactive
+fi

@@ -1,0 +1,54 @@
+# @(#)src/cmd/vxvm/common/libcmd/libcmd.mk	1.1 10/16/96 02:20:50 - 
+#ident	"@(#)cmd.vxvm:common/libcmd/libcmd.mk	1.1"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+COM_OBJS = $(COMMON_DIR)/action.o \
+	$(COMMON_DIR)/alloc.o \
+	$(COMMON_DIR)/check.o \
+	$(COMMON_DIR)/dgsup.o \
+	$(COMMON_DIR)/error.o \
+	$(COMMON_DIR)/extern.o \
+	$(COMMON_DIR)/getrec.o \
+	$(COMMON_DIR)/misc.o \
+	$(COMMON_DIR)/opt.o \
+	$(COMMON_DIR)/proc.o \
+	$(COMMON_DIR)/sig.o \
+	$(COMMON_DIR)/switchsup.o \
+	$(COMMON_DIR)/trans.o \
+	$(COMMON_DIR)/volmakesup.o
+
+COM_SRCS = $(COMMON_DIR)/action.c \
+	$(COMMON_DIR)/alloc.c \
+	$(COMMON_DIR)/alloc.c \
+	$(COMMON_DIR)/check.c \
+	$(COMMON_DIR)/dgsup.c \
+	$(COMMON_DIR)/error.c \
+	$(COMMON_DIR)/extern.c \
+	$(COMMON_DIR)/getrec.c \
+	$(COMMON_DIR)/misc.c \
+	$(COMMON_DIR)/opt.c \
+	$(COMMON_DIR)/proc.c \
+	$(COMMON_DIR)/sig.c \
+	$(COMMON_DIR)/switchsup.c \
+	$(COMMON_DIR)/trans.c \
+	$(COMMON_DIR)/volmakesup.c
+
+COM_HDRS =

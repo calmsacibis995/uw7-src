@@ -1,0 +1,74 @@
+/**/#ident	"@(#)r5fonts:clients/bdftosnf/Imakefile	1.10"
+/**/#copyright	"%c%"
+
+/**/#
+/**/# Make file for the BDF to SNF font compiler
+/**/#
+      USRCS = fontutil.c
+      UOBJS = fontutil.o
+      SRCS1 = bdftosnf.c
+      OBJS1 = bdftosnf.o $(UOBJS)
+      SRCS2 = showsnf.c
+      OBJS2 = showsnf.o $(UOBJS)
+   INCLUDES = -I. -I$(TOP) -I$(SERVERSRC)/include
+     LDLIBS = $(EXTRA_LIBRARIES)
+   PROGRAMS = bdftosnf_nat bdftosnf showsnf
+
+/**/# i386 should be defined no matter what host we are on.
+/**/# This is because the 630 uses 6386-format fonts, so the font compiler
+/**/# and showsnf should always follow the mt.
+
+#ifdef Release5
+SYS_DEFINES = -DSVR4 -Di386
+#else
+SYS_DEFINES = -DSYSV -Di386
+#endif
+
+all::
+	$(RM) bdftosnf_nat.c
+	$(LN) bdftosnf.c bdftosnf_nat.c
+
+all:: $(PROGRAMS)
+
+bdftosnf_nat: bdftosnf_nat.o
+	$(RM) $@
+	$(CC) -o $@ $(LDOPTIONS) bdftosnf_nat.o  fontutil.o
+	$(RM) fontutil.o
+
+bdftosnf_nat.o: $(SRCS)
+	$(CC) -c $(CFLAGS) bdftosnf_nat.c
+	$(RM) fontutil.o
+	$(CC) -c $(CFLAGS) fontutil.c
+
+bdftosnf: bdftosnf.o
+	$(RM) $@
+	$(CC) -o $@ $(HLDOPTIONS) bdftosnf.o fontutil.o 
+	$(RM) fontutil.o
+
+bdftosnf.o: $(SRCS)
+	$(CC) -c -I/usr/include $(HCFLAGS) bdftosnf.c
+	$(RM) fontutil.o
+	$(CC) -c -I/usr/include $(HCFLAGS) fontutil.c
+
+depend:: $(DEPEND)
+
+$(DEPEND):
+ 	@echo "checking $@ over in $(DEPENDSRC) first..."; \
+        cd $(DEPENDSRC); $(MAKE); \
+        echo "okay, continuing in $(CURRENT_DIR)"
+
+depend::
+        $(DEPEND) $(DEPENDFLAGS) -s "# DO NOT DELETE" -- $(ALLDEFINES) $(DEPEND_DEFINES) -- $(SRCS)
+
+ComplexProgramTarget_2(showsnf,$(UOBJS),)
+
+NormalLintTarget($(SRCS1) $(USRCS))
+InstallProgram(bdftosnf,$(BINDIR))
+InstallProgram(bdftosnf_nat,$(BINDIR))
+InstallProgram(showsnf,$(BINDIR))
+
+clobber::
+        $(RM) $(ALL)
+
+clean::
+	$(RM) bdftosnf bdftosnf_nat bdftosnf_nat.c

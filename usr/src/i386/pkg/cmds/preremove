@@ -1,0 +1,133 @@
+#ident	"@(#)pkg.cmds:i386/pkg/cmds/preremove	1.6.1.8"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+FAILURE=1       # fatal error
+REBUILD=0
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:101 " The Installable Driver feature has been removed. The %s cannot be removed." ${NAME} 2>&1`
+
+# determine that ID/TP tools are available
+
+if [ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+	-o ! -x ${CONFBIN}/idcheck ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+#------Remove drivers
+
+#Full removal
+for MODULE in fp lockstat fc mirrorcon
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RES="$?"
+	if [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -d ${MODULE} 2>> /tmp/${MODULE}.err
+		REBUILD=1
+	fi
+done
+
+#Partial removal
+for MODULE in prf
+do
+        ${CONFBIN}/idcheck -p ${MODULE}
+        RES="$?"
+        if
+                [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+        then
+                ${CONFBIN}/idinstall -gs  ${MODULE} |/usr/bin/sed -e 's/Y/N/' > System 2> ${ERR}
+                ${CONFBIN}/idinstall -us  ${MODULE} > ${ERR} 2>&1
+                ${CONFBIN}/idinstall -P ${PKGINST} -dopnT  ${MODULE} > ${ERR} 2>&1
+
+        fi
+done
+
+
+# remove filter table stuff
+
+if [ ! -z "`echo ${CLASSES} | grep post`" ]
+then
+	ETCLP=/etc/lp
+	USRSBIN=/usr/sbin
+	LPADMIN=${USRSBIN}/lpadmin
+	LPFILTER=${USRSBIN}/lpfilter
+	LPSCHED=${USRLIB}/lp/lpsched
+	LPSHUT=${USRSBIN}/lpshut
+	ACCEPT=${USRSBIN}/accept
+	REJECT=${USRSBIN}/reject
+	LPSTAT=${USRBIN}/lpstat
+	DUMPOLP=${USRSBIN}/dumpolp
+	ENABLE=${USRBIN}/enable
+	DISABLE=${USRBIN}/disable
+	TMP=/tmp/cmds.err
+	
+	FILTERTABLE=${ETCLP}/filter.table
+	FILTERTABLE_I=${ETCLP}/filter.table.i
+	FILTERTABLE_TMP=/var/tmp/flt.tbl$$
+
+	rm -f /tmp/FDLIST
+	for filter in \
+		dpost \
+		postdaisy \
+		postdmd \
+		postplot \
+		posttek
+	do
+		echo "${filter}" >> /tmp/FDLIST
+	done
+
+	while read filter
+	do
+		${LPFILTER} -f ${filter} -x 2>>${TMP}
+	done < /tmp/FDLIST
+
+	#####
+	#
+	# The ``factory installed'' filter table:
+	#####
+	mv ${FILTERTABLE} ${FILTERTABLE_TMP}
+	mv ${FILTERTABLE_I} ${FILTERTABLE} 2>/dev/null
+	
+	while read filter
+	do
+		${LPFILTER} -f ${filter} -x 2>>${TMP}
+	done < /tmp/FDLIST
+
+	mv ${FILTERTABLE} ${FILTERTABLE_I}
+	mv ${FILTERTABLE_TMP} ${FILTERTABLE}
+
+	rm -f /tmp/FDLIST
+
+fi  # end of post class removal
+
+if [ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+
+	${CONFBIN}/idbuild
+	if [ "$?" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+fi
+

@@ -1,0 +1,47 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1990, 1991 AT&T and UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF AT&T
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/docsamples	1.5.1.1"
+
+set -A EXAMPLES \
+	"Button Widget:    'Quit'" \
+	"Composit Widget:  'Quit2'" \
+	"Menu Widget:      'Menu'" \
+	"Entering Data:    'Textfield'" \
+	"Slider Widget:    'Slider'" \
+	"Form Widget:      'Form'" \
+	"Property Windows: 'PS'"
+
+do_example() {
+	FILE=$WKSHLIBDIR/olexamples/progguide$1
+	$FILE &
+	sv $DISP source:$FILE
+	sv $DISPTITLE string:"FILE: $FILE   LINES: `wc -l < $FILE`"
+}
+
+oi TOPLEVEL docsamples DocSamples "$@"
+
+cmw RT RT controlArea $TOPLEVEL layoutType:fixedcols
+cmw CAEX ca controlArea $RT layoutType:fixedcols alignCaptions:true
+
+k=1
+for i in "${EXAMPLES[@]}"
+do
+	cmw CAP CAP caption $CAEX label:"$i"
+	addbuttons $CAP "Example $k" "do_example $k"
+	let k=k+1
+done
+mnsetup $CAEX
+
+cmw DISPTITLE s staticText $RT
+cmw SW SW scrolledWindow $RT
+cmw DISP disp textEdit $SW font:fixed sourceType:disksource charsVisible:80
+
+rw $TOPLEVEL
+ml

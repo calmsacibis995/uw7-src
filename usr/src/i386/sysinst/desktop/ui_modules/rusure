@@ -1,0 +1,138 @@
+#!/sbin/sh
+#ident "@(#)rusure	15.1	97/12/19"
+
+# Nothing to do here.
+# common.rc will call ii_exit for us if skip_rusure is set
+
+. /isl/ui_modules/common.rc
+
+ui_mapfile=/isl/ui_map
+
+last_chance="$RUSURE_LAST_CHANCE"
+keys="$RUSURE_KEYS"
+
+function noop
+{
+       beep
+}
+
+function warn_user
+{
+[ -n "$debug" ] && set -x
+	display -w "$last_chance" -bg $WHITE -fg $BLUE
+	footer "$keys"
+	set_hotkey 1 get_help
+	set_hotkey 2 noop
+	set_hotkey 3 write_disk
+	set_hotkey 9  "ii_exit PREV"
+	set_hotkey 10 "ii_exit NEXT"
+	input_handler
+}
+
+
+#
+# List all the modules we want to be silent
+#
+function list_all_modules
+{
+	echo zone
+	echo locale
+	echo keyboard
+	echo license
+	echo hba 
+	echo dcu 
+	echo disk_size 
+	echo name 
+	echo media 
+	echo disk_config 
+	echo partition 
+	echo change_slices 
+	echo slices 
+	echo change_disk_ops 
+	echo disk_ops 
+	echo cans 
+	echo sets 
+	echo services 
+	echo check_pkg_sizes 
+	echo osmp
+	echo nics_detect
+	echo nics_select
+	echo nics_config
+	echo tcpconf
+	echo ipxconf
+	echo nisconf
+	echo date 
+	echo security 
+	echo owner 
+	echo password 
+	echo ad_flash 
+	echo pla
+}
+
+
+function write_disk
+{
+[ -n "$debug" ] && set -x
+	#
+	# Close main window, so these input_handlers won't wait for it.
+	#
+	wclose $CURWIN
+
+	display -w "$RUSURE_INSERT_DISK"
+	footer "$WRITE_ANSWERS_KEYS"
+	cancel_write=false
+	set_hotkey 9 "wclose $CURWIN; cancel_write=true"
+	input_handler
+	if [ "$cancel_write" = true ]
+	then
+		warn_user
+		return
+	fi
+	#echo "/isl/ifile" | cpio -o > /dev/rdsk/f0t
+
+	# set all the modules to run silently
+#	for mod in `list_all_modules`
+#	do
+#                ivar set silent_$mod true
+#                ivar set skip_$mod true
+#	done
+
+	# write out the memory-mapped variables to the ifile
+	ivar save
+
+	(ls /isl/ifile /isl/disk.info /isl/partition.info /isl/slice.info |
+		cpio -o > /dev/rdsk/f0t) >/dev/null 2>/dev/null
+	if [ $? -ne 0 ]
+	then
+		display -w "$RUSURE_DISK_WRITE_ERROR" -bg $ERROR_BG -fg $ERROR_FG
+		footer "$RUSURE_RETURN"
+		input_handler
+	else
+		display -w "$RUSURE_DISK_WRITE_SUCCESS"
+		footer "$RUSURE_RETURN"
+		input_handler
+	fi
+	warn_user
+}
+
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic rusure
+	ii_exit HELP
+}
+
+
+
+#
+# Main
+#
+warn_user
+
+#
+# Done
+#
+ii_exit NEXT
+

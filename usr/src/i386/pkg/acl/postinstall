@@ -1,0 +1,235 @@
+#ident	"@(#)postinstall	1.2"
+#ident	"$Header$"
+
+# Menu setup
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:1 " The Installable Driver feature has been removed. The %s cannot be installed." "${NAME}" 2>&1`
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+# install a module.  $1 is the module name
+
+do_install() {
+	ERR=/tmp/${1}.err
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Space.c Stubs.c Mtune Dtune"
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if
+		[ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if
+		[ -f ${1}.St ]
+	then
+		mv ${1}.St Stubs.c
+	fi
+	if
+		[ -f ${1}.Mt ]
+	then
+		mv ${1}.Mt Mtune
+	fi
+	if
+		[ -f ${1}.Dt ]
+	then
+		mv ${1}.Dt Dtune
+	fi
+	if
+		[ -f ${1}.Ma ]
+	then
+		grep -v "^[\*#]ident" ${1}.Ma > Master
+		rm -rf ${1}.Ma
+	fi
+	if
+		[ -f ${1}.Sy ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sy |
+			sed "${SEDCMD1}"  > System
+		rm -rf ${1}.Sy
+	fi
+	pfmt -s nostd -g ${PKGMSG}:2 "Installing %s %s module ...\n" "${NAME}" "${1}" 2>&1
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	RET=$?
+	if [ ${RET} = 0 ] || [ ${RET} = 8 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+		RET=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		RET=$?
+	fi
+	rm -rf ${IDCOMPS}
+	if [ ${RET} != 0 ]
+	then
+		message -d `pfmt -s error -g ${PKGMSG}:3 " The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." "${1}" "${NAME}" "${ERR}" 2>&1`
+		exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+errflag=0
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+		-o ! -x ${CONFBIN}/idcheck ]
+then
+	message -d ${NOTOOLS}
+	exit $FAILURE
+fi
+
+VOLATILES=`echo /tmp/acl/*`
+cd /tmp/acl
+# install drivers/modules
+
+do_install dac
+
+#
+#The following while-loop reads the commands and the roles
+#to which these commands are to be assigned.  If privileges, 
+#separated by a colon, appear next to the role in the script that 
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the role.
+#
+while read cmd roles
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |            # delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+        if [ -f $cmd ]
+		then
+        	prvd="no"
+        else
+	    pfmt -s warn -g {PKGMSG}:4 " %s not found on the system.  Not adding to TFM.\n" ${cmd} 2>&1
+            continue
+        fi
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						pfmt -s warn -g ${PKGMSG}:5 " %s privilege specified to be shut off for %s,\n         but it is NOT in its set of privileges.\n" $i $cmd 2>&1
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role
+        else
+            adminrole -a $base:$cmd:$privs $role
+        fi
+        shift
+    done
+done <<-!
+/usr/bin/getacl	SSO
+/usr/bin/setacl	SSO
+/usr/bin/tcpio	SOP:dacwrite:macwrite	SSO
+!
+
+#
+#
+#
+#	make a new UNIX(R)
+#
+# rebuild for changes to take effect
+
+TMP=/tmp/acl.$$
+${CONFBIN}/idbuild 2>>${TMP}
+if
+	[ "$?" -ne "0" ]
+then
+	pfmt -s nostd -g ${PKGMSG}:6 "An error has occurred during the rebuild of the UNIX System.  Errors have been written to the file %s.\n" ${TMP} 2>&1
+	exit ${FAILURE}
+fi
+
+rm -f ${TMP} 1>/dev/null 2>&1
+
+removef ${PKGINST} ${VOLATILES} /tmp/acl >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+installf -f ${PKGINST}
+
+exit 10			# indicates that the system should be rebooted

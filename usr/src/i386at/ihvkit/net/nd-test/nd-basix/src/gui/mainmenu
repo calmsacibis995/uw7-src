@@ -1,0 +1,113 @@
+#! /usr/X/bin/wksh -openlook
+
+alias debug=:
+#alias debug=echo
+
+#*
+#*  NAME
+#*	menu_handler
+#*
+#*  SYNOPSIS
+#*	menu_handler  <command_list_file>
+#*
+#*  DESCRIPTION 
+#*	This program, though suited currently for our current implementation
+#*	of test suites, can be used for any general purpose menu handling.
+#	It provides the following functionalities:
+#*	1. Configuring parameters.
+#*      2. Running one or more programs.
+#*      3. Displaying the results produced by the processes.
+#*      4. Listing and killing the running processes.
+#*      5. Removing the locks created by abnormally terminated processes.
+#*	For complete description of this utility, refer to the 
+#*	"menu_handler.doc" in the doc directory.
+#*
+#*  NOTES
+#*	Environment variable TET_SUITE_ROOT should be set, according to
+#*	ETET conventions.
+#*
+#*  MODIFICATION HISTORY
+#*	Created :  Lakshmana Pillai,        Wipro Infotech Limited.
+#*	Modified:  Yule R. Kingston,        Wipro Infotech Limited, May 30 1994.
+#*      Modified:  Hari Hara Vinayaka Ram.N Wipro Infotech Limited  Oct 22 1994
+
+# Variable used by test suites to know whether execution is under GUI or not.
+UWCTS_GUI=YES; export UWCTS_GUI
+. ${TET_SUITE_ROOT}/nd-basix.cfg
+>${ERR_FILE}
+Result_Click=0
+Admin_Click=0
+PREV_NUM_ITEMS=0
+NUM_ITEMS=0
+IND_KILL_COUNT=0
+NUM_KILL=0
+ACT=SHOW
+wc1=0
+RUN_BG=""
+X_SERVER_RUNNING=0
+limit_notice_posy=350
+limit_notice_posx=500
+init_notice_posx=200
+init_notice_posy=100
+notice_posx=$init_notice_posx
+notice_posy=$init_notice_posy
+limit_query_posy=350
+limit_query_posx=500
+init_query_posx=300
+init_query_posy=150
+query_posx=$init_query_posx
+query_posy=$init_query_posy
+const_cnt=0
+cd `dirname $0`
+CURRENT_DIR=`pwd`
+
+if [ "$1" = "" ]
+then
+	CMD_LIST_FILE=${CFG_PATH}/cmd.list
+else
+	CMD_LIST_FILE=$1
+fi
+MAIN_BUTTONS_LIST="'{Configure}','{Run}','{Results}','{Admin}','{Quit}'"
+NO_MAIN_BUTTONS=5
+X11PERF_VERSION=0
+XT_KILL=0
+export STATUS_EXIST=0
+export REPORT_EXIST=0
+# Loading functions
+. ${BIN_PATH}/libfuncs
+. ${BIN_PATH}/Configure
+. ${BIN_PATH}/Run
+. ${BIN_PATH}/KillProc
+
+#--------The program starts here-------->
+oi TOPLEVEL "$FIX_TITLE" "$FIX_TITLE" x:0 y:0 "$@"
+export TOPLEVEL
+#XtAddInput ${TET_SUITE_ROOT}/bin/Test_Notice Disp_Notice
+#XtAddInput ${TET_SUITE_ROOT}/bin/Test_Query Disp_Query
+
+# Get the version of the O.S on which the test is getting executed
+VERSION=`uname -v | cut -c1`
+
+# Ask if the user wants to update the AREV database
+AREV_YES="NO"
+#arev_interface
+
+cmw FORM form form $TOPLEVEL 
+cmw CAPTION caption caption $FORM \
+	label:"      " \
+	font:OlDefaultBOldFont \
+	position:top \
+	alignment:center
+cmw WINDOW window scrolledWindow $FORM \
+	y:25 viewHeight:200 viewWidth:850 
+cmw WINDOW_BCA ca controlArea $FORM y:250 x:45 center:true
+cmw WINDOW_SCA ca controlArea $WINDOW layoutType:fixedcols \
+		measure:1
+
+orh $TOPLEVEL "" -f /usr/X/lib/locale/C/help/${USER}/ndcert.hlp
+Display_Item_List
+#mnsetup $TOPLEVEL
+rw $TOPLEVEL
+ml
+
+#---End of program.

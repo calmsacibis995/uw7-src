@@ -1,0 +1,114 @@
+Additional fields for strftime
+
+Modifications to strftime.c:
+1)  added %O field, offset from UTC (+0000)
+2)  added %k and %l fields which existed in my man pages (SunOS 4.1.1)
+3)  corrected comment on %I field
+
+Modifications to Makefile.in:
+1)  strftime always added to library
+
+Comments: a mail application i'm developing couldn't grok %Z so i
+added %O which it can.  i lucked out having tm_gmtoff available on
+SunOS.  this hasn't been tested on any other OS, sorry.  i'll have to
+rely on you folks to make it more portable.  along the way i added %k
+and %l, also SunOS things.  the comment on %I was slightly incorrect
+as it can never actually produce "00", oh, well.
+
+*** lib/Makefile.in.orig	Sun Aug 18 23:33:09 1991
+--- lib/Makefile.in	Thu Feb 13 09:11:56 1992
+***************
+*** 27,33 ****
+  
+  OBJECTS = basename.o error.o stripslash.o xmalloc.o xstrdup.o xwrite.o \
+  putenv.o getopt.o getopt1.o getugroups.o regex.o getdate.o posixtm.o \
+! @LIBOBJS@ @ALLOCA@
+  
+  DISTFILES = Makefile.in getopt.h regex.h $(SOURCES)
+  
+--- 27,33 ----
+  
+  OBJECTS = basename.o error.o stripslash.o xmalloc.o xstrdup.o xwrite.o \
+  putenv.o getopt.o getopt1.o getugroups.o regex.o getdate.o posixtm.o \
+! strftime.o @LIBOBJS@ @ALLOCA@
+  
+  DISTFILES = Makefile.in getopt.h regex.h $(SOURCES)
+  
+*** lib/strftime.c.orig	Sat Aug 10 15:37:24 1991
+--- lib/strftime.c	Thu Feb 13 10:00:25 1992
+***************
+*** 39,45 ****
+  
+     Time fields:
+     %H	hour (00..23)
+!    %I	hour (00..12)
+     %M	minute (00..59)
+     %p	locale's AM or PM
+     %r	time, 12-hour (hh:mm:ss [AP]M)
+--- 39,47 ----
+  
+     Time fields:
+     %H	hour (00..23)
+!    %I	hour (01..12)
+!    %k	hour ( 0..23)
+!    %l	hour ( 1..12)
+     %M	minute (00..59)
+     %p	locale's AM or PM
+     %r	time, 12-hour (hh:mm:ss [AP]M)
+***************
+*** 48,53 ****
+--- 50,56 ----
+     %T	time, 24-hour (hh:mm:ss)
+     %X	locale's time representation (%H:%M:%S)
+     %Z	time zone (EDT), or nothing if no time zone is determinable
++    %O	offset from UTC (+0000)
+  
+     Date fields:
+     %a	locale's abbreviated weekday name (Sun..Sat)
+***************
+*** 274,279 ****
+--- 277,285 ----
+  	      length +=
+  		add_num2 (&string[length], tm->tm_hour, max - length, pad);
+  	      break;
++ 	    case 'k':
++ 	      length += strftime (&string[length], max - length, "%_H", tm);
++ 	      break;
+  	    case 'I':
+  	      if (tm->tm_hour == 0)
+  		length +=
+***************
+*** 286,291 ****
+--- 292,300 ----
+  		length +=
+  		  add_num2 (&string[length], tm->tm_hour, max - length, pad);
+  	      break;
++ 	    case 'l':
++ 	      length += strftime (&string[length], max - length, "%_I", tm);
++ 	      break;
+  	    case 'M':
+  	      length +=
+  		add_num2 (&string[length], tm->tm_min, max - length, pad);
+***************
+*** 331,336 ****
+--- 340,359 ----
+  #endif
+  #endif
+  	      break;
++ 	    case 'O': {
++ 	      int gmtoff_min = tm->tm_gmtoff/60;
++ 	      if (gmtoff_min < 0) {
++ 		add_char ('-');
++ 		gmtoff_min = -gmtoff_min;
++ 	      }
++ 	      else
++ 		add_char ('+');
++ 	      length +=	add_num2 (&string[length], gmtoff_min / 60,
++ 				  max - length, zero);
++ 	      length += add_num2 (&string[length], gmtoff_min % 60,
++ 				  max - length, zero);
++ 	      break;
++ 	    }
+  
+  	      /* Date fields: */
+  	    case 'a':

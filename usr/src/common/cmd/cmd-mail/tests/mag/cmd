@@ -1,0 +1,2971 @@
+#!/bin/sh
+#ident "@(#)cmd	11.3"
+#
+# Automated test suite for cmd-line options of mag.
+#
+# Attempts to achieve complete branch coverage
+# of cmd.tcl and the ma_*.tcl files.
+# This script expects the test version (mailadmint) to be installed
+# in /etc/mail/admin/mailadmin.
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -fr /etc/sendmail.cf
+	rm -fr /etc/default/mail
+	cp cf/cf_start /etc/sendmail.cf
+	cp cf/ms_start /etc/default/mail
+	rm -fr /etc/mail/table/domain
+	rm -fr /tmp/out /tmp/out1 /tmp/cf1
+}
+
+sumfix() \
+{
+	file=$1
+	sed -e '/# checksum:/d' $file > /tmp/$$
+	sum=`sum -r /tmp/$$ | awk '{ print $ 1}'`
+	echo "# checksum:$sum" > $file
+	cat /tmp/$$ >> $file
+	rm -f /tmp/$$
+}
+
+core_usage() \
+{
+	cleanup
+	$pgm abd > /tmp/out
+	ret=$?
+	if [ $ret -eq 0 ]
+	then
+		passfail 1
+		return
+	fi
+	grep "Usage:" /tmp/out > /dev/null
+	passfail $?
+	cleanup
+}
+
+core_list() \
+{
+	cleanup
+	# just list all things and check output.
+	$pgm \
+		list maps \
+		list altnames \
+		list channels \
+		> /tmp/out
+	cat << DONE > /tmp/out1
+/etc/mail/aliases
+local
+SMTP
+badhost
+DONE
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+core_add() \
+{
+	cleanup
+	# add one of each type and verify the cf file
+	$pgm \
+		add map /tmp/aliases \
+		add altname myothername \
+		add altname myothername2 \
+		add channel newchan /tmp/deliver file \
+		> /tmp/out
+	diff /etc/sendmail.cf cf/cf_add
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+core_order() \
+{
+	cleanup
+	cp cf/cf_add /etc/sendmail.cf
+	# move our new things up front
+	$pgm \
+		order maps /tmp/aliases /etc/mail/aliases -- \
+		order altnames myothername2 myothername -- \
+		order channels local newchan SMTP badhost
+	diff /etc/sendmail.cf cf/cf_order
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+core_del() \
+{
+	cleanup
+	cp cf/cf_order /etc/sendmail.cf
+	# delete our new things
+	$pgm \
+		del map /tmp/aliases \
+		del altname myothername \
+		del altname myothername2 \
+		del channel newchan \
+		> /tmp/out
+	diff /etc/sendmail.cf cf/cf_start
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+# take default file, set all values to defaults, nothing should change.
+core_def1() \
+{
+	cleanup
+	$pgm \
+		def host \
+		def from \
+		def domain \
+		def fdir \
+		def fname \
+		def fformat \
+		def fsync \
+		def fccheck \
+		def fincore \
+		def fthreshold \
+		def ftimeout \
+		def ffilelock \
+		def fumask \
+		def local:name \
+		def local:program \
+		def local:table \
+		def local:args \
+		def local:dir \
+		def local:file \
+		def local:host \
+		def local:flags \
+		def local:eol \
+		def local:maxmsg \
+		def local:maxline \
+		def local:nice \
+		def local:user \
+		def local:rruleset \
+		def local:sruleset \
+		def SMTP:name \
+		def SMTP:program \
+		def SMTP:table \
+		def SMTP:args \
+		def SMTP:dir \
+		def SMTP:file \
+		def SMTP:host \
+		def SMTP:flags \
+		def SMTP:eol \
+		def SMTP:maxmsg \
+		def SMTP:maxline \
+		def SMTP:nice \
+		def SMTP:user \
+		def SMTP:rruleset \
+		def SMTP:sruleset \
+		> /tmp/out
+	diff /etc/sendmail.cf cf/cf_start
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+# get all properties, vfy values
+core_get1() \
+{
+	cleanup
+	$pgm \
+		get host \
+		get from \
+		get domain \
+		get fdir \
+		get fname \
+		get fformat \
+		get fsync \
+		get fccheck \
+		get fincore \
+		get fthreshold \
+		get ftimeout \
+		get ffilelock \
+		get fumask \
+		get local:name \
+		get local:program \
+		get local:table \
+		get local:args \
+		get local:dir \
+		get local:file \
+		get local:host \
+		get local:flags \
+		get local:eol \
+		get local:maxmsg \
+		get local:maxline \
+		get local:nice \
+		get local:user \
+		get local:rruleset \
+		get local:sruleset \
+		get SMTP:name \
+		get SMTP:program \
+		get SMTP:table \
+		get SMTP:args \
+		get SMTP:dir \
+		get SMTP:file \
+		get SMTP:host \
+		get SMTP:flags \
+		get SMTP:eol \
+		get SMTP:maxmsg \
+		get SMTP:maxline \
+		get SMTP:nice \
+		get SMTP:user \
+		get SMTP:rruleset \
+		get SMTP:sruleset \
+		> /tmp/out
+	cat << DONE > /tmp/out1
+$host
+$host
+FALSE
+/var/mail
+
+Sendmail
+FALSE
+FALSE
+FALSE
+50
+10
+FALSE
+077
+local
+/etc/mail/slocal
+local
+slocal \$u
+/var/spool/mqueue
+
+
+lsDFMPhoAw5:|/@8
+\n
+20000000
+0
+0
+
+aplocal_re/aplocal_rh
+aplocal_se/aplocal_sh
+SMTP
+[IPC]
+DNS
+IPC \$h
+/var/spool/mqueue
+
+
+mlsDFMPeu8
+\r\n
+20000000
+990
+0
+
+ap822_re/ap822_rh
+ap822_se/ap822_sh
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# set all properties to different values.
+core_set1() \
+{
+	cleanup
+	$pgm \
+		set host test.pdev.sco.com \
+		set from pdev.sco.com \
+		set domain TRUE \
+		set fdir "" \
+		set fname ".mailbox" \
+		set fformat MMDF \
+		set fsync TRUE \
+		set fccheck TRUE \
+		set fincore TRUE \
+		set fthreshold 100 \
+		set ftimeout 5 \
+		set ffilelock TRUE \
+		set fumask 0777 \
+		add channel newchan /etc/mail/slocal file \
+		set newchan:name channel1 \
+		set channel1:program /tmp/deliver \
+		set channel1:table file \
+		set channel1:args "deliver -- \$h \$u" \
+		set channel1:dir /tmp \
+		set channel1:file /etc/mail/table/channel1 \
+		set channel1:flags D \
+		set channel1:eol \\r\\n \
+		set channel1:maxmsg 0 \
+		set channel1:maxline 1024 \
+		set channel1:nice -2 \
+		set channel1:user root:root \
+		set channel1:rruleset ap976_re/ap976_rh \
+		set channel1:sruleset ap976_se/ap976_sh \
+		> /tmp/out
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	# now check values via API
+	$pgm \
+		get host \
+		get from \
+		get domain \
+		get fdir \
+		get fname \
+		get fformat \
+		get fsync \
+		get fccheck \
+		get fincore \
+		get fthreshold \
+		get ftimeout \
+		get ffilelock \
+		get fumask \
+		get channel1:name \
+		get channel1:program \
+		get channel1:table \
+		get channel1:args \
+		get channel1:dir \
+		get channel1:file \
+		get channel1:host \
+		get channel1:flags \
+		get channel1:eol \
+		get channel1:maxmsg \
+		get channel1:maxline \
+		get channel1:nice \
+		get channel1:user \
+		get channel1:rruleset \
+		get channel1:sruleset \
+		> /tmp/out
+	cat << DONE > /tmp/out1
+test.pdev.sco.com
+pdev.sco.com
+TRUE
+
+.mailbox
+MMDF
+TRUE
+TRUE
+TRUE
+100
+5
+TRUE
+0777
+channel1
+/tmp/deliver
+file
+deliver -- \$h \$u
+/tmp
+/etc/mail/table/channel1
+
+D
+\r\n
+0
+1024
+-2
+root:root
+ap976_re/ap976_rh
+ap976_se/ap976_sh
+DONE
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_set
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+
+	# have to remove the sccs keyword lines before we do a diff
+	sed 's/^#ident.*//' /etc/default/mail >/tmp/out
+	sed 's/^#ident.*//' cf/ms_set >/tmp/out1
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# test syntax "pgm -h host and pgm -h".
+grp1_host() \
+{
+	cleanup
+	$pgm -h $host list altnames > /tmp/out
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	touch /tmp/out1
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	$pgm -h > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: No host name
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# test sendmail command
+grp1_sendmail() \
+{
+	cleanup
+	$pgm sendmail restart > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	touch /tmp/out1
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	$pgm sendmail junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unknown sendmail action: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# test uucp command
+grp1_uucp() \
+{
+	cleanup
+	rm -f /etc/mail/table/uucp.db
+	cp cf/cf_uucp /etc/sendmail.cf
+	$pgm uucp rebuild > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	touch /tmp/out1
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	if [ ! -f /etc/mail/table/uucp.db ]
+	then
+		echo uucp.db not found
+		passfail 1
+		return
+	fi
+	$pgm uucp junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unknown uucp action: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# some add failure cases
+grp1_add2() \
+{
+	cleanup
+	# add duplicate name
+	$pgm add map /etc/mail/aliases > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Duplicate map name for add: /etc/mail/aliases
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# some add failure cases
+grp1_add3() \
+{
+	cleanup
+	# add duplicate name
+	$pgm add altname junk add altname junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Duplicate altname for add: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# some add failure cases
+grp1_add4() \
+{
+	cleanup
+	# add duplicate name
+	$pgm add channel local /tmp/deliver DNS > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Duplicate channel name for add: local
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp1_add5() \
+{
+	cleanup
+	# add conflicting name
+	$pgm add channel error /tmp/deliver DNS > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Name conflict or reserved name: error
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp1_add6() \
+{
+	cleanup
+	$pgm add channel ap822_re /tmp/deliver DNS > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Name conflict or reserved name: ap822_re
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp1_add7() \
+{
+	cleanup
+	$pgm add channel "(error)" /tmp/deliver DNS > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid channel name: (error)
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_def() \
+{
+	cleanup
+	$pgm \
+		set host $host \
+		set from $host \
+		set fformat Sendmail \
+		set local:dir $MQUEUE \
+		set local:eol \\n \
+		set local:maxline 0 \
+		set local:nice 0 \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+grp2_twobad() \
+{
+	cleanup
+	$pgm \
+		add channel baduser1 [IPC] baduser \
+		add channel baduser2 [IPC] baduser \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Only one baduser channel may exist.
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_add1() \
+{
+	cleanup
+	$pgm add junk name > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unknown add type: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_del1() \
+{
+	cleanup
+	$pgm del map junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Map name not found: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_del2() \
+{
+	cleanup
+	$pgm del altname junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Altname not found: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_del3() \
+{
+	cleanup
+	$pgm del channel junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Channel name not found: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_del4() \
+{
+	cleanup
+	$pgm del junk name > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid del type: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_ordbad() \
+{
+	cleanup
+	$pgm \
+		add channel baduser [IPC] baduser \
+		order channels local SMTP baduser badhost \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: New order has a baduser channel that is not the last channel.
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_ord1() \
+{
+	cleanup
+	$pgm order junk name > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid order type: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_list1() \
+{
+	cleanup
+	$pgm list junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid list type: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_fformat() \
+{
+	cleanup
+	$pgm set fformat junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Folder format must be MMDF or Sendmail: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp2_set() \
+{
+	cleanup
+	$pgm set junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid property name: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp3_chan1() \
+{
+	cleanup
+	$pgm set local:name error > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Channel name conflict: error
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp3_chan2() \
+{
+	cleanup
+	$pgm set local:name "(error)" > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		echo "(error) allowed"
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Channel name invalid: (error)
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp3_chan3() \
+{
+	cleanup
+	$pgm set SMTP:host gateway > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_host
+	passfail $?
+}
+
+grp3_chan4() \
+{
+	cleanup
+	$pgm set local:junk value > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid channel property name: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp3_uucp() \
+{
+	cleanup
+	$pgm add channel UUCP /usr/bin/uux UUCP
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_uucp
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+grp3_chan5() \
+{
+	cleanup
+	$pgm add channel newchan /tmp/deliver junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unknown channel table type: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp3_order() \
+{
+	cleanup
+	$pgm order maps junk > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Ordering lists don't have the same items:
+    new list: junk
+    old list: /etc/mail/aliases
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set1() \
+{
+	cleanup
+	$pgm set > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Not enough arguments for command: set
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set2() \
+{
+	cleanup
+	$pgm set :name abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Null channel name
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set3() \
+{
+	cleanup
+	$pgm set junk:name abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unknown channel name: junk
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set4() \
+{
+	cleanup
+	$pgm set local: abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Null channel property name
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set5() \
+{
+	cleanup
+	$pgm set "" abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Null property name
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set6() \
+{
+	cleanup
+	$pgm set fsync FALSE > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+grp4_set7() \
+{
+	cleanup
+	$pgm set fsync abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid TRUE/FALSE value: abc
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set8() \
+{
+	cleanup
+	$pgm set fumask abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid umask value: abc
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set9() \
+{
+	cleanup
+	$pgm set fumask 777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: First digit of a umask must be 0
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set10() \
+{
+	cleanup
+	$pgm set fumask 07777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid umask value, greater than 0777: 07777
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set11() \
+{
+	cleanup
+	$pgm set local:maxline abc > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid numeric value: abc
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set12() \
+{
+	cleanup
+	$pgm set local:maxline -1 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Number less than minimum value of 0: -1
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set13() \
+{
+	cleanup
+	$pgm set local:maxline 20000 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Number greater than maximum value of 10000: 20000
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set14() \
+{
+	cleanup
+	$pgm set fumask 8 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid umask, not an octal number: 8
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp4_set15() \
+{
+	cleanup
+	$pgm set fumask 9 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Invalid umask, not an octal number: 9
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_nocf() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf
+	$pgm list maps > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to access $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_nodef() \
+{
+	cleanup
+	rm -f /etc/default/mail
+	$pgm list maps > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to access $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_badcf() \
+{
+	cleanup
+	echo "hi there" > /etc/sendmail.cf
+	$pgm list maps > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_baddef() \
+{
+	cleanup
+	echo "hi there you" > /etc/default/mail
+	$pgm list maps > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_write1() \
+{
+	cleanup
+	$pgm -test grp5_write1 set fformat Sendmail > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_write2() \
+{
+	cleanup
+	$pgm -test grp5_write2 set fformat Sendmail > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_copy1() \
+{
+	cleanup
+	$pgm -test grp5_copy1 set fformat Sendmail > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp5_copy2() \
+{
+	cleanup
+	$pgm -test grp5_copy2 set fformat Sendmail > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_open() \
+{
+	cleanup
+	$pgm -test grp6_open list maps > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_kwd() \
+{
+	cleanup
+	echo "junk=TRUE" >> /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_get1() \
+{
+	cleanup
+	sed -e "/^MS1_UMASK=/d" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+077
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_get2() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=abc/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_set1() \
+{
+	cleanup
+	sed -e "/^MS1_UMASK=/d" < cf/ms_start > /etc/default/mail
+	$pgm set fumask 077 > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+grp6_write() \
+{
+	cleanup
+	$pgm -test grp6_write set fumask 0777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p1() \
+{
+	cleanup
+	sed -e "s/^MS1_EXPUNGE_THRESHOLD=.*/MS1_EXPUNGE_THRESHOLD=abc/" < cf/ms_start > /etc/default/mail
+	$pgm get fthreshold > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p2() \
+{
+	cleanup
+	sed -e "s/^MS1_EXPUNGE_THRESHOLD=.*/MS1_EXPUNGE_THRESHOLD=101/" < cf/ms_start > /etc/default/mail
+	$pgm get fthreshold > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p3() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=abc/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p4() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=8/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p5() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=9/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p6() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=777/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_p7() \
+{
+	cleanup
+	sed -e "s/^MS1_UMASK=.*/MS1_UMASK=07777/" < cf/ms_start > /etc/default/mail
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_lock() \
+{
+	cleanup
+	sed -e "s/^MS1_LOCK_TIMEOUT=.*/MS1_LOCK_TIMEOUT=abc/" < cf/ms_start > /etc/default/mail
+	$pgm get ftimeout > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_null() \
+{
+	cleanup
+	echo "=TRUE" >> /etc/default/mail
+	$pgm get ftimeout > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_noct() \
+{
+	cleanup
+	sed -e "s/^MS1_EXPUNGE_THRESHOLD=.*/MS1_EXPUNGE_THRESHOLD=0100/" < cf/ms_start > /etc/default/mail
+	$pgm get fthreshold > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/default/mail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_set2() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_ms1_open /etc/default/mail \
+		-test shortcut ma_ms1_set MS1_UMASK abc \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+ERROR: Invalid value for MS1_UMASK: abc
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp6_set3() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_ms1_open /etc/default/mail \
+		-test shortcut ma_ms1_set INVALID TRUE \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+ERROR: Unknown keyword: INVALID
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_open() \
+{
+	cleanup
+	rm -f /tmp/not_there
+	$pgm -test shortcut ma_cf_open /tmp/not_there > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op1() \
+{
+	cleanup
+	sed -e "/^Schannels/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op2() \
+{
+	cleanup
+	sed -e "/^# checksum:/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op3() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf
+	touch /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op4() \
+{
+	cleanup
+	sed -e "/^Kusers/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op5() \
+{
+	cleanup
+	sed -e "/^Kuucp/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op6() \
+{
+	cleanup
+	sed -e "/^Kdomain/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op7() \
+{
+	cleanup
+	sed -e "/^CP/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op8() \
+{
+	cleanup
+	sed -e "/^CD/d" < cf/cf_start > /etc/sendmail.cf
+	$pgm get fumask > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op9() \
+{
+	cleanup
+	for i in domains domains_helper \
+		local_TBL dns_TBL uucp_TBL remote_TBL baduser_TBL \
+		ap822_se ap822_sh ap822_re ap822_rh \
+		ap976_se ap976_sh ap976_re ap976_rh \
+		aplocal_se aplocal_sh aplocal_re aplocal_rh
+	do
+		echo Testing Ruleset $i
+		sed -e "/^S$i/d" < cf/cf_start > /etc/sendmail.cf
+		$pgm get fumask > /tmp/out 2>& 1
+		if [ $? -eq 0 ]
+		then
+			cat /tmp/out
+			passfail 1
+			return
+		fi
+		cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+		diff /tmp/out /tmp/out1
+		if [ $? -ne 0 ]
+		then
+			passfail 1
+			return
+		fi
+	done	
+	passfail 0
+}
+
+grp7_op10() \
+{
+	cleanup
+	for i in \
+		ma_cf_close \
+		ma_cf_write \
+		"ma_machine_name_set abcd" \
+		ma_machine_name_get \
+		ma_alternate_names_get \
+		"ma_alternate_names_set abc" \
+		ma_from_domain_get \
+		"ma_from_domain_set abc" \
+		ma_aliases_get \
+		"ma_aliases_set junk" \
+		ma_domain_table_enabled_get \
+		"ma_domain_table_enabled_set 0" \
+		ma_domain_table_file_get \
+		ma_ch_names_get
+	do
+		echo Testing: $i
+		$pgm -test shortcut $i > /tmp/out 2>& 1
+		if [ $? -ne 0 ]
+		then
+			cat /tmp/out
+			passfail 1
+			continue
+		fi
+		cat << DONE > /tmp/out1
+ERROR: Sendmail configuration file is not open
+DONE
+		diff /tmp/out /tmp/out1
+		if [ $? -ne 0 ]
+		then
+			passfail 1
+			return
+		fi
+	done
+	passfail $?
+}
+
+grp7_op11() \
+{
+	cleanup
+	$pgm \
+		add channel baduser [IPC] file \
+		add channel badhost1 [IPC] remote \
+		set baduser:table baduser \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp7_op12() \
+{
+	cleanup
+	$pgm \
+		add channel baduser [IPC] baduser \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_badusern
+	passfail $?
+}
+
+grp7_op13() \
+{
+	cleanup
+	$pgm \
+		add channel newchan /tmp/deliver file \
+		set newchan:program "" \
+		set newchan:args "" \
+		set newchan:flags "" \
+		set newchan:sruleset "" \
+		set newchan:rruleset "" \
+		set newchan:maxmsg 0 \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_op1() \
+{
+	cleanup
+	$pgm -test grp8_op1 set fumask 0777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_op2() \
+{
+	cleanup
+	$pgm -test grp8_op2 set fumask 0777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_op3() \
+{
+	cleanup
+	$pgm -test grp8_op3 set fumask 0777 > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_set1() \
+{
+	cleanup
+	$pgm set host " " > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+grp8_set2() \
+{
+	cleanup
+	$pgm \
+		set host abc \
+		set host "" \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+grp8_v1() \
+{
+	cleanup
+	$pgm -test shortcut ma_cf_valid /etc/sendmail.cf > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_v2() \
+{
+	cleanup
+	$pgm -test shortcut ma_cf_valid /tmp/not_there > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_v3() \
+{
+	cleanup
+	sed -e "s/^# checksum:/# checksum:1/" < cf/cf_start > /etc/sendmail.cf
+	$pgm -test shortcut ma_cf_valid /etc/sendmail.cf > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_v4() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf
+	touch /etc/sendmail.cf
+	$pgm -test shortcut ma_cf_valid /etc/sendmail.cf > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_v5() \
+{
+	cleanup
+	sed -e "s/^# checksum:/#/" < cf/cf_start > /etc/sendmail.cf
+	$pgm -test shortcut ma_cf_valid /etc/sendmail.cf > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_v6() \
+{
+	cleanup
+	$pgm -test grp8_v6 -test shortcut ma_cf_valid /etc/sendmail.cf > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	grep "ERROR: Unable to open" /tmp/out > /dev/null
+	passfail $?
+}
+
+grp8_set3() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut ma_ch_table_type_set SMTP abc \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ERROR: Unknown channel table type "abc"
+DONE
+	passfail $?
+}
+
+grp8_seq() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut ma_ch_sequence_set SMTP 0 \
+		-test shortcut ma_ch_names_get \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+1
+SMTP local badhost
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_add1() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut ma_ch_create local \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+conflict
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp8_add2() \
+{
+	cleanup
+	echo "Knewchan_MAP /etc/mail/table/newchan" >> /etc/sendmail.cf
+	$pgm \
+		add channel newchan /tmp/deliver file \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Name conflict or reserved name: newchan
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p1() \
+{
+	cleanup
+	sed -e "/^Knewchan_MAP.*/d" < cf/cf_add > /etc/sendmail.cf
+	$pgm get newchan:file > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+/etc/mail/table/newchan
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p2() \
+{
+	cleanup
+	awk '
+		BEGIN {
+			found = 0;
+		}
+		{
+			if (found == 1) {
+				found = 0;
+				next;
+			}
+			if ($0 == "Snewchan") {
+				found = 1
+			}
+			print
+		}
+
+	' < cf/cf_add > /etc/sendmail.cf
+	$pgm get newchan:file > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p3() \
+{
+	cleanup
+	awk '
+		BEGIN {
+			found = 0;
+		}
+		{
+			if (found == 1) {
+				found = 0;
+				gsub("newchan","otherchan")
+				print
+				next;
+			}
+			if (found == 2)
+				found = 1
+			if ($0 == "Snewchan") {
+				found = 2
+			}
+			print
+		}
+
+	' < cf/cf_add > /etc/sendmail.cf
+	$pgm get newchan:file > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p4() \
+{
+	cleanup
+	cp cf/cf_host /etc/sendmail.cf
+	$pgm get SMTP:host > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+gateway
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p5() \
+{
+	cleanup
+	cp cf/cf_baduser /etc/sendmail.cf
+	$pgm list channels > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+local
+SMTP
+badhost
+baduser
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p6() \
+{
+	cleanup
+	awk '
+		BEGIN {
+			found = 0;
+		}
+		{
+			if (found == 1) {
+				found = 0;
+				gsub("baduser","otheruser")
+				print
+				next;
+			}
+			if (found == 2)
+				found = 1
+			if ($0 == "Sbaduser") {
+				found = 2
+			}
+			print
+		}
+
+	' < cf/cf_baduser > /etc/sendmail.cf
+	$pgm get baduser:host > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p7() \
+{
+	cleanup
+	awk '
+		BEGIN {
+			found = 0;
+		}
+		{
+			if (found == 1) {
+				found = 0;
+				next;
+			}
+			if ($1 == "Mbaduser,") {
+				found = 1;
+				print "Mbaduser"
+				next;
+			}
+			print
+		}
+
+	' < cf/cf_baduser > /etc/sendmail.cf
+	$pgm get baduser:host > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p8() \
+{
+	cleanup
+	cp cf/cf_badusern /etc/sendmail.cf
+	$pgm get baduser:host > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_p9() \
+{
+	cleanup
+	awk '
+		BEGIN {
+			found = 0;
+		}
+		{
+			if (found == 1) {
+				found = 0;
+				next;
+			}
+			if ($1 == "MSMTP,") {
+				found = 1;
+				print "MSMTP"
+				next;
+			}
+			print
+		}
+
+	' < cf/cf_baduser > /etc/sendmail.cf
+	$pgm get baduser:host > /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to parse $host:/etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_set1() \
+{
+	cleanup
+	$pgm set local:host gateway > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_local
+	passfail $?
+}
+
+grp9_set2() \
+{
+	cleanup
+	$pgm \
+		add channel baduser [IPC] baduser \
+		set baduser:host gateway \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_baduser
+	passfail $?
+}
+
+grp9_chall() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut ma_ch_sequence_get ukn \
+		-test shortcut ma_ch_sequence_set ukn 0 \
+		-test shortcut ma_ch_table_type_get ukn \
+		-test shortcut ma_ch_table_type_set ukn baduser \
+		-test shortcut ma_ch_table_file_get ukn \
+		-test shortcut ma_ch_table_file_set ukn /tmp/table \
+		-test shortcut ma_ch_host_get ukn \
+		-test shortcut ma_ch_host_set ukn gateway \
+		-test shortcut ma_ch_equate_get ukn P \
+		-test shortcut ma_ch_equate_set ukn P /tmp/deliver \
+		-test shortcut ma_ch_delete ukn \
+		-test shortcut ma_ch_rename ukn1 ukn2 \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn"
+ERROR: Unknown channel "ukn1"
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_del1() \
+{
+	cleanup
+	cp cf/cf_baduser /etc/sendmail.cf
+	$pgm \
+		del channel baduser \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	passfail $?
+}
+
+grp9_mch() \
+{
+	cleanup
+	$pgm \
+		set host abcd \
+		set host efgh.sco.com \
+		set host ijkl \
+		set host "" \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	passfail $?
+}
+
+grp9_fn() \
+{
+	cleanup
+	$pgm \
+		add channel newchan /tmp/deliver file \
+		set newchan:file "" \
+		> /tmp/out 2>& 1
+	if [ $? -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+mailadmin: Unable to save: /etc/sendmail.cf
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp9_rb() \
+{
+	cleanup
+	$pgm \
+		add channel baduser1 [IPC] baduser \
+		set baduser1:host gateway \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	$pgm \
+		set baduser1:name baduser \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf cf/cf_baduser
+	passfail $?
+}
+
+grp9_ndtf() \
+{
+	cleanup
+	# add one of each type and verify the cf file
+	$pgm \
+		add map /tmp/aliases \
+		add altname myothername \
+		add altname myothername2 \
+		add channel newchan /tmp/deliver file \
+		set newchan:file /tmp/newchan \
+		> /tmp/out
+	sed -e 's/etc\/mail\/table\/newchan/tmp\/newchan/' < cf/cf_add > /tmp/out1
+	sumfix /tmp/out1
+	diff /etc/sendmail.cf /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/default/mail cf/ms_start
+	passfail $?
+}
+
+grp10_p1() \
+{
+	cleanup
+	sed -e 's/^O AliasFile.*/OAaliases/' < cf/cf_start > /etc/sendmail.cf
+	$pgm list maps > /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+aliases
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp10_p2() \
+{
+	cleanup
+	cp cf/cf_start /etc/sendmail.cf
+	sed -e 's/^O ResolverOptions.*/OITrue +AAONLY -DNSRCH/' < cf/cf_start > /etc/sendmail.cf
+	echo "D{macro1}Value1" >> /etc/sendmail.cf
+	echo "C{class1}Class1 Class2" >> /etc/sendmail.cf
+	sed -e 's/^O ResolverOptions.*/O ResolverOptions=False -AAONLY +DNSRCH/' < cf/cf_start > /tmp/cf1
+	echo "D{macro1}Value2" >> /tmp/cf1
+	echo "C{class1}Class2 Class1" >> /tmp/cf1
+	sumfix /tmp/cf1
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' option I \
+		-test shortcut CF:Set '$MA_SENDMAIL_FILEID' option I "{False -AAONLY +DNSRCH}" \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' option I \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' class class1 \
+		-test shortcut CF:Set '$MA_SENDMAIL_FILEID' class class1 "{Class2 Class1}" \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' class class1 \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' macro macro1 \
+		-test shortcut CF:Set '$MA_SENDMAIL_FILEID' macro macro1 Value2 \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' macro macro1 \
+		-test shortcut ma_cf_write \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+True +AAONLY -DNSRCH
+1
+False -AAONLY +DNSRCH
+Class1 Class2
+1
+Class2 Class1
+Value1
+1
+Value2
+ok
+DONE
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf /tmp/cf1
+	passfail $?
+}
+
+grp10_p3() \
+{
+	cleanup
+	awk '
+		{
+			print
+			if ($0 == "V7") {
+				print "Or5s"
+			}
+		}
+
+	' < cf/cf_start > /tmp/cf1
+	sumfix /tmp/cf1
+	awk '
+		{
+			print
+			if ($0 == "V7") {
+				print "Or10m"
+			}
+		}
+	' < cf/cf_start > /etc/sendmail.cf
+	sumfix /etc/sendmail.cf
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut CF:Set '$MA_SENDMAIL_FILEID' option r 5s \
+		-test shortcut ma_cf_write \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+1
+ok
+DONE
+	diff /tmp/out /tmp/out1
+	if [ $? -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf /tmp/cf1
+	passfail $?
+}
+
+grp10_p4() \
+{
+	cleanup
+	sed \
+		-e 's/^O ResolverOptions=.*/O ResolverOptions=/' \
+		-e 's/^O AliasFile=.*/O AliasFile=/' \
+		< cf/cf_start > /etc/sendmail.cf
+	echo "O ResolverOptions=True +AAONLY" >> /etc/sendmail.cf
+	echo "O ResolverOptions=-DNSRCH" >> /etc/sendmail.cf
+	echo "O AliasFile=/etc/mail/aliases, b" >> /etc/sendmail.cf
+	echo "O AliasFile=/etc/mail/aliases1" >> /etc/sendmail.cf
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' option ResolverOptions \
+		-test shortcut CF:Get '$MA_SENDMAIL_FILEID' option AliasFile \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+True +AAONLY -DNSRCH
+/etc/mail/aliases, b,/etc/mail/aliases1
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp10_p5() \
+{
+	cleanup
+	sed -e '/^Cw/d' < cf/cf_start > /etc/sendmail.cf
+	cp /etc/sendmail.cf /tmp/cf1
+	echo "Cw" >> /etc/sendmail.cf
+	echo "Cw\$M altname1 altname2 altname3 altname4 altname5 altname6 altname7 altname8 " >> //tmp/cf1
+	echo "	altname9 altname10 altname11 altname12 altname13 altname14 altname15 " >> //tmp/cf1
+	echo "	altname16 altname17" >> //tmp/cf1
+	sumfix /tmp/cf1
+	$pgm \
+		add altname altname1 \
+		add altname altname2 \
+		add altname altname3 \
+		add altname altname4 \
+		add altname altname5 \
+		add altname altname6 \
+		add altname altname7 \
+		add altname altname8 \
+		add altname altname9 \
+		add altname altname10 \
+		add altname altname11 \
+		add altname altname12 \
+		add altname altname13 \
+		add altname altname14 \
+		add altname altname15 \
+		add altname altname16 \
+		add altname altname17 \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /etc/sendmail.cf /tmp/cf1
+	passfail $?
+}
+
+grp10_p6() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut ma_domain_table_file_get \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+/etc/mail/table/domain
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+grp10_p7() \
+{
+	cleanup
+	$pgm \
+		-test shortcut ma_cf_open /etc/sendmail.cf \
+		-test shortcut CF:GetMapInfo '$MA_SENDMAIL_FILEID' unknown \
+		> /tmp/out 2>& 1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+ cleanup
+TEST=""
+MQUEUE=/var/spool/mqueue
+pgm=/etc/mail/admin/mailadmin
+
+# config variables
+host=eclipse.pdev.sco.com
+
+core="usage list add order del def1 get1 set1"
+grp1="host sendmail uucp add2 add3 add4 add5 add6 add7"
+grp2="def twobad add1 del1 del2 del3 del4 ordbad ord1 list1 fformat set"
+grp3="chan1 chan2 chan3 chan4 uucp chan5 order"
+grp4="set1 set2 set3 set4 set5 set6 set7 set8 set9 set10 set11 set12 set13 set14 set15"
+grp5="nocf nodef badcf baddef write1 write2 copy1 copy2"
+grp6="open kwd get1 get2 set1 write p1 p2 p3 p4 p5 p6 p7 lock null noct set2 set3"
+grp7="open op1 op2 op3 op4 op5 op6 op7 op8 op9 op10 op11 op12 op13"
+grp8="op1 op2 op3 set1 set2 v1 v2 v3 v4 v5 v6 set3 seq add1 add2"
+grp9="p1 p2 p3 p4 p5 p6 p7 p8 p9 set1 set2 chall del1 mch fn rb ndtf"
+grp10="p1 p2 p3 p4 p5 p6 p7"
+
+#testlist grp6_ noct
+#exit 0
+
+testlist core_ $core
+testlist grp1_ $grp1
+testlist grp2_ $grp2
+testlist grp3_ $grp3
+testlist grp4_ $grp4
+testlist grp5_ $grp5
+testlist grp6_ $grp6
+testlist grp7_ $grp7
+testlist grp8_ $grp8
+testlist grp9_ $grp9
+testlist grp10_ $grp10

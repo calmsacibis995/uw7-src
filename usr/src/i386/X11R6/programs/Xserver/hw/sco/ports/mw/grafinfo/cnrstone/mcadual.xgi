@@ -1,0 +1,422 @@
+/*
+ *    @(#) mcadual.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* *********************************************************************** *
+ * CNRSTONE/MCADUAL.XGI - XEGIA(tm) GrafInfo File for Cornerstone          *
+ *                                                                         *
+ *           Copyright (c) 1990 Locus Computing Corporation                *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                    cnrstone.mcadual.MHGAC8.1600x1280-2                  *
+ *                    cnrstone.mcadual.MHGAD.1600x1280-2                   *
+ *                    cnrstone.mcadual.MHGAD8.1600x1280-2                  *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+VENDOR CNRSTONE   "Cornerstone"
+ MODEL  MCADUAL    "Dual Page for Microchannel"
+  CLASS  MHGAC8     "Microchannel HGA @C8000"
+   MODE   1600x1280-2 "1600x1280 Monochrome"
+
+      MEMORY (0xC8000,0x8000);
+      PORT   (0x1000:2,0x1008,0x100F);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 0x86;
+         DEVTECH     = 02;	/* Mono and banked */
+         PIXBYTES    = 0x100;
+         PIXWIDTH    = 1600;
+         PIXHEIGHT   = 1280;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+	 MAPTYPE     = "CornerstoneMC";
+         }
+
+      PROCEDURE SetGraphics
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             out(r8, 0x38);		/* Turn on the bit that allows */
+             in(r0,r9);			/* hi-res graphics modes */
+             or(r0,0x20);
+             out(r9,r0);
+
+             in(r0,r8);			/* Unlock everything */
+             in(r0,r8);			/* (Enable Corner full mode */
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             set(r3,r0);		/* Remember this value */
+             out(r10,r0);		/* Screen now blank */
+
+             out(r8,0x32);		/* CTL register */
+             in(r0,r9);
+             or(r0,0x80);		/* Bit 7 is Corn hi-res */
+             and(r0,0xbf);		/* Corn hi-res video enable off */
+             out(r9,r0);
+
+             in(r0,r11);		/* Herc specific functions */
+             set(r4,r0);
+             or(r0,3);			/* 0 - graf mode; 1 - page 2 en */
+             out(r11,r0);
+
+             set(r0,r3);		/* Do funny stuff to force init */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore this reg */
+
+             out(r8,0x32);
+             in(r0,r9);
+             or(r0,0x40);		/* Turn on Corn hi-res enable */
+             out(r9,r0);
+         }
+
+
+      PROCEDURE SetText
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             out(r10,r0);		/* Screen in now blank */
+
+             out(r8,0x32);		/* Back to herc mode */
+             in(r0,r9);
+             and(r0,0x3f);
+             out(r9,r0);
+
+             out(r8,0x21);		/* Turn off Corner full mode */
+             out(r9,0);
+
+             in(r0,r11);
+             set(r4,r0);		/* Remember this value */
+             or(r0,3);			/* Enable graphics and page 2 */
+             out(r11,r0);
+
+             in(r0,r10);		/* Do more funny things... */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore value */
+             wait(3450);
+
+             out(r10,0x28);		/* Herc text mode */
+         }
+
+
+	PROCEDURE BlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		and (r0, 0xbf);		/* zero video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+	PROCEDURE UnBlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		or (r0, 0x40);		/* set video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+/* *********************************************************************** *
+ *                                                                         *
+ *                    cnrstone.mcadual.MHGAD.1600x1280-2                   *
+ *                                                                         *
+ * *********************************************************************** */
+
+VENDOR CNRSTONE   "Cornerstone"
+ MODEL  MCADUAL    "Dual Page for Microchannel"
+  CLASS  MHGAD      "Microchannel HGA @D0000"
+   MODE   1600x1280-2 "1600x1280 Monochrome"
+
+      MEMORY (0xD0000,0x8000);
+      PORT   (0x1000:2,0x1008,0x100F);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 0x86;
+         DEVtECH     = 02;	/* Mono and banked */
+         PIXBYTES    = 0x100;
+         PIXWIDTH    = 1600;
+         PIXHEIGHT   = 1280;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+	 MAPTYPE     = "CornerstoneMC";
+         }
+
+      PROCEDURE SetGraphics
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             out(r8, 0x38);		/* Turn on the bit that allows */
+             in(r0,r9);			/* hi-res graphics modes */
+             or(r0,0x20);
+             out(r9,r0);
+
+             in(r0,r8);			/* Unlock everything */
+             in(r0,r8);			/* (Enable Corner full mode */
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             set(r3,r0);		/* Remember this value */
+             out(r10,r0);		/* Screen now blank */
+
+             out(r8,0x32);		/* CTL register */
+             in(r0,r9);
+             or(r0,0x80);		/* Bit 7 is Corn hi-res */
+             and(r0,0xbf);		/* Corn hi-res video enable off */
+             out(r9,r0);
+
+             in(r0,r11);		/* Herc specific functions */
+             set(r4,r0);
+             or(r0,3);			/* 0 - graf mode; 1 - page 2 en */
+             out(r11,r0);
+
+             set(r0,r3);		/* Do funny stuff to force init */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore this reg */
+
+             out(r8,0x32);
+             in(r0,r9);
+             or(r0,0x40);		/* Turn on Corn hi-res enable */
+             out(r9,r0);
+         }
+
+
+      PROCEDURE SetText
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             out(r10,r0);		/* Screen in now blank */
+
+             out(r8,0x32);		/* Back to herc mode */
+             in(r0,r9);
+             and(r0,0x3f);
+             out(r9,r0);
+
+             out(r8,0x21);		/* Turn off Corner full mode */
+             out(r9,0);
+
+             in(r0,r11);
+             set(r4,r0);		/* Remember this value */
+             or(r0,3);			/* Enable graphics and page 2 */
+             out(r11,r0);
+
+             in(r0,r10);		/* Do more funny things... */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore value */
+             wait(3450);
+
+             out(r10,0x28);		/* Herc text mode */
+         }
+
+	PROCEDURE BlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		and (r0, 0xbf);		/* zero video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+	PROCEDURE UnBlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		or (r0, 0x40);		/* set video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+/* *********************************************************************** *
+ *                                                                         *
+ *                    cnrstone.mcadual.MHGAD8.1600x1280-2                  *
+ *                                                                         *
+ * *********************************************************************** */
+
+VENDOR CNRSTONE   "Cornerstone"
+ MODEL  MCADUAL    "Dual Page for Microchannel"
+  CLASS  MHGAD8     "Microchannel HGA @D8000"
+   MODE   1600x1280-2 "1600x1280 Monochrome"
+
+      MEMORY (0xD8000,0x8000);
+      PORT   (0x1000:2,0x1008,0x100F);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "StaticGray";
+	 DEPTH       = 1;
+         DEVTYPE     = 0x86;
+         DEVTECH     = 02;	/* Mono and banked */
+         PIXBYTES    = 0x100;
+         PIXWIDTH    = 1600;
+         PIXHEIGHT   = 1280;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+	 MAPTYPE     = "CornerstoneMC";
+         }
+
+      PROCEDURE SetGraphics
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             out(r8, 0x38);		/* Turn on the bit that allows */
+             in(r0,r9);			/* hi-res graphics modes */
+             or(r0,0x20);
+             out(r9,r0);
+
+             in(r0,r8);			/* Unlock everything */
+             in(r0,r8);			/* (Enable Corner full mode */
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             set(r3,r0);		/* Remember this value */
+             out(r10,r0);		/* Screen now blank */
+
+             out(r8,0x32);		/* CTL register */
+             in(r0,r9);
+             or(r0,0x80);		/* Bit 7 is Corn hi-res */
+             and(r0,0xbf);		/* Corn hi-res video enable off */
+             out(r9,r0);
+
+             in(r0,r11);		/* Herc specific functions */
+             set(r4,r0);
+             or(r0,3);			/* 0 - graf mode; 1 - page 2 en */
+             out(r11,r0);
+
+             set(r0,r3);		/* Do funny stuff to force init */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore this reg */
+
+             out(r8,0x32);
+             in(r0,r9);
+             or(r0,0x40);		/* Turn on Corn hi-res enable */
+             out(r9,r0);
+         }
+
+
+      PROCEDURE SetText
+         {
+             set(r8,0x1000);	/* Change these four set() commands */
+             set(r9,0x1001);	/* for base addresses other than 0x1000 */
+             set(r10,0x1008);
+             set(r11,0x100f);
+
+             in(r0,r10);		/* Get mode register */
+             and(r0,0xf7);		/* Blank text screen */
+             out(r10,r0);		/* Screen in now blank */
+
+             out(r8,0x32);		/* Back to herc mode */
+             in(r0,r9);
+             and(r0,0x3f);
+             out(r9,r0);
+
+             out(r8,0x21);		/* Turn off Corner full mode */
+             out(r9,0);
+
+             in(r0,r11);
+             set(r4,r0);		/* Remember this value */
+             or(r0,3);			/* Enable graphics and page 2 */
+             out(r11,r0);
+
+             in(r0,r10);		/* Do more funny things... */
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+             xor(r0,0x82);
+             out(r10,r0);
+             wait(3450);
+
+             out(r11,r4);		/* Restore value */
+             wait(3450);
+
+             out(r10,0x28);		/* Herc text mode */
+         }
+
+	PROCEDURE BlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		and (r0, 0xbf);		/* zero video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+	PROCEDURE UnBlankScreen
+	{
+		out (0x1000, 0x32);
+		in (r0, 0x1001);
+		or (r0, 0x40);		/* set video enable bit */
+		out (0x1000, 0x32);
+		out (0x1001, r0);
+	}
+
+/* End of File - CNRSTONE/mcadual.XGI */

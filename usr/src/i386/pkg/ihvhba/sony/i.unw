@@ -1,0 +1,32 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/sony/i.unw	1.1"
+#
+# 'unw' CLASS installation script to unwind compressed cpio archive
+#
+# input: src  - pathname to compressed cpio archive on installation medium 
+#	 dest - pathname of temporary file required for package verification
+#
+
+while read src dest
+do
+	# Create a hook dest file for package file verification
+	touch $dest
+	cd /
+
+	# Unwind $PGKINST files from compressed cpio archive
+	cpio -idDZ -I $src "*/$PKGINST/*" >/dev/null 2>&1 || exit 1
+
+	if [ "$install_list" ]
+	then
+		install_list="$install_list\n$dest"
+	else
+		install_list="$dest"
+	fi
+done 
+
+###
+# We have to installf all $dest's in order to make sure package file
+# attribute verification will pass later during pkginstall.  We will
+# removef it in the postinstall script.
+###
+echo "$install_list" | installf -c unw $PKGINST -
+installf -f $PKGINST || exit 2

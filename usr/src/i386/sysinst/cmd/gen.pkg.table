@@ -1,0 +1,222 @@
+#!/bin/ksh
+#ident	"@(#)gen.pkg.table	15.1	97/12/19"
+#
+#
+# gen.pkg.table 
+#
+# This script generates a table of package information (pkg_table file)
+# that is read by the gen.can.ifile script.
+# 
+# Be sure 'dir' (see below) is set to the same path
+# as that used in gen.pkg.table.
+# It can be passed on the command line to both scripts.
+#
+
+out=pkg_table
+sizes=pkg_sizes
+miss=/tmp/missing
+
+/bin/rm -f $out $sizes $miss
+touch $out;	chmod 777 $out
+touch $sizes;	chmod 777 $sizes
+touch $miss;	chmod 777 $miss
+
+# find the names of all the pkginfo files
+# and feed them to our parser 
+# sorted by the unquoted long name of the package
+#
+dir=$ROOT/$SPOOL
+[ -n "$1" ] && dir=$1
+
+
+# function get_pkg_size
+#
+# $dir should be the package directory
+# $1 should be some package name
+#
+# The $1/pkgmap file should have a line indicating the number
+# of parts in the package and the maximum size of a part like so:
+#	: 3 848
+# The pkgmap file is our first line of defence.  If that fails,
+# the $1.out file is expected to have some lines indicating the size
+# of each of the package's blocks.  Like so:
+#	part  1 -- 2876 blocks, 19 entries
+# If we can't find the $1.out file, we'll try doing a du of each of
+# the root* files in the package's directory.  If both of these methods
+# fail, we'll bail out and not print a size for this package.
+# If we did find a size, we'll see if there is a $1/install/space file,
+# which contains additional requirements of the package.  We'll add these
+# in if we find them.
+
+function get_pkg_size
+{
+	typeset got_space=0
+	typeset	space_reqs addl_reqs
+	typeset size
+	typeset pkgname=$1
+
+# First see if there is a line like ": 3 512" in the package's
+# pkgmap file.  If so, one number is the part count and the
+# other is the maximum size of a part.  This is at least an
+# upper bound on the size.  Hopefully, it's not a large
+# overestimate.
+
+	if [[ -f $dir/$pkgname/pkgmap ]]; then
+		size=0
+		while read line
+		do
+			set -- $line
+
+			if [[ "$1" = "#"* ]] || [[ "$1" = ":"* ]]
+			then
+				continue
+			fi
+
+			if [ "$2" = "f" ] || [ "$2" = "v" ] || [ "$2" = "e" ]
+			then
+				((size+=$8))
+			elif [ "$2" = "i" ]
+			then
+				((size+=$4))
+			fi
+		done < $dir/$pkgname/pkgmap
+# Convert size to 512 byte blocks
+		(( size = size/512 + 1 ))
+
+#		grep "^:" $dir/$1/pkgmap | read line
+#		line=${line#:}
+#		echo $line | read parts size
+#		[[ $parts = *[1-9]* ]] && [[ $size = *[1-9]* ]] &&
+#			(( space_reqs = parts * size ))
+#		[[ $space_reqs = *[1-9]* ]] && got_space=1
+
+		space_reqs="$size"
+		[[ $size = *[1-9]* ]] && got_space=1
+	fi
+
+# If we didn't find the package size that way, see if there's
+# a package .out file with a list of sizes for all the parts.
+# If so, get all these sizes.
+
+	if [[ $got_space != 1 && -f $dir/$pkgname.out ]]; then
+		space_reqs="$( grep "^part .* blocks" $dir/$pkgname.out | \
+			sed -e 's/.* \([0-9]*\) blocks.*/\1/' )"
+		[[ $space_reqs = *[1-9]* ]] && got_space=1
+	fi
+
+# If all that fails, try seeing how much space is used by each of
+# the parts (root*) with du.
+
+	if [[ $got_space != 1 ]]; then
+		space_reqs="$( du -s $dir/$pkgname/root* | awk '{ print $1 }' )"
+		[[ $space_reqs = *[1-9]* ]] && got_space=1
+	fi
+
+# If we got some number for the basic package size, see if there's
+# a space file, which would tell us that the package required
+# additional space when installed.  If so, add it on.
+
+	if [[ $got_space = 1 ]]; then
+		addl_reqs=""
+		[[ -f $dir/$pkgname/install/space ]] &&
+			addl_reqs="$(grep -v '^#' $dir/$pkgname/install/space | \
+				awk '{ print $2 }')"
+
+		print -n $pkgname ""
+		for i in $space_reqs $addl_reqs
+		do
+			[[ $i != *[!0-9]* ]] && print $i
+		done | \
+		awk 'BEGIN { sum = 0 } { sum += $1 } END { print sum }'
+	fi
+}
+
+
+echo Scanning package directory $dir...
+
+#find $dir -follow -name pkginfo -print | 
+#
+#/bin/ls $dir/*/pkginfo |		# says 'arg list too long'
+#
+#( cd $dir; find . -follow -name pkginfo -print | xargs grep -n '^NAME=' ) | 
+#
+( cd $dir ; /bin/ls */pkginfo |
+xargs grep -n '^NAME=' ) | 
+sed 's,",,g' |
+sort -t = -k 2f,2 | 
+(	integer i=0;
+	while [ 1 == 1 ]
+	do
+		read line	# reads /a/b/pkg_name/pkginfo
+		#echo -n .
+#echo line=$line 
+		[ "$line" == "" ] && break
+		#pp=${line%%:*}	# turns /a/b/pkg_name/pkginfo:PKG=blah
+		pp=$dir/${line%%:*}	# turns /a/b/pkg_name/pkginfo:PKG=blah
+				# into  /a/b/pkg_name/pkginfo
+#echo pp=$pp
+		d=${pp%/*}	# turns /a/b/pkg_name/pkginfo into /a/b/pkg_name
+#echo -n d=$d,' '
+		p=${d##*/}	# turns /a/b/pkg_name         into      pkg_name
+#echo -n p=$p,' '
+		x="`grep '^PKG=' $pp | sed -e 's,\",,g' -e 's,.*=,,'`"
+#echo p=$p, x=$x
+		echo -n $x' '
+#echo ""
+		[ "$x" == "" ] && x=$p
+		#x="`echo $x | sed -e s,-,_,g -e s,+,P,g`"  # c++ no longer renamed cPP
+#echo x=$x
+		echo "PACKAGE $x"					>> $out
+		get_pkg_size $x >> $sizes
+	#echo ${x}_PKG_INDEX=$i					>> $out
+	#echo 'pkg_code['$i']='$x				>> $out
+		x="`grep '^NAME=' $pp | sed -e 's,\",,g' -e 's,.*=,,'`"
+		[ "$x" == "" ] && x=$p
+		# On the following line, change xxx to x to shorten labels.
+		xxx=`	echo $x |
+			sed	-e 's,.*=,,' \
+				-e 's,",,g' \
+				-e s,Management,Mgmt, \
+				-e s,Environment,Env, \
+				-e s,Administrator,Admin, \
+				-e s,Manager,Mgr, \
+				-e 's, Package,,' \
+				-e s,Utilities,Utils, \
+				-e s,Utility,Util, \
+				-e 's, IHV,,' \
+				-e 's, Driver,,' \
+				-e 's, Visual,,' \
+				-e s,-Chip,, \
+				-e 's,Optimizing ,,' \
+				-e s,Compatibility,Compat.,   |
+			awk '{printf("%.30s",$0)}'`
+		# The shortening of words (sed) and truncation at 30 chars (awk)
+		# is to allow the Packages UI modules to fit the 
+		# labels (derived from NAME=) in 2 columns instead of 1.
+
+		echo "	LABEL	"$x					>> $out
+	#echo 'pkg_label['$i']="'$x'"'				>> $out
+		x="`grep '^DESC=' $pp | sed -e 's,\",,g' -e 's,.*=,,'`"
+		[ "$x" == "" ] && { x="  "; echo $p >> $miss; }
+		echo "	DESC	"$x					>> $out
+	#echo 'pkg_desc['$i']="'$x'"'				>> $out
+		dep=
+		[ -f $d/depend ]		&& dep=$d/depend
+		[ -f $d/install/depend ]	&& dep=$d/install/depend
+		[ -n "$dep" ] && {
+			x="`grep '^P' $dep | awk '{print $2}'`"
+			echo "	PKGS	"$x				>> $out
+	#echo 'pkg_pkgs['$i']="'$x'"'			>> $out
+		}
+		(( i += 1 ))
+	done
+)
+echo ""
+
+[ -s $miss ] && {
+	echo ""
+	echo DESCriptions must be added to $out for the following packages:
+	echo `cat $miss`
+	exit 1
+}
+exit 0

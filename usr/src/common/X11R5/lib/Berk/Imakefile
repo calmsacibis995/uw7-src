@@ -1,0 +1,36 @@
+/**/#ident	"@(#)berklib:Imakefile	1.3"
+
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+
+SRCS = Berklib.c
+OBJS = Berklib.o
+
+       INCLUDES = -I$(LIBSRC)
+        LIBNAME = X11
+   SHLIBLDFLAGS = -G
+
+XCOMM
+XCOMM The first release of SVR4.2 has bcopy, bzero etc in libX11.so.1
+XCOMM This is wrong as per iABI; this caused some problems with 3rd party
+XCOMM clients. In the mtc release, all non-abi stuff is removed, but since
+XCOMM we have to maintain backward compatability, libX11.so.1 is built
+XCOMM with Berklib.o and libX11.so.5.0
+XCOMM
+
+NEW_XLIB = ../X/libX11.so
+SHAREDOBJS = $(OBJS) $(NEW_XLIB)
+
+LibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),1,$(SHAREDOBJS),.,.)
+install::
+	$(INSTALL) $(INSTLIBFLAGS) lib$(LIBNAME).so.1 $(DESTDIR)$(USRLIBDIR);
+
+
+NormalLibraryTarget(Xbsd,$(OBJS))
+InstallLibrary(Xbsd,$(USRLIBDIR))
+DependTarget()
+
+NormalLintTarget($(SRCS))
+LintLibraryTarget($(LIBNAME),$(SRCS))
+InstallLintLibrary($(LIBNAME),$(LINTLIBDIR))

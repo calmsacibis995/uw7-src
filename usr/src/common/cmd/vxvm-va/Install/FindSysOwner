@@ -1,0 +1,63 @@
+#!/bin/sh
+#ident	"@(#)cmd.vxva:vxvm-va/Install/FindSysOwner	1.2"
+#
+#	If we are running during the system installation phase and our name
+#	is postinstall,  then just copy the script to the OwnerPrivs directory
+#	and call it vxva.
+#	
+
+[ -d /etc/inst/scripts ] && {
+	scriptName=`basename $0`
+	[ "$scriptName" = "FindSysOwner" ] && {
+		[ -d /usr/lib/scoadmin/account/OwnerPrivs ] || {
+			mkdir -p /usr/lib/scoadmin/account/OwnerPrivs
+		}
+		cp $0 /usr/lib/scoadmin/account/OwnerPrivs/vxva	
+		exit 0
+	}
+}
+
+bin=$PKGTOP/install
+PKGTOP=/opt/vxvm-va
+VXVA=$PKGTOP/bin/vxva
+ss=/etc/security/tfm/users
+
+SetVAPrivilege()
+{
+	login=$1
+	
+	if [ ! -d $ss/$login ]
+	then 
+		eval echo `gettxt Vxva_inst:7 "$login isn't a desktop user!"`
+		return 1
+	fi
+	
+	# Remove any old vxva pathnames from the TFM database, by removing vxva
+	if [ -f $ss/$login/cmds/vxva ];
+	then
+		/sbin/tfadmin adminuser -r vxva $login  2>/dev/null || {
+			/usr/bin/adminuser -r vxva $login  2>/dev/null || {
+				eval echo `gettxt Vxva_inst:2 "You don't have the privilege to run adminuser!"`
+				return 1
+			}
+		}
+	fi
+	
+	if /sbin/tfadmin adminuser -a vxva:$VXVA:owner:audit:compat:dacread:dacwrite:dev:filesys:macread:macwrite:mount:multidir:setplevel:setspriv:setuid:sysops:setupriv:driver:rtime:macupgrade:fsysrange:setflevel:auditwr:tshar:plock:core:loadmod $login   2>/dev/null
+	then 
+		eval echo `gettxt Vxva_inst:8 "$login is given the privilege to run Volume Manager!"`
+	else 	
+		/usr/bin/adminuser -a vxva:$VXVA:owner:audit:compat:dacread:dacwrite:dev:filesys:macread:macwrite:mount:multidir:setplevel:setspriv:setuid:sysops:setupriv:driver:rtime:macupgrade:fsysrange:setflevel:auditwr:tshar:plock:core:loadmod $login  2>/dev/null
+	fi
+	return 0
+}
+
+for upath in /etc/security/tfm/users/*
+do
+ 	if [ -s $upath/cmds/adminuser ]
+	then 
+		user=`basename $upath`
+		SetVAPrivilege $user
+	fi
+done
+exit 0

@@ -1,0 +1,31 @@
+/*
+ *	@(#) Imakefile 11.1 97/10/22 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1997.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+#include <Server.tmpl>
+
+GRAFDIR=$(USRLIBDIR)/grafinfo/cirrus
+SCRIPTDIR=$(USRLIBDIR)/vidconf/scripts
+AOFDIR=$(USRLIBDIR)/vidconf/AOF/ID/cirrus
+
+all: gd5465pci.tmpl
+
+gd5465pci.tmpl: gd5465pci.template modes.list buildgrafinfo
+	rm -f gd5465pci.tmpl
+	egrep -v '^#' modes.list | sort -r -n +1 | \
+	    $(SHELL) buildgrafinfo gd5465pci.template > gd5465pci.tmpl
+
+clean::
+	rm -f gd5465pci.tmpl
+
+depend::
+
+MakeDirectories(install,$(GRAFDIR) $(SCRIPTDIR) $(AOFDIR))
+InstallMultipleFlags(gd5465pci,$(SCRIPTDIR),$(INSTBINFLAGS))
+InstallNonExec(gd5465pci.tmpl,$(GRAFDIR))
+InstallNonExec(gd5465pci.xgi,$(GRAFDIR))
+InstallNonExec(../AOF/ID/gd5465pci,$(AOFDIR))
+InstallNamedNonExec(gd5465pci.unq,gd5465pci,$(USRLIBDIR)/vidconf/AOF/UNIQUE/cirrus)

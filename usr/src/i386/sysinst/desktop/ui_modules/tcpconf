@@ -1,0 +1,1443 @@
+#!/sbin/sh
+#ident "@(#)tcpconf	15.2	98/01/18"
+
+# This is a dual-purpose module.  If it is run as netinst_tcp,
+# it will ask only for information necessary for the network
+# install.  If it runs as tcpconf, it will ask for more things,
+# but not ask for the install server IP address.  If you run
+# it with some other name, it will die.
+
+case $0 in
+	*netinst_tcp)
+		typeset -r InstallPath=true ;;
+	*tcpconf)
+		typeset -r InstallPath=false ;;
+	*)
+		print -u2 This module must be run as tcpconf or netinst_tcp.
+		exit 0 ;;
+esac
+
+typeset TCP_MODULES="route inet icmp incf rip ip arp tcp udp net sockmod timod tirdwr"
+typeset IIROOT=/.extra.d
+typeset MNTROOT=/flpy2		# Mount point of Netinstall Floppy
+
+
+#-------------------------------------------------------
+
+function noop
+{
+  beep
+}
+
+function skip_test
+{
+	[ -n "$debug" ] && set -x
+
+	# common.rc invokes this to see if this module needs to run,
+	# which (in the InstallPath case) is only if the "inet"
+	# package will be installed.  If the package is not going
+	# to be installed, exit.  In the InstallPath case, we
+	# always want to execute the module.
+
+	if [[ $InstallPath != true ]]; then
+		UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+		[[ " $UnixWare_PKGS " == *" inet "* ]] || ii_exit $direction
+
+		# if we've been asked to defer configuration, skip on by.
+		NICS_CHOICE=$(svar get NICS_CHOICE)
+		[ "$NICS_CHOICE" = "DEFER_CONFIG" ] && {
+			ivar set TCP_IPADDR ""
+			ivar set TCP_NETMASK ""
+			ivar set TCP_BROADCAST ""
+			ivar set TCP_DOMAIN_NAME ""
+			ivar set TCP_ROUTER_ADDR ""
+			ivar set TCP_DNS_ADDR[0] ""
+			ivar set TCP_DNS_ADDR[1] ""
+			ivar set TCP_DNS_ADDR[2] ""
+			ivar set TCP_FRAME_TYPE ""
+			svar set tcp_defer "true"
+			ii_exit $direction
+		}
+	fi
+}
+
+. /globals.sh
+. /isl/ui_modules/common.rc
+. /isl/ui_modules/ip_math.rc
+. /isl/ui_modules/frametype.rc
+
+# JTB should we symlink the txtstrings instead?
+if [[ $InstallPath = true ]]; then
+	. /etc/inst/locale/$LANG/menus/net_wrapper.txtstrings
+	. /etc/inst/locale/$LANG/menus/tcpconf.txtstrings
+fi
+
+function setnows {
+	eval "$1=\"$2\""
+}
+
+# Table of 
+# -----------------
+#  go_back
+#  go_next
+#  get_help
+#
+#  choose_netmask
+#  class_ip_address
+#  valid_domain_name
+#  valid_ip_addr
+#
+#  netinst_clean
+#  tcp_done_clean_up
+#  try_to_reach_network
+#  check_router_required
+#  tcp_config_update
+#  tcp_config_shutdown
+#  tcp_net_config
+#
+#  guess_netmask
+#  guess_broadcast
+#  guess_router
+#  choose_partial_ip
+#  do_ip_addr
+#  do_netmask
+#  do_broadcast
+#  do_router
+#  input_state_save
+#  entry_get_parms
+#  entry_guess_parms
+#  net_install_tcp_init
+
+# Don't automatically export all subsequently defined variables
+set +a
+PS4='[$LINENO]+ '
+
+
+# ----------------------------------------------------
+# End of generics
+# ----------------------------------------------------
+
+# List of reasonable netmasks
+set -A TCPCONF_NETMASK_TXT \
+	"255.0.0.0" \
+	"255.128.0.0" \
+	"255.192.0.0" \
+	"255.224.0.0" \
+	"255.240.0.0" \
+	"255.248.0.0" \
+	"255.252.0.0" \
+	"255.254.0.0" \
+	"255.255.0.0" \
+	"255.255.128.0" \
+	"255.255.192.0" \
+	"255.255.224.0" \
+	"255.255.240.0" \
+	"255.255.248.0" \
+	"255.255.252.0" \
+	"255.255.254.0" \
+	"255.255.255.0" \
+	"255.255.255.128" \
+	"255.255.255.192" \
+	"255.255.255.224" \
+	"255.255.255.240" \
+	"255.255.255.248" \
+	"255.255.255.252"
+
+# Needed by frametype.rc
+CHOOSE_FRAME_TYPE_TITLE="$TCPCONF_CHOOSE_FRAME_TYPE_TITLE"
+CHOOSE_FRAME_TYPE_FOOTER="$TCPCONF_CHOOSE_FRAME_TYPE_FOOTER"
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices.
+	#
+
+	if [[ $InstallPath = true ]]
+	then
+	    ETH_HW=`ivar get NICS_DRIVER_NAME`
+	    NICS_TYPE=$(ivar get NICS_TYPE)
+	    if [ "$NICS_TYPE" == "MDI" ]
+	    then
+		dev_name=/dev/net0
+	    else
+		dev_name=/dev/${ETH_HW}_0
+	    fi
+
+	    tcp_status=$(svar get tcp_status)
+ 	    [ -f ${IIROOT}/usr/sbin/slink -a ${tcp_status:-0} -eq 1 ] && {
+ 		${IIROOT}/usr/sbin/ifconfig -a down > /dev/null 2>&1
+		${IIROOT}/usr/sbin/slink -uv -c /etc/strcf add_interface res ${dev_name} ${ETH_HW}0 > /dev/null 2>&1
+ 		${IIROOT}/usr/sbin/slink -uv -c /etc/strcf ii_boot > /dev/null 2>&1
+		svar set tcp_status 0
+ 	    }
+	fi
+
+	tcp_config_update
+	tcp_config_shutdown
+
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices if they're valid,
+	# otherwise, stick around.
+	#
+
+	#svar set tcp_status 0
+	tcp_config_update validate
+	retval=$?
+
+	[[ $retval != 0 ]] && return $retval
+
+	if [[ $InstallPath = true ]]; then
+		try_to_reach_network || return $?
+	fi
+
+	[[ $InstallPath = true ]] && tcp_done_clean_up
+	tcp_config_shutdown
+
+	svar set tcp_status 2
+	#
+	# Tell the sequencer to go forward
+	#
+	ii_exit NEXT
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+
+	tcp_config_update
+	tcp_config_shutdown
+
+	#
+	ivar set help_topic tcpconf
+	ii_exit HELP
+}
+
+
+function choose_netmask
+{
+[ -n "$debug" ] && set -x
+	CHOOSE_TITLE="${TCPCONF_CHOOSE_NETMASK_TITLE}"
+	CHOOSE_FOOTER="${TCPCONF_CHOOSE_NETMASK_FOOTER}"
+
+	nm_choice="${TCPCONF_NETMASK_TXT[0]}"
+
+	for i in "${TCPCONF_NETMASK_TXT[@]}"
+	do
+		[[ $1 = $i ]] && nm_choice="${i}"
+	done
+
+	choose -f -winparms "-above 4 -below 1" "${nm_choice}" "${TCPCONF_NETMASK_TXT[@]}"
+}
+
+
+
+# class_ip_address
+# Arguments: 1:	a valid IP address
+# Returns:
+#	0 = class A
+#	1 = class B
+#	2 = class C
+#	3 = something else
+
+function class_ip_address
+{
+[ -n "$debug" ] && set -x
+	typeset temp
+	temp="$( to_chex "$1" )"
+	temp="$( chex_to_dd "$temp" )"
+	temp="${temp%%.*}"
+	integer i=${temp}
+	(( ( i & 16#80 ) == 0 )) && return 0
+	(( ( i & 16#C0 ) == 16#80 )) && return 1
+	(( ( i & 16#E0 ) == 16#C0 )) && return 2
+	return 3
+}
+
+
+
+# determine if domain name is reasonable
+function valid_domain_name
+{
+[ -n "$debug" ] && set -x
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+# the following are the rules regarding domain name:
+# First Character  in [A-Za-z]
+# Other Characters in [-A-Za-z0-9]
+# Final Character  in [A-Za-z0-9]
+# Labels are of form  First{Other}*{Final}
+# Full name of form   Label{.Label}*
+#
+# Unacceptable:
+#	non-alphanumeric characters except for . and -
+#	- or a number at the beginning
+#	- or a number right after a .
+#	two . characters in a row
+#	- at the end or before a .
+
+	[[ $1 = @(*[!-A-Za-z0-9.]*|[-0-9]*|*.[-0-9]*|*..*|*-.*|*-) ]] && {
+		errmsg "${TCPCONF_ERROR_INVALID_NAME_CHAR}"
+		return 1;
+	}
+
+	return 0
+}
+
+
+
+# determine if IP address/netmask is correct
+function valid_ip_addr
+{
+[ -n "$debug" ] && set -x
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+	typeset via_net_err=${TCPCONF_ERROR_ILLEGAL_ADDR}
+	if [ X$2 = Xnetmask ]
+#	if [ a = a ]
+	then
+		{
+		typeset via_net_err=${TCPCONF_ERROR_ILLEGAL_NETMASK}
+		case "$1" in
+		0x*)
+			{
+			case "$1" in
+			#non-hex?
+			0x*[!0-9a-fA-F]*)
+				errmsg "${via_net_err}"
+				return 1;
+				;;
+			#leading is non-zero, len==len(0xffffff00)
+			0x[1-9a-fA-F]???????)
+				return 0;
+				;;
+			esac
+			errmsg "${via_net_err}"
+			return 1;
+			}
+		esac
+		}
+		#if it did not start with 0x, must be dotted decimal
+	fi
+	case "$1" in
+	#illegal addresses have non-(digit dot)
+	#2 or more dots in a row
+	#4 or more dots in addr
+	#starting octet has leading zero?
+	#begins or ends with a .?
+	*[!0-9.]*|*..*|*.*.*.*.*|.*|*.)
+		errmsg "${via_net_err}"
+		return 1;
+		;;
+	#numbers greater than 255: four+ digits, [3-9]XX, 2[6-9]X, 25[6-9]
+	*[1-9][0-9][0-9][0-9]*|*[3-9][0-9][0-9]*|*2[6-9][0-9]*|*25[6-9]*)
+		errmsg "${via_net_err}"
+		return 1; ;;
+	#MUST have 3 dots (note:127.0.0.1 == 127.0...but do we deal with it?)
+	*.*.*.*)
+		return 0;
+		;;
+	esac
+	#did not have exactly 3 dots
+	errmsg "${via_net_err}"
+	return 1;
+}
+
+function tcp_done_clean_up
+{
+[ -n "$debug" ] && set -x
+	#
+	#  Now we're configured.  Place the TCP-specific files in the
+	#  list to be copied to the hard drive when we chroot /mnt.
+	#
+	while read FILENAME
+	do
+		grep "^${FILENAME}$" /hd.list > /dev/null 2>&1
+		(( $? )) && echo ${FILENAME} >> /hd.list
+	done <<EOFILES
+dev/arp
+dev/icmp
+dev/ip
+dev/tcp
+dev/udp
+usr/lib/libcrypt.so
+usr/lib/libiaf.so
+usr/lib/tcpip.so
+usr/lib/libcrypt.so.1
+usr/lib/libiaf.so.1
+usr/lib/libresolv.so.2
+usr/lib/tcpip.so
+EOFILES
+
+	#
+	#  Copy file ii.conflicts from /tmp to /var/sadm/dist so
+	#  that these parameters may be used by other packages' install scripts.
+	#
+	[ -f /tmp/ii.conflicts ] &&
+		cp /tmp/ii.conflicts /var/sadm/dist/ii.conflicts
+
+	#
+	#  Now we're configured.  Place the common files in the list to be
+	#  copied to the hard drive when we chroot /mnt. This is a list of
+	#  files used by copy2hd to cpio from the RAM disk to the newly created
+	#  hard disk.
+	#
+	while read FILENAME
+	do
+		grep "^${FILENAME}$" /hd.list > /dev/null 2>&1
+		(( $? )) && echo ${FILENAME} >> /hd.list
+	done <<EOFILES
+etc/services
+etc/netconfig
+var/sadm/dist/ii.conflicts
+usr/sbin/pkgcat
+usr/lib/libnsl.so
+usr/lib/libsocket.so.2
+usr/lib/libthread.so
+usr/lib/libnsl.so.1
+usr/lib/libthread.so.1
+usr/bin/cat
+usr/bin/dd
+usr/bin/uname
+EOFILES
+
+# JTB: need to figure this out eventually
+#	netinst_clean SUCCESS
+
+#	wclose $CURWIN
+	return 0
+}
+
+
+
+function try_to_reach_network
+{
+[ -n "$debug" ] && set -x
+
+	#
+	#  Now configure the networking interface to use the proper
+	#  address
+	#
+	footer "${INETINST_SETUP_TCP}"
+	${IIROOT}/usr/sbin/ifconfig ${ETH_HW}0 ${TCP_IPADDR} \
+		netmask ${TCP_NETMASK} -trailers up > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		display -w "${INETINST_NET_FAILURE} ${INETINST_IFCONFIG_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+#		input_handler
+#		netinst_clean ERROR
+		return 1
+        }
+
+	#
+	#  Give ourselves a default route
+	#
+	if [ -n "${TCP_ROUTER_ADDR}" ]; then
+	   ${IIROOT}/usr/sbin/route add default ${TCP_ROUTER_ADDR} > /dev/null
+	   jRET=$?
+	   [ "${jRET}" != "0" ] && {
+		display -w "${INETINST_NET_FAILURE} ${INETINST_ROUTE_FAIL}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+#		input_handler
+#		netinst_clean ERROR
+# JTB new line
+		${IIROOT}/usr/sbin/ifconfig -a down
+		return 1
+	   }
+	fi
+
+	#
+	#  Ping the network install server to make sure that it's there.
+	#
+	ERROR="$INETINST_PING_FAIL1"
+	footer "${INETINST_TRY_SERVER}"
+	${IIROOT}/usr/sbin/ping ${TCP_SERVER_ADDR} 5 > /dev/null 2>&1
+	jRET=$?
+	if [ "${jRET}" != "0" ]
+	then
+		[[ -n ${TCP_ROUTER_ADDR} ]] && try_to_reach_router
+		display -w "${INETINST_SERVER_UNREACHABLE} ${ERROR}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+#		netinst_clean ERROR
+		${IIROOT}/usr/sbin/ifconfig -a down > /dev/null 2>&1
+		${IIROOT}/usr/sbin/route delete default ${TCP_ROUTER_ADDR} \
+			> /dev/null
+		return 1
+	fi
+
+	footer "${INETINST_VERIFY_STREAM}"
+	IMAGE="${TCP_SERVER_ADDR}:/var/spool/dist/${REL_FULLNAME}/${LANG} ${SET_NAME}.package"
+	SEC_MEDIUM_TYPE=tcp
+	NETPATH=${SEC_MEDIUM_TYPE} /usr/sbin/pkgcat -n ${SEC_MEDIUM_TYPE} \
+		 -s $IMAGE | read_header > /dev/null 2>&1
+	if [[ $? -ne 0 ]]
+	then
+		eval display -w "\"${INETINST_PKGCAT_FAIL}\"" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+#		netinst_clean ERROR
+		return 1
+	fi
+
+	return 0
+}
+
+
+function try_to_reach_router
+{
+	footer "${INETINST_TRY_ROUTER}"
+	${IIROOT}/usr/sbin/ping ${TCP_ROUTER_ADDR} 5 > /dev/null 2>&1
+	jRET=$?
+	if [ "${jRET}" != "0" ]
+	then
+		ERROR="$INETINST_PING_FAIL2"
+	else
+		ERROR="$INETINST_PING_FAIL3"
+	fi
+}
+
+# Assume we have valid ip address, netmask, and server ip address.
+# Returns 1 if server is on a different network (router required)
+# otherwise returns 0.
+
+function check_router_required
+{
+[ -n "$debug" ] && set -x
+
+	typeset ip srvr net anet bnet
+
+	ip=$( to_chex "${TCP_IPADDR}" )
+	srvr=$( to_chex "${TCP_SERVER_ADDR}" )
+	net=$( to_chex "${TCP_NETMASK}" )
+	anet=$( chex_and "$net" "$ip" )
+	bnet=$( chex_and "$net" "$srvr" )
+
+	[[ $anet != $bnet ]] && return 1
+
+	return 0
+}
+
+
+#
+#  If $1 is "validate", we check to make sure all fields have valid
+#  values.  If so, or if $1 is not "validate", we update the ifile
+#  with all of the shell variables we set here and return 0.  If
+#  we do the check and something is not valid, we show an error and
+#  return 1 instead of 0.
+#
+function tcp_config_update
+{
+[ -n "$debug" ] && set -x
+
+	footer ""
+	msg ""
+
+	#
+	#  Make sure that this form is completely filled in with 
+	#  valid values.  Each address is piped to a read to eliminate
+	#  leading or trailing whitespace which can foul up commands
+	#  that will use these addresses (like pkgcat).
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	typeset chk_TCP_IPADDR
+	typeset chk_TCP_NETMASK
+	typeset chk_TCP_BROADCAST
+	typeset chk_TCP_ROUTER_ADDR
+	typeset chk_TCP_SERVER_ADDR
+	typeset chk_TCP_DNS_ADDR[0]
+	typeset chk_TCP_DNS_ADDR[1]
+	typeset chk_TCP_DNS_ADDR[2]
+	typeset chk_TCP_DOMAIN_NAME
+	typeset chk_TCP_FRAME_TYPE
+
+	setnows chk_TCP_IPADDR		$TCP_IPADDR
+	setnows chk_TCP_NETMASK		$TCP_NETMASK
+	setnows chk_TCP_BROADCAST	$TCP_BROADCAST
+	setnows chk_TCP_ROUTER_ADDR	$TCP_ROUTER_ADDR
+	setnows chk_TCP_SERVER_ADDR	$TCP_SERVER_ADDR
+	setnows chk_TCP_DNS_ADDR[0]	${TCP_DNS_ADDR[0]}
+	setnows chk_TCP_DNS_ADDR[1]	${TCP_DNS_ADDR[1]}
+	setnows chk_TCP_DNS_ADDR[2]	${TCP_DNS_ADDR[2]}
+	setnows chk_TCP_DOMAIN_NAME	$TCP_DOMAIN_NAME
+	setnows chk_TCP_FRAME_TYPE	$TCP_FRAME_TYPE
+
+	[[ $1 = "validate" ]] && {
+
+		valid_ip_addr "${chk_TCP_IPADDR}"
+		[ $? != 0 -o -z "${chk_TCP_IPADDR}" ] && {
+			II_FLD[${II_ERR}]="${TCPCONF_IPADDR_PROMPT}"
+			let II_ERR+=1
+		}
+		
+		valid_ip_addr "${chk_TCP_NETMASK}" netmask
+		[ $? != 0 -o -z "${chk_TCP_NETMASK}" ] && {
+			II_FLD[${II_ERR}]="${TCPCONF_NETMASK_PROMPT}"
+			let II_ERR+=1
+		}
+
+		if [[ $InstallPath != true ]] || [[ -n $chk_TCP_ROUTER_ADDR ]]
+		then
+			valid_ip_addr "${chk_TCP_ROUTER_ADDR}"
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_ROUTER_PROMPT}"
+				let II_ERR+=1
+			}
+		fi
+
+		if [[ $InstallPath = true ]]; then
+
+			valid_ip_addr "${chk_TCP_SERVER_ADDR}"
+			[ $? != 0 -o -z "${chk_TCP_SERVER_ADDR}" ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_SERVER_PROMPT}"
+				let II_ERR+=1
+			}
+
+# If all the previous values are okay syntactically, but no router
+# is provided, see if a router is necessary.
+			[[ $II_ERR = 0 && -z "${chk_TCP_ROUTER_ADDR}" ]] && {
+				check_router_required
+				[ $? != 0 ] && {
+					II_FLD[${II_ERR}]="${TCPCONF_ROUTER_PROMPT}"
+					let II_ERR+=1
+				}
+			}
+
+		else
+
+			valid_ip_addr "${chk_TCP_BROADCAST}"
+			[ $? != 0 -o -z "${chk_TCP_BROADCAST}" ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_BROADCAST_PROMPT}"
+				let II_ERR+=1
+			}
+
+			valid_ip_addr "${chk_TCP_DNS_ADDR[0]}"
+#			[ $? != 0 -o -z "${chk_TCP_DNS_ADDR[0]}" ] && {
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_FIRST_DNS_PROMPT}"
+				let II_ERR+=1
+			}
+			#}
+
+			valid_ip_addr "${chk_TCP_DNS_ADDR[1]}"
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_AUX_DNS_PROMPT}"
+				let II_ERR+=1
+			}
+
+			valid_ip_addr "${chk_TCP_DNS_ADDR[2]}"
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_AUX_DNS_PROMPT}"
+				let II_ERR+=1
+			}
+
+			valid_domain_name "${chk_TCP_DOMAIN_NAME}"
+#			[ $? != 0 -o -z "${chk_TCP_DOMAIN_NAME}" ] && {
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${TCPCONF_DOMAIN_PROMPT}"
+				let II_ERR+=1
+			}
+			#}
+
+			valid_frame_type "${chk_TCP_FRAME_TYPE}"
+			[ $? != 0 -o -z "${chk_TCP_FRAME_TYPE}" ] && {
+				II_FLD[${II_ERR}]="$TCPCONF_FRAME_TYPE_PROMPT"
+				let II_ERR+=1
+			}
+		fi
+	}
+	
+	if [ ${II_ERR} != 0 ] 
+	then
+		#tcp_defer=$(svar get tcp_defer)
+		#[[ "$tcp_defer" == "true" ]] && return 0
+		eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+		return 1
+	else
+		ivar set TCP_IPADDR		"${chk_TCP_IPADDR}"
+		ivar set TCP_NETMASK		"${chk_TCP_NETMASK}"
+		ivar set TCP_BROADCAST		"${chk_TCP_BROADCAST}"
+		ivar set TCP_ROUTER_ADDR	"${chk_TCP_ROUTER_ADDR}"
+
+		ivar set TCP_DOMAIN_NAME	"${chk_TCP_DOMAIN_NAME}"
+		ivar set TCP_DNS_ADDR[0]	"${chk_TCP_DNS_ADDR[0]}"
+		ivar set TCP_DNS_ADDR[1]	"${chk_TCP_DNS_ADDR[1]}"
+		ivar set TCP_DNS_ADDR[2]	"${chk_TCP_DNS_ADDR[2]}"
+	
+		ivar set TCP_FRAME_TYPE		"${chk_TCP_FRAME_TYPE}"
+
+		if [ $InstallPath = true ]
+		then
+			ivar set SERVER_INET_ADDR "$chk_TCP_SERVER_ADDR"
+		fi
+		svar set tcp_defer "false"
+		return 0
+	fi
+}
+
+
+# Close the form and whatever else we need to do before leaving this module
+
+function tcp_config_shutdown
+{
+[ -n "$debug" ] && set -x
+
+	if [ -n "$myFID" ]
+	then
+		destroy_form $myFID
+		myFID=
+	fi
+	if [ -n "$myWID" ]
+	then
+		wclose $myWID
+		myWID=
+	fi
+}
+
+
+#  Gather information to configure the protocol stack (for TCP/IP).
+#
+function tcp_net_config
+{
+[ -n "$debug" ] && set -x
+
+
+	#
+	# Determine width of this menu
+	#
+	typeset II_WIDTH_MAX=0
+	typeset LINE_LENGTHS
+
+# Leave this left justified so the whitespace stripper will be happy.
+LINE_LENGTHS="${#TCPCONF_IPADDR_PROMPT} \
+${#TCPCONF_NETMASK_PROMPT} \
+${#TCPCONF_ROUTER_PROMPT}"
+
+	if [[ $InstallPath = true ]]; then
+		typeset II_WIDTH=19	# Width of input field (+4)
+		typeset field_cnt=6	# 2 lines of blanks, 4 fields
+		LINE_LENGTHS="$LINE_LENGTHS ${#TCPCONF_SERVER_PROMPT}"
+		FOOTER="$TCPCONF_NODEFER_FOOTER"
+	else
+		typeset II_WIDTH=39		# Width of input field (+4)
+		typeset field_cnt=13	# 4 lines of blanks, 9 fields
+		FOOTER="$TCPCONF_FORM_FOOTER"
+# Leave this left justified so the whitespace stripper will be happy.
+LINE_LENGTHS="$LINE_LENGTHS ${#TCPCONF_BROADCAST_PROMPT} \
+${#TCPCONF_FIRST_DNS_PROMPT} \
+${#TCPCONF_AUX_DNS_PROMPT} \
+${#TCPCONF_AUX_DNS_PROMPT} \
+${#TCPCONF_DOMAIN_PROMPT} \
+${#TCPCONF_FRAME_TYPE_PROMPT}"
+	fi
+
+	for i in $LINE_LENGTHS
+	do
+		(( II_WIDTH_MAX < i )) && (( II_WIDTH_MAX = i ))
+	done
+
+	let II_FIELD_LOC=${II_WIDTH_MAX}+3
+	let II_WIDTH=${II_WIDTH}+${II_WIDTH_MAX}
+
+	place_window -right 1 ${II_WIDTH} ${field_cnt} -current 'footer "${FOOTER}"' -fg $COMBO2_FG -bg $COMBO2_BG -title "${TCPCONF_TITLE}"
+	myWID=$CURWIN
+
+	open_form -exit 'go_next'
+	myFID=$FID
+
+	add_field -exit 'do_ip_addr "${TCP_IPADDR}"' \
+		-entry 'msgnoerr $TCPCONF_IPADDR_MSG' \
+		-p "${TCPCONF_IPADDR_PROMPT}" \
+		-ilen 15 TCP_IPADDR -ix ${II_FIELD_LOC}
+
+	NETMASK_FIELD_NUM=$FIELDCNT
+	add_field -choice 'choose_netmask "${TCP_NETMASK}"' \
+		-exit 'do_netmask "${TCP_NETMASK}"' \
+		-entry 'msgnoerr $TCPCONF_NETMASK_MSG' \
+		-p "${TCPCONF_NETMASK_PROMPT}" \
+		-ilen 15 TCP_NETMASK
+
+	if [[ $InstallPath != true ]]; then
+		BROADCAST_FIELD_NUM=$FIELDCNT
+		add_field -choice 'choose_partial_ip "${TCP_BROADCAST}"' \
+			-exit 'do_broadcast "${TCP_BROADCAST}"' \
+			-entry 'msgnoerr $TCPCONF_BROADCAST_MSG' \
+			-p "${TCPCONF_BROADCAST_PROMPT}" \
+			-ilen 15 TCP_BROADCAST
+	fi
+
+	ROUTER_FIELD_NUM=$FIELDCNT
+	add_field -choice 'choose_partial_ip "${TCP_ROUTER_ADDR}"' \
+		-exit 'do_router "${TCP_ROUTER_ADDR}"' \
+		-entry 'msgnoerr $TCPCONF_ROUTER_MSG' \
+		-p "${TCPCONF_ROUTER_PROMPT}" \
+		-ilen 15 TCP_ROUTER_ADDR
+
+	if [[ $InstallPath = true ]]; then
+		add_field -choice 'choose_partial_ip "${TCP_SERVER_ADDR}"' \
+			-exit 'valid_ip_addr "${TCP_SERVER_ADDR}"' \
+			-entry 'msgnoerr $TCPCONF_SERVER_MSG' \
+			-p "${TCPCONF_SERVER_PROMPT}" \
+			-ilen 15 TCP_SERVER_ADDR
+	else
+		add_field -exit 'valid_domain_name "${TCP_DOMAIN_NAME}"' \
+			-entry 'msgnoerr $TCPCONF_DOMAIN_MSG' \
+			-p "${TCPCONF_DOMAIN_PROMPT}" -py 6 -iy 6 \
+			-ilen 35 TCP_DOMAIN_NAME
+		add_field -choice 'choose_partial_ip "${TCP_DNS_ADDR[0]}"' \
+			-exit 'valid_ip_addr "${TCP_DNS_ADDR[0]}"' \
+			-entry 'msgnoerr $TCPCONF_FIRST_DNS_MSG' \
+			-p "${TCPCONF_FIRST_DNS_PROMPT}" \
+			-ilen 15 TCP_DNS_ADDR[0]
+		add_field -choice 'choose_partial_ip "${TCP_DNS_ADDR[1]}"' \
+			-exit 'valid_ip_addr "${TCP_DNS_ADDR[1]}"' \
+			-entry 'msgnoerr $TCPCONF_AUX_DNS_MSG' \
+			-p "${TCPCONF_AUX_DNS_PROMPT}" \
+			-ilen 15 TCP_DNS_ADDR[1]
+		add_field -choice 'choose_partial_ip "${TCP_DNS_ADDR[2]}"' \
+			-exit 'valid_ip_addr "${TCP_DNS_ADDR[2]}"' \
+			-entry 'msgnoerr $TCPCONF_AUX_DNS_MSG' \
+			-p "${TCPCONF_AUX_DNS_PROMPT}" \
+			-ilen 15 TCP_DNS_ADDR[2]
+		add_field -choice 'choose_frame_type "${TCP_FRAME_TYPE}"' \
+			-exit 'valid_frame_type "${TCP_FRAME_TYPE}"' \
+			-entry 'msgnoerr $TCPCONF_FRAME_TYPE_MSG' \
+			-p "${TCPCONF_FRAME_TYPE_PROMPT}" -py 11 -iy 11 \
+			-ilen ${FRAME_TYPE_MAX_LEN} TCP_FRAME_TYPE
+	fi
+
+	run_form $myFID
+}
+
+
+function guess_netmask
+{
+[ -n "$debug" ] && set -x
+	typeset newval=""
+	valid_ip_addr "${TCP_IPADDR}"
+	[ $? != 0 -o -z "${TCP_IPADDR}" ] && return 1
+
+	if [[ ${TCP_NETMASK} = 0x* ]]; then
+#		class_ip_address "${TCP_IPADDR}"
+#		case $? in
+#			0) newval="0xFF000000" ;;
+#			1) newval="0xFFFF0000" ;;
+#			2) newval="0xFFFFFF00" ;;
+#			3) return 1;;
+#		esac
+		newval="0xFFFFFF00"
+	else
+#		class_ip_address "${TCP_IPADDR}"
+#		case $? in
+#			0) newval="255.0.0.0" ;;
+#			1) newval="255.255.0.0" ;;
+#			2) newval="255.255.255.0" ;;
+#			3) return 1;;
+#		esac
+		newval="255.255.255.0"
+	fi
+
+	[[ $1 = var ]] && TCP_NETMASK="$newval" ||
+		fld_change ${myFID} ${NETMASK_FIELD_NUM} "$newval"
+	return 0
+}
+
+
+function guess_broadcast
+{
+[ -n "$debug" ] && set -x
+
+	[[ $InstallPath = true ]] && return 0
+
+	typeset ip net tnet bcast ddbcast
+	valid_ip_addr "${TCP_IPADDR}"
+	[ $? != 0 -o -z "${TCP_IPADDR}" ] && return 1
+
+	valid_ip_addr "${TCP_NETMASK}" netmask
+	[ $? != 0 -o -z "${TCP_NETMASK}" ] && return 1
+
+	ip=$( to_chex "${TCP_IPADDR}" )
+	net=$( to_chex "${TCP_NETMASK}" )
+	tnet=$( chex_not "$net" )
+	bcast=$( chex_or "$tnet" "$ip" )
+
+	[[ ${TCP_BROADCAST} = 0x* ]] &&
+		ddbcast=$( chex_to_hex "$bcast" ) ||
+		ddbcast=$( chex_to_dd "$bcast" )
+
+	[[ $1 = var ]] && TCP_BROADCAST="$ddbcast" ||
+		fld_change ${myFID} ${BROADCAST_FIELD_NUM} "${ddbcast}"
+	return 0
+}
+
+
+function guess_router
+{
+[ -n "$debug" ] && set -x
+# A router is not required if all hosts are on the same network,
+# and you don't want to talk to other networks.  Decision was
+# made to avoid guessing a router address.
+
+return 0
+
+	typest ip net tnet one router ddrouter
+	valid_ip_addr "${TCP_IPADDR}"
+	[ $? != 0 -o -z "${TCP_IPADDR}" ] && return 1
+
+	valid_ip_addr "${TCP_NETMASK}" netmask
+	[ $? != 0 -o -z "${TCP_NETMASK}" ] && return 1
+
+	ip=$( to_chex "${TCP_IPADDR}" )
+	net=$( to_chex "${TCP_NETMASK}" )
+	tnet=$( chex_and "$net" "$ip" )
+	one=$( dd_to_chex "0.0.0.1" )
+	router=$( chex_or "$tnet" "$one" )
+
+	[[ ${TCP_ROUTER_ADDR} = 0x* ]] &&
+		ddrouter=$( chex_to_hex "$router" ) ||
+		ddrouter=$( chex_to_dd "$router" )
+
+	[[ $1 = var ]] && TCP_ROUTER_ADDR="$ddrouter" ||
+		fld_change ${myFID} ${ROUTER_FIELD_NUM} "${ddrouter}"
+	return 0
+}
+
+
+function choose_partial_ip
+{
+[ -n "$debug" ] && set -x
+	valid_ip_addr "${TCP_IPADDR}"
+	[ $? != 0 -o -z "${TCP_IPADDR}" ] && return
+
+# may not be able to assume IP is in dotted decimal, so make it so
+
+	ip="$( to_chex "${TCP_IPADDR}" )"
+	ip="$( chex_to_dd "$ip" )"
+
+# strip off 1 to 3 bytes from the end
+
+	a="${ip%.*}."
+	b="${a%.*.}."
+	c="${b%.*.}."
+
+	[[ $1 != $a && $1 != $b && $1 != $c ]] && oldval="$1"
+
+	if [[ -n $oldval ]]; then
+		[[ -n $1 ]] && cur="$1" || cur="$oldval"
+		choose -winparms "-above 4 -below 1" "$cur" "$a" "$b" "$c" "$oldval"
+	else
+		[[ -n $1 ]] && cur="$1" || cur="$c"
+		choose -winparms "-above 4 -below 1" "$cur" "$a" "$b" "$c"
+	fi
+}
+
+
+function do_ip_addr
+{
+[ -n "$debug" ] && set -x
+	valid_ip_addr "$1"
+	retval=$?
+
+	[[ $retval -eq 0 ]] && {
+		class_ip_address "${save_TCP_IPADDR}"
+		class_a=$?
+		class_ip_address "${TCP_IPADDR}"
+		class_b=$?
+
+		[[ $class_a -ne $class_b ]] && {
+			guess_netmask
+		}
+
+		[[ $save_TCP_IPADDR != $TCP_IPADDR ]] && {
+			guess_broadcast
+			guess_router
+		}
+		input_state_save
+	}
+
+	return $retval
+}
+
+
+function do_netmask
+{
+[ -n "$debug" ] && set -x
+	valid_ip_addr "$1" netmask
+	retval=$?
+
+	[[ $retval -eq 0 ]] && {
+		[[ $save_TCP_NETMASK != $TCP_NETMASK ]] && {
+			guess_broadcast
+			guess_router
+		}
+		input_state_save
+	}
+
+	return $retval
+}
+
+
+function do_broadcast
+{
+[ -n "$debug" ] && set -x
+	valid_ip_addr "$1"
+	retval=$?
+
+	[[ $retval -eq 0 ]] && {
+		input_state_save
+	}
+
+	return $retval
+}
+
+
+function do_router
+{
+[ -n "$debug" ] && set -x
+	valid_ip_addr "$1"
+	retval=$?
+
+	[[ $retval -eq 0 ]] && {
+		input_state_save
+	}
+
+	return $retval
+}
+
+
+function input_state_save
+{
+[ -n "$debug" ] && set -x
+	save_TCP_IPADDR=${TCP_IPADDR}
+	save_TCP_NETMASK=${TCP_NETMASK}
+	save_TCP_BROADCAST=${TCP_BROADCAST}
+	save_TCP_ROUTER_ADDR=${TCP_ROUTER_ADDR}
+}
+
+
+function entry_get_parms
+{
+[ -n "$debug" ] && set -x
+
+	# Get the values for our variables out of the ifile.
+
+	TCP_IPADDR=`ivar get TCP_IPADDR`
+	TCP_NETMASK=`ivar get TCP_NETMASK`
+	TCP_BROADCAST=`ivar get TCP_BROADCAST`
+	TCP_DOMAIN_NAME=`ivar get TCP_DOMAIN_NAME`
+	TCP_ROUTER_ADDR=`ivar get TCP_ROUTER_ADDR`
+	TCP_DNS_ADDR[0]=`ivar get TCP_DNS_ADDR[0]`
+	TCP_DNS_ADDR[1]=`ivar get TCP_DNS_ADDR[1]`
+	TCP_DNS_ADDR[2]=`ivar get TCP_DNS_ADDR[2]`
+	TCP_FRAME_TYPE=`ivar get TCP_FRAME_TYPE`
+
+	if [[ $InstallPath = true ]]; then
+		TCP_SERVER_ADDR=`ivar get SERVER_INET_ADDR`
+		ETH_HW=`ivar get NICS_DRIVER_NAME`
+		NODE=`ivar get NODE`
+		REL_FULLNAME=`ivar get REL_FULLNAME`
+		SET_NAME=`ivar get SET_NAME`
+	fi
+
+	input_state_save
+}
+
+
+function entry_guess_parms
+{
+[ -n "$debug" ] && set -x
+
+	# We've tried to get initial values, but we may not have
+	# values for some fields.  For example, the broadcast
+	# address is not requested by the TCP network install
+	# screen.  So let's make some guesses....
+
+	[[ -n ${TCP_IPADDR} ]] && {
+		[[ -z ${TCP_NETMASK} ]] && guess_netmask var
+		[[ -n ${TCP_NETMASK} ]] && {
+			[[ -z ${TCP_BROADCAST} ]] && guess_broadcast var
+			[[ -z ${TCP_ROUTER_ADDR} ]] && guess_router var
+		}
+	}
+
+	# Initial frame type, if none is set already.
+
+	[[ -z ${TCP_FRAME_TYPE} ]] &&
+		TCP_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[0]}"
+}
+
+function defer_tcp_config
+{
+[ -n "$debug" ] && set -x
+	if [[ $InstallPath != true ]]; then
+		UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+
+		# if we defer TCP config, we may have to deconfig the NIC
+		typeset defer_nics=false
+		IPX_DEFER=$(ivar get IPX_DEFER)
+		[[ " $UnixWare_PKGS " != *" nwnet "* ]] && defer_nics=true
+		[ "$defer_nics" == "true" -o "${IPX_DEFER:-FALSE}" == "TRUE" ] && {
+			svar set NICS_CHOICE DEFER_CONFIG
+
+			# some of the network postinstall scripts use
+			# empty NICS_TYPE as a way to defer configuration
+			ivar set NICS_TYPE ""
+			ivar set NICS_CONFIG_FILE ""
+			ivar set NICS_DRIVER_NAME ""
+		}
+
+		# without TCP, NIS is useless
+		[[ " $UnixWare_PKGS " == *" nis "* ]] && {
+			ivar set NIS_TYPE "DEFER"
+		}
+
+		ivar set TCP_IPADDR ""
+		ivar set TCP_NETMASK ""
+		ivar set TCP_BROADCAST ""
+		ivar set TCP_DOMAIN_NAME ""
+		ivar set TCP_ROUTER_ADDR ""
+		ivar set TCP_DNS_ADDR[0] ""
+		ivar set TCP_DNS_ADDR[1] ""
+		ivar set TCP_DNS_ADDR[2] ""
+		ivar set TCP_FRAME_TYPE ""
+		svar set tcp_defer "true"
+	fi
+}
+
+function load_floppy_one
+{
+	# get rid of remnants of previous magic floppy mount
+	sh_umount $MNTROOT >/dev/null 2>&1
+	rm -f /usr/lib/libcrypt.so* >/dev/null 2>&1
+
+	typeset DONE=0
+	typeset II_FLOP_ERR=0
+	typeset MESSAGE=${INETINST_INSERT_FLOPPY}
+	cancel_tcp_install=0
+
+	while [ ${DONE} -eq 0 ]
+	do
+	    if [ ${II_FLOP_ERR} != 0 ]
+	    then
+		display -w "${MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+	    else
+		display -w "${MESSAGE}"
+	    fi
+
+	    set_hotkey 9 "cancel_tcp_install=1; return 0"
+
+	    footer "$WELCOME_FOOTER"
+	    msg ""
+	    input_handler
+
+	    # The user has decided that it isn't time to load the
+	    # first network floppy, or hasn't yet created the
+	    # floppy and wants to back up.
+	    #
+	    [ "${cancel_tcp_install}" == "1" ] && {
+		# TODO - somewhat problematic. This currently
+		# tries to unload the modules, but they aren't
+		# yet loaded. 
+		netinst_clean ERROR
+		ii_exit PREV
+	    }
+
+	    display "${EXAMINING_DISKETTE}"
+	    footer "${GENERIC_WAIT_FOOTER}"
+
+	    rm -f /tmp/netflop.label
+	    cpio -iuvDZI /dev/rdsk/f0t >> /tmp/stderr 2>&1
+	    (( $? )) || {
+		read IDSTRING < /tmp/netflop.label
+		REL_FULLNAME=$(ivar get REL_FULLNAME)
+		if [ "${IDSTRING}" = "${REL_FULLNAME} 1" ]
+		then
+			DONE=1
+		fi
+	    }
+	    MESSAGE="${INETINST_INSERT_AGAIN}${INETINST_INSERT_FLOPPY}"
+	    II_FLOP_ERR=1
+	    wclose $CURWIN
+	done
+}
+
+function net_install_tcp_init
+{
+[ -n "$debug" ] && set -x
+
+	#  The networking hardware has been successfully configured at
+	#  this point.  Here we do the tcp-specific stuff.
+
+	tcp_status=$(svar get tcp_status)
+	tcp_status="${tcp_status:-0}"
+	(( tcp_status > 0 )) && return 0
+
+	# make sure the files have been extracted from the
+	# floppy.
+
+	cd ${IIROOT}
+	got_floppy_one=0
+	[ -f /tmp/common.list -a -f /tmp/tcp.list ] || {
+		load_floppy_one
+		got_floppy_one=1
+	}
+	TCP_EXTRACT_LIST=""
+	testlist="$(cat /tmp/common.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			TCP_EXTRACT_LIST="${testlist}"
+			break
+		}
+	done
+	testlist="$(cat /tmp/tcp.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			TCP_EXTRACT_LIST="${TCP_EXTRACT_LIST} ${testlist}"
+			break
+		}
+	done
+
+	typeset extract_cnt=0 cnt_extracted=0
+	[ -n "$TCP_EXTRACT_LIST" ] && {
+	    (( $got_floppy_one )) || load_floppy_one
+	    display "$INETINST_COPY_WAIT" -above 1 -below 3
+	    DISPWIN=${CURWIN}
+	    msg ""
+	    footer "${LONG_WAIT_FOOTER}"
+	    set -- ${TCP_EXTRACT_LIST}
+	    extract_cnt=$#
+	    gauge_start $extract_cnt -title "${COPYING_UTILS}" -above 6
+	    PROGRESS=$CURWIN
+	    cpio -ivdDZI /dev/rdsk/f0 ${TCP_EXTRACT_LIST} 2>> /tmp/stderr |&
+		while read -p x
+		do
+			gauge_add
+			(( cnt_extracted += 1 ))
+		done
+	    call sleep 2
+	    wclose $PROGRESS
+	    wclose ${DISPWIN}
+	}
+
+	[[ $cnt_extracted != $extract_cnt ]] && {
+	    display -w "${INETINST_NET_FAILURE} ${INETINST_TCPEXTRACT_FAIL}" \
+		-bg $ERROR_BG -fg $ERROR_FG
+	    input_handler
+	    return 1
+	}
+
+	#
+	#  Let the user know we're now configuring the network
+	#
+	(( $extract_cnt )) && wclose $DISPWIN
+	display "${INETINST_CONFIGURE_NETWORK}"
+	footer "${INETINST_WAIT_MSG}"
+	typeset CONFWID=$CURWIN
+
+	typeset iilibs
+	for iilibs in ${IIROOT}/usr/lib/*.so ${IIROOT}/usr/lib/*.so.2
+	do
+		[ -h /usr/lib/${iilibs##*/} ] || ln -s ${iilibs} /usr/lib/
+	done
+
+	for iilibs in /usr/lib/*.so
+	do
+		[ -h ${iilibs}.1 ] || ln -s ${iilibs} ${iilibs}.1
+	done
+
+	#
+	#  TCP network install requires that we make the necessary
+	#  device nodes, load the appropriate kernel modules, then
+	#  	link the networking streams modules,
+	#	configure the networking interface (address 0.0.0.0),
+	#	use bootp to try to find TCP networking info
+	#	configure the networking interface (real address),
+	#	add the default route
+	#	ping the install server
+	#
+	for i in arp icmp ip tcp udp route
+	do
+	    OIFS="${IFS}"
+	    IFS=":"
+	    while read junk junk mod min
+	    do
+	    	[ "${mod}" == "${i}" ] && {
+	    	    ${IIROOT}/usr/sbin/mknod /dev/${mod} c 7 ${min}
+	    	    break
+	    	}
+	    done < ${IIROOT}/etc/conf/mod_register
+	    IFS="${OIFS}"
+	done 
+
+	#
+	#  Make TCP specific links, directories
+	#
+	ln -s ${IIROOT}/etc/confnet.d /etc/
+	ln -s ${IIROOT}/etc/strcf /etc/
+	ln -s ${IIROOT}/usr/lib/libresolv.so.2 /usr/lib/resolv.so.2
+
+	#
+	#  Load in modules for Networking Stack, sockets, and TLI.  These are
+	#  stored on the Network Install Floppy as bzip'ed cpio archives to
+	#  save space.  When we cpio them in and load them, we then blow them
+	#  away to save space on the boot filesystem.  
+	#
+	cd /etc/conf/mod.d/
+	for MODULE in ${TCP_MODULES}
+	do
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		jRET=$?
+		[ "${jRET}" != "0" ] && {
+			wclose $CURWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_TCPLOAD_FAIL} ${MODULE}" -bg $ERROR_BG -fg $ERROR_FG
+			footer "$INETINST_ERROR_FOOTER"
+			input_handler
+#			netinst_clean ERROR
+			return 1
+		}
+	done
+
+	#
+	#  Link STREAMS modules
+	#
+	${IIROOT}/usr/sbin/slink -v -c /etc/strcf ii_boot > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_SLINK_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+		input_handler
+#		netinst_clean ERROR
+		return 1
+	}
+
+	NICS_TYPE=$(ivar get NICS_TYPE)
+	if [ "$NICS_TYPE" == "MDI" ]
+	then
+		dev_name=/dev/net0
+	else
+		dev_name=/dev/${ETH_HW}_0
+	fi
+	${IIROOT}/usr/sbin/slink -v -c /etc/strcf add_interface res ${dev_name} ${ETH_HW}0 > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_SLINK_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+		input_handler
+#		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Bring up the interface with a zero address to listen for
+	#  broadcast responses to BOOTP requests.
+	#
+	${IIROOT}/usr/sbin/ifconfig ${ETH_HW}0 up > /dev/null
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_IFCONFIG_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+		input_handler
+#		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  We now try to run bootp to determine our address and
+	#  other significant parameters.
+	#
+	${IIROOT}/usr/sbin/bootp -a ${ETH_HW}0 -c 3 ${dev_name} \
+		${NODE} >> /tmp/bootp.out 2>>/tmp/stderr
+
+	. /tmp/bootp.out
+
+# JTB: Do Bootp parameters work?
+
+	# Assign values given us by bootp to the values used in
+	# this script, but only if we don't already have values
+	# from somewhere.
+
+	[[ -z ${TCP_IPADDR} ]] &&
+		TCP_IPADDR="${INET_YOUR_IP_ADDRESS}"
+	[[ -z ${TCP_NETMASK} ]] &&
+		TCP_NETMASK="${INET_SUBNET_MASK}"
+	[[ -z ${TCP_ROUTER_ADDR} ]] &&
+		TCP_ROUTER_ADDR="${INET_ROUTER}"
+	[[ -z ${TCP_SERVER_ADDR} ]] &&
+		TCP_SERVER_ADDR="${INET_SERVER_IP_ADDRESS}"
+	[[ -z ${TCP_DOMAIN_NAME} ]] &&
+		TCP_DOMAIN_NAME="${INET_DOMAIN_NAME}"
+	[[ -z ${TCP_DNS_ADDR[0]} ]] &&
+		TCP_DNS_ADDR[0]="${INET_DNS_SERVER[0]}"
+	[[ -z ${TCP_DNS_ADDR[1]} ]] &&
+		TCP_DNS_ADDR[1]="${INET_DNS_SERVER[1]}"
+	[[ -z ${TCP_DNS_ADDR[2]} ]] &&
+		TCP_DNS_ADDR[2]="${INET_DNS_SERVER[2]}"
+
+	input_state_save
+
+	wclose $CURWIN
+
+	svar set tcp_status 1
+	return 0
+}
+
+entry_get_parms
+if [[ $InstallPath = true ]]; then
+	net_install_tcp_init || ii_exit PREV
+fi
+entry_guess_parms
+tcp_net_config
+
+# ----------------------------------------------------
+# More generics
+# ----------------------------------------------------
+
+# process user input
+
+set_hotkey 1 get_help
+set_hotkey 3 noop
+set_hotkey 4 noop
+set_hotkey 5 noop
+set_hotkey 6 noop
+set_hotkey 7 noop
+set_hotkey 9 go_back
+[[ $InstallPath != true ]] && set_hotkey 8 "defer_tcp_config; ii_exit NEXT"
+input_handler
+
+#
+# Done
+#
+go_next
+

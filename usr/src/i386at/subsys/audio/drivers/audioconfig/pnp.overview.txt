@@ -1,0 +1,42 @@
+
+Plug and Play Support Preliminary Design Overview
+Shawn McMurdo
+1997 July 10
+
+Intro
+-----
+Basic Plug and Play functions will be handled by Don Wooten's Plug and Play
+driver.  This driver provides a set of ioctl()'s which will be used by the
+Audio Configuration Manager to handle Plug and Play sound cards.
+
+Startup
+-------
+The Audio Configuration Manager will ask the Plug and Play driver via an
+ioctl() for a list of Plug and Play devices in the machine.
+Audioconfig will compare this list with the list of known installed soundcards.
+If there is a new plug and play soundcard, we will then ask the plug and play
+driver for any known configuration of the card's resources such as IOs, IRQs,
+and DMAs.
+At this point we have two desing choices:
+1) Create a new dialog that prompts the user to say "Hey, there's a new
+soundcard in your box, do you want to configure it?"
+or 2) Immediatley drop the user into the Modify dialog.
+If we use 2 this assumes a yes answer to 1 and the user can hit Cancel
+if they didn't want to confiure the card.
+
+Modify
+------
+After completion of the Modify dialog we update the resmgr with the new card
+resource values.
+If we are dealing with a Plug and Play card we then perform an ioctl() to tell
+the Plug and Play driver to initialize the card.
+This can be either an ioctl that gives the specific data structure to push down
+to the card (which we got from the earlier query to the PnP driver) or it could
+be an ioctl that tells the PnP driver to reread the resmgr and initialize all
+the PnP cards it finds there.
+
+Remove
+------
+If the user uses the Remove dialog to remove a card, we now need to update
+the resmgr and we may want to tell the PnP driver to uninitialize the card.
+

@@ -1,0 +1,82 @@
+/**/#ident	"@(#)oldnd:Imakefile	1.15"
+
+#if Release5
+#define DoNormalLib	NormalLibDnD
+#define DoSharedLib	SharedLibDnD
+#define DoDebugLib	DebugLibDnD
+#define DoProfileLib	ProfileLibDnD
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+#endif
+
+       INCLUDES = -I$(LIBSRC)
+
+        LIBNAME = DnD
+       FULLNAME = lib$(LIBNAME)
+
+   INSTALLFLAGS = $(INSTINCFLAGS)
+       LINTLIBS = $(LINTXLIB)
+
+HEADERS = \
+	FuncProto.h \
+	OlDnDUtil.h \
+	OlDnDVCX.h \
+	OlDnDVCXI.h \
+	OlDnDVCXP.h
+
+SRCS = \
+	OlDnDUtil.c \
+	OlDnDVCX.c
+
+OBJS = $(SRCS:.c=.o)
+SHAREDOBJS = $(OBJS)
+
+#if Release5
+LibraryObjectRule()
+
+#if DoSharedLib
+#if DoNormalLib
+SharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),shared,..)
+#else
+SharedLibraryTarget($(LIBNAME),$(SODTREV),$(SHAREDOBJS),.,.)
+#endif
+InstallSharedLibrary($(LIBNAME),$(SODTREV),$(USRLIBDIR))
+#endif
+
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+#if DoProfileLib
+ProfiledLibraryTarget($(LIBNAME),$(OBJS))
+InstallLibrary($(LIBNAME)_p,$(USRLIBDIR))
+#endif
+
+#else /* Release 5 */
+
+all:: $(FULLNAME).so $(FULLNAME).a
+
+MixedLibraryObjectRule()
+
+SharedLibraryTarget($(LIBNAME),$(SHAREDOBJS),,)
+ArchiveLibraryTarget($(LIBNAME),$(OBJS))
+
+#ifdef NOTNEEDED
+#if SystemV4
+install::
+	$(RM) -r $(ROOT)/$(MACH)/usr/include/$(LIBNAME)
+	$(LN) $(INCROOT)/$(LIBNAME) $(ROOT)/$(MACH)/usr/include/$(LIBNAME)
+#endif
+#endif
+
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+InstallMultiple($(HEADERS),$(INCROOT)/DnD)
+
+LintLibraryTarget($(LIBNAME),$(SRCS))
+InstallLintLibrary($(LIBNAME),$(LINTLIBDIR))
+
+DependTarget()
+
+NormalLintTarget($(SRCS))

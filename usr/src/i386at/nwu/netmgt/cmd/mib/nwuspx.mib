@@ -1,0 +1,558 @@
+--
+-- Source file:   nwuspx.mib
+--
+-- Description:   NetWare for Unix SPX Management Information Base
+--
+-- Author:   Rick Bell
+--
+-- Date Created:  January 25, 1993
+--
+-- Copyright 1991, 1992 Unpublished Work of Novell, Inc.
+-- All Rights Reserved.
+--
+-- This work is an unpublished work and contains confidential,
+-- proprietary and trade secret information of Novell, Inc. Access
+-- to this work is restricted to (I) Novell employees who have a
+-- need to know to perform tasks within the scope of their
+-- assignments and (II) entities other than Novell who have
+-- entered into appropriate agreements.
+--
+-- No part of this work may be used, practiced, performed,
+-- copied, distributed, revised, modified, translated, abridged,
+-- condensed, expanded, collected, compiled, linked, recast,
+-- transformed or adapted without the prior written consent
+-- of Novell.  Any use or exploitation of this work without
+-- authorization could subject the perpetrator to criminal and
+-- civil liability.
+--
+
+NWUSPX DEFINITIONS ::= BEGIN
+
+IMPORTS
+	enterprises, Counter, Gauge
+             FROM RFC1155-SMI
+        OBJECT-TYPE
+             FROM RFC1212
+        DisplayString
+             FROM RFC1213-MIB
+        nwu
+             FROM Network-Management-MIB;
+
+nwuSPX             OBJECT IDENTIFIER ::= { nwu 2 }
+
+-- SPX Groups
+
+nwuSPXSystem  OBJECT IDENTIFIER ::= {nwuSPX 1}
+nwuSPXCircuit OBJECT IDENTIFIER ::= {nwuSPX 2}
+
+-- Types
+NetNumber ::= OCTET STRING (SIZE(4))
+ 
+-- System Group
+--   This group contains global information about each instance of
+--   SPX running on one system.
+
+-- SPX System Table
+--  This table contains an entry for each instance of SPX running on the 
+--  system.
+
+nwuSPXSysTable          OBJECT-TYPE
+                        SYNTAX    SEQUENCE OF NWUSPXSysEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "The SPX system table."
+                        ::= {nwuSPXSystem 1}
+
+nwuSPXSysEntry          OBJECT-TYPE
+                        SYNTAX    NWUSPXSysEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "Each entry corresponds to one instance of 
+                                  SPX running on the system."
+                        INDEX     {nwuSPXSysInstance}
+                        ::= {nwuSPXSysTable 1}
+
+NWUSPXSysEntry ::= SEQUENCE  {
+                             nwuSPXSysInstance
+                                  INTEGER,
+                             nwuSPXSysState
+                                  INTEGER,
+                             nwuSPXSysMajorVer
+                                  INTEGER,
+                             nwuSPXSysMinorVer
+                                  INTEGER,
+                             nwuSPXSysUpTime
+                                  INTEGER,
+                             nwuSPXSysMaxOpenSessions
+                                  INTEGER,
+                             nwuSPXSysUsedOpenSessions
+                                  INTEGER,
+                             nwuSPXSysMaxUsedOpenSessions
+                                  Gauge,
+                             nwuSPXSysConnectReqCounts
+                                  Counter,
+                             nwuSPXSysConnectErrors
+                                  Counter,
+                             nwuSPXSysListenReqs
+                                  Counter,
+                             nwuSPXSysListenErrors
+                                  Counter,
+                             nwuSPXSysOutPackets
+                                  Counter,
+                             nwuSPXSysOutErrors
+                                  Counter,
+                             nwuSPXSysInPackets
+                                  Counter,
+                             nwuSPXSysInErrors
+                                  Counter
+                             }
+                           
+nwuSPXSysInstance       OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "The unique identifier of the instance of 
+                                  SPX to which this row corresponds. This 
+                                  value links the instance of SPX to an 
+                                  instance of IPX running on the system  
+                                  (i.e. the value of nwuSPXSysInstance 
+                                  should be the same as a value of ipxSysInstance)."
+                        ::= {nwuSPXSysEntry 1}
+
+nwuSPXSysState          OBJECT-TYPE
+                        SYNTAX    INTEGER   {
+                                            off(1),
+                                            on(2)
+                                            }
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Indicates the operational state of this 
+                                  instance of SPX."
+                        ::= {nwuSPXSysEntry 2}
+
+nwuSPXSysMajorVer       OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION    
+                                  "This is the Major Version Number for SPX 
+                                  Services."
+                        ::= { nwuSPXSysEntry 3 }
+
+nwuSPXSysMinorVer       OBJECT-TYPE
+                        SYNTAX  INTEGER
+                        ACCESS  read-only
+                        STATUS  mandatory
+                        DESCRIPTION
+                                  "This is the Minor Version Number for
+                                  SPX Services."
+                        ::= { nwuSPXSysEntry 4 }
+
+nwuSPXSysUpTime         OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the uptime of the SPX Services."
+                        ::= { nwuSPXSysEntry 5 }
+
+nwuSPXSysMaxOpenSessions OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "This is the maximum open SPX sessions
+                                  allowed on the system."
+                        ::= { nwuSPXSysEntry 6 }
+
+nwuSPXSysUsedOpenSessions OBJECT-TYPE
+                        SYNTAX   INTEGER
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "This is the current in use open SPX sessions
+                                  on the system."
+                        ::= { nwuSPXSysEntry 7 }
+
+nwuSPXSysMaxUsedOpenSessions OBJECT-TYPE
+                        SYNTAX   Gauge
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "This is the higwater mark of open SPX 
+                                  sessions on the system."
+                        ::= { nwuSPXSysEntry 8 }
+
+nwuSPXSysConnectReqCounts OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of connect request received."
+                        ::= { nwuSPXSysEntry 9 }
+
+nwuSPXSysConnectErrors  OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of connect request errors."
+                        ::= { nwuSPXSysEntry 10 }
+
+nwuSPXSysListenReqs     OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of listen request received."
+                        ::= { nwuSPXSysEntry 11 }
+
+nwuSPXSysListenErrors   OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of listen request errors."
+                        ::= { nwuSPXSysEntry 12 }
+
+nwuSPXSysOutPackets     OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of SPX packets sent."
+                        ::= { nwuSPXSysEntry 13 }
+
+nwuSPXSysOutErrors      OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of SPX packets sent errors."
+                        ::= { nwuSPXSysEntry 14 }
+
+nwuSPXSysInPackets      OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of SPX packets received."
+                        ::= { nwuSPXSysEntry 15 }
+
+nwuSPXSysInErrors       OBJECT-TYPE
+                        SYNTAX   Counter
+                        ACCESS   read-only
+                        STATUS   mandatory
+                        DESCRIPTION
+                                  "Number of SPX packets received errors."
+                        ::= { nwuSPXSysEntry 16 }
+
+-- Circuit Group
+--   This group contains SPX management information for each
+--   circuit known to this system.
+
+-- SPX Circuit Table
+--  The SPX Circuit table contains an entry for the SPX 
+--  information for each circuit known to the system.
+
+nwuSPXCircTable         OBJECT-TYPE
+                        SYNTAX    SEQUENCE OF NWUSPXCircEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The SPX Circuit table."
+                        ::= {nwuSPXCircuit 1}
+
+nwuSPXCircEntry         OBJECT-TYPE
+                        SYNTAX    NWUSPXCircEntry
+                        ACCESS    not-accessible
+                        STATUS    mandatory
+                        DESCRIPTION 
+                             "Each entry corresponds to one circuit known to 
+                             the system."
+                        INDEX     {
+                                  nwuSPXCircSysInstance,
+                                  nwuSPXCircIndex
+                                  }
+                        ::= {nwuSPXCircTable 1}
+
+NWUSPXCircEntry   ::= SEQUENCE    {
+                                  nwuSPXCircSysInstance
+                                       INTEGER,
+                                  nwuSPXCircIndex
+                                       INTEGER,
+                                  nwuSPXCircState
+                                       INTEGER,
+                                  nwuSPXCircStartTime
+                                       INTEGER,
+                                  nwuSPXCircRetryCounts
+                                       Counter,
+                                  nwuSPXCircRetryTime
+                                       INTEGER,
+                                  nwuSPXCircLocNetNumber
+                                       NetNumber,
+                                  nwuSPXCircLocNode
+                                       OCTET STRING,
+                                  nwuSPXCircEndNetNumber
+                                       NetNumber,
+                                  nwuSPXCircEndNode
+                                       OCTET STRING,
+                                  nwuSPXCircType
+                                       INTEGER,
+                                  nwuSPXCircIPXChkSum
+                                       INTEGER,
+                                  nwuSPXCircSndWinSize
+                                       INTEGER,
+                                  nwuSPXCircSndPktSize
+                                       INTEGER,
+                                  nwuSPXCircSndMsgCounts
+                                       Counter,
+                                  nwuSPXCircSndPktCounts
+                                       Counter,
+                                  nwuSPXCircSndNAKs
+                                       Counter,
+                                  nwuSPXCircSndErrorCtrs
+                                       Counter,
+                                  nwuSPXCircRcvWinSize
+                                       INTEGER,
+                                  nwuSPXCircRcvPktSize
+                                       INTEGER,
+                                  nwuSPXCircRcvPktCounts
+                                       Counter,
+                                  nwuSPXCircRcvNAKs
+                                       Counter,
+                                  nwuSPXCircRcvErrorCtrs
+                                       Counter,
+                                  nwuSPXCircRcvPktQues
+                                       Counter,
+                                  nwuSPXCircRcvPktSentUps
+                                       Counter
+                                  }
+
+nwuSPXCircSysInstance      OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The unique identifier of the instance of 
+                                  SPX and IPX (via ipxSysInstance) to which 
+                                  this entry corresponds. This value may be written 
+                                  only when creating a new entry in the table."
+                        ::= {nwuSPXCircEntry 1}
+
+nwuSPXCircIndex         OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The identifier of this circuit, unique within 
+                                  the instance of SPX. This value 
+                                  corresponds to the circuit identifier found in 
+                                  ipxCircIndex. This value may be written only when 
+                                  creating a new entry in the table."
+                        ::= {nwuSPXCircEntry 2}
+
+nwuSPXCircState         OBJECT-TYPE
+                        SYNTAX    INTEGER   {
+                                            off(1),
+                                            on(2),
+                                            auto(3)
+                                            }
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "Indicates whether SPX information may be 
+                                  sent/received over this circuit."
+                        DEFVAL    { auto }
+                        ::= {nwuSPXCircEntry 3}
+
+nwuSPXCircStartTime     OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Time the connection was open."
+                        ::= {nwuSPXCircEntry 4}
+
+nwuSPXCircRetryCounts   OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of retries before disconnect."
+                        ::= {nwuSPXCircEntry 5}
+
+nwuSPXCircRetryTime     OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Time in millisceconds between retries."
+                        ::= {nwuSPXCircEntry 6}
+
+nwuSPXCircLocNetNumber  OBJECT-TYPE
+                        SYNTAX    NetNumber
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The local network number portion of the
+                                   IPX address."
+                        ::= {nwuSPXCircEntry 7}
+
+nwuSPXCircLocNode       OBJECT-TYPE
+                        SYNTAX    OCTET STRING (SIZE(6))
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The local node number portion of the IPX 
+                                   address."
+                        ::= {nwuSPXCircEntry 8}
+
+nwuSPXCircEndNetNumber  OBJECT-TYPE
+                        SYNTAX    NetNumber
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The endpoint network number portion of the
+                                   IPX address."
+                        ::= {nwuSPXCircEntry 9}
+
+nwuSPXCircEndNode       OBJECT-TYPE
+                        SYNTAX    OCTET STRING (SIZE(6))
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION 
+                                  "The endpoint node number portion of the IPX 
+                                   address."
+                        ::= {nwuSPXCircEntry 10}
+
+nwuSPXCircType          OBJECT-TYPE
+                        SYNTAX    INTEGER   {
+                                            unknown(1),
+                                            spx(2),
+                                            spxii(3)
+                                            }
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Connection Type."
+                        ::= {nwuSPXCircEntry 11}
+
+nwuSPXCircIPXChkSum     OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "If non-zero IPX Check sums are used."
+                        ::= {nwuSPXCircEntry 12}
+
+nwuSPXCircSndWinSize    OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Current transmit window size."
+                        ::= {nwuSPXCircEntry 13}
+
+nwuSPXCircSndPktSize    OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Current maximum transmit packet size."
+                        ::= {nwuSPXCircEntry 14}
+
+nwuSPXCircSndMsgCounts  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of messages sent to SPX by application."
+                        ::= {nwuSPXCircEntry 15}
+
+nwuSPXCircSndPktCounts  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of packets sent to IPX by SPX."
+                        ::= {nwuSPXCircEntry 16}
+
+nwuSPXCircSndNAKs       OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of NACK packets sent."
+                        ::= {nwuSPXCircEntry 17}
+
+nwuSPXCircSndErrorCtrs  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Total number of send errors."
+                        ::= {nwuSPXCircEntry 18}
+
+nwuSPXCircRcvWinSize    OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Current receive window size."
+                        ::= {nwuSPXCircEntry 19}
+
+nwuSPXCircRcvPktSize    OBJECT-TYPE
+                        SYNTAX    INTEGER
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Current maximum receive packet size."
+                        ::= {nwuSPXCircEntry 20}
+
+nwuSPXCircRcvPktCounts  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of packets received."
+                        ::= {nwuSPXCircEntry 21}
+
+nwuSPXCircRcvNAKs       OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of NACK packets received."
+                        ::= {nwuSPXCircEntry 22}
+
+nwuSPXCircRcvErrorCtrs  OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Total number of receive errors."
+                        ::= {nwuSPXCircEntry 23}
+
+nwuSPXCircRcvPktQues    OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of packets qued due application being
+                                   to slow."
+                        ::= {nwuSPXCircEntry 24}
+
+nwuSPXCircRcvPktSentUps OBJECT-TYPE
+                        SYNTAX    Counter
+                        ACCESS    read-only
+                        STATUS    mandatory
+                        DESCRIPTION
+                                  "Number of packets received sent upstream."
+                        ::= {nwuSPXCircEntry 25}
+
+END

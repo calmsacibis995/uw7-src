@@ -1,0 +1,40 @@
+#ident	"@(#)r5fonts:clients/mkfontdir/Imakefile	1.3"
+
+XCOMM $XConsortium: Imakefile,v 1.5 91/07/17 16:04:28 gildea Exp $
+
+LOCAL_LIBRARIES = ../../lib/font/libfont.a 
+LOCAL_NAT_LIBRARIES = ../../lib/font/libfont_nat.a 
+DEPLIBS = $(LOCAL_LIBRARIES)
+INCLUDES = -I$(FONTSRC)/include -I$(FONTLIBSRC)/include
+SRCS = mkfontdir.c
+OBJS = mkfontdir.o
+PROGRAMS = mkfontdir_nat mkfontdir
+
+all::
+	$(RM) mkfontdir_nat.c
+	$(LN) mkfontdir.c mkfontdir_nat.c
+
+all:: $(PROGRAMS)
+
+mkfontdir_nat: mkfontdir_nat.o
+	$(RM) $@
+	$(CC) -o $@ mkfontdir_nat.o $(LDOPTIONS) $(LOCAL_LIBRARIES) 
+
+mkfontdir_nat.o: 
+	$(CC) -c $(CFLAGS) mkfontdir_nat.c
+
+mkfontdir: mkfontdir.o
+	$(RM) $@
+	$(HCC) -o $@ mkfontdir.o $(HLDOPTIONS) $(LOCAL_NAT_LIBRARIES) 
+
+mkfontdir.o: 
+	$(HCC) -c $(HCFLAGS) mkfontdir.c
+	
+	
+InstallProgram(mkfontdir,$(BINDIR))
+InstallProgram(mkfontdir_nat,$(BINDIR))
+
+includes::
+depend::
+
+/* ComplexProgramTarget(mkfontdir) */

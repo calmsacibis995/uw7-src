@@ -1,0 +1,271 @@
+#!/sbin/sh
+#ident	"@(#)netinfo	1.2"
+#ident	"$Header$"
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	# if catalogs aren't under /usr/lib/locale, check /etc/inst/locale
+	if [ -d /usr/lib/locale/$LANG ] 
+	then LC_MESSAGES=$LANG
+	else LC_MESSAGES=/etc/inst/locale/$LANG
+	fi
+	export LANG LC_MESSAGES
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+dARG=`gettxt "$CAT:82" "device"`
+pARG=`gettxt "$CAT:81" "protocol"`
+USAGE="
+
+netinfo [-l dev] [-l proto] [-d <$dARG>] [-p <$pARG>]
+netinfo [-u -l dev] [-u -l proto]
+netinfo [-a -d <$dARG>] [-a -d <$dARG> -p <$pARG>]
+netinfo [-r -d <$dARG>] [-r -p <$pARG>] [-r -d <$dARG> -p <$pARG>]
+"
+usage()
+{
+pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+exit 1
+}
+NETDRV=/etc/confnet.d/netdrivers
+unmap_flg=0
+add_flg=0
+rm_flg=0
+
+uid=`expr "\`id\`" : '[^=]*=\([^(]*\)(.*'`
+if [ "$uid" -ne 0 ]
+then
+	pfmt -l $LABEL -s error -g $CAT:84 "must be super-user\n"
+	exit 1
+fi
+
+do_list() {
+if [ "$unmap_flg" -eq 0 ]
+then
+	if [ -s $NETDRV ]
+	then
+		egrep -v '^#' $NETDRV > /tmp/netlist.$$
+		if [ "$disp" = dev ]
+		then	
+			sed -e 's/[ 	][ 	]*/ /g
+				s/$/ /g' /tmp/netlist.$$|cut -d" " -f1|
+				sed -e '/^[ 	]*$/d'
+		else
+			sed -e 's/[ 	][ 	]*/ /g
+				s/$/ /g' /tmp/netlist.$$|cut -d" " -f2|
+				sort -u|sed -e '/^[ 	]*$/d'
+		fi
+		rm -f /tmp/netlist.$$
+	else	exit 0
+	fi
+else
+	if [ "$disp" = dev ]
+	then
+		if [ -s $NETDRV ]
+		then	
+			egrep -v '^#' $NETDRV > /tmp/netlist.$$
+			while read a b
+			do
+				if [ "$b" = "" ]
+				then	echo $a
+				fi
+			done < /tmp/netlist.$$
+			rm -f /tmp/netlist.$$
+		else	exit 0
+		fi
+	else
+		cd /etc/confnet.d
+		for i in `ls`
+		do
+			if [ -d $i ]
+			then	
+				egrep -v "^#" $NETDRV|egrep "$i"|sed -e 's/[ 	][ 	]*/ /g
+							   s/$/ /g'|
+					egrep " $i " > /dev/null
+				if [ $? != 0 ]
+				then echo $i
+				fi
+			fi
+		done
+	fi
+fi
+}
+
+do_list_dp() {
+# change the format <device><whitespace><protocol> of netdrivers
+# to <device><single_space><protocol>
+cat $NETDRV | sed -e 's/[ 	][ 	]*/ /g
+			s/$/ /g'>/tmp/netdv1.$$
+if [ "$dvc" != "" ]
+then
+	egrep "^$dvc " /tmp/netdv1.$$ > /tmp/netdv2.$$
+	if [ -s /tmp/netdv2.$$ ]
+	then	
+		cut -d" " -f2 /tmp/netdv2.$$ | sed -e '/^[ 	]*$/d' 
+	fi
+	rm -f /tmp/netdv2.$$
+else
+	egrep " $prot " /tmp/netdv1.$$ > /tmp/netdv2.$$
+	if [ -s /tmp/netdv2.$$ ]
+	then	
+		cut -d" " -f1 /tmp/netdv2.$$ | sed -e '/^[ 	]*$/d' 
+	fi
+	rm -f /tmp/netdv2.$$
+fi
+rm -f /tmp/netdv1.$$
+}
+
+do_add() {
+if [ "$prot" = "" ]
+then
+	egrep "^$dvc" $NETDRV > /dev/null
+	if [ $? != 0 ]
+	then
+		echo "$dvc" >> $NETDRV
+	fi
+else
+	egrep "^$dvc" $NETDRV > /tmp/dvc.$$
+
+	#dvc_name not in NETDRV
+	if [ ! -s /tmp/dvc.$$ ]
+	then	echo "$dvc	$prot" >> $NETDRV
+	else	
+		#dvc_name in NETDRV, no matching protocol
+		while read dvc_name prot_name
+		do
+			if [ "$prot_name" = "" ]
+			then	
+				ed - $NETDRV <<!
+/^$dvc/c
+${dvc}	${prot} 
+.
+w
+!
+			break
+			fi
+		done < /tmp/dvc.$$
+	fi
+	rm -f /tmp/dvc.$$
+
+	#dvc_name in NETDRV, but matched to a different protocol
+	cat $NETDRV|sed -e 's/[ 	][ 	]*/ /g'|
+		egrep "^$dvc $prot" > /dev/null
+	if [ $? != 0 ]
+	then	echo "$dvc	$prot" >> $NETDRV
+	fi
+fi
+}
+
+do_rm() {
+# change the format <device><whitespace><protocol> of netdrivers
+# to <device><single_space><protocol>
+sed -e 's/[ 	][ 	]*/ /g
+		s/$/ /g' $NETDRV >/tmp/netdv1.$$
+if [ "$dvc" != "" -a "$prot" = "" ]
+then
+	egrep -v "^$dvc " /tmp/netdv1.$$ > /tmp/netdv2.$$
+	cp /tmp/netdv2.$$ $NETDRV
+	rm -f /tmp/netdv2.$$
+else
+	if [ "$dvc" = "" -a "$prot" != "" ]
+	then
+		while read a b
+		do
+			if [ "$b" = "$prot" ]
+			then	echo $a >> /tmp/netdv2.$$
+			else	echo $a $b >> /tmp/netdv2.$$
+			fi
+		done < /tmp/netdv1.$$
+		cp /tmp/netdv2.$$ $NETDRV
+		rm -f /tmp/netdv2.$$
+	else
+		egrep -v "^$dvc $prot " /tmp/netdv1.$$ > /tmp/netdv2.$$
+		cp /tmp/netdv2.$$ $NETDRV
+		rm -f /tmp/netdv2.$$
+	fi
+fi
+rm -f /tmp/netdv1.$$
+}
+	
+while getopts l:d:p:uar i
+do
+	case $i in
+	l)	if [ $add_flg = 1 -o $rm_flg = 1 ]
+		then
+			usage
+		fi
+		disp=$OPTARG
+		if [ "$disp" != dev -a "$disp" != proto ]
+		then
+			usage
+		fi;;
+
+	u)	if [ $add_flg = 1 -o $rm_flg = 1 ]
+		then
+			usage
+		fi
+		unmap_flg=1;;
+	d)	dvc=$OPTARG;;
+	p)	prot=$OPTARG;;
+	a)	if [ $rm_flg = 1 -o "$disp" != "" -o $unmap_flg = 1 ]
+		then
+			usage
+		fi
+		add_flg=1;;
+	r)	if [ $add_flg = 1 -o "$disp" != "" -o $unmap_flg = 1 ]
+		then
+			usage
+		fi
+		rm_flg=1;;
+	\?) 	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+		exit 0
+		;;
+	esac
+done
+
+if [ "$unmap_flg" -eq 1 -a "$disp" = "" ]
+then
+	usage
+fi
+
+if [ "$disp" != "" ]
+then	do_list
+	exit 0
+fi
+
+if [ $add_flg -eq 0 -a $rm_flg -eq 0 ]
+then
+	if [ "$dvc" != "" -o "$prot" != "" ]
+	then	do_list_dp
+		exit 0
+	fi
+fi
+
+if [ $add_flg -eq 1 ]
+then
+	if [ "$dvc" = "" ]
+	then
+		usage
+	fi
+	do_add
+	exit 0
+fi
+
+if [ $rm_flg -eq 1 ]
+then
+	if [ "$dvc" = "" -a "$prot" = "" ]
+	then
+		usage
+	fi
+	do_rm
+	exit 0
+fi

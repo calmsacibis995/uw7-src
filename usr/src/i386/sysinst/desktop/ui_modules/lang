@@ -1,0 +1,164 @@
+#!/sbin/sh
+#ident "@(#)lang	15.1	97/12/19"
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func	# common.rc invokes this if skip_lang is True
+{
+	#
+	# Make sure the lang variable is set and is valid
+	#
+	integer n num_langs
+	found=false
+	l=`ivar get LANG`
+	num_langs=${#lang_code[*]}
+	n=0
+	while (( n < num_langs ))
+	do
+		if [ "${lang_code[$n]}" = "$l" ]
+		then
+			found=true
+			break
+		fi
+		(( n += 1 ))
+	done
+	if $found
+	then
+		#
+		# We cannot go back because this is the first ui module
+		#
+		ii_exit NEXT
+	fi
+	#
+	# If we got here, we were supposed to skip this module, but a 
+	# valid language was not chosen. So don't skip.
+	#
+}
+
+. /isl/ui_modules/common.rc
+
+################################################################################
+
+function noop
+{
+       beep
+}
+
+
+function create_menu
+{
+[ -n "$debug" ] && set -x
+	integer n selected real_num_langs
+
+	open_menu -x 3 -y 1
+	menu_id=$MID
+	selected=0
+	real_num_langs=0
+	n=0
+	integer maxwidth=0
+	while (( n < num_langs ))
+	do
+		max $maxwidth "${#lang_name[n]}"
+		(( maxwidth=$? ))
+
+		if [ -n "${lang_name[n]}" ] && [ -d /etc/inst/locale/${lang_code[n]} ]
+		then
+			add_menu_item -entry "pick_lang $n" \
+				-select done_picking "${lang_name[$n]}"
+# Uncomment this next line when you put the other languages
+# back.  (Right now all languages have lang_code = C)
+			[ "${lang_code[$n]}" = "$current_lang" ] && \
+				selected=$real_num_langs
+			(( real_num_langs += 1 ))
+		fi
+		(( n += 1 ))
+	done	
+	
+	(( x = real_num_langs + 2 ))
+	(( maxwidth += 6 ))
+	
+	place_window $maxwidth $x # -below 1 -above 4
+	window_id=$CURWIN
+	run_menu $menu_id $selected
+        set_hotkey  1 noop
+        set_hotkey  2 noop
+        set_hotkey  3 noop
+        set_hotkey  4 noop
+        set_hotkey  5 noop
+        set_hotkey  6 noop
+        set_hotkey  7 noop
+        set_hotkey  8 noop
+        set_hotkey  9 noop
+	set_hotkey 10 done_picking
+	return 0
+}
+
+
+function pick_lang 
+{
+[ -n "$debug" ] && set -x
+	#current_lang=$1
+	index=$1
+	current_lang=${lang_code[$1]}
+	footer "${lang_return[$1]}"
+}
+
+
+function done_picking
+{
+[ -n "$debug" ] && set -x
+	wclose $window_id
+	save_exit NEXT
+}
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the currently selected language, so it will be selected
+	# when we get run again.
+	#
+	ivar set LANG "$current_lang"
+	#
+	ivar set help_topic lang
+	ii_exit $1
+}
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+current_lang=`ivar get LANG`
+[ "$current_lang" = "" ] && current_lang=C
+
+num_langs=${#lang_code[*]}
+
+# If there is just one language supported, then do not display the menu
+#######################################################################
+integer i=-1 count=0
+typeset _LANG
+while (( (( i += 1 )) < num_langs ))	
+do
+	if [ -d /etc/inst/locale/${lang_code[i]} ]
+	then
+		(( count += 1 ))
+		_LANG=${lang_code[i]}
+	fi
+done
+
+if (( count == 1 ))
+then
+	current_lang="$_LANG"	
+	save_exit NEXT
+fi
+#######################################################################
+
+# Let the user choose one
+#
+create_menu
+input_handler
+save_exit NEXT

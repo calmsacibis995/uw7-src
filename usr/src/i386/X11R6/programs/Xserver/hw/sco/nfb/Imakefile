@@ -1,0 +1,139 @@
+XCOMM	@(#)Imakefile	12.2	2/9/98	13:41:09
+XCOMM
+XCOMM	Copyright (C) The Santa Cruz Operation, 1991-1998.
+XCOMM	This Module contains Proprietary Information of
+XCOMM	The Santa Cruz Operation, and should be treated as Confidential.
+XCOMM
+XCOMM
+XCOMM	SCO MODIFICATION HISTORY
+XCOMM
+XCOMM	S000	Fri Mar 13 15:41:54 PST 1992	mikep@sco.com
+XCOMM	- Add include path for R5 font includes.
+XCOMM	S001	Fri Apr 17 16:40:37 PDT 1992	mikep@sco.com
+XCOMM	- Add PSZ and PixelSize definitions for new cfb include files 
+XCOMM   S002	Wed Aug 26 08:58:27 1992	staceyc@sco.com
+XCOMM	- Text8 file added.
+XCOMM	S003	Fri Aug 28 10:23:59 PDT 1992	staceyc@sco.com
+XCOMM	- Poly rects added.
+XCOMM	S004	Mon Aug 31 08:27:09 PDT 1992	staceyc@sco.com
+XCOMM	- Filled Polygon added
+XCOMM	S005	Wed Sep 09 21:25:52 PDT 1992	mikep@sco.com
+XCOMM	- Swap MonoImages for backwards compatibility
+XCOMM	S006	Sat Sep 19 19:46:45 PDT 1992	mikep@sco.com
+XCOMM	- PutImage and GetImage
+XCOMM	S007	Sat Sep 19 19:46:45 PDT 1992	mikep@sco.com
+XCOMM	- Add better dashed line support
+XCOMM	S008	Mon Dec 21 13:28:10 PST 1992	staceyc@sco.com
+XCOMM	- Compiler broken with nfb bit blt code.  Remove 'e' from
+XCOMM	optimization.
+XCOMM	S009	Wed Dec 23 11:38:01 PST 1992	staceyc@sco.com
+XCOMM	- Move special compiler rule below lib rule.
+XCOMM	S010	Fri Apr 16 18:32:12 PDT 1993	staceyc@sco.com
+XCOMM	- Get rid of nfbNewCmap and nfbValTree.
+XCOMM	S011	Fri Sep 17 14:57:06 PDT 1993	mikep@sco.com
+XCOMM	- No more nfbPixmap.c
+XCOMM	S012	Wed Oct 06 05:48:12 PDT 1993	buckm@sco.com
+XCOMM	- Add rule for names file generation.
+XCOMM	S013	Mon Dec 13 13:51:24 PST 1993	staceyc@sco.com
+XCOMM	- Changed macro that had hardwired mcc flags, no longer hardwired.
+XCOMM	S014	Wed Nov 16 10:01:05 PST 1994	hiramc@sco.COM
+XCOMM	- Remove 0SpecialFlagsObjectRule(nfbBitBlt, BrokenMccFlags)
+XCOMM	- for BL10 build
+XCOMM	S015	Mon Feb  9 13:35:18 PST 1998	hiramc@sco.COM
+XCOMM	- Add SCP build rules
+XCOMM
+
+#include <Server.tmpl>
+
+XCOMM
+XCOMM PixelSize must be 8 for nfb
+XCOMM
+#define PixelSize 8
+
+SRCS =	nfbBitBlt.c nfbCmap.c nfbFillSp.c nfbGetSp.c nfbPntWin.c \
+	nfbRep.c nfbScrInit.c nfbSetSp.c nfbWindow.c nfbGC.c nfbScreen.c \
+	nfbImgGBlt.c nfbPlyGBlt.c nfbFillRct.c nfbFont.c \
+	nfbPolyPnt.c nfbRop.c nfbLine.c nfbSeg.c \
+	nfbArgs.c nfbZeroArc.c nfbDLine.c nfbDSeg.c \
+	nfbShmPmap.c nfbBStore.c nfbDLine.c \
+	nfbPushPxl.c nfbHelpGC.c nfbText8.c nfbPlyRect.c \
+	nfbPolygon.c nfbSImage.c nfbImage.c nfbBresD.c
+
+OBJS =	nfbBitBlt.o nfbCmap.o nfbFillSp.o nfbGetSp.o nfbPntWin.o \
+	nfbRep.o nfbScrInit.o nfbSetSp.o nfbWindow.o nfbGC.o nfbScreen.o \
+	nfbImgGBlt.o nfbPlyGBlt.o nfbFillRct.o nfbFont.o \
+	nfbPolyPnt.o nfbRop.o nfbLine.o nfbSeg.o \
+	nfbArgs.o nfbZeroArc.o nfbDLine.o nfbDSeg.o \
+	nfbShmPmap.o nfbBStore.o nfbDLine.o \
+	nfbPushPxl.o nfbHelpGC.o nfbText8.o nfbPlyRect.o \
+	nfbPolygon.o nfbSImage.o nfbImage.o nfbBresD.o
+
+HEADERS = \
+        nfbArgs.h nfbDefs.h nfbGCStr.h nfbGlyph.h \
+        nfbProcs.h nfbRop.h nfbScrStr.h nfbWinStr.h \
+        nfbZeroArc.h nfbcfb.h
+
+STD_DEFINES = ServerDefines -DPSZ=PixelSize
+CDEBUGFLAGS = ServerCDebugFlags
+
+XCOMM   INCLUDES = -I. -I.. -I$(SERVERSRC)/ddx/mi \
+XCOMM	      -I$(SERVERSRC)/ddx/mfb -I$(SERVERSRC)/ddx/cfb \
+XCOMM	      -I$(SERVERSRC)/ddx/ports/gen \
+XCOMM	      -I$(SERVERSRC)/include  -I$(FONTSRC)/include \
+XCOMM	      -I$(SERVERSRC)/sys/common -I$(INCLUDESRC)
+
+   INCLUDES = -I. -I$(SERVERSRC)/include -I../include -I$(INCLUDESRC) \
+		-I$(SERVERSRC)/mi -I$(SERVERSRC)/mfb -I$(SERVERSRC)/cfb \
+		-I$(SERVERSRC) -I$(FONTINCSRC) -I../ports/gen
+
+   LINTLIBS = ../../../dix/llib-ldix.ln ../../../os/4.2bsd/llib-los.ln \
+	     ../../mfb/llib-lmfb.ln ../../mi/llib-lmi.ln ../../cfb/llib-lcfb.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(nfb,$(OBJS))
+ProfiledLibraryTarget(nfb,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(nfb,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(nfb,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProvileServer */
+#endif /* DebugServer */
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget(nfb,$(OBJS))
+LintLibraryTarget(nfb,$(SRCS))
+#endif
+
+NamesFromLibrary(nfb,nfb)
+
+NormalLintTarget($(SRCS))
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+
+#ifndef	SCP_PRODUCT
+ObjectFromSpecialSource(nfbSeg,nfbLine,-DPOLYSEGMENT)
+ObjectFromSpecialSource(nfbDSeg,nfbDLine,-DPOLYSEGMENT)
+#endif
+
+DependTargetSCP(nfbScreen.c)
+BuildServerIncludes($(HEADERS),include/nfb,../..)
+
+InstallHDKMultiple($(HEADERS),$(HDKSERVERINCDIR)/nfb)
+InstallHDKLibrary(nfb,$(HDKSERVERDIR)/lib)

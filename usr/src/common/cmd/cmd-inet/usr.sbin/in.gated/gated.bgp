@@ -1,0 +1,68 @@
+#ident	"@(#)gated.bgp	1.3"
+#      SCCS IDENTIFICATION
+#
+#	sample BGP config file
+#
+
+#traceoptions "/tmp/gatedlog" replace size 1000k files 2 all;
+
+# our AS number
+autonomoussystem 188 ;
+
+bgp on {
+	# BGP peers
+	#
+	#    group type <internal/external/idrp/routing/test> peeras <peer AS>
+	#    {
+	#         allow { <allow list> }
+	#         peer <host IP>
+	#         <options> ...
+	#    }
+
+	group type external peeras 193
+	{
+		peer 128.212.137.3 ;
+	};
+
+	group type external peeras 194
+	{
+		peer 128.212.137.2 ;
+	};
+};
+
+
+# Turn off unused protocols
+egp no;
+ospf no;
+rip no;
+
+# local (static) routes
+static {
+	default gw 128.212.137.1;
+};
+
+
+import proto bgp autonomoussystem 193
+{
+	all;
+};
+
+import proto bgp autonomoussystem 194
+{
+	all;
+};
+
+export proto bgp autonomoussystem 193
+{
+	proto static {
+		223.2 restrict;
+	};
+};
+
+export proto bgp autonomoussystem 194
+{
+	proto static {
+		223.2 restrict;
+	};
+};
+

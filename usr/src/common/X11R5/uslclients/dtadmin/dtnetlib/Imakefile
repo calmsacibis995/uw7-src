@@ -1,0 +1,80 @@
+/**/#ident	"@(#)dtnetlib:Imakefile	1.12"
+
+#include        <Motif.tmpl>
+#include        <Motif.rules>
+
+#if Release5
+
+#define DoNormalLib	NO
+#define DoSharedLib	YES
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+
+#else
+
+#define DynamicLibraryObjectRule()                                      @@\
+.c.o:                                                                   @@\
+                $(CC) -c -KPIC $(CFLAGS) $<
+
+#define SharedLibraryTarget(libname,objlist,dependlib,otherlib)         @@\
+lib/**/libname/**/.so:: objlist dependlib                               @@\
+        $(RM) lib/**/libname/**/.so                                     @@\
+        $(CC) $(YFLAGS) -G objlist -o lib/**/libname/**/.so -h lib/**/libname/**/.so.1 $(SHLIBFLAGS) dependlib otherlib
+
+#endif
+
+EXTRA_DEFINES= -DNOVELL
+    DTLIBSRC = $(LIBSRC)/Dt
+    DTILIBSRC = $(USLCLIENTSRC)/libDtI $(USLCLIENTSRC)/libMDtI
+
+    INCLUDES = -I$(LIBSRC) -I$(DTLIBSRC) -I$(DTILIBSRC)
+     LIBNAME = dtnet
+     LIBNAME2 = dtrac
+         LIB = lib$(LIBNAME).so
+        LIB2 = lib$(LIBNAME2).so
+
+        SRCS = \
+		hosts.c \
+		netlib.c \
+		util.c \
+		rac.c \
+		raclook.c \
+		resolv.c \
+		msg.c
+
+       SRCS2 = \
+		util.c \
+		rac.c \
+		msg.c
+
+OBJS = $(SRCS:.c=.o)
+OBJS2 = $(SRCS2:.c=.o)
+HEADERS = \
+	lookup.h \
+	lookupG.h \
+	lookupMsg.h \
+	util.h \
+	inet.h
+
+
+#if Release5
+LibraryObjectRule()
+SharedLibraryDepTarget($(LIBNAME),$(SODTREV),$(OBJS),.,.,-lresolv)
+SharedLibraryTarget($(LIBNAME2),$(SODTREV),$(OBJS2),.,.)
+/*FurSharedLibraryTarget($(LIBNAME),$(SODTREV),$(OBJS),.,.)*/
+
+InstallSharedLibrary($(LIBNAME),$(SODTREV),$(USRLIBDIR))
+InstallSharedLibrary($(LIBNAME2),$(SODTREV),$(USRLIBDIR))
+/*InstallFurLibrary($(LIBNAME),$(SODTREV),$(USRLIBDIR))*/
+#else
+all::	libdtnet.so libdtrac.so
+DynamicLibraryObjectRule()
+SharedLibraryDepTarget($(LIBNAME),$(OBJS),.,.,-lresolv)
+SharedLibraryTarget($(LIBNAME2),$(OBJS),.,.)
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+InstallLibrary($(LIBNAME2),$(USRLIBDIR))
+#endif
+
+InstallMsgCatalog(lookup)
+
+DependTarget()

@@ -1,0 +1,60 @@
+#!/usr/bin/wksh -motif
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:xmexamples/procs	1.2"
+
+
+export OPTIONS
+OPTIONS=-f
+
+do_ps() {	# $1=reschedule
+	sv $TEXT labelString:"`ps $OPTIONS`"
+	if [ "$1" ]
+	then ato $TOPLEVEL 20000 do_ps
+	fi
+}
+
+opt_apply() {
+	gv $OPTSTRING value:OPTIONS
+	pd $POP
+}
+
+opt_dismiss() {
+	sv $OPTSTRING value:"$OPTIONS"
+	pd $POP
+}
+
+do_options() {
+	typeset TMP BAR
+
+	if [ ! "$POP" ]
+	then
+		cps POP pop topLevelShell $TOPLEVEL
+		cmw TMP rc rowColumn $POP
+		addfields $TMP OPTSTRING "Options for PS:" opt_apply 20
+		cmw BAR bar rowColumn $TMP orientation:horizontal
+		addbuttons $BAR "OK" opt_apply "DISMIS" opt_dismiss
+	fi
+	pu $POP
+}
+
+ai TOPLEVEL ps Ps "$@"
+
+cmw RC rc rowColumn $TOPLEVEL orientation:vertical
+cmw WINDOW window scrolledWindow $RC scrollingPolicy:AUTOMATIC
+cmw TEXT text label $WINDOW labelString:"`ps $OPTIONS`" alignment:alignment_beginning
+cmw BAR bar rowColumn $RC orientation:horizontal
+
+addbuttons $BAR	"Run PS" do_ps  "Options" do_options
+
+ato $TOPLEVEL 20000 "do_ps true"
+
+rw $TOPLEVEL
+ml

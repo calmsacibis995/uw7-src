@@ -1,0 +1,101 @@
+#!/usr/bin/ksh
+#ident	"@(#)oemcd:mach.build/genextras.orig.2	1.1"
+#
+# This script creates the .extras.d directory of the EFIGS CD.
+#
+# It takes a single argument, which is the full pathname of
+# the directory in which to create the .extras.d directory.
+# Files are copied from the build area defined by the following
+# environment variables:
+#
+# 1) ROOT - the root of the build area.
+# 2) MACH - machine type, eg i386at
+# 3) PROTO - the proto directory.
+# 4) WORK - work area, eg work
+#
+set -x
+DEST=$ROOT/$SPOOL/prep
+XTRA_DIR=$DEST/.extras.d
+SRCPROTO=$PROTO/locale
+SRCDCU=$ROOT/$MACH/etc/dcu.d/locale
+SRCDIR=$ROOT/$MACH/usr/share/lib
+CONFDIR=$ROOT/.$MACH/etc/conf
+
+COMPILE=$ROOT/$MACH/usr/lib/winxksh/compile
+PATH=$PROTO/bin:$PATH: export PATH
+
+[ -d $XTRA_DIR ] && rm -rf $XTRA_DIR
+mkdir -p $XTRA_DIR/tools $XTRA_DIR/terminfo/A
+
+cp $ROOT/$MACH/usr/bin/choose_lang $XTRA_DIR/tools
+cp $SRCDIR/terminfo/A/AT386 /$XTRA_DIR/terminfo/A
+cp $SRCDIR/terminfo/A/AT386-M /$XTRA_DIR/terminfo/A
+
+mkdir -p $XTRA_DIR/bin
+cp $ROOT/$MACH/etc/inst/scripts/install_more /$XTRA_DIR/bin/install_more
+
+mkdir -p $XTRA_DIR/screen.d
+cp $PROTO/stage/lang.items $XTRA_DIR/screen.d
+cp $PROTO/stage/lang.msgs $XTRA_DIR/screen.d
+cp $PROTO/stage/lang.footers $XTRA_DIR/screen.d
+
+mkdir -p $XTRA_DIR/fs
+cp $CONFDIR/modnew.d/dosfs $XTRA_DIR/fs
+
+[ -f $PROTO/stage/lang.items ] && LANG_ITEMS=`cat $PROTO/stage/lang.items`
+
+for i in $LANG_ITEMS
+do
+	echo "Processing $i locale textstrings and help files"
+	[ -d $XTRA_DIR/locale/$i ] || mkdir -p $XTRA_DIR/locale/$i
+	[ -f $SRCPROTO/$i/menus/txtstrings ] && {
+		cp $SRCPROTO/$i/menus/txtstrings $XTRA_DIR/locale/$i
+		chmod 555 $XTRA_DIR/locale/$i/txtstrings
+	}
+	if [ -f $SRCPROTO/$i/menus/config ]
+	then
+		cp $SRCPROTO/$i/menus/config $XTRA_DIR/locale/$i
+	else
+		cp $SRCPROTO/$i/menus/config.sh $XTRA_DIR/locale/$i
+		(cd $XTRA_DIR/locale/$i; $COMPILE $XTRA_DIR/locale/$i/config.sh)
+		rm -f $XTRA_DIR/locale/$i/config.sh
+	fi
+	chmod 555 $XTRA_DIR/locale/$i/config
+	[ -d $XTRA_DIR/locale/$i/tmp ] || mkdir -p $XTRA_DIR/locale/$i/tmp
+	(cd $SRCPROTO/$i/menus/help; find . -print |cpio -pdu $XTRA_DIR/locale/$i/tmp 2>/dev/null)
+	(cd $XTRA_DIR/locale/$i/tmp; make -f help.mk)
+	[ -d $XTRA_DIR/locale/$i/help ] || mkdir -p $XTRA_DIR/locale/$i/help
+	mv $XTRA_DIR/locale/$i/tmp/*.hcf $XTRA_DIR/locale/$i/help
+	rm -rf $XTRA_DIR/locale/$i/tmp
+	[ -d $XTRA_DIR/locale/$i/dcu.d ] || mkdir -p $XTRA_DIR/locale/$i/dcu.d
+	(cd $SRCDCU/$i; find . -print |cpio -pdu $XTRA_DIR/locale/$i/dcu.d 2>/dev/null)
+	if [ "$i" = "C" ]
+	then
+		#NICLOC="${ROOT}/usr/src/${WORK}/cmd/cmd-nics"
+		NICLOC="${ROOT}/usr/src/${WORK}/cmd/niccfg"
+		SUPPHELP=.
+	else
+		NICLOC="${ROOT}/${MACH}/etc/inst/locale/$i/menus/nics"
+		SUPPHELP=help
+	fi
+	[ -d $XTRA_DIR/locale/$i/nics.d ] || mkdir -p $XTRA_DIR/locale/$i/nics.d
+	cp ${NICLOC}/help/*hcf $XTRA_DIR/locale/$i/nics.d || {
+		print -u2 ERROR -- copy failed from nics help directory.
+		exit 2
+	}
+	cp ${NICLOC}/supported_nics/${SUPPHELP}/*hcf \
+	    $XTRA_DIR/locale/$i/nics.d || {
+		print -u2 ERROR -- copy failed from supported_nics directory.
+		exit 2
+	}
+	(
+		cd $XTRA_DIR/locale/$i/nics.d
+		find . -print | ksh ${PROTO}/desktop/buildscripts/cpioout > \
+		   $XTRA_DIR/locale/$i/help/nicshlp.z || {
+			print -u2 ERROR -- could not create nicshlp.z.
+			exit 2
+		}
+	)
+	rm -rf $XTRA_DIR/locale/$i/nics.d
+done
+

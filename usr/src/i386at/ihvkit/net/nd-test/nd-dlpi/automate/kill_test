@@ -1,0 +1,22 @@
+if [ $# -ne 1 ]
+then
+	echo "usage: $0 <proc. pattern name>"
+	exit 1
+fi
+a=`ps -ef|grep $1 |grep -v grep| grep -v kill_test |grep -v rsh | awk '{printf "%d ",$2}'`
+if [ "$a" != "" ]
+then
+	for i in $a
+	do
+		sleep 2
+		kill -0 $i 2> /dev/null 2>&1
+		if [ $? -eq 0 ]
+		then
+			kill  $i >/dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				echo "ERROR in killing $i on `uname -a`"
+			fi
+		fi
+	done
+fi

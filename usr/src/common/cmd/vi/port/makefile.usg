@@ -1,0 +1,291 @@
+#ident	"@(#)vi:port/makefile.usg	1.48.2.10"
+#ident  "$Header$"
+
+include $(CMDRULES)
+
+#	Makefile for vi
+
+OWN = bin
+GRP = bin
+
+DEBUGDEF = -DTRACE
+DEBUGFLAGS = -g
+NONDEBUGDEF =
+NONDEBUGFLAGS = -O
+DEV2 = $(NONDEBUGDEF)
+DEBCFLAGS = $(NONDEBUGFLAGS)
+
+LOCALDEF = -DSTDIO -DVMUNIX -DTABS=8 -DSINGLE
+LDLIBS = -lw -lcrypt -lcurses -lgen
+
+EX = ex
+FOLD  = ../misc/fold
+CTAGS = ../misc/ctags
+CXREF = ../misc/cxref
+
+MAINS = $(EX) expreserve exrecover 
+
+OBJECTS = bcopy.o ex.o ex_addr.o ex_cmds.o ex_cmds2.o \
+	ex_cmdsub.o ex_data.o ex_extern.o ex_get.o \
+	ex_io.o ex_put.o ex_re.o ex_set.o ex_subr.o \
+	ex_temp.o ex_tty.o ex_unix.o ex_v.o ex_vadj.o \
+	ex_vget.o ex_vmain.o ex_voper.o ex_vops.o \
+	ex_vops2.o ex_vops3.o ex_vput.o ex_vwind.o \
+	printf.o 
+
+SOURCES = $(OBJECTS:.o=.c)
+
+MISC = READ_ME makeoptions asfix.c70 ex.news makefile.370 makefile.c70 \
+	makefile.70 ovdoprnt.s ovprintf.c rofix
+
+LOCALHEADS = ex.h $(INC)/sys/types.h $(INC)/ctype.h \
+	$(INC)/errno.h $(INC)/sys/errno.h \
+	$(INC)/signal.h $(INC)/sys/signal.h \
+	$(INC)/setjmp.h $(INC)/sys/stat.h \
+	$(INC)/stdlib.h $(INC)/unistd.h \
+	$(INC)/limits.h \
+	$(INC)/termio.h $(INC)/sys/termio.h \
+	$(INC)/sgtty.h $(INC)/term.h \
+	ex_tune.h $(INC)/sys/param.h \
+	ex_vars.h $(INC)/stdio.h
+
+
+all: $(MAINS)
+
+$(EX): $(OBJECTS) textmem.o
+	$(CC) -o $@ textmem.o $(OBJECTS) $(LDFLAGS) $(LDLIBS) $(PERFLIBS)
+
+expreserve: expreserve.o 
+	$(CC) -o $@ $@.o $(LDFLAGS) $(LDLIBS) $(PERFLIBS)
+
+exrecover: exrecover.o ex_extern.o textmem.o
+	$(CC) -o $@ $@.o ex_extern.o textmem.o $(LDFLAGS) $(LDLIBS) $(PERFLIBS)
+
+
+ex.o: ex.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_temp.h \
+	ex_tty.h \
+	$(INC)/pfmt.h \
+	$(INC)/locale.h \
+	$(INC)/fcntl.h
+
+ex_addr.o: ex_addr.c \
+	$(LOCALHEADS) \
+	ex_re.h $(INC)/regexpr.h
+
+ex_cmds.o: ex_cmds.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_temp.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_cmds2.o: ex_cmds2.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_temp.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_cmdsub.o: ex_cmdsub.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_temp.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_data.o: ex_data.c \
+	$(LOCALHEADS) \
+	ex_tty.h
+
+ex_extern.o: ex_extern.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_re.h $(INC)/regexpr.h \
+	ex_temp.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_get.o: ex_get.c \
+	$(LOCALHEADS) \
+	$(INC)/pfmt.h \
+	ex_tty.h
+
+ex_io.o: ex_io.c \
+	$(LOCALHEADS) \
+	ex_argv.h \
+	ex_temp.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_put.o: ex_put.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_re.o: ex_re.c \
+	$(LOCALHEADS) \
+	ex_re.h $(INC)/regexpr.h
+
+ex_set.o: ex_set.c \
+	$(LOCALHEADS) \
+	ex_temp.h \
+	ex_tty.h
+
+ex_subr.o: ex_subr.c \
+	$(LOCALHEADS) \
+	ex_re.h $(INC)/regexpr.h \
+	ex_tty.h \
+	ex_vis.h \
+	$(INC)/sys/stropts.h \
+	$(INC)/sys/eucioctl.h
+
+ex_temp.o: ex_temp.c \
+	$(LOCALHEADS) \
+	ex_temp.h \
+	ex_vis.h \
+	ex_tty.h
+
+ex_tty.o: ex_tty.c \
+	$(LOCALHEADS) \
+	ex_tty.h
+
+ex_unix.o: ex_unix.c \
+	$(LOCALHEADS) \
+	ex_temp.h \
+	ex_vis.h \
+	ex_tty.h
+
+ex_v.o:  ex_v.c \
+	$(LOCALHEADS) \
+	ex_re.h $(INC)/regexpr.h \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vadj.o: ex_vadj.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vget.o: ex_vget.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vmain.o: ex_vmain.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_voper.o: ex_voper.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h \
+	$(INC)/regexpr.h
+
+ex_vops.o: ex_vops.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vops2.o: ex_vops2.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vops3.o: ex_vops3.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vput.o: ex_vput.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+ex_vwind.o: ex_vwind.c \
+	$(LOCALHEADS) \
+	ex_tty.h \
+	ex_vis.h
+
+expreserve.o: expreserve.c \
+	$(INC)/stdio.h \
+	$(INC)/ctype.h \
+	$(INC)/sys/types.h \
+	$(INC)/sys/stat.h \
+	$(INC)/dirent.h \
+	$(INC)/errno.h $(INC)/sys/errno.h \
+	$(INC)/pwd.h \
+	$(INC)/locale.h \
+	$(INC)/pfmt.h \
+	ex_tune.h
+	$(CC) $(DEBCFLAGS) $(DEFLIST) $(INCLIST) $(DEFLIST) -c expreserve.c
+
+exrecover.o: exrecover.c \
+	$(LOCALHEADS) \
+	ex_temp.h \
+	ex_tty.h \
+	ex_tune.h \
+	$(INC)/pwd.h \
+	$(INC)/locale.h \
+	$(INC)/dirent.h \
+	$(INC)/pfmt.h
+	$(CC) $(DEBCFLAGS) $(DEFLIST) $(INCLIST) $(DEFLIST) -c exrecover.c
+
+printf.o: printf.c \
+	$(INC)/varargs.h \
+	$(INC)/stdlib.h \
+	$(INC)/unistd.h \
+	$(INC)/limits.h
+
+textmem.o: textmem.c \
+	$(INC)/stdlib.h \
+	$(INC)/sys/types.h \
+	$(INC)/sys/mman.h \
+	$(INC)/fcntl.h \
+	$(INC)/errno.h $(INC)/sys/errno.h \
+	$(INC)/unistd.h
+
+
+clean:
+	rm -f $(OBJECTS) expreserve.o exrecover.o textmem.o
+
+clobber: clean
+	rm -f $(MAINS)
+
+lintit:
+	$(LINT) $(LINTFLAGS) $(SOURCES) 
+	$(LINT) $(LINTFLAGS) expreserve.c
+	$(LINT) $(LINTFLAGS) exrecover.c ex_extern.c textmem.c
+
+install: all
+	if [ ! -d $(VAR)/preserve ] ; then \
+		mkdir ${VAR}/preserve ; \
+	fi
+	$(INS) -f $(USRBIN) -m 0555 -u $(OWN) -g $(GRP) -o $(EX);
+	$(CH)rm -f $(USRBIN)/vi $(USRBIN)/view $(USRBIN)/edit $(USRBIN)/vedit
+	$(CH)ln $(USRBIN)/$(EX) $(USRBIN)/vi
+	$(CH)ln $(USRBIN)/$(EX) $(USRBIN)/view
+	$(CH)ln $(USRBIN)/$(EX) $(USRBIN)/edit
+	$(CH)ln $(USRBIN)/$(EX) $(USRBIN)/vedit
+	$(INS) -f $(USRLIB) -m 0555 -u $(OWN) -g $(GRP) exrecover
+	$(INS) -f $(USRLIB) -m 0555 -u $(OWN) -g $(GRP) expreserve
+
+#	These targets are useful but optional
+
+partslist:
+	@echo makefile.usg $(SOURCES) $(LOCALINCS) | tr ' ' '\012' | sort
+
+productdir:
+	@echo $(USRBIN) | tr ' ' '\012' | sort
+
+product:
+	@echo $(MAINS) | tr ' ' '\012' | \
+	sed 's;^;$(USRBIN)/;'
+
+srcaudit:
+	@fileaudit makefile.usg $(LOCALINCS) $(SOURCES) $(MISC) -o $(OBJECTS) \
+	expreserve.o exrecover.o textmem.o $(MAINS)
+#ident	"@(#)vi:port/makefile.usg	1.48.2.10"

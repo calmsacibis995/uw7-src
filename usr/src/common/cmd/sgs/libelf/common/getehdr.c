@@ -1,0 +1,29 @@
+#ident	"@(#)libelf:common/getehdr.c	1.8"
+
+
+#ifdef __STDC__
+	#pragma weak	elf32_getehdr = _elf32_getehdr
+#endif
+
+
+#include "syn.h"
+#include "libelf.h"
+#include "decl.h"
+#include "error.h"
+
+
+Elf32_Ehdr *
+elf32_getehdr(elf)
+	Elf	*elf;
+{
+	if (elf == 0)
+		return 0;
+	if (elf->ed_class != ELFCLASS32)
+	{
+		_elf_err = EREQ_CLASS;
+		return 0;
+	}
+	if (elf->ed_ehdr == 0)
+		(void)_elf_cook(elf);
+	return elf->ed_ehdr;
+}

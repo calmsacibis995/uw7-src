@@ -1,0 +1,489 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wcalen	3.4"
+
+DAYFONTCOLOR=white
+WEEKENDFONTCOLOR=red
+WEEKDAYFONTCOLOR=black
+
+BLANKS=""
+LPCOMMAND="${LPCOMMAND:-lp -c}"
+CALDIR=${CALDIR:-$HOME/calendar}
+
+#
+# NOTE: SunOs doesn't have date +%Y, so we add 19 to the front
+# of the date.  So, this will break in the year 2000.
+#
+eval "`date +'TODAY_M=%m; TODAY_D=%d; TODAY_Y=%y; TODAY=%m-%d-%y'`"
+TODAY_Y=19$TODAY_Y
+
+typeset -Z2 CURMONTH=0 CURDAY=0
+integer CURYEAR=0
+
+do_Print_Hdr() {
+                > /tmp/WAAG_info || warn "Could not create printfile"
+                echo " " >> /tmp/WAAG_info
+                echo "******Week-At-A-Glance******" >> /tmp/WAAG_info
+                echo " " >> /tmp/WAAG_info
+}
+
+do_p() { 
+        gv $1 string:LPCOMMAND
+        curbusy $TOPLEVEL
+        if [ -f /tmp/WAAG_info ]
+        then 
+        cat /tmp/WAAG_info |eval $LPCOMMAND || warn "Print Command Failed!"
+        else
+        warn "Could not create printfile"; return;
+        fi
+        curstand $TOPLEVEL
+}
+
+do_Print() {
+	if [ "$PRINT" = "" ]
+	then
+		cps PRINT Print popupWindowShell $TOPLEVEL
+		cmw PRINTER caption caption $PRINT_UCA label:"Print command: "
+		cmw CMD cmd textField $PRINTER
+		sv $CMD string:"$LPCOMMAND"
+		addbuttons $PRINT_LCA Print 'do_p $CMD'  Cancel :
+	fi
+	XtPopup $PRINT GrabNone
+}
+
+do_Prev_Month() {
+	integer m=CURMONTH-1 y=CURYEAR
+
+	if [ "$m" -lt 1 ]
+	then
+		m=12
+		y=y-1
+	fi
+	update_month $m $y 1
+}
+
+do_Next_Month() {
+	integer m=CURMONTH+1 y=CURYEAR
+
+	if [ "$m" -gt 12 ]
+	then
+		m=1
+		y=y+1
+	fi
+	update_month $m $y 1
+}
+
+do_Properties() {
+	warn "Not Implemented"
+}
+
+do_Search() {
+	warn "Not Implemented"
+}
+
+recurCB() {	# $1=filename $2=title
+	pd $RECURMENU
+	recur_edit $CALDIR/$1 "$2"
+}
+
+do_recurring() {	# $1=weekday name
+	if [ ! "$RECURMENU" ]
+	then
+		cps RECURMENU Recurring_Events menuShell $SUN pushpin:out
+		for i in R1 R2 R3 R4 R5 R6 
+		do
+			cmw $i $i oblongButtonGadget $RECURMENU_MP
+		done
+	fi
+	sv $R1 label:"Every $1" select:"recurCB $1_EVERY \"Every $1\""
+	sv $R2 label:"First  $1 of Each Month" select:"recurCB $1_FIRST \"First $1 of Each Month\""
+	sv $R3 label:"Second $1 of Each Month" select:"recurCB $1_SECOND \"Second $1 of Each Month\""
+	sv $R4 label:"Third  $1 of Each Month" select:"recurCB $1_THIRD \"Third $1 of Each Month\""
+	sv $R5 label:"Fourth $1 of Each Month" select:"recurCB $1_FOURTH \"Fourth $1 of Each Month\""
+	sv $R6 label:"Last   $1 of Each Month" select:"recurCB $1_LAST \"Last $1 of Each Month\""
+	pu $RECURMENU GrabExclusive
+}
+
+bp() {	# Main button press handler (takes as arg the button number or day)
+	integer day
+
+	case "$1" in
+	[0-9]*)
+		let CURDAY=$1-OFFSET+1
+		cal_edit $CALDIR/$CURMONTH-$CURDAY-$CURYEAR
+		;;
+	*)
+		do_recurring $1
+		;;
+	esac
+}
+
+set -A FDAYS SUNDAY MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY
+
+do_WAAG() {	# Week at a glance, take the current week
+	if [ ! "$WAAG" ]
+	then
+		cps WAAG Week_At_A_Glance popupWindowShell $TOPLEVEL \
+			background:plum title:"Week At A Glance" pushpin:in
+		sv $WAAG_UCA layoutType:fixedcols measure:5 sameSize:none \
+			center:true background:plum
+		sv $WAAG_LCA background:plum
+		for i in 1 2 3 4 5
+		do
+			cmw WAAGDATE[$i] txt oblongButtonGadget $WAAG_UCA \
+				background:red fontColor:white
+		done
+		for i in 1 2 3 4 5
+		do
+			cmw  WAAGTXT[$i] txt textEdit $WAAG_UCA \
+				background:lightblue \
+				sourceType:disksource editType:textread \
+				charsVisible:24 linesVisible:8 \
+				background:lightblue font:6x10
+		done
+		for i in 1 2 3 4 5
+		do
+			cmw  WAAGRECURTXT[$i] txt textEdit $WAAG_UCA \
+				background:lightblue \
+				sourceType:stringsource editType:textread \
+				charsVisible:24 linesVisible:3 \
+				background:lightblue font:6x10
+		done
+		cmw tmp tmp oblongButtonGadget $WAAG_LCA \
+			label:"Print" select:do_Print
+	fi
+
+	typeset -Z2 month=0 day=0 prevdays=0
+
+	if [ "$windex" -gt "$CURDAY" ]
+	then 
+		# Jump to the previous month, much easier this way
+		if [ "$CURMONTH" = 1 ]
+		then let new_month=12; let new_year=CURYEAR-1
+		else let new_month=CURMONTH-1; let new_year=CURYEAR
+		fi
+		PREVLAST=$(cal $new_month $new_year | xargs)
+		PREVLAST=${PREVLAST##* }
+		[[ $windex -gt $CURDAY ]] && ((prevdays=windex-CURDAY)) && ((day=PREVLAST-prevdays+1)) && ((month=CURMONTH-1))
+		let WAAGDAY=PREVLAST+CURDAY-windex
+	else
+		let WAAGDAY=CURDAY-windex
+	fi
+        do_Print_Hdr
+
+	for i in 1 2 3 4 5
+	do
+		if [[ $windex -le $CURDAY ]] then
+			let day='1+((i+WAAGDAY-1)%LAST)' 
+			let month=CURMONTH+'(day<WAAGDAY)'
+			if [[ $month -eq 13 ]] then
+				let month=1
+			fi
+		fi
+		let year=CURYEAR+'(CURMONTH==12 && day<WAAGDAY)'-1900
+		let YEAR=year+1900
+		sv ${WAAGDATE[i]} label:"${DAYS[$i]} $month-$day-$year" \
+		select:"CURDAY=$day; CURYEAR=$YEAR CURMONTH=$month; cal_edit $CALDIR/$month-$day-$YEAR"
+		sv ${WAAGTXT[i]} source:$CALDIR/$month-$day-$YEAR
+		# add recur text
+		RECURTEXT=""
+		if [ $i -ge $windex -o $windex -le $CURDAY ]
+		then
+			if [ -f "$CALDIR/${FDAYS[$i]}_EVERY" ]
+			then RECURTEXT="`cat $CALDIR/${FDAYS[$i]}_EVERY`"
+			fi
+			let weekno='1+(CURDAY-1)/7'
+			case $weekno in
+			1)	TEST=FIRST ;;
+			2)	TEST=SECOND ;;
+			3)	TEST=THIRD ;;
+			4)	TEST=FOURTH
+				if ((CURDAY+7>=LAST))
+				then TEST="$TEST LAST"
+				fi ;;
+			5)	TEST="FIFTH LAST" ;;
+			esac
+			for j in $TEST
+			do
+				if [ -f $CALDIR/${FDAYS[$i]}_$j ]
+				then RECURTEXT="$RECURTEXT; `cat $CALDIR/${FDAYS[$i]}_$j`"
+				fi
+			done
+		fi
+		sv ${WAAGRECURTXT[i]} source:"$RECURTEXT"
+                echo ${DAYS[$i]} $month-$day-$year >> /tmp/WAAG_info
+                echo "----------------------------" >> /tmp/WAAG_info
+                if [ -f "$CALDIR/$month-$day-$YEAR" ]
+                then
+                cat $CALDIR/$month-$day-$YEAR >> /tmp/WAAG_info
+                else
+                echo "Nothing Scheduled" >> /tmp/WAAG_info
+                fi
+                echo " " >> /tmp/WAAG_info
+		if [[ $windex -gt $CURDAY && ($day = 0 || $day = $PREVLAST) ]]
+		then
+			let day=1
+			let month=month+1
+			if [[ $month -eq 13 ]] then
+				let month=1
+			fi
+		else if [[ $windex -gt $CURDAY ]] then
+			let day=day+1
+		fi
+		fi
+	done
+
+	pu $WAAG GrabNone
+}
+
+recur_apply() {
+	if [ -f $RECURFILENAME ]
+	then cp $RECURFILENAME ${RECURFILENAME}.bak || \
+		warn "Unable to make backup of date file" 
+	fi
+	teecho "$RECUREDTXT" > $RECURFILENAME || warn "Unable to write calendar file"
+	update_recur
+}
+
+recur_edit() {	# $1=FILENAME $2=title
+	if [ ! "$RECURED" ]
+	then
+		# Create the edit window, a popup shell
+		cps RECURED Recurring_Date_Edit popupWindowShell $TOPLEVEL \
+			apply:"recur_apply" reset:":" \
+			background:navyblue
+		cmw RECUREDTITLE edtitle staticText $RECURED_UCA \
+			recomputeSize:true \
+			background:lightblue fontColor:red font:8x13
+		cmw RECUREDTXT edtxt textEdit $RECURED_UCA sourceType:disksource \
+			charsVisible:24 linesVisible:6 \
+			background:lightblue font:8x13
+	fi
+	RECURFILENAME=$1
+	sv $RECUREDTITLE string:"Events on $2"
+	sv $RECURED reset:"ed_reset $RECUREDTXT $RECURFILENAME"
+	ed_reset $RECUREDTXT $RECURFILENAME
+	pu $RECURED GrabNone
+}
+
+ed_reset() { # $1=textEdit handle $2=filename
+	teclear $1
+	sv $1 source:$2
+}
+
+ed_apply() {
+	if [ -f $FILENAME ]
+	then cp $FILENAME ${FILENAME}.bak || \
+		warn "Unable to make backup of date file" 
+	fi
+	teecho "$EDTXT" > $FILENAME || warn "Unable to write calendar file"
+}
+
+cal_edit() {	# $1=FILENAME
+	if [ ! "$ED" ]
+	then
+		# Create the edit window, a popup shell
+		cps ED Date_Edit popupWindowShell $TOPLEVEL \
+			background:navyblue title:"Date Display/Edit" \
+			pushpin:in
+		cmw EDAPPLY Apply oblongButtonGadget $ED_LCA select:"ed_apply"
+		cmw EDRESET Reset oblongButtonGadget $ED_LCA
+		cmw EDCANCEL Cancel oblongButtonGadget $ED_LCA select:"pd $ED"
+		cmw EDTITLE edtitle staticText $ED_UCA recomputeSize:true \
+			background:plum fontColor:white font:8x13
+		cmw EDTXT edtxt textEdit $ED_UCA sourceType:disksource \
+			charsVisible:24 linesVisible:8 \
+			background:lightblue font:8x13
+		cmw tmp tmp staticText $ED_UCA recomputeSize:false \
+			background:plum fontColor:white font:8x13 \
+			string:"Recurring Events:" gravity:west
+		cmw EDRECUR edrecur textEdit $ED_UCA \
+			editType:textread \
+			charsVisible:24 linesVisible:3 \
+			background:lightblue font:8x13
+	fi
+	FILENAME=$1
+	let windex='(CURDAY+OFFSET-1)%7'
+	let mindex=CURMONTH-1
+	sv $EDTITLE string:"${FDAYS[$windex]} ${SHORTMONTHS[$mindex]} $CURDAY"
+	sv $EDRESET select:"ed_reset $EDTXT $FILENAME"
+
+	update_recur
+	ed_reset $EDTXT $FILENAME
+	pu $ED GrabNone
+}
+
+update_recur() {
+	# Check if a recurring event is scheduled for this day
+	RECURTEXT=""
+	if [ -f "$CALDIR/${FDAYS[$windex]}_EVERY" ]
+	then RECURTEXT="`cat $CALDIR/${FDAYS[$windex]}_EVERY`"
+	fi
+	let weekno='1+(CURDAY-1)/7'
+	case $weekno in
+	1)	TEST=FIRST
+		;;
+	2)	TEST=SECOND
+		;;
+	3)	TEST=THIRD
+		;;
+	4)	TEST=FOURTH
+		if ((CURDAY+7>=LAST))
+		then TEST="$TEST LAST"
+		fi
+		;;
+	5)	TEST="FIFTH LAST"
+		;;
+	esac
+	for i in $TEST
+	do
+		if [ -f $CALDIR/${FDAYS[$windex]}_$i ]
+		then RECURTEXT="$RECURTEXT; `cat $CALDIR/${FDAYS[$windex]}_$i`"
+		fi
+	done
+	sv $EDRECUR source:"$RECURTEXT"
+}
+
+set -A DAYS SUN MON TUE WED THU FRI SAT
+set -A MONTHS JANUARY FEBRUARY MARCH APRIL MAY JUNE JULY AUGUST SEPTEMBER OCTOBER NOVEMBER DECEMBER
+set -A SHORTMONTHS JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC
+
+update_month() {  # $1=Month $2=Year $3=Day
+	integer i=0
+
+	CURMONTH=$1
+	CURYEAR=$2
+	CURDAY=$3
+	IFS=:
+	unset L
+	cal $CURMONTH $CURYEAR | \
+		while read "L[$i]"
+		do
+			let i=i+1
+		done
+	IFS=" 	
+"
+	sv $TITLE string:"${L[0]#   }"	# clip off the 3 leading spaces
+
+	# Clip off leading number of spaces of first line
+	spaces="${L[2]%%1[ 2-7]*}"
+
+	# cal prints in 3 column fields, see how many leading blank fields
+	# there are
+	PREVOFFSET=$OFFSET
+	let OFFSET="(${#spaces}-1)/3"
+
+	# blank out the first $OFFSET numbers
+	i=0
+	while ((i<OFFSET))
+	do
+		sv ${CBUTS[$i]} label:$BLANKS sensitive:false background:navyblue
+		let i=i+1
+	done
+	# find the last number
+	PREVLAST=$LAST
+	case "${L[5]} ${L[6]} ${L[7]}" in
+	*31*) LAST=31 ;;
+	*30*) LAST=30 ;;
+	*29*) LAST=29 ;;
+	*28*) LAST=28 ;;
+	esac
+	# update the buttons up to the LAST number
+	j=1
+	while ((i<LAST+OFFSET))
+	do
+		sv "${CBUTS[$i]}" label:"$j" sensitive:true background:yellow
+		let i=i+1
+		let j=j+1
+	done
+	# blank out the trailing labels
+	while ((i<42))
+	do
+		sv "${CBUTS[$i]}" label:"$BLANKS" sensitive:false background:navyblue
+		let i=i+1
+	done
+	# If the month and year displayed are the current month and year,
+	# highlight today's date.
+	if [ $CURMONTH = $TODAY_M -a $CURYEAR = $TODAY_Y ]
+	then 
+		let day=TODAY_D+OFFSET-1
+		sv "${CBUTS[$day]}" background:lightblue
+	fi
+}
+
+if [ ! -d "$CALDIR" ]
+then mkdir $CALDIR
+fi
+
+BUTTONTYPE=oblongButton
+oi TOPLEVEL calendar calendar -openlook "$@"
+
+# Create the top level structure of the main screen
+
+cmw FORM f form $TOPLEVEL background:navyblue
+cmw BAR bar controlArea $FORM background:navyblue
+cmw OUTERCA ca controlArea $FORM `under $BAR` \
+	layoutType:fixedcols measure:1 vSpace:10 \
+	sameSize:none center:true background:navyblue
+cmw TCA tca controlArea $OUTERCA center:true background:navyblue
+cmw tmp tmp oblongButtonGadget $TCA \
+	labelType:image labelImage:"$WKSHLIBDIR/pixmaps/left.xpm" \
+	select:do_Prev_Month fontColor:white background:navyblue
+cmw TITLE title staticText $TCA string:"December 1991" font:8x13 \
+	recomputeSize:false background:lightblue
+cmw tmp tmp oblongButtonGadget $TCA \
+	labelType:image labelImage:"$WKSHLIBDIR/pixmaps/right.xpm" \
+	select:do_Next_Month fontColor:white background:navyblue
+cmw CAL cal exclusives $OUTERCA layoutType:fixedcols measure:7 \
+	background:navyblue
+
+# Add the command bar buttons
+
+addbuttons $BAR \
+	"Week at a Glance"	"do_WAAG" \
+	"Quit"		        "exit"
+
+# Create the widgets for the main screen
+
+j=0
+for i in ${DAYS[@]}
+do
+	cmw $i daybutton rectButton "$CAL" select:"bp ${FDAYS[$j]}" \
+		fontColor:$DAYFONTCOLOR label:$i labelJustify:center \
+		font:8x13 background:red
+	let j=j+1
+done
+
+i=0
+while ((i<42))
+do
+	if ((((i%7)==0)||((i%7)==6)))
+	then buttype=WEEKEND
+	     color=$WEEKENDFONTCOLOR
+	else buttype=WEEKDAY
+	     color=$WEEKDAYFONTCOLOR
+	fi
+	cmw CBUTS[$i] $buttype rectButton "$CAL" select:"bp $i" \
+		fontColor:$color labelJustify:center foreground:white \
+		background:yellow font:8x13 label:"  "
+	let i=i+1
+done
+
+rw $TOPLEVEL
+
+update_month $TODAY_M $TODAY_Y $TODAY_D
+cal_edit $CALDIR/$TODAY_M-$TODAY_D-$TODAY_Y
+
+if [ ! -d $HOME/calendar ]
+then mkdir $HOME/calendar || fatal "Could not create $HOME/calendar directory"
+fi
+
+ml

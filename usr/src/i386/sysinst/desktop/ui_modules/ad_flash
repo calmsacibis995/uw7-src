@@ -1,0 +1,135 @@
+#!/sbin/sh
+#ident "@(#)ad_flash	15.2	98/01/18"
+
+# Should we skip the user interaction?
+#
+# Nothing to do here.
+# common.rc will call ii_exit for us if skip_ad_flash is set
+
+. /isl/ui_modules/common.rc
+
+
+#--------------------------------------------------------
+
+function get_ads
+{
+[ -n "$debug" ] && set -x
+	integer i num 
+	#
+	# Create the description window
+	#
+	display "$AD_INTRO" -above 1 -below 10
+	desc_window=$CURWIN
+
+	#
+	# Create the menu
+	#
+	open_menu -x 3 -y 1
+	ad_menu=$MID
+
+	# Now create menu
+	num=$num_ads
+	width=0
+	i=-1
+	while (( ( i += 1 ) < num ))
+	do
+		add_menu_item "${AD_DESC[i]}" \
+			-entry "set_ad $i" \
+			-select "get_help $i"
+		(( width < ${#AD_DESC[i]} )) && width=${#AD_DESC[i]}
+	done
+	
+	#
+	# Create the window for it
+	#
+	(( num += 2 ))
+	(( width += 6 ))
+	place_window $width $num -title "$TITLE_AD_SEL" -below 1 -above 10
+	menu_window=$CURWIN
+	run_menu $ad_menu $ad_num
+	msg "$MSG_CHOOSE_AD"
+	footer "$AD_KEYS"
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back 
+	set_hotkey 10 go_next
+
+	# 
+	# Give input control to the menu.
+	# input_handler returns ONLY when the user hits Return.
+	#
+	input_handler
+}
+
+function set_ad
+{
+[ -n "$debug" ] && set -x
+	ad_num=$1
+}
+
+
+#
+# The user hit F9, so tell the sequencer to go back.
+#
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+        # Set the ad_num to zero, so that when they come back they
+	# will be at the start of the list
+        #
+        ivar set ad_num "0"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+# 
+# The user hit F1, so tell the sequencer to run the help module.
+#
+function get_help
+{
+[ -n "$debug" ] && set -x
+
+	[ -n "$1" ] && ad_num=$1
+
+        ivar set ad_num "$ad_num"
+        ivar set help_topic "ad_flash$ad_num"
+        ii_exit HELP
+}
+
+
+#
+# The user hit F10, continue
+#
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+        # Set the ad_num to zero, so that when they come back they
+	# will be at the start of the list
+        #
+        ivar set ad_num "0"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit NEXT
+}
+
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
+#
+# Main
+#
+
+num_ads=6
+
+ad_num=`ivar get ad_num`
+[ -z "$ad_num" ] && ad_num=0
+
+get_ads
+input_handler
+ii_exit NEXT
+

@@ -1,0 +1,50 @@
+#!/etc/dcu.d/winxksh
+#ident	"@(#)dcu:dcu	1.2.6.1"
+
+NOCHG=1         # Change was detected by the configuration manager
+SILENT=2        # Attempt to perform the silent board mapping
+INTERACTIVE=3   # Display the interactive menu driven screens
+
+if [ -f /etc/dcu.d/.run_silent ]
+then
+	call unlink /etc/dcu.d/.run_silent
+else
+	if [ -x /sbin/dcusilent ]
+	then
+		/sbin/dcusilent		# returns NOCHG|SILENT|INTERACTIVE
+		[ "$?" = "$NOCHG" -a "$1" = "-N" ] && exit 0
+	fi
+fi
+
+export ROOT=${ROOT:-/}
+export DCUDIR=${DCUDIR:-${ROOT}/etc/dcu.d}
+export LD_LIBRARY_PATH=${DCUDIR}/dculib
+
+export UNIX_INSTALL=${UNIX_INSTALL:-N}
+export SILENT_INSTALL=${SILENT_INSTALL:-false}
+
+export LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-C}}}
+if [ ! -d ${DCUDIR}/locale/${LOCALE} ]
+then
+        LOCALE=C
+fi
+
+if [ "$SILENT_INSTALL" = false ]
+then
+	export TERM=${TERM:-AT386}
+	typeset -L1 T=$TERM
+	if [ ! -d ${ROOT}/usr/share/lib/terminfo ]
+	then
+		export TERMINFO=${TERMINFO:-${DCUDIR}/terminfo}
+	else
+		export TERMINFO=${ROOT}/usr/share/lib/terminfo
+	fi
+	if [ ! -r ${TERMINFO}/$T/${TERM} ]
+	then
+		echo "$TERM terminfo type not supported."
+		exit 1
+	fi
+fi
+
+export LANG DCUDEBUG
+exec ${DCUDIR}/winxksh -c "${DCUDIR}/scripts/dcu $*"

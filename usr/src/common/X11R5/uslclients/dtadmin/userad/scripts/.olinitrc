@@ -1,0 +1,79 @@
+#!/bin/sh
+#ident	"@(#)dtadmin:userad/scripts/.olinitrc	1.30"
+#copyright	"%c%"
+#
+
+# CAUTION: the desktop manager runs this start-up script and waits for
+# it to finish.  When running programs from within this script, they
+# must be run in the background or the desktop manager will wait
+# indefinitely and the desktop will not come up.  (Note that some
+# programs run from this script have been "daemonized" so they are not
+# run in the background.)
+
+eval `defadm keyboard 2> /dev/null`
+export XKEYBOARD NUMLOCK SHIFTDOWN
+if [ ! -z "$LANG" -a -r /usr/lib/locale/$LANG/locale_def ]
+then
+    eval `grep LOC_XMODIFIERS /usr/lib/locale/$LANG/locale_def 2> /dev/null`
+    if [ $? != 0 ]
+    then
+	unset XMODIFIERS
+    else
+	XMODIFIERS=$LOC_XMODIFIERS
+	export XMODIFIERS
+    fi
+else
+    eval `defadm Xim XMODIFIERS 2> /dev/null`
+    export XMODIFIERS
+fi
+if [ -z "$XNLSPATH" ]
+then
+    eval `defadm Xim XNLSPATH 2> /dev/null`
+fi
+
+copyright.sh &
+colorserver	# this must not start in the background
+
+case "$DISPLAY" in
+    "" | unix:* | `uname -n`:*)
+	if [ !  -z "$XKEYBOARD" -a -r /usr/lib/keyboard/X/$XKEYBOARD ]
+	then
+	    /usr/X/bin/xmodmap /usr/lib/keyboard/X/DeFaUlT
+	    /usr/X/bin/xmodmap /usr/lib/keyboard/X/AltsAndNum
+	    /usr/X/bin/xmodmap /usr/lib/keyboard/X/$XKEYBOARD
+	fi
+	;;
+    *)
+	;;
+esac
+
+# Start the font server if it is not already running.
+FONTSERVER=tcp/`uname -n`:7000 export FONTSERVER
+if [ fsinfo > /dev/null 2>&1 ]
+then
+   if [ "$DISPLAY" = "" -o "$DISPLAY" = "unix:0" -o "$DISPLAY" = "unix:0.0" -o "$DISPLAY" = ":0" -o "$DISPLAY" = ":0.0" -o "$DISPLAY" = "local:0" -o "$DISPLAY" = "local:0.0" -o "$DISPLAY" = "`uname -n`:0" -o "$DISPLAY" = "`uname -n`:0.0" ]
+   then
+       xset fp= /usr/X/lib/fonts/misc,$FONTSERVER 2>/dev/null &
+   else 
+       xset +fp $FONTSERVER 2>/dev/null &
+   fi
+    # The above line adds the font server and removes the 75dpi and
+    # 100dpi directories from the font path; the latter two are in the
+    # font server catalogue and so are not needed in the font path as
+    # well, once the font server has started (before that, for xdm, they
+    # are needed to get the Helvetica font for use on the Graphical Login window).
+fi
+
+# minimize start-up contention by not running this in background
+dsdm
+
+if [ ! -z "$LANG" -a -x /usr/X/lib/locale/$LANG/locale.init ]
+then
+        /usr/X/lib/locale/$LANG/locale.init &
+fi
+
+# minimize start-up contention by not running this in background
+mwm -xrm "*showFeedback: -kill"
+
+xidlelock &
+dtwallpaper -init &

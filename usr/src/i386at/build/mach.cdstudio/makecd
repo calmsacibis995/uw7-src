@@ -1,0 +1,104 @@
+#!/usr/bin/ksh
+#ident	"@(#)oemcd:mach.cdstudio/makecd	1.1"
+
+USAGE="Usage: $0 -t tools_tree -w work_tree -r root_of_cd\n
+\t-v volume_desc_file -d dest_file [-b bootstrap]"
+unset TOOLS WORK ROOT VOL DEST BOOT
+while getopts t:w:r:v:d:b: c
+do
+	case $c in
+	t)	TOOLS=$OPTARG
+		;;
+	w)	WORK=$OPTARG
+		;;
+	r)	ROOT=$OPTARG
+		;;
+	v)	VOL=$OPTARG
+		;;
+	d)	DEST=$OPTARG
+		;;
+	b)	BOOT=$OPTARG
+		;;
+	\?)	print -u2 $USAGE
+		exit 1
+		;;
+	*)	print -u2 Internal error during getopts.
+		exit 2
+		;;
+	esac
+done
+if [ -z "$TOOLS" ] || [ -z "$WORK" ] || [ -z "$ROOT" ] ||
+	[ -z "$DEST" ] || [ -z "$VOL" ]
+then
+	print -u2 $0: ERROR: Must give t, w, r, v, and d options
+	print -u2 $USAGE
+	exit 1
+fi
+[ -d "$TOOLS" ] || {
+	print -u2 $0: ERROR: $TOOLS: No such directory
+	exit 1
+}
+[ -d "$ROOT" ] || {
+	print -u2 $0: ERROR: $ROOT: No such directory
+	exit 1
+}
+[ -d "$WORK" ] || mkdir -p "$WORK" || exit 1
+[ -s "$VOL" ] || {
+	print -u2 $0: ERROR: $VOL: No such file or file is empty
+	exit 1
+}
+[ -z "$BOOT" ] || {
+	[ -s "$BOOT" ] || {
+		print -u2 $0: ERROR: $BOOT: No such file or file is empty
+		exit 1
+	}
+	set -- $(ls -l "$BOOT")
+	(( $5 == 2048 )) || {
+		print -u2 $0: ERROR: $BOOT is not 2048 bytes long
+		exit 1
+	}
+}
+
+rm -f $WORK/${VOL##*/}
+cp $VOL $WORK
+export PATH=$PATH:$TOOLS
+cd $TOOLS
+
+# If we are not including the bootstrap, just run makedisc and exit.
+# Otherwise turn off execute permission for cdout.  We do this so that we
+# can edit dumplist.fil to add an entry for the bootstrap to the beginning
+# of the CD, and then we run cdout separately.
+
+MAKEDISC="makedisc -R -d -g -p -b16 -l -t -r $WORK $ROOT $DEST 640"
+[ -z "$BOOT" ] && {
+	$MAKEDISC
+	exit 0
+}
+
+chmod -x $TOOLS/cdout || exit $?
+$MAKEDISC
+# makedisc will complain that it cannot run cdout.  Ignore the message.
+chmod +x $TOOLS/cdout || exit $?
+
+PATHLEN=${#BOOT}
+(( ENTRYLEN = PATHLEN + 36 ))
+(( PATHLEN >= 10 )) || PATHLEN=0$PATHLEN
+mv $WORK/dumplist.fil $WORK/dumplist.tmp
+print 00000000${ENTRYLEN}0000000000F00000000000000002048000${PATHLEN}${BOOT} \
+	> $WORK/dumplist.fil
+cat $WORK/dumplist.tmp >> $WORK/dumplist.fil
+rm $WORK/dumplist.tmp
+
+nl="
+"
+LAST=$(tail -2 ${WORK}/dumplist.fil)
+LAST=/${LAST#*/}  # Strip up to the first slash.
+LAST=${LAST%$nl*} # Strip off the last line.
+[ "${LAST}" = "${ROOT}/.t/h/i/s/i/s/a/d/e/e/p/p/a/t/h/zboot" ] || {
+	print -u2 "ERROR: zboot is not the last file.  Give it a deeper path."
+	exit 1
+}
+
+[ -c $DEST ] && tapecntl -w $DEST
+cdout -g -b16 $WORK $DEST 640
+

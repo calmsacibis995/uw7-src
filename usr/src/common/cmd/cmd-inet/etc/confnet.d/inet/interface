@@ -1,0 +1,50 @@
+#ident	"@(#)interface	1.3"
+#version = 1.0
+#Format of a 1.0 line
+#	prefix:unit#:addr:device:ifconfig opts:slink opts:
+#
+#Field	Name		Verify	Purpose			Default on NULL
+#
+#$1	prefix		string	device identifier	NONE
+#	prefix is an identifier for a driver's netstat statistics
+#
+#$2	unit		number	device ifstats index	NONE
+#	unit is the index per prefix array
+#
+#$3	address		NONE	IP name or address	`/usr/bin/uname -n`
+#	address is used by ifconfig to initialize the transport provider.
+#	This may be the internet name or number.
+#	Null is expanded to `/usr/bin/uname -n`
+#
+#$4	device		string	full device path name	NONE
+#	device is the node name of the transport provider.
+#	it is reserved through the generic /etc/confnet.d/configure script
+#	from the generic /etc/confnet.d/netdrivers file.
+#	it will be used by slink
+#
+#$5	ifconfig_opt	NONE	allow customized options, SLIP for example
+#	ifconfig_opts is used to customize the ifconfig options used at boot time.
+#	The constructed command line will take the form:
+#		ifconfig prefixunit# Converted_Address ifconfig_opts up
+#	Converted_Address is the /etc/inet/hosts value for the address field.
+#	So ifconfig_opts has the -trailers and other options needed by
+#	System V Release 4 transport providers. 
+#	Note that a null entry is allowed for providers like lo0 that require
+#	no additional ifconfig options at boot time. 
+#
+#$6	slink_opt	NONE	allow customized options, SLIP for example
+#	default:	add_interface
+#	The slink_opts value is used by slink to initialize the device
+#	into the TCP/IP protocol stack.
+#	slink_opts selects the strcf function from /etc/inet/strcf and
+#	any initial arguments.
+#	add_interface is the default slink_opts value; it is used with
+#	Ethernet-style devices.
+#	Additional arguments will be appended to slink_opt to make the final
+#	form of the slink operation:
+#		slink_opts ip device prefixunit#
+#	Where ip will be an open file descriptor to /dev/ip and device prefix
+#	and unit are defined in the current interface entry.
+#	For a standard Ethernet board, slink_opts may be null; the defaults
+#	will take care of all arguments.
+lo:0:127.0.0.1:/dev/loop::add_loop:

@@ -1,0 +1,53 @@
+#ident	"@(#):mkhead	16.1	97/11/08"
+#ident "$Header$"
+#
+#	Install UNIX System header files
+#
+
+#	NOTE: if possible (site-specific), you can
+#	add the `-l' option to cpio
+echo "START `basename $0` `date`"
+
+UID_NAME=`id|sed 's/[()]/ /gp'|awk '{print $2}'`
+trap 'exit 1' 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+
+#
+# Find a reasonable vpp to use
+#
+VPP=${Root}/usr/src/${Work}/cmd/vpp/vpp
+if [ ! -x ${VPP} ]; then
+	VPP=${TOOLS}/usr/bin/vpp
+	if [ ! -x ${VPP} ]; then
+		VPP=vpp
+	fi
+fi
+VPP_VHFLAGS="-c ansi"
+
+echo "Installing Header files to ${Root}/${Mach}"
+
+[ -d ${Root}/${Mach}/usr/include ] || mkdir -p ${Root}/${Mach}/usr/include
+
+echo "$0: Placing header files in ${Root}/${Mach}/usr/include"
+cd ${Root}/usr/src/${Work}/head
+find . -type f -follow -print | egrep -v '\.vh$' | \
+	cpio -pdmuL ${Root}/${Mach}/usr/include
+
+echo "$0: VPP header files into ${Root}/${Mach}/usr/include"
+find . -type f -follow -name '*.vh' -print | {
+	while read file
+	do
+		targ=${Root}/${Mach}/usr/include/`echo "$file" | sed -e 's/\.vh$/.h/'`
+		echo "\t${VPP} ${VPP_VHFLAGS} $file $targ"
+		${VPP} ${VPP_VHFLAGS} $file $targ
+	done
+}
+
+cd ${Root}/${Mach}/usr/include
+find . -type f -print|xargs chmod 0644
+
+echo "ENDED `basename $0` `date`"
+exit 0

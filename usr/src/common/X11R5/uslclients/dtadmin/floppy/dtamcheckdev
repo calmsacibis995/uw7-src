@@ -1,0 +1,391 @@
+#ident	"%W%"
+#copyright	"%c%"
+
+
+XDIR=${XWINHOME:-/usr/X}
+if [ ! -d $XDIR ]
+then
+	exit 0		# no X -> no work
+fi
+
+DESKTOP=$XDIR/desktop
+
+if [ ! -d $DESKTOP ]
+then
+	exit 0		# no desk top -> no work
+fi
+
+if [ ! -d $XDIR/lib/classdb ]
+then
+	exit 0		# no databases -> cannot work
+fi
+
+FOLDER=Disks-etc
+GENICON=gendev.icon
+PERIPH=$XDIR/lib/classdb/peripherals
+FIRST=$XDIR/adm/.firstboot
+
+GETTXT="/usr/bin/gettxt"
+get_locale() {  # $1=user
+        #Check if the user has a DayOne file
+        LOCALE=""
+        if [ -f $DESKTOP/LoginMgr/DayOne/$1 ]
+        then
+            read LOCALE < $DESKTOP/LoginMgr/DayOne/$1 2>/dev/null
+        fi
+
+        if [ -z "$LOCALE" ]
+        then
+              LOCALE="C"
+        fi
+}
+
+#
+#	First check if this is the first startup after installation
+# 	(.firstboot exists); always run on first startup.
+#	If not first startup, check that $PERIPH is up to date; 
+#	if so no more to be done.
+#
+
+if [ ! -r $FIRST ]
+then
+	if [ -f $PERIPH ]
+	then
+		xxx=`find /etc/device.tab -newer $PERIPH -print`
+		if [ "$xxx" = "" ]
+		then
+			exit 0		# all current -> no work needed
+		fi
+	fi
+else
+	# first startup after installation
+	/usr/sbin/removef desktop $FIRST >/dev/null
+	/usr/bin/rm -f $FIRST
+	/usr/sbin/removef -f desktop
+fi
+MEDIA="MediaMgr"
+PKGMG="PackageMgr"
+TFADMIN="/sbin/tfadmin"
+USERS=`(cd $DESKTOP/LoginMgr/Users 2> /dev/null; ls 2> /dev/null)`
+
+if [ -f $XDIR/adm/precheckdev ]
+then
+	. $XDIR/adm/precheckdev
+fi
+
+rm -rf $PERIPH
+
+if [ ! -d $DESKTOP/$FOLDER ]
+then
+    mkdir $DESKTOP/$FOLDER
+fi
+if [ ! -d /$FOLDER ]
+then
+    mkdir /$FOLDER
+fi
+
+
+PIXMAPS=$XDIR/lib/pixmaps
+BITMAPS=$XDIR/lib/bitmaps
+PIXMASKS=$XDIR/lib/pixmasks
+BITMASKS=$XDIR/lib/bitmasks
+
+#
+# check each removable device and generate an entry in the file $PERIPH
+# and maybe include it in a list to use for linking devices into users homes.
+#
+TOMAP=		# initialize the list as empty
+for D in `/usr/bin/getdev -a removable=true display=true`
+do
+    ICON=$GENICON
+    NAME=$D
+    case $D in
+	disk*)	DEV=`devattr $D bdevice` ;;
+	*)	DEV=`devattr $D cdevice` ;;
+    esac
+    case $D in
+	disk*1)		I_DEV="528diskette1" ;;
+	disk*2)		I_DEV="529diskette2" ;;
+	ctape1)		I_DEV="530ctape1" ;;
+	ctape2)		I_DEV="532ctape2" ;;
+	ctape3)		I_DEV="586ctape3" ;;
+	ctape4)		I_DEV="587ctape4" ;;
+	ctape5)		I_DEV="588ctape5" ;;
+	cdrom1)		I_DEV="533cdrom1" ;;
+	cdrom2)		I_DEV="534cdrom2" ;;
+	*)		continue ;;
+    esac	
+
+    echo CLASS $D LOCKED>> $PERIPH
+    echo BEGIN >> $PERIPH
+    echo "\t_CLASSNAME\t'dtmedia:$I_DEV';" >> $PERIPH
+    echo "\t_LFILEPATH\t'`dirname $DEV`';" >> $PERIPH
+    echo "\t_LPATTERN\t'`basename $DEV`';" >> $PERIPH
+    echo "\t_SYSTEM\t\tY;" >> $PERIPH
+#
+#	standard MENU entries:  CD-ROM should not have Backup or Restore
+#
+    case $D in
+    cdrom*) 	echo "\tMENU _Open\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -D $D; \\
+			else     exec $MEDIA -D $D; fi)&';" >> $PERIPH
+    		echo "\tMENU 'dtmedia:527Install'\t'(if $TFADMIN -t $PKGMG 2>/dev/null;\\
+			then $TFADMIN $PKGMG -D $D; \\
+			else     exec $PKGMG -D $D; fi)&';" >> $PERIPH
+		;;
+    *) 		echo "\tMENU _Open\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -D $D; \\
+			else     exec $MEDIA -D $D; fi)&';" >> $PERIPH
+    		echo "\tMENU 'dtmedia:33Backup'\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -B -D $D; \\
+			else     exec $MEDIA -B -D $D; fi)&';" >> $PERIPH
+    		echo "\tMENU 'dtmedia:34Restore'\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -R -D $D; \\
+			else     exec $MEDIA -R -D $D; fi)&';" >> $PERIPH
+    		echo "\tMENU 'dtmedia:527Install'\t'(if $TFADMIN -t $PKGMG 2>/dev/null;\\
+			then $TFADMIN $PKGMG -D $D; \\
+			else     exec $PKGMG -D $D; fi)&';" >> $PERIPH
+		;;
+    esac
+
+#
+#	extra MENU entires (format, rewind, *cmd ...) 
+#	I should do a complete devattr -v $D and select *cmd= lines,
+#	but will settle for looking for the specific ones I "expect" 
+#
+    FMT=`/usr/bin/devattr $D fmtcmd`
+    if [ $? = 0 ]
+    then
+	echo "\tMENU 'dtmedia:35Format'\t'exec $MEDIA -F -D $D &';" >> $PERIPH
+    fi
+    CMD=`/usr/bin/devattr $D rewind`
+    if [ $? = 0 ]
+    then
+	if [ -x $CMD ]
+	then
+	    echo "\tMENU 'dtmedia:36Rewind'\t'exec $CMD &';" >> $PERIPH
+	fi
+    fi
+    CMD=`/usr/bin/devattr $D erasecmd`
+    if [ $? = 0 ]
+    then
+	if [ -x $CMD ]
+	then
+            echo "\tMENU 'dtmedia:52Erase'\t'(if $CMD 2> /dev/null;\\
+                                  then if ( \$? != 0 ) ;\\
+                                       then $GETTXT dtmedia:284 \"Erase failed.\" | $DESKTOP/rft/dtmsg; fi; \\
+                                  else $GETTXT dtmedia:284 \"Erase failed.\" | $DESKTOP/rft/dtmsg; fi)';" >> $PERIPH
+	fi
+    fi
+    case $D in
+
+    ctape?)     case $D in
+                *1)     NAME=Cartridge_Tape
+                        ;;
+                *2)	NAME=Tape_2
+                        ;;
+                *3)	NAME=Tape_3
+                        ;;
+                *4)	NAME=Tape_4
+                        ;;
+                *5)	NAME=Tape_5
+                        ;;
+                esac
+		ICON=ctape.glyph
+		echo "\t_DROP\t\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -B -D $D -C %{\"S*\"}; \\
+			else     exec $MEDIA -B -D $D -C %{\"S*\"}; fi)&';" >> $PERIPH
+	    ;;
+
+    cdrom?)	case $D in
+		*1)	NAME=CD-ROM_1
+			;;
+		*2)	NAME=CD-ROM_2
+			;;
+		esac
+		if [ ! -d /$NAME ]
+		then
+			/usr/bin/mkdir /$NAME
+		fi
+		ICON=cdrom.icon
+	    ;;
+
+    diskette?)	case $D in
+		*1)	NAME=Disk_A
+			if [ ! -d /Disk_A ]
+			then    /usr/bin/mkdir /Disk_A
+			fi
+			;;
+		*2)	NAME=Disk_B
+			if [ ! -d /Disk_B ]
+			then    /usr/bin/mkdir /Disk_B
+			fi
+			;;
+		esac
+		case $FMT in
+		    *5*)	y=disk5.25.xpm ;;
+		    *)		y=disk3.5.xpm ;;
+		esac
+		chmod +w $DEV
+		ICON=$NAME.icon
+		/usr/bin/rm -f $PIXMAPS/$ICON
+		/usr/bin/ln $PIXMAPS/$y $PIXMAPS/$ICON
+		/usr/bin/rm -f $BITMAPS/$ICON
+		/usr/bin/ln $BITMAPS/$y $BITMAPS/$ICON
+		/usr/bin/rm -f $PIXMASKS/$ICON
+		/usr/bin/ln $PIXMASKS/$y $PIXMASKS/$ICON
+		/usr/bin/rm -f $BITMASKS/$ICON
+		/usr/bin/ln $BITMASKS/$y $BITMASKS/$ICON
+		echo "\t_DROP\t\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -D $D -C %{\"S*\"}; \\
+			else     exec $MEDIA -D $D -C %{\"S*\"}; fi)&';" >> $PERIPH
+		;;
+
+	*)	x=`devattr $D dticon`
+		if [ $? = 0 ]
+		then
+			ICON=$x
+		else
+			ICON=$GENICON
+		fi
+		x=`devattr $D dtalias`
+		if [ $? = 0 ]
+		then
+			NAME=$x
+		else
+			NAME=$D
+		fi
+		x=`devattr $D bdevice`
+		if [ $? = 0 ]
+		then
+			cd /
+			if [ ! -d $NAME ]
+			then
+				/usr/bin/mkdir $NAME
+			fi
+		fi
+		echo "\t_DROP\t\t'(if $TFADMIN -t $MEDIA 2>/dev/null;\\
+			then $TFADMIN $MEDIA -D $D -C %{\"S*\"}; \\
+			else     exec $MEDIA -D $D -C %{\"S*\"}; fi)&';" >> $PERIPH
+	    ;;
+    esac
+#
+#	icon definition, to complete the class
+#
+    echo "\t_ICONFILE\t'$ICON';" >> $PERIPH
+    echo "END" >> $PERIPH
+    echo  >> $PERIPH
+    /usr/bin/rm -f $DESKTOP/$FOLDER/$NAME
+    /usr/bin/ln -s $DEV $DESKTOP/$FOLDER/$NAME
+
+    #
+    # since the redirection of input forces a subshell, do an echo
+    # of the needed information and capture that output with command
+    # substitution.
+    #
+    PART=`while read Dir File Index
+        do
+            if [ "$File" = "$NAME" ]
+            then
+                echo $Index
+                break
+            fi
+        done < $XDIR/adm/day1addmap`
+    #
+    # construct a list of devices each user needs to see
+    #
+    if [ -n "$PART" ]
+    then
+        TOMAP="$TOMAP $PART $NAME $DEV
+"
+    fi
+done
+
+#
+# update each user for each device in the list $TOMAP
+#
+onceroot=false		# always do root and only do it once
+for U in root $USERS
+do
+    if [ $U = "root" ]
+    then
+        if $onceroot
+        then
+            continue		# occurs if root also is in $USERS
+        fi
+        onceroot=:
+        DIR=
+    else
+    	# First check if user is a NIS user.
+    	PLUSPASS=`/usr/bin/grep "^+${U}:" /etc/passwd 2>/dev/null`
+    	if [ "$?" = 0 ]
+    	then
+    		NISPASS=`/usr/bin/ypmatch $USER passwd 2>/dev/null`
+          	if [ "$?" != 0 ]
+          	then
+          		continue    #Bypass this user.
+          	fi
+    		DIR=`echo $NISPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+       		LOCALHOME=`echo $PLUSPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+       		if [ -n "$LOCALHOME" ]
+       		then
+	       		DIR=$LOCALHOME
+       		fi
+    	else
+    		DIR=`/usr/bin/grep "^${U}:" /etc/passwd | /usr/bin/cut -d: -f6 2>/dev/null`
+    	fi
+
+    	if [ -z "$DIR" ]
+    	then
+		continue
+     	fi
+    fi
+
+    get_locale $U
+    LFOLDER=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:15 "$FOLDER"`
+
+    if [ ! -d $DIR/$LFOLDER ]
+    then
+        if [ "$U" != root ]
+        then
+            su $U -c "mkdir $DIR/$LFOLDER"
+        else
+            mkdir $DIR/$LFOLDER
+        fi
+    fi
+    #
+    # update this user's home with links to access each device on the list
+    #
+    echo "$TOMAP" | while read Index NAME DEV
+    do
+        if [ -z "$DEV" ]
+        then
+            continue
+        fi
+        if [ "$LOCALE" != "C" ]
+        then
+#            LFOLDER=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:15 "$FOLDER"`
+            LNAME=`LC_ALL=$LOCALE /usr/bin/gettxt dayone:$Index "$NAME"`;
+            dNAME=$DIR/$LFOLDER/$LNAME
+        else
+            dNAME=$DIR/$FOLDER/$NAME
+        fi
+        if [ "$U" != root ]
+        then
+            su $U -c "/usr/bin/rm -f $dNAME;/usr/bin/ln -s $DEV $dNAME"
+        else
+            /usr/bin/rm -f $dNAME
+            /usr/bin/ln -s $DEV $dNAME
+        fi
+    done
+done
+
+/usr/bin/chmod 664 $PERIPH
+/usr/bin/chgrp dtadmin $PERIPH
+
+if [ -f $XDIR/adm/postcheckdev ]
+then
+	. $XDIR/adm/postcheckdev
+else
+	exit 0
+fi

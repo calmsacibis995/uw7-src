@@ -1,0 +1,501 @@
+/*       @(#)quadvga.xgi	6.1     12/13/91 16:52:03      */
+/*
+ *    @(#) quadvga.xgi 12.1 95/05/09  
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1989-1992.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+/* *********************************************************************** *
+ * Quadram/QuadVGA.XGI - XEGIA(tm) GrafInfo File for  QuadVGA Adaptor      *
+ *                                                                         *
+ *        Copyright (c) 1989 Metagraphics Software Corporation             *
+ *      269 Mount Hermon Road, PO 66779, Scotts Valley, CA 95066           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                      QUADRAM.QUADVGA.VGA.640x350-16                     *
+ *                      QUADRAM.QUADVGA.VGA.640x480-16                     *
+ *                      QUADRAM.QUADVGA.VGA.800x600-16                     *
+ *                      QUADRAM.QUADVGA.SVGA.1024x768-16                   *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+
+/* ********************************************************************* */
+
+VENDOR QUADRAM     "Quadram"
+ MODEL  QUADVGA     "QuadVGA"
+  CLASS  VGA         "VGA"
+   MODE   640x350-16  "640x350 16-color"      /* VGA 640x350 16 color */
+
+      MEMORY(0xA0000,0x10000);        /*  Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 350;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE  SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(6,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xA3);                 /* misc out reg */
+         r0=3; bout(1,0x3C4,0x3C5);        /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x83;  r17 = 0x85;  r18 = 0x5D;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x63;  r22 = 0xBA;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout( 9, 0x3CE, 0x3CF );
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout( 5, 0x3C4, 0x3C5 );         /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR QUADRAM     "Quadram"
+ MODEL  QUADVGA     "QuadVGA"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16  "640x480 16-color"         /* VGA 640x480 16 color */
+
+      MEMORY(0xA0000,0x10000);        /* Basee Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEA;  r17 = 0x8C;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout( 5, 0x3C4, 0x3C5 );         /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+/* ********************************************************************* */
+
+VENDOR QUADRAM     "Quadram"
+ MODEL  QUADVGA     "QuadVGA"
+  CLASS  VGA        "VGA"
+   MODE   800x600-16  "800x600 16-color"
+
+      MEMORY(0xA0000,0x10000);        /* Basee Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;                   /* VGA */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE  SetGraphics
+         {
+         in(r63,0x3DA);                      /* reset attr F/F   */
+         out(0x3C0,0);                       /* disable palette  */
+
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7 */
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;  r5 = 0;  r6 = 0;
+         r7 = 0x88; bout(8,0x3C4,0x3C5);     /* reset, sequencer regs */
+
+         out(0x3C2,0xEB);                    /* misc out reg     */
+         r0=3;  bout(1,0x3C4,0x3C5);         /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7 */
+         r0  = 0x7B;  r1  = 0x63;  r2  = 0x68;  r3  = 0x18; /* crtc */
+         r4  = 0x68;  r5  = 0x8D;  r6  = 0x86;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x64;  r17 = 0x87;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x5C;  r22 = 0x7A;  r23 = 0xC3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01);   /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                      /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);  /* vga color select */
+
+         out(0x3C0,0x20);                    /* enable palette   */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         in(r63,0x3DA);                      /* reset attr F/F   */
+         out(0x3C0,0);                       /* disable palette  */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;  r5 = 0;  r6 = 0;
+         r7 = 0x88;   bout(8,0x3C4,0x3C5);   /* sequencer regs   */
+
+         out(0x3C2,0x67);                    /* misc out reg     */
+         r0 = 0x03;   bout(1,0x3C4,0x3C5);   /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x02; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0C;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x07;  r15 = 0x80;
+         r16 = 0x9C;  r17 = 0xAE;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01);   /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                      /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         out(0x3C0,0x20);                    /* enable palette */
+         }
+
+/* *********************************************************************** */
+
+VENDOR QUADRAM     "Quadram"
+ MODEL  QUADVGA     "QuadVGA"
+  CLASS  SVGA        "SVGA"
+   MODE   1024x768-16  "1024x768 16-color"   /* Super-VGA 1024x768 16-color */
+
+      MEMORY(0xA0000,0x20000);         /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;                /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11); out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 24 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+  
+         /* additional master clock select */
+         out (0x3d4, 0x24); out (0x3d5, 0x2);
+
+         /* reset compatibilty regs */
+         out (0x3BF, 0x1);
+         out (0x3D8, 0xA0);
+
+         in(r63,0x3DA);                      /* reset attr F/F       */
+         out(0x3C0,0);                       /* disable palette      */
+
+         r0 = 1;  r1 = 0x0A;  r2 = 0x6F;  r3 = 0;  r4 = 6;  r5 = 0;  r6 = 0;
+         r7 = 0xE8;  bout(8,0x3C4,0x3C5);    /* reset sequencer regs */
+
+
+         out(0x3C2,0xAB);                    /* misc out reg         */
+         r0 = 3;  bout(1,0x3C4,0x3C5);       /* sequencer enable     */
+
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+         r0  = 0x4A;  r1  = 0x3F;  r2  = 0x40;  r3  = 0x8D;     /* crtc */
+         r4  = 0x43;  r5  = 0x0D;  r6  = 0x98;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x80;  r17 = 0xA2;  r18 = 0x7F;  r19 = 0x20;
+         r20 = 0x0;   r21 = 0x80;  r22 = 0x98;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3d4,0x1B); out(0x3D5,0x0);  /* more special crtc regs */
+         out(0x3d4,0x1C); out(0x3d5,0x0);
+         out(0x3d4,0x1D); out(0x3d5,0x0);
+         out(0x3d4,0x1E); out(0x3d5,0x0);
+         out(0x3d4,0x1F); out(0x3d5,0x0);
+         out(0x3d4,0x20); out(0x3d5,0x0);
+         out(0x3d4,0x21); out(0x3d5,0x3f);
+         out(0x3d4,0x23); out(0x3d5,0x0);
+         out(0x3d4,0x25); out(0x3d5,0x80);
+
+         out(0x3CC,0x00); out(0x3CA,0x01);   /* graphics controller       */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x01;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                      /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* enable double sized planes */
+         out(0x3C0,0x36); out(0x3C0,0x10);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00); 
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* turn off fast mode */
+         out(0x3C4,0x1); out(0x3C5,0x1);
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+
+         /* unprotect crtc registers 0 - 7 */
+         out(0x3D4,0x11);  out(0x3D5,0x00); 
+
+         /* unprotect sequencer reg 1, bit 1 */
+         out(0x3BF,0x03); out(0x3D8,0xA0);
+
+         /* additional master clock reset */
+         out (0x3d4, 0x24); out (0x3d5, 0x0);
+
+         /* reset compatibilty regs */
+         out(0x3BF,0x3); out(0x3D8,0xA0);
+
+         in(r63,0x3DA);                      /* reset attr F/F       */
+         out(0x3C0,0);                       /* disable palette      */
+
+         r0 = 1;  r1 = 0;  r2 = 3;  r3 = 0;  r4 = 2;  r5 = 0;  r6 = 0;
+         r7 = 0x88;  bout(8,0x3C4,0x3C5);    /* reset sequencer regs */
+
+         out(0x3C2,0x67);                    /* misc out reg         */
+         r0 = 3;  bout(1,0x3C4,0x3C5);       /* sequencer enable     */
+
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0 - 7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x02;       /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0C;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x07;  r15 = 0x80;
+         r16 = 0x9C;  r17 = 0xAE;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3d4,0x1B); out(0x3D5,0x0);  /* more special crtc regs */
+         out(0x3d4,0x1C); out(0x3d5,0x0);
+         out(0x3d4,0x1D); out(0x3d5,0x0);
+         out(0x3d4,0x1E); out(0x3d5,0x0);
+         out(0x3d4,0x1F); out(0x3d5,0x0);
+         out(0x3d4,0x20); out(0x3d5,0x0);
+         out(0x3d4,0x21); out(0x3d5,0x4f);
+         out(0x3d4,0x23); out(0x3d5,0x0);
+         out(0x3d4,0x25); out(0x3d5,0x00);
+
+         out(0x3CC,0x00); out(0x3CA,0x01);   /* graphics controller       */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                      /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* disable double sized planes */
+        out( 0x3c0, 0x36);  out( 0x3c0, 0x0 );
+
+        /* bank sel off */
+        out( 0x3cd, 0x0 );
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+/* End of File - QUADRAM/QUADVGA.XGI */
+

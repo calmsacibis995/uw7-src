@@ -1,0 +1,330 @@
+#ident	"@(#)postinstall	1.2"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+# install a module.  $1 is the module name
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+do_install() {
+	ERR=/tmp/${1}.err
+	OPTS=""	
+
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Mfsys Sfsys Node"
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if [ -f ${1}.Mo ]
+	then
+		mv ${1}.Mo Modstub.o
+	fi
+	if [ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if [ -f ${1}.Mt ]
+	then
+		mv ${1}.Mt Mtune
+	fi
+	if [ -f ${1}.Dt ]
+	then
+		mv ${1}.Dt Dtune
+	fi
+	if [ -f ${1}.Ma ]
+	then
+		grep -v "^[\*#]ident" ${1}.Ma > Master
+		rm -rf ${1}.Ma
+	fi
+	if [ -f ${1}.Sy ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sy |
+			sed "${SEDCMD1}" >System
+		rm -rf ${1}.Sy
+	fi
+	if [ -f ${1}.Mf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mf > Mfsys
+		rm -rf ${1}.Mf
+		OPTS="-c"
+	fi
+	if [ -f ${1}.Sf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sf |
+			sed "${SEDCMD2}" >Sfsys
+		rm -rf ${1}.Sf
+		OPTS=${OPTS}"l"
+	fi
+	if [ -f ${1}.No ]
+	then
+		grep -v "^[\*#]ident" ${1}.No > Node
+		rm -rf ${1}.No
+	fi
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	RC=$?
+	[ ! -d /etc/conf/pack.d/${1} ] && mkdir /etc/conf/pack.d/${1}
+	if [ "$RC" = 0 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${OPTS} ${1} 2> ${ERR}
+		RET=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} 2> ${ERR}
+		RET=$?
+	fi
+	rm -rf ${IDCOMPS}
+	if [ ${RET} != 0 ]
+	then
+		message -d `pfmt -s nostd -g ${PKGMSG}:1 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR} 2>&1`
+		
+		# rm nfs.env created by chkpkgrel run from the request
+		rm -f /var/sadm/upgrade/nfs.env
+
+		exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:2 " The Installable Driver feature has been removed. The %s cannot be installed." ${NAME} 2>&1`
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+VOLATILES=`echo /tmp/nfs/*`
+
+cd /var/sadm/pkg/${PKG}/install
+
+# determine that ID/TP tools are available
+
+if [ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+			     -o ! -x ${CONFBIN}/idcheck ]
+then
+	message -d ${NOTOOLS}
+	exit $FAILURE
+fi
+
+cd /tmp/nfs
+
+# install modules
+
+for module in nfss nfs klm
+do
+	do_install $module 
+done
+
+#
+#	add entry in /etc/dfs/fstypes
+#
+
+if [ -s /etc/dfs/fstypes ]
+then
+	grep '^nfs' /etc/dfs/fstypes >/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		cp /etc/dfs/fstypes /tmp/fstypes.$$ >/dev/null 2>&1
+		pfmt -s nostd "nfs\tNetwork File System Utilities: Version 2.0\n" > /etc/dfs/fstypes 2>&1
+		cat /tmp/fstypes.$$ >> /etc/dfs/fstypes
+		rm  /tmp/fstypes.$$
+	fi
+else
+	pfmt -s nostd "nfs\tNetwork File System Utilities: Version 2.0\n" > /etc/dfs/fstypes 2>&1
+fi
+
+installf $PKGINST /etc/dfs/fstypes v \? \? \? 1 NULL NULL
+
+## Change init state to 3
+
+/usr/bin/ed -s /etc/inittab <<- EOF > /dev/null 2>&1
+	/initdefault/
+	s/2/3/
+	w
+	q
+EOF
+
+/usr/bin/ed -s /etc/conf/init.d/kernel <<- EOF > /dev/null 2>&1
+	/initdefault/
+	s/2/3/
+	w
+	q
+EOF
+
+## for graphical admin
+if [ -s	 /etc/dfs/dtvfstab ]
+then	:
+else
+	>/etc/dfs/dtvfstab
+	installf ${PKGINST} /etc/dfs/dtvfstab v 0644  root root 1 NULL NULL
+fi
+
+#
+# attach the desktop manager class definitions
+#
+#if [ ! -z "`echo ${CLASSES} | grep DTMadmin`" ]
+#then
+	#if [ -d /usr/X/lib/classdb ]
+	#then
+		#grep "INCLUDE nfs\.cdb;" /usr/X/lib/classdb/dtadmin >/dev/null 2>&1
+		#if [ $? -ne 0 ]
+		#then
+			#echo "INCLUDE nfs.cdb;" >> /usr/X/lib/classdb/dtadmin
+		#fi
+	#fi
+#fi
+
+# add entry to Help_Desk
+#HDFILE=/usr/X/desktop/Help_Desk
+#if [ -f $HDFILE ]
+#then
+
+#grep "^FileSharing" $HDFILE >/dev/null 2>&1
+#if [ $? != 0 ]
+#then
+        #ed $HDFILE >/dev/null <<!
+#$
+#a
+#FileSharing0,0{_DFLT_ICONLABEL="File_Sharing";_ICONLABEL="File_Sharing";_DESCRP="File Sharing";_ICONFILE="nfs.icon";_HELPFILE="dtadmin/FileShar.hlp"}
+#.
+#w
+#q
+#!
+
+#fi
+#fi
+
+#
+# Add File_Sharing icon to all the existing users with desktop.
+#
+ 
+#GT=/usr/bin/gettxt
+
+#if [ "$INSTALL_ICONS" != "FALSE" ]
+#then
+	# add links to Admin_Tools/Networking folder for all desktop users.
+
+	#DAYONEDIR=/usr/X/desktop/LoginMgr/DayOne
+	#USERDIR=/usr/X/desktop/LoginMgr/Users
+	#LOGDIRCMD=/usr/X/adm/upgrade/dtlogindir
+	#if [ ! -d $DAYONEDIR -o ! -d $USERDIR -o ! -x $LOGDIRCMD ]
+	#then	
+		# desktop corrupted or installing on pre 2.0 system?
+		#pfmt -s nostd -g ${PKGMSG}:4 "desktop icon installation failed\n"
+	#else
+		#for login in `ls $USERDIR`
+		#do
+			#if [ -f $DAYONEDIR/$login ]
+			#then
+				#hdir=`$LOGDIRCMD $login`
+				#if [ $? -ne 0 ]
+				#then
+					# desktop user with no home dir, or
+					# user has been removed.
+					#continue
+				#fi	
+				#locale=`cat $DAYONEDIR/$login`
+				#admdir=`LC_ALL=$locale $GT dayone:2 "Admin_Tools"`
+				#netdir=`LC_ALL=$locale $GT dayone:32 "Networking"`
+				#if [ -d $hdir/$admdir/$netdir ]
+				#then
+					#nfs=`LC_ALL=$locale $GT dayone:17 "File_Sharing"`
+					#if [ -s $hdir/$admdir/$netdir/$nfs -o -f $hdir/$admdir/$netdir/$nfs -o -h $hdir/$admdir/$netdir/$nfs ]
+					#then
+						# remove old link
+						#rm -f $hdir/$admdir/$netdir/$nfs
+					#fi
+					#ln -s /usr/X/bin/File_Sharing $hdir/$admdir/$netdir/$nfs
+					#installf $PKGINST $hdir/$admdir/$netdir/$nfs=/usr/X/bin/File_Sharing s
+				#fi
+
+
+			#fi
+		#done
+	#fi
+
+#fi
+
+# rebuild for changes to take effect
+TMP=/tmp/nfs.$$
+${CONFBIN}/idbuild 2>$TMP
+if [ "$?" -ne "0" ]
+then
+	pfmt -s error -g ${PKGMSG}:5 "The attempt to rebuild the kernel has failed.\nErrors have been written to the file %s" $TMP
+
+	# rm nfs.env created by chkpkgrel run from the request
+	rm -f /var/sadm/upgrade/nfs.env
+
+	exit ${FAILURE}
+fi
+cd /tmp
+rm -f $TMP
+rm -rf /tmp/nfs
+removef ${PKGINST} ${VOLATILES} >/dev/null 2>&1
+removef ${PKGINST} /tmp/nfs >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+#
+#	Add NFS commands to TFM database
+#
+#while read cmd
+#do
+#	base=`basename $cmd`
+#	privs=`
+#		egrep ":${cmd}$" /etc/security/tcb/privs |
+#		sed -n '/%inher,.*:/s/^.*%inher,\(.*\):.*/\1/p' |
+#		sed 's/,/:/gp'
+#		`
+#	if [ ! -f $cmd ]
+#	then
+#		echo "Warning: $cmd not found on the system.\c"
+#		echo "  Not adding to TFM."
+#		continue
+#	fi
+#
+#	if [ -z "$privs" ]
+#	then
+#		adminrole -a $base:$cmd NET
+#	else
+#		adminrole -a $base:$cmd:$privs NET
+#	fi
+#done <<!
+#/usr/lib/nfs/biod
+#/usr/lib/nfs/mountd
+#/usr/lib/nfs/automount
+#/usr/lib/nfs/nfsd
+#/usr/lib/nfs/lockd
+#/usr/lib/nfs/statd
+#/usr/lib/nfs/bootparamd
+#/usr/lib/nfs/pcnfsd
+#/usr/sbin/exportfs
+#/usr/sbin/showmount
+#/usr/sbin/nfsstat
+#!
+
+#
+#
+#	end with installf -f and exit message (required reboot)
+#
+
+installf -f $PKGINST
+
+# rm nfs.env created by chkpkgrel run from the request
+rm -f /var/sadm/upgrade/nfs.env
+
+exit 	10
