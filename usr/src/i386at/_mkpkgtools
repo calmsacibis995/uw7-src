@@ -1,0 +1,55 @@
+#!/sbin/sh
+#			Copyright (c) 1990, 1991, 1992, 1993, 1994, 1995 Novell, Inc. All Rights Reserved.
+#			Copyright (c) 1984, 1985, 1986, 1987, 1988, 1989, 1990 Novell, Inc. All Rights Reserved.
+#			  All Rights Reserved
+
+#			THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF Novell Inc.
+#			The copyright notice above does not evidence any
+#			actual or intended publication of such source code.
+
+#ident	"@(#):mkpkgtools	16.1	98/03/03"
+echo "START `basename $0` `date`"
+
+ROOT=$1 export ROOT
+WORK=$2 export WORK
+TOOLS=$3 export TOOLS
+PROTO=$4 export PROTO
+
+###############################################################################
+# Build pkgmk and pkgtrans to run on the integration machine.
+# After this script completes, pkgmk and pkgtrans can be
+# found in the following directories:
+#
+# $ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgmk
+# $ROOT/usr/src/$WORK/cmd/pkgtools/oampkg/pkgtrans
+#
+# These tools should be used for all integration procedures.
+###############################################################################
+
+BASE=$ROOT/usr/src/$WORK/cmd/pkgtools export BASE
+cd $BASE
+chmod 0755 buildtools
+./buildtools
+
+###############################################################################
+# Build other tools for making a compressed datastream.
+###############################################################################
+
+OCMDRULES=$CMDRULES
+CMDRULES=$TOOLS/etc/xcmd.rulefile
+OPATH=$PATH
+PATH=/usr/bin:$PATH
+export CMDRULES PATH
+
+cd $PROTO/cmd
+make -f cmd.mk native
+
+[ -d $PROTO/ds_tools ] || mkdir $PROTO/ds_tools
+cp bzip iscompress wrt chall $PROTO/desktop/buildscripts/* $PROTO/ds_tools
+chmod 755 $PROTO/ds_tools/*
+
+CMDRULES=$OCMDRULES
+PATH=$OPATH
+
+echo "ENDED `basename $0` `date`"
+exit 0

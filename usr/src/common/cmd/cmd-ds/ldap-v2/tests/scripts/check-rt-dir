@@ -1,0 +1,335 @@
+#!/usr/bin/ksh
+
+if [ ! -f /usr/local/ldap-tests/scripts/ldap-test-globals ]
+then
+	echo Cannot not include /usr/local/scripts/ldap-tests/ldap-test-globals
+	exit 1
+fi
+
+. /usr/local/ldap-tests/scripts/ldap-test-globals
+
+
+# FUNCTIONS ####
+
+function modify_directory {
+	if [ $# -eq 3 ]
+	then
+		typeset ldiffile="$1"
+		typeset portno="$2"
+		typeset hostname="$3"
+		typeset comargs=""
+		typeset SCRIPT="/tmp/modify_dir_entries"
+		if [ ! -z "$ROOTDN" ] && [ ! -z "$ROOTPW" ]
+		then
+			comargs="-D \"$ROOTDN\" -w $ROOTPW"
+		fi
+		
+		echo ROOTDN = $ROOTDN
+		echo ROOTPW = $ROOTPW
+		echo GENERATING TEST SCRIPT
+		awk -v COMARGS="$comargs" -v NEWSCRIPT="$SCRIPT" '
+			BEGIN { 
+				print "let errcount=0" > NEWSCRIPT;
+				print "let testcount=0" >> NEWSCRIPT;
+				START=1; RECORD=""; }
+
+			function addstuff() {
+				print "echo ==========================" >> NEWSCRIPT
+				print "let testcount=$testcount+1" >> NEWSCRIPT
+				print "echo TEST $testcount /usr/bin/ldapmodify" >> NEWSCRIPT
+				print "/usr/bin/ldapmodify "COMARGS" <<EOF" > NEWSCRIPT
+				print RECORD               >> NEWSCRIPT
+				print "EOF"                >> NEWSCRIPT
+				print ""                   >> NEWSCRIPT
+				print "RES=$?"             >> NEWSCRIPT
+				print "if [ $RES != 0 ]"   >> NEWSCRIPT
+				print "then"               >> NEWSCRIPT
+				print "	let errcount=$errcount+1" >> NEWSCRIPT
+				print "	echo :TEST ERROR: errno = $RES" >> NEWSCRIPT
+				print "fi"                 >> NEWSCRIPT
+				print ""                   >> NEWSCRIPT
+				START=1
+				RECORD=""
+			}
+
+			/^[ 	]*dn:/ {
+				if(START == 0 ) {
+					addstuff()
+				}
+			}
+			/^[ 	]*$/ { next; }
+			{
+				START=0
+				if ( RECORD == "" ) {
+					RECORD=$0
+				} else { 
+					RECORD=RECORD"\n"$0
+				}
+			}
+			END {
+				if(START == 0 ) {
+					addstuff()
+				}
+				print "echo NUMBER OF TEST ERRORS = $errcount" >> NEWSCRIPT;
+				print "echo NUMBER OF TESTS = $testcount" >> NEWSCRIPT;
+				system("chmod 755 "NEWSCRIPT)
+			}
+			
+		' "$ldiffile"
+		if [ $? != 0 ]
+		then
+			echo TEST PROG ERROR: problem occured running awk
+			exit 1
+		fi
+		echo GENERATED SCRIPT: $SCRIPT
+		echo NOW EXECUTING: $SCRIPT
+		$SCRIPT
+		echo TEST FINISHED
+	else
+		echo TEST PROG ERROR: Wrong no of args to modify_directory
+		exit 1
+	fi
+
+}
+
+function add_entries_to_directory {
+	if [ $# -eq 3 ]
+	then
+		typeset ldiffile="$1"
+		typeset portno="$2"
+		typeset hostname="$3"
+		typeset comargs=""
+		typeset SCRIPT="/tmp/add_entries_to_directory"
+		if [ ! -z "$ROOTDN" ] && [ ! -z "$ROOTPW" ]
+		then
+			comargs="-D \"$ROOTDN\" -w $ROOTPW"
+		fi
+		
+		echo ROOTDN = $ROOTDN
+		echo ROOTPW = $ROOTPW
+		echo GENERATING TEST SCRIPT
+		awk -v COMARGS="$comargs" -v NEWSCRIPT="$SCRIPT" '
+			BEGIN { 
+				print "let errcount=0" > NEWSCRIPT;
+				print "let testcount=0" >> NEWSCRIPT;
+				START=1; RECORD=""; }
+
+			function addstuff() {
+				print "echo ==========================" >> NEWSCRIPT
+				print "let testcount=$testcount+1" >> NEWSCRIPT
+				print "echo TEST $testcount /usr/bin/ldapadd" >> NEWSCRIPT
+				print "/usr/bin/ldapadd "COMARGS" <<EOF" > NEWSCRIPT
+				print RECORD               >> NEWSCRIPT
+				print "EOF"                >> NEWSCRIPT
+				print ""                   >> NEWSCRIPT
+				print "RES=$?"             >> NEWSCRIPT
+				print "if [ $RES != 0 ]"   >> NEWSCRIPT
+				print "then"               >> NEWSCRIPT
+				print "	let errcount=$errcount+1" >> NEWSCRIPT
+				print "	echo :TEST ERROR: errno = $RES" >> NEWSCRIPT
+				print "fi"                 >> NEWSCRIPT
+				print ""                   >> NEWSCRIPT
+				START=1
+				RECORD=""
+			}
+
+			/^[ 	]*dn:/ {
+				if(START == 0 ) {
+					addstuff()
+				}
+			}
+			/^[ 	]*$/ { next; }
+			{
+				START=0
+				if ( RECORD == "" ) {
+					RECORD=$0
+				} else { 
+					RECORD=RECORD"\n"$0
+				}
+			}
+			END {
+				if(START == 0 ) {
+					addstuff()
+				}
+				print "echo NUMBER OF TEST ERRORS = $errcount" >> NEWSCRIPT;
+				print "echo NUMBER OF TESTS = $testcount" >> NEWSCRIPT;
+				system("chmod 755 "NEWSCRIPT)
+			}
+			
+		' "$ldiffile"
+		if [ $? != 0 ]
+		then
+			echo TEST PROG ERROR: problem occured running awk
+			exit 1
+		fi
+		echo GENERATED SCRIPT: $SCRIPT
+		echo NOW EXECUTING: $SCRIPT
+		$SCRIPT
+		echo TEST FINISHED
+	else
+		echo TEST PROG ERROR: Wrong no of args to add_entries_to_directory
+		exit 1
+	fi
+}
+
+function delete_entries_from_directory {
+	if [ $# -eq 3 ]
+	then
+		typeset ldiffile="$1"
+		typeset portno="$2"
+		typeset hostname="$3"
+		typeset SCRIPT="/tmp/del_entries_from_directory"
+		if [ ! -z "$ROOTDN" ] && [ ! -z "$ROOTPW" ]
+		then
+			comargs="-D \"$ROOTDN\" -w $ROOTPW"
+		fi
+		
+		echo ROOTDN = $ROOTDN
+		echo ROOTPW = $ROOTPW
+		echo GENERATING TEST SCRIPT
+		awk -v COMARGS="$comargs" -v NEWSCRIPT="$SCRIPT" '
+			BEGIN { 
+				print "let errcount=0" > NEWSCRIPT;
+				print "let testcount=0" >> NEWSCRIPT;
+				}
+			/^[ 	]*dn:/ {
+				print "echo ==========================" >> NEWSCRIPT
+				print "let testcount=$testcount+1" >> NEWSCRIPT
+				print "echo TEST $testcount /usr/bin/ldapdelete" >> NEWSCRIPT
+				DN=$2
+				for(I=3; I<=NF; I++) {
+					DN=DN" "$I
+				}
+				print "echo Attempting to delete \""DN"\"" >> NEWSCRIPT
+				print "/usr/bin/ldapdelete "COMARGS" \""DN"\"" >> NEWSCRIPT
+				print "RES=$?"             >> NEWSCRIPT
+				print "if [ $RES != 0 ]"   >> NEWSCRIPT
+				print "then"               >> NEWSCRIPT
+				print "	let errcount=$errcount+1" >> NEWSCRIPT
+				print "	echo :TEST ERROR: errno = $RES" >> NEWSCRIPT
+				print "fi"                 >> NEWSCRIPT
+				print ""                   >> NEWSCRIPT
+			}
+			END {
+				print "echo NUMBER OF TEST ERRORS = $errcount" >> NEWSCRIPT;
+				print "echo NUMBER OF TESTS = $testcount" >> NEWSCRIPT;
+				system("chmod 755 "NEWSCRIPT)
+			}
+			
+		' "$ldiffile"
+		if [ $? != 0 ]
+		then
+			echo TEST PROG ERROR: problem occured running awk
+			exit 1
+		fi
+		echo GENERATED SCRIPT: $SCRIPT
+		echo NOW EXECUTING: $SCRIPT
+		$SCRIPT
+		echo TEST FINISHED
+	else
+		echo TEST PROG ERROR: Wrong no of args to delete_entries_from_directory
+		exit 1
+	fi
+}
+
+
+# MAIN ####
+
+# Check that ldap is installed
+pkginfo ldap > /dev/null 2>&1
+if [ $? != 0 ]
+then
+	echo TEST PROG ERROR: pkginfo ldap indicates that the ldap package is not installed
+	exit 1
+fi
+
+# Check command line parameters
+if [ $# -eq 0 ]
+then
+	exit 1
+fi
+
+ACTION=
+while [ $# != 0 ]
+do
+	case $1 in
+	-l)
+		# specify ldif file
+		shift
+		if [ $# -eq 0 ]
+		then
+			echo TEST PROG ERROR: name of ldif file required
+			exit 1
+		fi
+
+		LDIFFILE=$1
+		if [ ! -a "$LDIFFILE" ]
+		then
+			echo TEST PROG ERROR: Cannot access specified ldif file
+			exit 1
+		fi
+		;;
+	-add)
+		ACTION=add_to_dir
+		;;
+	-delete)
+		ACTION=del_from_dir
+		;;
+	-p)
+		shift
+		if [ $# -eq 0 ]
+		then
+			echo TEST PROG ERROR: portnumber is requird
+			exit 1
+		fi
+		PORTNO=$1
+		;;
+	-h)
+		shift
+		if [ $# -eq 0 ]
+		then
+			echo TEST PROG ERROR: hostname unspecified
+			exit 1
+		fi
+		HOSTNAME=$1
+		;;
+	*)
+		echo TEST PROG ERROR: Unknown parameter: \"$1\"
+		exit 1
+		;;
+	esac
+	shift
+done
+
+if [ -z "$LDIFFILE" ]
+then
+	echo TEST PROG ERROR: An ldif file must be specified
+	exit 1
+fi
+
+if [ -z "$PORTNO" ]
+then
+	PORTNO=389
+fi
+if [ -z "$HOSTNAME" ]
+then
+	HOSTNAME=localhost
+fi
+
+case $ACTION in
+del_from_dir)
+	delete_entries_from_directory "$LDIFFILE" "$PORTNO" "$HOSTNAME"
+	;;
+add_to_dir)
+	add_entries_to_directory "$LDIFFILE" "$PORTNO" "$HOSTNAME"
+	;;
+modify_dir)
+	modify_directory "$LDIFFILE" "$PORTNO" "$HOSTNAME"
+	;;
+*)
+	echo An action must be specified e.g. -add or -delete
+	exit 1
+	;;
+esac
+exit 0
+# END OF SCRIPT ####

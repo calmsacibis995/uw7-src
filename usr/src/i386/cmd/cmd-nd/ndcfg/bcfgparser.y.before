@@ -1,0 +1,345 @@
+the purpose of this file is to show examples of the other data types that 
+ndcfg can support.  Specifically, STRING, SINGLENUM, and STRINGLIST.
+
+This method was abandoned early in the development of ndcfg for a few reasons:
+
+- libresmgr always works with strings and can do its own typing when
+  then string has ",[nrs] after the string (see val_type() in libresmgr)
+- conversion from string to associated data type would slow ndcfg startup.
+- ndcfg would have to convert to/from these data types when talking to user
+  in interactive mode and new netconfig program (tcl mode).
+
+As a result, ndcfg always uses data type STRINGLIST.  Hooks for other
+data types still exist within ndcfg if you wish to adopt them later on, and
+the following code may be useful in how to use these other data types.
+The code below is an early version of bcfglex.l.
+
+Nathan
+11 December 1996
+
+---cut paste glue---
+%{
+#ident "@(#)bcfgparser.y.before	5.4"
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include "common.h"
+%}
+
+%union {
+	char *strval;
+	union primitives primitive;
+}
+
+%token <strval> VERSION WORD VARIABLE NEWSECTION 
+%token <strval> DECNUM OCTNUM HEXNUM 
+%token EQUAL CFGDEBUG
+
+%type <primitive> singlenumber
+%type <primitive> numberlist
+%type <primitive> stringlist
+%type <primitive> words
+%type <primitive> something
+%type <primitive> SingleNumOrNumRange
+
+%start cfgfile
+
+%%
+
+cfgfile: versionlist
+	| cfgdebuglist
+	| assignmentlist
+	;
+
+versionlist: version
+	| versionlist version
+	;
+
+cfgdebuglist: cfgdebug
+	| cfgdebuglist cfgdebug
+	;
+
+cfgdebug: CFGDEBUG '=' WORD	{cfgdebug=strtol($3,NULL,10); /* treat as number */
+									 		printf("cfgdebug now %d\n",cfgdebug);
+										}
+	;
+
+assignmentlist: assignment			{printf("got_assignmentlist_assignment ");}
+	| assignmentlist assignment	{printf("got_assignmentlist_assignmentlist_assignment ");}
+	;
+
+version: VERSION WORD	{
+								printf("got_VERSION_WORD:%s ",$2);
+							   }
+	;
+
+assignment: VARIABLE '=' something {
+								 printf("got_VARIABLE_=_something ");
+								 DoAssignment($1,$3);
+								}
+	;
+
+something: SingleNumOrNumRange		{printf("got_SingleNumberOrNumRange ");
+												 $$=$1;
+												}
+	| SingleWord							{printf("got_SingleWord ");
+												 $$=$1;
+												}
+	| '"' numberlist '"'					{printf("got_DQ_numlist_DQ ");
+												 $$=$2;
+												}
+	| '"' stringlist '"'    			{printf("got_DQ_strlist_DQ ");
+												 $$=$2;
+												}
+	;
+
+numberlist: SingleNumOrNumRange		{printf("see SingleNumOrNumRange ");
+												 if ($1.type == SINGLENUM) {
+													$$.numlist.type = NUMBERLIST;
+													$$.numlist.ishighvalid = 0;
+													$$.numlist.low=$1.num.number;
+													$$.numlist.high=0;
+													$$.numlist.next=(struct numberlist *)NULL;
+												 } else 
+                                     if ($1.type == NUMBERRANGE) {
+													$$.numlist.type = NUMBERLIST;
+													$$.numlist.ishighvalid = 1;
+													$$.numlist.low=$1.numrange.low;
+													$$.numlist.high=$1.numrange.high;
+													$$.numlist.next=(struct numberlist *)NULL;
+												 } else {
+												    fprintf(stderr,"what is %d?",$1.type);
+													 exit(1);
+												 }
+												}
+	| numberlist ',' SingleNumOrNumRange
+												{ union primitives *nl;
+												  struct numberlist *walk;
+												 printf("see SingleNumOrNumRange,NumList ");
+												 if ($1.numlist.ishighvalid == 1 && 
+													   $3.type != NUMBERRANGE) {
+													fprintf(stderr,"number list must have ranges in it at line %d\n",linenum);
+													exit(1);
+												 }
+                                     if ($1.numlist.ishighvalid == 0 &&
+                                          $3.type != SINGLENUM) {
+                                       fprintf(stderr,"number list must not have ranges in it at line %d\n",linenum);
+												   exit(1);
+											    }
+												 /* ok do real work here */
+												  nl=(union primitives *) malloc(sizeof(union primitives));
+												  if (!nl) {
+ 													 fprintf(stderr,"couldn't malloc for numberlist\n");
+													 exit(1);
+												  }
+												  /* $1.numlist.next = nl; old approach */
+												  /* nl->numlist.next = &$1.numlist; */
+												  nl->numlist.type=NUMBERLIST;
+												  nl->numlist.next=(struct numberlist *)NULL;
+												  if ($3.type == SINGLENUM) {
+												     nl->numlist.ishighvalid = 0;
+													  nl->numlist.low=$3.num.number;
+													  nl->numlist.high=0;
+												  } else 
+ 												  if ($3.type == NUMBERRANGE) {
+													   nl->numlist.ishighvalid = 1;
+														nl->numlist.low = $3.numrange.low;
+														nl->numlist.high = $3.numrange.high;
+												  } else {
+												      fprintf(stderr,"what is %d?",$3.type);
+													   exit(1);
+												  }
+												  if ($1.numlist.next == NULL) {
+													   $1.numlist.next = &nl->numlist;
+												  } else {
+                                          walk=$1.numlist.next;
+												      while (walk->next != NULL) walk=walk->next;
+												      walk->next = &nl->numlist;
+												  }
+												  $$=$1;
+												}
+	;
+
+SingleNumOrNumRange: singlenumber	{printf("see singlenum ");
+												 $$.num.type = SINGLENUM;
+												 $$.num.number = $1.num.number;
+												}
+	| singlenumber '-' singlenumber	{printf("see singlenum(%d)-singlenum(%d) ",$1.num.number, $3.num.number);
+												 $$.numrange.type = NUMBERRANGE;
+												 $$.numrange.low = $1.num.number;
+												 $$.numrange.high = $3.num.number;
+												 if ($$.numrange.low > $$.numrange.high) {
+												    fprintf(stderr,"%d-%d:invalid range\n",
+													      $$.numrange.low,$$.numrange.high);
+													 exit(1);
+												 }
+												}
+	;
+
+stringlist: words				{printf("in_stringlist_got_words ");
+									 $$.stringlist.type=STRINGLIST;
+									 $$.stringlist.string=$1.string.words;
+									 $$.stringlist.next=(struct stringlist *)NULL;
+									}
+	| stringlist ',' words	{union primitives *sl;
+									 struct stringlist *walk;
+									 printf("in_stringlist_got_wordsCOMMAstringlist ");
+									 /* ok do real work here */
+									 sl=(union primitives *) malloc(sizeof(union primitives));
+									 if (!sl) {
+ 										 fprintf(stderr,"couldn't malloc for stringlist\n");
+										 exit(1);
+									 }
+								    sl->stringlist.type = STRINGLIST;
+								    sl->stringlist.next = (struct stringlist *)NULL;
+									 sl->stringlist.string = $3.string.words;
+								    if ($1.stringlist.next == NULL) {
+									    $1.stringlist.next = &sl->stringlist;
+									 } else {
+                               walk=$1.stringlist.next;
+									    while (walk->next != NULL) walk=walk->next;
+									       walk->next = &sl->stringlist;
+									 }
+									 $$=$1;
+									}
+	;
+
+words: WORD					{printf("in_words_got_WORD: %s ",$1);
+								 $$.type = STRING;
+								 $$.string.words=$1;
+								}
+	| words WORD			{char *ptr;
+								 ptr=(char *)malloc(strlen($1.string.words)+strlen($2)+1);
+								 if (!ptr) {
+								    fprintf(stderr,"no memory for string\n");
+									 exit(1);
+								 }
+                         printf("in_words_got_word_WORD: <%s %s> ",$1.string.words,$2);
+								 $$.string.type = STRING;
+								 $$.string.words=ptr;
+								
+								 strcpy($$.string.words,$1.string.words);
+								 strcat($$.string.words,$2);
+								}
+	;
+
+singlenumber:	DECNUM	{printf("got_DEC_NUM:%s ",$1); 
+								 $$.num.type = SINGLENUM;
+								 $$.num.number = strtol($1,NULL,10);
+								}
+	| OCTNUM					{printf("got_OCT_NUM:%s ",$1); 
+								 $$.num.type = SINGLENUM;
+								 $$.num.number = strtol($1,NULL,8);
+								}
+	| HEXNUM					{printf("got_HEX_NUM:%s ",$1); 
+								 $$.num.type = SINGLENUM;
+								 $$.num.number = strtol($1,NULL,16);
+								}
+	;
+
+%%
+
+int section;
+extern FILE *yyin;
+
+char unknowntype[80];  /* global; not on stack */
+char *
+T(int type)
+{
+   switch(type) {
+      case SINGLENUM: return("SINGLENUM"); break;
+      case NUMBERRANGE: return("NUMBERRANGE"); break;
+      case STRING: return("STRING"); break;
+      case NUMBERLIST: return("NUMBERLIST"); break;
+      case STRINGLIST: return("STRINGLIST"); break;
+      default: sprintf(unknowntype,"Unknown_type_%d",type); 
+               return(unknowntype);
+               break;
+   }
+}
+
+extern unsigned int linenum;
+extern unsigned int eatspace;
+extern unsigned int insingle;
+
+void
+DoAssignment(char *variable,union primitives primitive)
+{
+singlenum_t *snp;
+numrange_t *nrp;
+string_t *sp;
+numlist_t *nlp;
+stringlist_t *slp;
+
+   printf("\nvariable=%s; type=%d\n",variable,primitive.type);
+   switch (primitive.type) {
+      case SINGLENUM:
+			snp=&primitive.num;
+			printf("singlenum: number=%d\n",snp->number);
+			break;
+
+		case NUMBERRANGE:
+			nrp=&primitive.numrange;
+			printf("numrange: low=%d  high=%d\n",nrp->low, nrp->high);
+		   break;
+	
+		case STRING:
+			sp=&primitive.string;
+			printf("string: %s\n",sp->words);
+			break;
+
+		case NUMBERLIST:
+			nlp=&primitive.numlist;
+			while (nlp != (struct numberlist *)NULL) {
+			   if (nlp->ishighvalid)
+			      printf("numberlist: low=%d high=%d\n",nlp->low, nlp->high);
+			   else
+					printf("numberlist: %d\n",nlp->low); 
+				nlp=nlp->next;
+ 			}
+			break;
+
+		case STRINGLIST:
+			slp=&primitive.stringlist;
+			while (slp != (struct stringlist *)NULL) {
+			   printf("stringlist: %s\n",slp->string);
+				slp=slp->next;
+			}
+			break;
+	
+		default:
+         fprintf(stderr,"DoAssignment: unknown type %d\n",primitive.type);
+			break;
+
+   }
+}
+
+
+int
+main(int argc, char *argv[])
+{
+
+   eatspace= 1;
+	insingle= 0;
+   linenum = 1;
+	section = NOSECTION;   /* initial starting section */
+	while (!feof(yyin)) {
+		printf("main: about to yyparse\n");
+		yyparse();
+	}
+	printf("\nmain: hit feof\n");
+}
+
+extern char yytext[];
+extern int yyleng;
+extern int tokenpos;
+extern char linebuf[];
+
+yyerror(char *s)
+{
+	fprintf(stderr,"inside yyerror at line ");
+	fprintf(stderr,"%d token '%s': %s:\n%s\n",
+				linenum, yytext, s, linebuf);
+	fprintf(stderr,"%*s\n", 1+tokenpos, "^");
+}
+

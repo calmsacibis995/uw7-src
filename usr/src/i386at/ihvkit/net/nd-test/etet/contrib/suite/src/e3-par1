@@ -1,0 +1,115 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3","tp4","tp5","tp6","tp7","tp8","tp9","tp10");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api parallel-2");
+
+	foreach(@journal) {
+		($number)=/^(\d+)\|.*\|.*$/;
+		if ($number eq "") {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+
+
+sub tp2 {
+	$tp=tp2;
+	&verify(grep(/^$TEST_CASE_START\|.*TC Start.*$/,@journal)==4);
+}
+
+sub tp3 {
+	$tp=tp3;
+	&verify(grep(/^$TEST_CASE_END\|.*TC End$/,@journal)==4);
+}
+
+sub tp4 {
+	$tp=tp4;
+	&verify(grep(/^$INVOCABLE_COMPONENT_START\|.*IC Start/,@journal)==4);
+}
+
+sub tp5 {
+	$tp=tp5;
+	&verify(grep(/^$INVOCABLE_COMPONENT_END\|.*IC End$/,@journal)==4);
+}
+
+sub tp6 {
+	$tp=tp6;
+	&verify(grep(/^$TEST_CASE_INFORMATION\|/,@journal)==4);
+}
+
+sub tp7 {
+	$tp=tp7;
+	@starts=grep(/^$TEST_CASE_START\|/,@journal);
+	foreach(@starts) {
+		# pull out the activity and test number
+		($ac,$test)=/\d+\|(\d) \/src\/test(\d).*$/;
+		# this array is used in a later tp
+		$activities[$ac]=$test;
+	}
+	grep(s/^.*test(\d).*$/$1/,@starts);
+	@starts=sort(@starts);
+	for($i=2;$i<=5;++$i) {
+		if ($i!=$starts[$i-2]) {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+	
+sub tp8 {
+	$tp=tp8;
+	@infolines=grep(/^$TEST_CASE_INFORMATION\|/,@journal);
+	grep(s/^.*test(\d).*$/$1/,@infolines);
+	@infolines=sort(@infolines);
+	for($i=2;$i<=5;++$i) {
+		if ($i!=$infolines[$i-2]) {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+
+
+
+sub tp9 {
+	$tp=tp9;
+	@ends=grep(/^$TEST_CASE_END\|/,@journal);
+	grep(s/^.*\|(\d) .*$/$1/,@ends);
+	@ends=sort(@ends);
+	for($i=0;$i<=3;++$i) {
+		if ($i!=$ends[$i]) {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+
+
+	
+sub tp10 {
+	$tp=tp10;
+	@infolines=grep(/^$TEST_CASE_INFORMATION\|/,@journal);
+	foreach(@infolines) {
+		&breakup_infoline($_);
+		$message =~ s/^.*test(\d).*$/$1/;
+		if ($message ne $activities[$activity]) {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+	
+	
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

@@ -1,0 +1,48 @@
+#!/usr/bin/ksh
+#ident	"@(#)conv	15.1"
+
+ nl='
+'
+section() {
+	sed -e "1,/^\\$1\$/d" -e '/^[ 	]*#/d' -e "s/'/__SQUOTE__/g" -e 's/"/__DQUOTE__/g' -e 's/`/__BQUOTE__/g' "$file" | sed '/^\./,$d'
+}
+
+convhelp() {
+	typeset pages=0 lines=0 line help
+	help=
+	while read line
+	do
+		help="$help$nl$line"
+		let lines=lines+1
+		if (( !(lines % 19) ))
+		then
+			let pages=pages+1
+			echo "_HELP[$pages]=\"${help#?}\""
+			help=
+			lines=0
+		fi
+	done
+	if [ -n "$help" ]
+	then
+		let pages=pages+1
+		echo "_HELP[$pages]=\"${help#?}\""
+	fi
+}
+convoptstring() {
+	:
+}
+
+function conv
+{
+for file
+do
+	integer botlines=0 toplines=0
+	print -r "_TOP=\"$(section '.top')\""
+	print -r "_BOT=\"$(section '.bottom')\""
+	section '.help' | convhelp
+	print -r "_DONECHECK=\"$(section '.donecheck')\""
+	print -r "_FORM=\"$(section '.form')\""
+done | sed -e 's!Right/Left arrow keys!F2 key!g' -e "s/__SQUOTE__/'/g" \
+	-e "/BQUOTE.*DQUOTE.*BQUOTE/s/__DQUOTE__/\"/g" \
+	-e  's/__DQUOTE__/\\"/g' -e 's/__BQUOTE__/$(/' -e 's/__BQUOTE__/)/'
+}

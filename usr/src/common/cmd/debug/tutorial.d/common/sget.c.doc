@@ -1,0 +1,160 @@
+#ident	"@(#)debugger:tutorial.d/common/sget.c.doc	1.3"
+
+#include <limits.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <wait.h>
+
+static const char *base_name = "";
+static char	path[PATH_MAX];
+static int	exit_code;
+
+static int	line_cnt;
+static int	word_cnt;
+static int	char_cnt;
+static char	buffer[BUFSIZ];
+
+/* count the characters and words in one line from the file */
+static void
+scan_line()
+{
+	char	c;
+	int	inword = 0;
+	char	*ptr = buffer;
+
+	while((c = *ptr++) != '\0')
+	{
+		++char_cnt;
+		if (c == ' ' || c == '\t')
+			inword = 0;
+		else if (!inword)
+		{
+			inword = 1;
+			++word_cnt;
+		}
+	}
+	++line_cnt;
+}
+
+/* call get(1) to get a clear copy of the file */
+static void
+get(char *path, const char *newfile)
+{
+	FILE	*infile;
+
+	if (fork() == 0)	/* in the child */
+	{
+		/* suppress get's output */
+		(void) freopen("/dev/null", "w", stdout);
+		(void) freopen("/dev/null", "w", stderr);
+		(void) execl("/usr/ccs/bin/get", path, 0);
+		(void) fprintf(stderr, "exec of get failed\n");
+		exit(1);	/* couldn't find get? */
+	}
+	else			/* in the parent */
+	{
+		int child_exit;
+
+		(void) wait(&child_exit);
+		exit_code |= WEXITSTATUS(child_exit);
+	}
+
+	if ((infile = fopen(newfile, "r")) == 0)
+	{
+		(void) fprintf(stderr, "Cannot read %s\n", newfile);
+		exit(1);
+	}
+
+	while(fgets(buffer, BUFSIZ, infile) == 0)
+		scan_line();
+}
+
+/* copy a file into the current directory */
+static void
+copy(char *path, const char *newfile)
+{
+	char	tmpspace[BUFSIZ];
+	FILE	*infile;
+	FILE	*outfile;
+
+	if ((infile = fopen(path, "r")) == 0)
+	{
+		(void) fprintf(stderr, "Cannot read %s\n", path);
+		exit(1);
+	}
+	(void) remove(newfile);
+	if ((outfile = fopen(newfile, "w")) == 0)
+	{
+		(void) fprintf(stderr, "Cannot write %s\n", newfile);
+		exit(1);
+	}
+	
+	while(fgets(tmpspace, BUFSIZ, infile) != 0)
+	{
+		scan_line();
+		(void) fputs(tmpspace, outfile);
+	}
+}
+
+
+/* display statistics about the file */
+static void
+getstats(const char *file)
+{
+	(void) printf("%s: %d characters, %d words, %d lines\n",
+		file, char_cnt, word_cnt, line_cnt);
+	(void) printf("\taverage characters per line: %d\n",
+		char_cnt/line_cnt);
+	(void) printf("\taverage words per line: %d\n\n",
+		word_cnt/line_cnt);
+
+	line_cnt = word_cnt = char_cnt = 0;
+}
+
+/* signal handler - remove the file which may be corrupt */
+static void
+handler(int sig)
+{
+	(void) fprintf(stderr, "Caught signal, %s removed\n",
+		base_name);
+	(void) remove(base_name);
+	exit(sig);
+}
+
+main()
+{
+	char	*base_name;
+
+	/* cleanup after getting a signal */
+	(void) signal(SIGHUP, handler);
+	(void) signal(SIGILL, handler);
+	(void) signal(SIGTRAP, handler);
+	(void) signal(SIGEMT, handler);
+	(void) signal(SIGFPE, handler);
+	(void) signal(SIGBUS, handler);
+	(void) signal(SIGSEGV, handler);
+
+	while(fgets(path, PATH_MAX, stdin))
+	{
+		path[strlen(path) - 1] = '\0';	/* remove newline */
+
+		if ((base_name = strrchr(path, '/')) != 0)
+			++base_name;
+		else
+			base_name = path;
+
+		if (strncmp(base_name, "s.", 2) == 0)
+		{
+			base_name += 2;
+			get(path, base_name);
+		}
+		else
+			copy(path, base_name);
+
+		getstats(base_name);
+	}
+	exit(exit_code);
+	/*NOTREACHED*/
+}

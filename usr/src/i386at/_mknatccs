@@ -1,0 +1,228 @@
+#ident	"@(#):mknatccs	16.2	98/01/07"
+#ident	"$Header$"
+echo "START `basename $0` `date`"
+
+trap 'exit 1' 1 2 3 15
+
+set +e
+
+Cpu=$1
+Root=$2
+Tools=$3
+Mach=$4
+Work=$5
+Pfx=$6
+
+#
+#	Note the following will be used to set the
+#	owner and group of the commands
+
+intgr=`id|sed 's/[()]/ /gp'|awk '{print $2}'`
+igrp=`id|sed 's/[()]/ /gp'|awk '{print $4}'`
+
+ROOT=${Root}
+TOOLS=${Tools}
+export ROOT TOOLS
+
+
+#
+#	Note: below, the default parameters are relative
+#	to $TOOLS.
+#
+
+# Gemini kludge to build the native UDKs with a C++ -Xo compiler
+# performance fix  (not wanted in the XENV)
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/acomp/common
+rm expand.c
+ln -s expand.c_nat expand.c
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/cplusbe/common
+if [ -f "cg_be.c" ]
+then
+	rm cg_be.c
+fi
+if [ -f "glue.h" ]
+then
+	rm glue.h
+fi
+ln -s cg_be.c_nat cg_be.c
+ln -s glue.h_nat glue.h
+
+
+# First build native CCS for hosting on UnixWare
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}
+
+echo "$0: Running pted.compat"
+(
+	echo n		# Answering NO to building with default parameter
+	echo UnixWare			# platform
+	echo GEMINI_ON_UW		# cc compat flag
+	echo /udk			# alternate directory prefix
+	echo /udk/usr/ccs/bin	# CCS bin directory
+	echo /udk/usr/ccs/lib	# CCS lib directory
+	echo /udk/usr/lib	# usr/lib directory
+	echo /udk/usr/include	# usr/include directory
+	echo /etc	# etc directory
+	echo /udk/usr/ccs/lib	# cross lint1, lint2 location
+	echo ''		# The prefix to be used for the cross build
+	echo ${intgr}	# Owner of installed commands
+	echo ${igrp}	# Group of the installed commands
+	echo y		# Answering YES to parameters question
+) | sh ./pted.compat ${Cpu} ${Root} ${Tools} ${Mach} ${Work} ${Pfx}
+
+echo "$0: Building UnixWare Compatibility Native CCS"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk clobber \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk install \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+echo "$0: Installing UnixWare Libraries"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk compat_libs \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+# special case for libC.so.1 - on UnixWare belongs in /usr/lib,
+# not /udk/usr/lib
+cp ${Root}/${Mach}/UnixWare/udk/usr/lib/libC.so.1 ${Root}/${Mach}/UnixWare/usr/lib/libC.so.1
+
+# Now build OpenServer version (note: no clobber, just re-install)
+# Except for ld, that is; we need a different version of ld
+# on UW2 and OSR5
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}
+echo "$0: Running pted.compat"
+(
+	echo n		# Answering NO to building with default parameter
+	echo OSR5			# platform
+	echo GEMINI_ON_OSR5		# cc compat flag
+	echo /udk			# alternate directory prefix
+	echo /udk/usr/ccs/bin	# CCS bin directory
+	echo /udk/usr/ccs/lib	# CCS lib directory
+	echo /udk/usr/lib	# usr/lib directory
+	echo /udk/usr/include	# usr/include directory
+	echo /etc	# etc directory
+	echo /udk/usr/ccs/lib	# cross lint1, lint2 location
+	echo ''		# The prefix to be used for the cross build
+	echo ${intgr}	# Owner of installed commands
+	echo ${igrp}	# Group of the installed commands
+	echo y		# Answering YES to parameters question
+) | sh ./pted.compat ${Cpu} ${Root} ${Tools} ${Mach} ${Work} ${Pfx}
+
+echo "$0: Building OpenServer Compatibility Native CCS"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/ld/${Cpu}
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make clobber
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk install \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+echo "$0: Installing OpenServer Libraries"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk compat_libs \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+# Now build real native CCS
+
+echo "$0: Building Native CCS"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}
+
+echo "$0: Running Pathedit"
+(
+	echo y		# Answering YES to building native CCS
+	echo n		# Answering no to building with default parameter
+	echo /usr/ccs/bin	# CCS bin directory
+	echo /usr/ccs/lib	# CCS lib directory
+	echo /usr/lib	# usr/lib directory
+	echo /usr/include	# usr/include directory
+	echo /etc	# etc directory
+	echo /usr/ccs/lib	# cross lint1, lint2 location
+	echo ''		# The prefix to be used for the cross build
+	echo ${intgr}	# Owner of installed commands
+	echo ${igrp}	# Group of the installed commands
+	echo y		# Answering YES to parameters question
+) | sh ./pathedit ${Cpu} ${Root} ${Tools} ${Mach} ${Work} ${Pfx}
+
+echo "$0: Building Native CCS"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk clobber \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk install \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+cd ${Root}/usr/src/${Work}/cmd
+
+for i in asa cb cflow cscope ctrace cxref fprof ldd make prof regcmp sccs
+do
+	echo "=== $i"
+	cd ${i}
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f ${i}.mk install
+	cd ..
+done
+
+#
+echo "=== debug"
+if [ -f ${Tools}/usr/X11R6.1/lib/libX11.so -a \
+	-f ${Tools}/usr/X11R6.1/lib/libXm.so ]
+then
+#	Build full graphical debugger
+	cd ${Root}/usr/src/${Work}/cmd/debug
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f debug.mk install
+#
+else
+#	Build debug without graphic interface
+	cd ${Root}/usr/src/${Work}/cmd/debug
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f debug.mk install_cli
+fi
+
+#
+#	Make native libraries
+#	(need to do this install because header files
+#	are installed by some library makefiles.)
+#
+
+echo "$0: Building Native Libraries"
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk libs \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+echo "$0: Building Native xcplibs"
+
+cd ${Root}/usr/src/${Work}/xcplib
+
+for l in libx lxcurses lxtermlib
+do
+	cd $l
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f ${l}.mk install \
+		ROOT=${Root} MACH=${Mach}
+	cd ..
+done
+
+set -e
+
+echo "ENDED `basename $0` `date`"
+exit 0

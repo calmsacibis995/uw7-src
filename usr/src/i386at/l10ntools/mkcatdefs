@@ -1,0 +1,36 @@
+#!/bin/sh
+#	@(#) mkcatdefs.sh 11.8 94/12/09 
+#
+#	Copyright (C) 1992-1994 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation and should be treated as Confidential.
+#
+# shell front end to the awk implementation of the OSF/1 mkcatdefs utility,
+# see the mkcatdefs.aw file for more information on this utility.
+#
+
+usage() {
+	echo "usage: mkcatdefs [-h|-s] [ -a archive_name ] catalog_name sourcefile" >&2
+	exit 1
+}
+
+while getopts hsa: opt
+do
+	case $opt in
+		h)	hoption="-v h_option=true";;
+		s)	soption="-v shell_option=true";;
+		a)	aoption="-v archive_name=$OPTARG";;
+		?)	usage;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+[ -n "$hoption" -a -n "$soption" ] && {
+	echo "mkcatdefs: The -h and -s options are mutually exclusive" >&2
+	exit 1
+}
+
+[ $# -lt 2 ] && usage
+
+exec /usr/bin/awk -f $TOOLS/usr/lib/mkcatdefs.aw $hoption $soption $aoption $*

@@ -1,0 +1,49 @@
+/**/#ident	"@(#)dtadmin:fontmgr/Imakefile	1.18.1.15"
+/**/#copyright	"%c%"
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+SUBDIRS = fsfpreset
+
+         SRCS = \
+		font_info.c font_add.c font_arena.c font_del.c \
+		notice.c  fontxlfd.c \
+		font_prop.c font_util.c font_view.c fontmgr.c 
+
+         OBJS = \
+		font_info.o font_add.o font_arena.o font_del.o \
+		notice.o  fontxlfd.o \
+		font_prop.o font_util.o font_view.o fontmgr.o 
+
+       HEADERS = \
+		 message.h fontmgr.h
+
+       DTLIBSRC = $(LIBSRC)/Dt
+      DTILIBSRC = $(USLCLIENTSRC)/libDtI
+    GIZMOLIBSRC = $(LIBSRC)/Gizmo
+      DNDLIBSRC = $(LIBSRC)/DnD
+
+          DTLIB = $(DTLIBSRC)/libDt.so
+         DTILIB = $(DTILIBSRC)/libDtI.so
+       GIZMOLIB = $(GIZMOLIBSRC)/libGizmo.so
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(USLCLIENTSRC) \
+		-I$(GIZMOLIBSRC) -I$(DTLIBSRC) -I$(DTILIBSRC) \
+		-I$(DNDLIBSRC)
+
+LOCAL_LIBRARIES = $(DTILIB) $(DTLIB) $(GIZMOLIB) \
+		XolClientLibs 
+        DEPLIBS = $(DTILIB) $(DTLIB) $(GIZMOLIB) \
+		XolClientDepLibs
+
+  SYS_LIBRARIES =  -lgen 
+
+CC = LD_RUN_PATH=/usr/lib/X11 $(PFX)cc
+
+ComplexProgramTarget(fontmgr)
+
+InstallDesktopClient($(BINDIR)/fontmgr,$(DESKTOPDIR)/Preferences/Fonts)
+MakeSubdirs($(SUBDIRS))
+InstallNonExecFile(config, $(LIBDIR)/fonts/type1)
+InstallMsgCatalog(fontsetup)
+

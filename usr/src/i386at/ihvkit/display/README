@@ -1,0 +1,324 @@
+#ident	"@(#)ihvkit:display/README	1.3"
+/*
+ * This file has general information about Novell's Xwin server
+ * (version 2) features include:
+ *	
+ *	- dynamic linking of various of display libararies at run time.
+ *	- configuration files.
+ *
+ * Also, you will find information about setting high-resolution modes.
+ */
+
+INTRODUCTION:
+=============
+
+Novell's Xwin server is divided into three parts: 
+
+	1.  "CORE X" (X)
+	2.  "DISPLAY MODULE" (DM)
+	3.  "VENDOR MODULE" (VM)
+
+The "CORE X" part is the X server (that is, /usr/X/bin/X).
+
+A "DISPLAY MODULE" (DM) is one of many libraries to support various
+chip sets (for example, S3, Mach32, SuperVGA256), video adapters.
+
+A "VENDOR MODULE" (VM) contains the vendor-specific details, mostly the
+initialization of various high-resolution modes.
+
+Example: To run Cirrus GD54xx-based cards in 256 color modes
+	    Runtime X = X + libvga256.so.2 + gd54xx_256.so
+
+Example: To run ET4000 based cards in 256 color modes 
+	    Runtime X = X + libvga16.so.2 + et4k_256.so
+
+Example: To run Trident 8900 in 16 color modes 
+	    Runtime X = X + libvga16.so.2 + t89_16.so
+
+Example: To run any Intel Video card in Standard VGA mode
+	    Runtime X = X + libvga16.so.2 + stdvga.so
+
+/usr/X/defaults/Xwinconfig file has all the the information needed by
+the X server.  This file has information about the type of video
+adapter present in the system and the resolution that the user wants
+to use on the server. For more information on the format of the Xwinconfig
+file, see the sub-section 'Xwinconfig'.
+
+
+VGA World:
+===========
+
+Since the only standard in the 'VGA world' is 640x480 16 colors,
+Novell's Xwin product is delivered to run in the default mode, that
+is, 640x480 and 16 colors. Drivers for all the popular VGA cards are 
+provided with the system.
+
+It is STRONGLY RECOMENDED that the user install the product with the 
+default mode, run all the required software and make sure everything
+runs fine, and then switch to a high-resolution mode.
+
+A drawing library is split up into two individual libraries, one for
+actual drawing (DM) and one for initialization (VM).  A drawing
+library (libvga16.so.2 or libvga256.so.2) is common to all VGA
+adapters, irrespective of the vendor.  However, the initialzation 
+library is different for each board vendor. Novell provides 
+"VENDOR MODULES" for most of the popular VGA cards; they are located
+in the /usr/X/lib/display/ directory.
+
+Refer to the examples below on how to edit the Xwinconfig file
+manually and also how to determine the various resolution+monitor
+combinations supported by a particular initialization library.
+
+BE CAREFUL WHEN YOU SELECT THE HIGH RESOLUTION MODES.  A wrong 
+combination can either reboot the machine or (over a period of time)
+damage the monitor.  For example, if given a Tseng Labs ET4000-based
+board and one of the resolution modes intended for the Trident chipset
+were to be selected, it might cause serious problems.
+
+Also, whenever you select one of the high-resolution modes,
+run the 'sync' command a few times before you start the server.  This
+will minimize the damage in case the system reboots.  
+
+setvideomode Utility:
+=====================
+
+The setvideomode utility replaces the old "setvgamode" utility.
+Some of the new features include:
+
+   - Autodetection for the graphics chipset and the video
+     memory installed (whenever possible)
+
+   - Optional "TEST" feature - this will allow you to test the mode
+     selected, so that you do not have to bring up X to test
+     the selected mode.
+
+   - More generic than the "VGA ONLY" setvgamode.
+
+This utility sets up the configuration file for high-resolution
+modes.  Run this utility ONLY after you make sure everything works.
+To select a high-resolution mode, the user can run this utility
+(/usr/X/adm/setvideomode) program or advanced users can manually
+edit the "/usr/X/defaults/Xwinconfig" file.
+
+To run the '/usr/X/adm/setvideomode' utility, you must be logged
+in as the privileged user (that is, root).
+
+If 'setvideomode' is executed with '-default' flag, the default
+Xwinconfig (640x480, 16 colors) is restored.  If no flags are
+given, you are prompted with a list of video vendors.  Once a vendor
+is selected, then you are prompted with a list of the resolutions
+and the monitors supported by that vendor.  After the appropriate
+selection is made, you are given an option to test the selected mode.
+A /usr/X/defaults/Xwinconfig file is generated after you accept
+the mode.
+
+If you want to restore the default Xwinconfig file, execute the
+script:
+
+   /usr/X/adm/setvideomode -default
+
+To test all the modes supported by a Vendor Module, there is one
+unsupported (and undocumented) argument (that is, the testallmodes flag)
+to "setvideomode" that will allow you to cycle through all the modes in
+a Vendor Module.  Once you select the vendor, all the modes supported by
+the vendor are cycled through.  First, the information about the mode
+is printed on the screen, then the 'test' pattern is displayed on the
+screen for a few seconds, and then the next available mode is tried
+until all the modes are cycled through.  This mode should be used only
+if you have a high-end monitor, because if the Vendor Module supports
+a range of monitors from low-end to high-end (as in most cases), and
+if you don't have a monitor to handle the high-end frequencies, choosing
+this option could damage your monitor.
+
+To use this option:
+
+	/usr/X/adm/setvideomode -testallmodes
+
+
+/usr/X/defaults/Xwinconfig
+==========================
+
+A Description of the Xwinconfig File
+------------------------------------
+
+For each line in the Xwinconfig file, everything after the "#" sign
+is treated as a comment.
+
+The following is a sample config file for standard VGA, 640x480
+16-color mode:
+
+################## /usr/X/defaults/Xwinconfig #######################
+
+KEYBOARD = us
+FONTPATH = "lib/fonts/misc,lib/fonts/75dpi,lib/fonts/100dpi"
+
+#
+# Primary Screen definition
+#
+DEFINE SCREEN 0
+	chipset = STDVGA	# video chipset
+	 memory = 512		# video memory
+	  class = VGA16		# class of this DisplayModule
+	  model = VGA		# the core drawing lib for this class
+     vendor_lib = stdvga.so.2	# chip specific drawing lib
+   virtual_size = 640x480	# actual Frame Buffer size
+   display_size = 640x480	# display (viewing) size within the FB
+	 visual = StaticColor	# visual for this class
+       fb_depth = 4		# number of colors
+	 device = /dev/console	# device used
+	monitor = STDVGA	# type of monitor
+   monitor_size = 10x8		# size of the monitor
+  monitor_specs = NONE		# any monitor specific information
+   refresh_rate = 0		# take default for standard VGA
+  info2classlib = ""		# info passed to class lib - optional
+ info2vendorlib = ""		# info passed to vendor lib - optional
+         vendor = "Standard VGA" # vendor name
+     configfile = stdvga.dat	# mode data file supported by the driver
+END
+
+################## /usr/X/defaults/Xwinconfig #######################
+
+The first line "DEFINE SCREEN 0" defines this as the primary screen 0.
+In a multi-screen environment (not officially supported at this time),
+a second screen is defined as "DEFINE SCREEN 1".
+
+NOTE: There are too many restrictions on the hardware combinations for 
+Intel architectures to support more than one video board in the same
+box.
+
+"chipset" is the graphics chipset, e.g., ET4000, T8900, S3, and so on.
+
+"memory"  is the amount of video memory installed on the video board.
+This is automatically detected for most of the popular chipsets, but
+you can override this field during the execution of "setvideomode".
+
+"class" is the class of this video hardware.
+
+"model"	is the model name of the video board.
+
+"vendor_lib" is the vendor/chip specific library, for example,
+gd54xx_256.so.2.
+
+"virtual_size" is the virtual frame buffer (screen) size.  By
+default, this is the same as the display size (DISPLAY_SIZE).  In
+theory, you can have a virtual size dependent on only the amount of
+display memory, but some vendor's hardware is sensitive to 
+the the length of each scan line, which restricts the virtual
+width of the frame buffer to be one of a set of pre-defined values. 
+
+The virtual size of the frame buffer is always equal (default)
+or larger than the "DISPLAY_SIZE".
+
+Due to the lack of standards in the VGA world, and the various 
+combinations of the chips, resolutions, and monitors, it is not 
+easy to support the panning feature on all boards reliably.  Also,
+there are human factors issues (especially if you are running a
+"desktop"; the icons go off the screen).  For these reasons panning
+is not officially supported.  In other words, try at your own risk;
+it is an unsupported feature.  You can try various combinations,
+and if something works the way you like it, use it. If there are
+any problems, please do not file any MR's.  
+
+"display_size" is the The actual display area (that is, visible area)
+on the screen.
+
+"visual" is the default visual for this environment.
+
+"fb_depth" is the depth of the frame buffer (4, 8, 16, 24, and so on).
+
+"device" is the device used (for example, /dev/console).
+
+"monitor" is the type of monitor.
+
+"monitor_size" is the size of the monitor in the format:
+      [width]X[height], for example, 10X8, where the units of width and
+      height are in inches.
+
+"monitor_specs" are any monitor-specific information that a Display Module
+(DM) or a Vendor Module (VM) needs. This info is passed "as-is"
+to the DM and VM.
+
+"info2classlib" is any chip-specific information needed by a
+Display Module.  This information is passed "as-is" to the Display Module.
+
+"info2vendorlib" is any vendor-specific information needed by a
+Display Module.  This information is passed "as-is" to the Display Module.
+
+
+
+Switching to Another High-res Mode WITHOUT Running Setvideomode
+---------------------------------------------------------------
+
+Each vendor's library (for example, gd54xx_256.so.2) supports some
+predetermined combinations of display resolutions and monitors.
+
+For example, if you want to switch to another combination (like
+from 800x600, MULTISYNC_60 to 1024x768, MULTISYNC_60) that this module
+supports, you have to edit only one field:
+
+Change "display_size = 800x600" to "display_size = 1024x768".
+
+If you want to know which combinations that the current vendor library
+supports, see the corresponding configuration file in
+"/usr/X/lib/display" directory.  For example, the corresponding
+configuration file for "gd54xx_256.so.2" is "gd54xx.256dat".
+
+
+
+How Do I Know Which Resolution+Monitor Combinations Are Supported?
+------------------------------------------------------------------
+
+Whenever a combination (MODEL, DISPLAY_SIZE, MONITOR) is not
+found, all the supported modes are printed to stdout.  One easy way
+is to read the corresponding config file in /usr/X/lib/display.
+
+A second way to get this info, is to put an invalid entry in
+one of the three fields.  For example, if you change "MODEL = foo"
+and run X, all the modes supported by the "vendor_lib" are printed
+to stdout.
+
+Colormaps:
+==========
+
+In 16 color mode, the server reads the "/usr/X/defaults/Xwincmaps" file
+to fill up the static color map.  Each line has a 'R', 'G', and 'B'
+values.  There are a few colormaps in the default Xwincmaps file, but
+you can create your own colormap in this file.  The server takes the
+first colormap without '#' in the first column as the valid colormap
+data.
+
+Miscellaneous:
+==============
+
+A new Display Module (DM) is created if the graphics chip has enough new
+hardware features, so that many new functions have to be implemented
+from a existing DM.  For example, an S3 chip has enough hardware features
+that Novell decided to create a new DM and not to use the dumb SuperVGA256
+(libvga256.so.2) module. 
+
+Given fixed-function (functions such as bitblt and stippling) chips such
+as the WD90C31 and Cirrus(R) GD5426, there is no real need for creating
+a complete new DM.  These few functions can be implemented in the
+Vendor Module (to take advantage of the hardware) and override the
+software versions from the Display Module.  For example, if you have a
+new chip that supports only screen-to-screen bitblt, you can add support
+to this new chip by implementing just 3 functions (init_modes,
+restore_modes, and scr_scr_bitblt). 
+
+You can even disable the hardware functions (if you want to compare
+performance differences between software and hardware versions, or if
+you suspect the bug is in the hardware version) by setting an
+environment variable, HWFUNCS=no.  For example, use the command:
+
+      HWFUNCS=no /usr/X/bin/X &
+
+If hardware function disabling/enabling is provided, the "HWFUNCS"
+environment variable is used.  The Vendor Module prints a message to
+stderr. For example, use the command:
+
+      HWFUNCS=no /usr/X/bin/X -config /tmp/mygd54xx.cfg &
+
+You will see the following message on stderr:
+
+      Cirrus GD5426 detected.
+      GD54xx Hardware functions disabled.

@@ -1,0 +1,30 @@
+#ident	"@(#)OSRcompat:i386/pkg/OSRcompat/preinstall	1.1"
+
+FAILURE=1
+
+urel=`uname -r`
+if [ $urel != "3.2" ]
+then
+	# Gemini or UnixWare
+	echo "Installation requires OpenServer version 5.0.x"
+	exit $FAILURE
+else
+	# OSR5
+	xuname=`uname -X`
+	overs=`expr "$xuname" : '.*Release = \(3\.2v5\.0\..\)'`
+	if [ x$overs != "x3.2v5.0.0" -a x$overs != "x3.2v5.0.2" -a x$overs != "x3.2v5.0.4" ]
+	then
+		echo "Installation requires OpenServer version 5.0.x"
+		exit $FAILURE
+	fi
+fi
+# determine whether the preUDK version is already installed
+pkginfo -i 'preUDK-OS' > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	echo "The pre-release version of this compatibility package"
+	echo "is already installed.  It must be removed before you"
+	echo "install this package."
+	exit $FAILURE
+fi
+exit 0

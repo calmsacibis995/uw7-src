@@ -1,0 +1,170 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxevac.sh	1.2 3/3/97 03:15:50 - cmd.vxvm:common/support/vxevac.sh
+#ident	"@(#)cmd.vxvm:common/support/vxevac.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+progname=vxevac
+
+usage()
+{
+	progname="$progname" egettxt \
+		"Usage: $progname [-g diskgroup] medianame [new-medianame ...]"\
+		vxvmshm:526
+}
+
+tmpfile1=${TMPDIR:-/tmp}/vx.1.$$
+tmpfile2=${TMPDIR:-/tmp}/vx.2.$$
+
+quit()
+{
+	rm -f $tmpfile1 $tmpfile2
+	exit $1
+}
+
+doit()
+{
+	[ "$verbose" ] && echo "! $*"
+	("$@")
+}
+
+trap "quit 1" INT HUP QUIT TERM
+
+g_diskgroup=
+Verbose=
+while getopts :g:vV c
+do
+	case $c in
+	g)	g_diskgroup=$OPTARG;;
+	v)	verbose=yes; v_opt=-v;;
+	V)	Verbose=yes;;
+	?)	usage; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -lt 1 ]
+then
+	usage
+	exit 1
+fi
+dmname=$1
+shift
+
+# determine the disk group of the disk
+
+if [ -z "$g_diskgroup" ]
+then
+	vxprint -AQdF "%dgname" -- "$dmname" 2> /dev/null > $tmpfile1
+else
+	vxprint -g "$g_diskgroup" -dF "%dgname" -- "$dmname" \
+		2> /dev/null > $tmpfile1
+fi
+g_diskgroup=
+exec 3<&0 < $tmpfile1
+while read group
+do
+	if [ "X$group" = "Xrootdg" ]
+	then
+		g_diskgroup="rootdg"
+		break
+	fi
+	if [ ! -z "$g_diskgroup" ]
+	then
+        export progname dmname g_diskgroup group; egettxt \
+        "$progname: $dmname: Disk is in both groups $g_diskgroup and $group
+\tUse -g diskgroup to disambiguate." vxvmshm:63 >&2
+		quit 1
+	fi
+	g_diskgroup=$group
+done
+exec 0<&3 3<&-
+if [ -z "$g_diskgroup" ]
+then
+	export progname dmname; egettxt \
+	"$progname: Disk $dmname: Not found in configuration" vxvmshm:68 >&2
+	quit 1
+fi
+
+# locate all volumes on the disk.  If any of the volumes are stopped
+# but startable, then start them.
+
+vxprint -g "$g_diskgroup" -vn \
+	-e "aslist.aslist.sd_dm_name==\"$dmname\"" > $tmpfile1
+if [ $? -ne 0 ]
+then
+	export progname; egettxt \
+		"$progname: Cannot evacuate disk" vxvmshm:67 >&2
+	quit 1
+fi
+vlist="`cat $tmpfile1`"
+if [ -z "$vlist" ]
+then
+	quit 0
+fi
+
+vxinfo -g "$g_diskgroup" $vlist > $tmpfile1
+if [ $? -ne 0 ]
+then
+	export progname; egettxt \
+		"$progname: Cannot evacuate disk" vxvmshm:67 >&2
+	quit 1
+fi
+
+startlist=
+exec 3<&0 < $tmpfile1
+while read volname usetype state
+do
+	if [ "X$state" = XStartable ]
+	then
+		startlist="$startlist $volname"
+	fi
+done
+exec 0<&3 3<&-
+
+if [ ! -z "$startlist" ]
+then
+	doit vxvol -g "$g_diskgroup" start $startlist
+	if [ $? -ne 0 ]
+	then
+		export progname; egettxt \
+			"$progname: Cannot evacuate disk" vxvmshm:67 >&2
+		quit 1
+	fi
+fi
+
+# move all volumes that are using the disk off of the disk
+
+for vol in $vlist
+do
+	[ -n "$Verbose" ] && vol="$vol" egettxt "  Move volume $vol ..." vxvmshm:30
+	doit vxassist -g "$g_diskgroup" $v_opt move $vol "!$dmname" "$@"
+	if [ $? -ne 0 ]
+	then
+		export progname; egettxt \
+			"$progname: Aborting disk evacuation" vxvmshm:65 >&2
+		quit 1
+	fi
+done
+
+quit 0

@@ -1,0 +1,1872 @@
+#!/bin/sh
+#
+#******************************************************************************
+#
+#	ident @(#) gui 7.1 97/05/08 
+#
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#******************************************************************************
+#
+# Semi-automated test suite for vacation client.
+#
+# Attempts to achieve complete branch coverage of vacation.tcl
+#
+# Refer to gui.plan for test setup and instructions.
+#
+#******************************************************************************
+
+#
+# utility routines
+#
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo "$TEST: BEGIN"
+
+		retry=y
+		while [ "$retry" = "y" ]
+		do
+			${name}$i
+			code=$?
+			if [ $code -ne 0 ]
+			then
+				echo "Failed: retry (y/n) [y]: \c"
+				retry=`line`
+				if [ "$retry" = "" ]
+				then
+					retry="y"
+				fi
+			else
+				retry=n
+			fi
+		done
+		passfail $code
+		echo "$TEST: END"
+		echo ""
+	done
+}
+
+passfail() \
+{
+	result=$1
+	if [ $# -eq 2 ]
+	then
+		message=$2
+	fi
+
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: $message : FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -f ${TMPDIR}/*
+	rm -f $HOME/.alter_egos
+	rm -f $HOME/.maildelivery
+	rm -f $HOME/tripnote
+	rm -f $HOME/triplog
+	rm -f $HOME/tripsubject
+}
+
+#
+# test cases
+#
+
+
+vacation_gui_core_defaults() 
+{
+	cleanup
+	defaultTripnote=$TMPDIR/tripnote.default
+	defaultTripsubject=$TMPDIR/tripsubject.default
+	expectedMaildelivery=$TMPDIR/maildelivery.expected
+	expectedTriplog=$TMPDIR/triplog.expected
+	diffout=$TMPDIR/out.diff
+	ret=0
+
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		echo "$DEFAULTNOTE" >$defaultTripnote
+		diff $defaultTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of default tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		echo "$DEFAULTSUBJECT" >$defaultTripsubject
+		diff $defaultTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of default tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	if [ -f $HOME/.alter_egos ]
+	then
+		echo "File $HOME/.alter_egos should not exist"
+		ret=1
+	fi
+
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		echo "*	-	pipe	R	vacation" > \
+			$expectedMaildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	if [ ! -f $HOME/triplog ]
+	then
+		echo "$HOME/triplog is missing"
+		ret=1
+	else
+		touch $expectedTriplog
+		diff $expectedTriplog $HOME/triplog >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of default triplog and $HOME/triplog:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_core_on() 
+{
+	cleanup
+	expectedAlteregos=$TMPDIR/alter_egos.on.expected
+	expectedTripnote=$TMPDIR/tripnote.on.expected
+	expectedTripsubject=$TMPDIR/tripsubject.on.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.on.expected
+	diffout=$TMPDIR/out.diff
+	ret=0
+
+	
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		echo "$LOGNAME\nfoobar\ntester" >$expectedAlteregos
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+		
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		echo "I'm on vacation from 4/21 through 4/28, but I'll read\nyour mail and respond as soon as I get back." >$expectedTripnote
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		echo "I'm on vacation!" >$expectedTripsubject
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		cp $TESTFILEDIR/maildelivery $expectedMaildelivery
+		echo "*	-	pipe	R	vacation" >> $expectedMaildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	return $ret
+}
+
+vacation_gui_core_off() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.off.expected
+	expectedTripsubject=$TMPDIR/tripsubject.off.expected
+	expectedTripnote=$TMPDIR/tripnote.off.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.off.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" >> $HOME/.maildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+	cp $TESTFILEDIR/tripsubject $HOME/tripsubject
+	cp $TESTFILEDIR/tripnote $HOME/tripnote
+
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+
+	# .maildelivery should have vacation line removed
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		cp $TESTFILEDIR/maildelivery $expectedMaildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		echo "$LOGNAME" >$expectedAlteregos
+		sed '/^foobar$/d' $TESTFILEDIR/alter_egos >> $expectedAlteregos
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		echo "$DEFAULTNOTE" >$expectedTripnote
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		echo "$DEFAULTSUBJECT" >$expectedTripsubject
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# triplog
+	if [ -f $HOME/triplog ]
+	then
+		echo "$HOME/triplog should not exist"
+		ret=1
+	fi
+
+	return $ret
+}
+
+vacation_gui_core_noclear() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.noclear.expected
+	expectedTripsubject=$TMPDIR/tripsubject.noclear.expected
+	expectedTripnote=$TMPDIR/tripnote.noclear.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.noclear.expected
+	expectedTriplog=$TMPDIR/triplog.noclear.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" >> $HOME/.maildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+	cp $TESTFILEDIR/tripsubject $HOME/tripsubject
+	cp $TESTFILEDIR/tripnote $HOME/tripnote
+
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+
+	# .maildelivery should have vacation line removed
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		cp $TESTFILEDIR/maildelivery $expectedMaildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		echo "$LOGNAME" >$expectedAlteregos
+		sed '/^foobar$/d' $TESTFILEDIR/alter_egos >> $expectedAlteregos
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		echo "$DEFAULTNOTE" >$expectedTripnote
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		echo "$DEFAULTSUBJECT" >$expectedTripsubject
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# triplog
+	if [ ! -f $HOME/triplog ]
+	then
+		echo "$HOME/triplog is missing"
+		ret=1
+	else
+		cp $TESTFILEDIR/triplog $expectedTriplog
+		diff $expectedTriplog $HOME/triplog >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected triplog and $HOME/triplog:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_core_cancel() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.cancel.expected
+	expectedTripsubject=$TMPDIR/tripsubject.cancel.expected
+	expectedTripnote=$TMPDIR/tripnote.cancel.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.cancel.expected
+	expectedTriplog=$TMPDIR/triplog.cancel.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" >> $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+	cp $TESTFILEDIR/triplog $expectedTriplog
+
+	cp $TESTFILEDIR/tripsubject $HOME/tripsubject
+	cp $TESTFILEDIR/tripsubject $expectedTripsubject
+
+	cp $TESTFILEDIR/tripnote $HOME/tripnote
+	cp $TESTFILEDIR/tripnote $expectedTripnote
+
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# triplog
+	if [ ! -f $HOME/triplog ]
+	then
+		echo "$HOME/triplog is missing"
+		ret=1
+	else
+		diff $expectedTriplog $HOME/triplog >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected triplog and $HOME/triplog:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_lock() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.lock.expected
+	expectedTripsubject=$TMPDIR/tripsubject.lock.expected
+	expectedTripnote=$TMPDIR/tripnote.lock.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.lock.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" >> $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	echo "Invoking vacation client..."
+	$PROGRAM &
+	sleep 5
+	echo "Attempting second vacation client..."
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# wait for tester's completion of test case steps
+	wait
+	
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# triplog
+	if [ -f $HOME/triplog ]
+	then
+		echo "$HOME/triplog should not exist"
+		ret=1
+	fi
+	
+	return $ret
+}
+
+vacation_gui_error_ask() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.ask.expected
+	expectedTripsubject=$TMPDIR/tripsubject.ask.expected
+	expectedTripnote=$TMPDIR/tripnote.ask.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.ask.expected
+	diffout=$TMPDIR/out.diff
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	touch $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_ask >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_triplog() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.triplog.expected
+	expectedTripsubject=$TMPDIR/tripsubject.triplog.expected
+	expectedTripnote=$TMPDIR/tripnote.triplog.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.triplog.expected
+	diffout=$TMPDIR/out.diff
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	touch $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	cp $TESTFILEDIR/triplog $HOME/triplog
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_triplog >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_tripsubject() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.tripsubject.expected
+	expectedTripsubject=$TMPDIR/tripsubject.tripsubject.expected
+	expectedTripnote=$TMPDIR/tripnote.tripsubject.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.tripsubject.expected
+	diffout=$TMPDIR/out.diff
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_tripsubject >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_tripnote() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.tripnote.expected
+	expectedTripsubject=$TMPDIR/tripsubject.tripnote.expected
+	expectedTripnote=$TMPDIR/tripnote.tripnote.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.tripnote.expected
+	diffout=$TMPDIR/out.diff
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_tripnote >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_alteregos() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.alteregos.expected
+	expectedTripsubject=$TMPDIR/tripsubject.alteregos.expected
+	expectedTripnote=$TMPDIR/tripnote.alteregos.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.alteregos.expected
+	diffout=$TMPDIR/out.diff
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $expectedMaildelivery
+
+	echo "$LOGNAME" >$HOME/.alter_egos
+	cat $TESTFILEDIR/alter_egos >> $HOME/.alter_egos
+	cp $HOME/.alter_egos $expectedAlteregos
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_alteregos >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# .alter_egos
+	if [ ! -f $HOME/.alter_egos ]
+	then
+		echo "$HOME/.alter_egos is missing"
+		ret=1
+	else
+		diff $expectedAlteregos $HOME/.alter_egos >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected alter_egos and $HOME/.alter_egos:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_triplogon() 
+{
+	cleanup
+	ret=0
+	expectedAlteregos=$TMPDIR/alter_egos.triplogon.expected
+	expectedTripsubject=$TMPDIR/tripsubject.triplogon.expected
+	expectedTripnote=$TMPDIR/tripnote.triplogon.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.triplogon.expected
+	diffout=$TMPDIR/out.diff
+
+	touch $HOME/.maildelivery
+	touch $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_triplogon >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# set home directory writable again
+	chmod 0755 $HOME
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_deliveryon() 
+{
+	cleanup
+	ret=0
+	expectedTripsubject=$TMPDIR/tripsubject.deliveryon.expected
+	expectedTripnote=$TMPDIR/tripnote.deliveryon.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.deliveryon.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	cp $TESTFILEDIR/maildelivery $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_deliveryon >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		chmod 0644 $HOME/.maildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_offread() 
+{
+	cleanup
+	ret=0
+	expectedTripsubject=$TMPDIR/tripsubject.offread.expected
+	expectedTripnote=$TMPDIR/tripnote.offread.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.offread.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_offread >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		chmod 0644 $HOME/.maildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_offwrite() 
+{
+	cleanup
+	ret=0
+	expectedTripsubject=$TMPDIR/tripsubject.offwrite.expected
+	expectedTripnote=$TMPDIR/tripnote.offwrite.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.offwrite.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_offwrite >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		chmod 0644 $HOME/.maildelivery
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_readsubject() 
+{
+	cleanup
+	ret=0
+	expectedTripsubject=$TMPDIR/tripsubject.readsubject.expected
+	expectedTripnote=$TMPDIR/tripnote.readsubject.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.readsubject.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_readsubject >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		chmod 0644 $HOME/tripsubject
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_error_readmessage() 
+{
+	cleanup
+	ret=0
+	expectedTripsubject=$TMPDIR/tripsubject.readmessage.expected
+	expectedTripnote=$TMPDIR/tripnote.readmessage.expected
+	expectedMaildelivery=$TMPDIR/maildelivery.readmessage.expected
+	diffout=$TMPDIR/out.diff
+
+	cp $TESTFILEDIR/maildelivery $HOME/.maildelivery
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	cp $HOME/.maildelivery $expectedMaildelivery
+
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	echo "$DEFAULTSUBJECT" > $expectedTripsubject
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTNOTE" > $expectedTripnote
+
+	$PROGRAM -t vacation_gui_error_readmessage >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# .maildelivery
+	if [ ! -f $HOME/.maildelivery ]
+	then
+		echo "$HOME/.maildelivery is missing"
+		ret=1
+	else
+		diff $expectedMaildelivery $HOME/.maildelivery >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected .maildelivery and $HOME/.maildelivery"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	# tripnote
+	if [ ! -f $HOME/tripnote ]
+	then
+		echo "$HOME/tripnote is missing"
+		ret=1
+	else
+		chmod 0644 $HOME/tripnote
+		diff $expectedTripnote $HOME/tripnote >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripnote and $HOME/tripnote:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+	
+	# tripsubject
+	if [ ! -f $HOME/tripsubject ]
+	then
+		echo "$HOME/tripsubject is missing"
+		ret=1
+	else
+		diff $expectedTripsubject $HOME/tripsubject >$diffout
+		if [ $? -eq 1 ]
+		then
+			echo "Diff of expected tripsubject and $HOME/tripsubject:"
+			cat $diffout
+			ret=1
+		fi
+	fi
+
+	return $ret
+}
+
+vacation_gui_auto_cmdline()
+{
+	cleanup
+	ret=0
+
+	#
+	# test -query
+	#
+
+	$PROGRAM -query >$STDOUT
+	exitCode=$?
+	if [ $exitCode -ne 1 ]
+	then
+		echo "Testing -query with notices off;"
+		echo "expected exit code 1, but got back $exitCode"
+		ret=1
+	fi
+
+	result=`cat $STDOUT`
+	if [ "$result" != "0" ]
+	then
+		echo "Testing -query with notices off;"
+		echo "expected return 0, but got back $result"
+		ret=1
+	fi
+
+
+	echo "*	-	pipe	R	vacation" > $HOME/.maildelivery
+	echo "$DEFAULTNOTE" > $HOME/tripnote
+	echo "$DEFAULTSUBJECT" > $HOME/tripsubject
+	$PROGRAM -query >$STDOUT
+	exitCode=$?
+
+	if [ $exitCode -ne 0 ]
+	then
+		echo "Testing -query with notices on;"
+		echo "expected exit code 0, but got back $exitCode"
+		ret=1
+	fi
+
+	result=`cat $STDOUT`
+	if [ "$result" != "1" ]
+	then
+		echo "Testing -query with notices on;"
+		echo "expected return 1, but got back $result"
+		ret=1
+	fi
+
+
+	#
+	# test invalid args
+	#
+	$PROGRAM -foo >$STDOUT 2>$STDERR
+	exitCode=$?
+	
+	if [ $exitCode -ne 1 ]
+	then
+		echo "Testing invalid command line arguments;"
+		echo "expected exit code 1, but got $exitCode"
+		ret=1
+	fi
+
+	result=`cat $STDERR`
+	if [ "$result" != 'vacation: unknown argument "-foo"' ]
+	then
+		echo "Testing invalid command line arguments;"
+		echo "expected usage message 'vacation: unknown argument \"-foo\"'"
+		echo "but got: $result"
+		ret=1
+	fi
+
+	return $ret
+}
+
+#
+# main()
+#
+
+# both HOME and LOGNAME must be set
+if [ "$HOME" = "" -o "$LOGNAME" = "" ]
+then
+	echo "You must have both HOME and LOGNAME set in your"
+	echo "env for this test script to run correctly."
+	exit 1
+fi
+
+TEST=""
+
+DEFAULTNOTE="\tThis is an automatic reply to email you recently sent\nto $LOGNAME.  Additional mail to $LOGNAME will not result in\nfurther replies.  This mail indicates that the user is not\nresponding to your message for the following reason:\n\n\tNo pre-recorded message file was left by the user.\nHowever, this feature of the mail system is normally used\nduring vacations and other extended absences.\n\n\tThe Mail System\n"
+
+DEFAULTSUBJECT="Absence (Automatic reply)"
+
+if [ "$TESTDIR" = "" ]
+then
+	TESTDIR=`pwd`
+fi
+
+if [ "$PROGDIR" = "" ]
+then
+	PROGDIR=/etc/mail/admin
+fi
+
+PROGRAM=$PROGDIR/vacation
+TESTFILEDIR=$TESTDIR/testfiles
+TMPDIR=$TESTDIR/tmp
+STDOUT=$TMPDIR/out.stdout
+STDERR=$TMPDIR/out.stderr
+
+if [ ! -d $TMPDIR ]
+then
+	mkdir -p $TMPDIR
+fi
+
+# module prefix is composed of the client being tested (channel)
+# and this test script name (gui) -- used in case there are similar
+# test procedure names that must be differentiated in common code (like
+# the admin/lib files)
+modulePrefix="vacation_gui_"
+
+core="defaults on off noclear cancel"
+error="lock ask triplog tripsubject tripnote alteregos triplogon deliveryon \
+	offread offwrite readsubject readmessage"
+auto="cmdline"
+
+cleanup
+
+testlist ${modulePrefix}core_ $core
+testlist ${modulePrefix}error_ $error
+
+echo "The following tests are fully automated and need no interaction."
+echo "----------------------------------------------------------------"
+testlist ${modulePrefix}auto_ $auto

@@ -1,0 +1,234 @@
+XCOMM $XConsortium: sv4Lib.tmpl,v 1.6 92/01/25 16:46:55 rws Exp $
+
+#ifndef ProfileLibDtWidget
+#define ProfileLibDtWidget	NO
+#endif
+#ifndef ProfileLibXol
+#define ProfileLibXol		NO
+#endif
+#ifndef ProfileLibDnD
+#define ProfileLibDnD		NO
+#endif
+#ifndef ProfileLibDt
+#define ProfileLibDt		NO
+#endif
+#ifndef ProfileLibDtI
+#define ProfileLibDtI		NO
+#endif
+#ifndef ProfileLibGizmo
+#define ProfileLibGizmo		NO
+#endif
+#ifndef SharedLibDtWidget
+#define SharedLibDtWidget HasSharedLibraries
+#endif
+#ifndef NormalLibDtWidget
+#define NormalLibDtWidget ( !SharedLibDtWidget | ForceNormalLib )
+#endif
+#ifndef SharedLibXol
+#define SharedLibXol HasSharedLibraries
+#endif
+#ifndef NormalLibXol
+#define NormalLibXol (!SharedLibXol | ForceNormalLib)
+#endif
+#ifndef SharedLibDnD
+#define SharedLibDnD HasSharedLibraries
+#endif
+#ifndef NormalLibDnD
+#define NormalLibDnD (!SharedLibDnD | ForceNormalLib)
+#endif
+#ifndef SharedLibDt
+#define SharedLibDt HasSharedLibraries
+#endif
+#ifndef NormalLibDt
+#define NormalLibDt (!SharedLibDt | ForceNormalLib)
+#endif
+#ifndef SharedLibDtI
+#define SharedLibDtI HasSharedLibraries
+#endif
+#ifndef NormalLibDtI
+#define NormalLibDtI	NO	/* archive for internal lib not needed */
+#endif
+#ifndef SharedLibGizmo
+#define SharedLibGizmo HasSharedLibraries
+#endif
+#ifndef NormalLibGizmo
+#define NormalLibGizmo	NO	/* archive for internal lib not needed */
+#endif
+
+XCOMM
+XCOMM Leave the USL numbers to 1 - there are no compatability changes
+XCOMM between the first release of SVR4.2 and the second release
+XCOMM Also, cannot use ?.0 numbering, because it will be more than 14 chars
+XCOMM which will break SYSV file systems.
+XCOMM
+#ifndef SharedDtWidgetRev
+#define SharedDtWidgetRev 1
+#endif
+#ifndef SharedXolRev
+#define SharedXolRev 1
+#endif
+#ifndef SharedOlitRev
+#define SharedOlitRev 1
+#endif
+#ifndef SharedOlitMRev
+#define SharedOlitMRev 1
+#endif
+#ifndef SharedOlitORev
+#define SharedOlitORev 1
+#endif
+#ifndef SharedDtRev
+#define SharedDtRev 1
+#endif
+#ifndef SharedFontLibRev
+#define SharedFontLibRev 1
+#endif
+#ifndef SharedGizmoLibRev
+#define SharedGizmoLibRev 1
+#endif
+#ifndef SharedDtILibRev
+#define SharedDtILibRev 1
+#endif
+
+    SODTWIDGETREV = SharedDtWidgetRev
+         SOXOLREV = SharedXolRev
+        SOOLITREV = SharedOlitRev
+       SOOLITMREV = SharedOlitMRev
+       SOOLITOREV = SharedOlitORev
+          SODTREV = SharedDtRev
+     SOFONTLIBREV = SharedFontLibRev
+       SOGIZMOREV = SharedGizmoLibRev
+         SODTIREV = SharedDtILibRev
+
+/*
+ * SVR4 shared library template
+ */
+
+#ifndef SharedXlibRev
+#define SharedXlibRev 5.0
+#endif
+#ifndef SharedOldXRev
+#define SharedOldXRev 5.0
+#endif
+#ifndef SharedXtRev
+#define SharedXtRev 5.0
+#endif
+#ifndef SharedXawRev
+#define SharedXawRev 5.0
+#endif
+#ifndef SharedXmuRev
+#define SharedXmuRev 5.0
+#endif
+#ifndef SharedXextRev
+#define SharedXextRev 5.0
+#endif
+#ifndef SharedXinputRev
+#define SharedXinputRev 5.0
+#endif
+#ifndef SharedXTrapRev
+#define SharedXTrapRev 5.0
+#endif
+#ifndef SharedXTestRev
+#define SharedXTestRev 5.0
+#endif
+
+SHLIBLDFLAGS = SharedLibraryLoadFlags
+PICFLAGS = PositionIndependentCFlags
+
+/*
+ * and now a little bit of magic for using imake without source tree; if we
+ * are using shared libraries, we really do not need to depend on anything
+ */
+#if SharedLibXext
+  DEPEXTENSIONLIB = /* _UseCat($(USRLIBDIR),$(EXTENSIONSRC)/lib,/libXext.so.$(SOXEXTREV)) */
+     EXTENSIONLIB = _Use(-lXext,-L$(EXTENSIONSRC)/lib -lXext)
+#endif
+#if SharedLibX
+          DEPXLIB = $(DEPEXTENSIONLIB) /* _UseCat($(USRLIBDIR),$(XLIBSRC),/libX11.so.$(SOXLIBREV)) */
+             XLIB = $(EXTENSIONLIB) _Use(-lX11,-L$(XLIBSRC) -lX11)
+#endif
+#if SharedLibXmu
+        DEPXMULIB = /* _UseCat($(USRLIBDIR),$(XMUSRC),/libXmu.so.$(SOXMUREV)) */
+           XMULIB = _Use(-lXmu,-L$(XMUSRC) -lXmu)
+
+#ifndef XawClientLibs
+#define XawClientLibs $(XAWLIB) $(XMULIB) $(XTOOLLIB) $(XLIB)
+#endif
+#endif
+#if SharedOldLibX
+       DEPOLDXLIB = /* _UseCat($(USRLIBDIR),$(OLDXLIBSRC),/liboldX.so.$(SOOLDXREV)) */
+          OLDXLIB = _Use(-loldX,-L$(OLDXLIBSRC) -loldX)
+#endif
+#if SharedLibXt
+      DEPXTOOLLIB = /* _UseCat($(USRLIBDIR),$(TOOLKITSRC),/libXt.so.$(SOXTREV)) */
+         XTOOLLIB = _Use(-lXt,-L$(TOOLKITSRC) -lXt)
+#endif
+#if SharedLibDtWidget
+      DEPDTWIDGETLIB = /* _UseCat($(USRLIBDIR),$(TOOLKITSRC),/libDtWidget.so.$(SOXTREV)) */
+         DTWIDDGETLIB = _Use(-lDtWidget,-L$(TOOLKITSRC) -lDtWidget)
+#endif
+#if SharedLibXol
+DEPXOLCOMPATLIB = _UseCat($(USRLIBDIR),$(XOLSRC),/libXol.so.$(SOXOLREV))
+      DEPXOLLIB = _UseCat($(USRLIBDIR),$(XOLSRC),/libOlit.so.$(SOXOLREV))
+         XOLLIB = _Use(-lOlit,-L$(XOLSRC) -lOlit)
+#endif
+#if SharedLibXaw
+        DEPXAWLIB = /* _UseCat($(USRLIBDIR),$(AWIDGETSRC),/libXaw.so.$(SOXAWREV)) */
+           XAWLIB = _Use(-lXaw,-L$(AWIDGETSRC) -lXaw)
+#endif
+#if SharedLibXinput
+        DEPXILIB = /* _UseCat($(USRLIBDIR),$(XILIBSRC),/libXi.so.$(SOXINPUTREV)) */
+           XILIB = _Use(-lXi,-L$(XILIBSRC) -lXi)
+#endif
+#if SharedLibXTest
+        DEPXTESTLIB = /* _UseCat($(USRLIBDIR),$(XTESTLIBSRC),/libXtst.so.$(SOXTESTREV)) */
+           XTESTLIB = _Use(-lXtst,-L$(XTESTLIBSRC) -lXtst)
+#endif
+
+XCOMM 
+XCOMM USL: BEGIN
+XCOMM
+
+#ifndef SharedLibXol
+      DEPXTOOLLIB = _UseCat($(USRLIBDIR),$(TOOLKITSRC),/libXol.a)
+         XTOOLLIB = LoaderLibPrefix _Use(-lXol,$(DEPXTOOLLIB))
+#endif
+#ifndef XolClientDepLibs
+#define XolClientDepLibs $(DEPXOLLIB) $(DEPXTOOLLIB) $(DEPXMULIB) $(DEPXLIB)
+#endif
+#ifndef XolClientLibs
+#ifdef I18NDefines
+#define XolClientLibs $(XOLLIB) $(XTOOLLIB) $(XMULIB) $(XLIB)
+#else
+#define XolClientLibs $(XOLLIB) $(XTOOLLIB) $(XMULIB) $(XLIB)
+#endif
+#endif
+
+#ifndef XolCompatClientDepLibs
+#define XolCompatClientDepLibs $(DEPXOLLIB) $(DEPXOLCOMPATLIB) $(DEPXTOOLLIB) $(DEPXMULIB) $(DEPXLIB)
+#endif
+#ifndef XolCompatClientLibs
+#ifdef I18NDefines
+#define XolCompatClientLibs $(XOLLIB) -lXol $(XTOOLLIB) $(XMULIB) $(XLIB)
+#else
+#define XolCompatClientLibs $(XOLLIB) -lXol $(XTOOLLIB) $(XMULIB) $(XLIB)
+#endif
+#endif
+
+  /*
+   * If you will be building static shared libs with XLIB in a source
+   * tree referenced by an absolute $(TOP), you will have to 
+   * set XHOSTLOC to XLIBSRC in your Imakefile.  Since mkshlib is run
+   * in a 'shared' subdirectory, it can't find a relative $(TOP) from
+   * there.
+   */
+
+#ifndef ShLibFlags
+#define ShLibFlags
+#endif
+
+XHOSTLOC = _Use($(DESTDIR)/$(LIBDIR),../../X)
+SHLIBFLAGS = ShLibFlags -L $(XHOSTLOC)
+
+XCOMM 
+XCOMM USL: END
+XCOMM

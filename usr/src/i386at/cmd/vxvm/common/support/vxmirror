@@ -1,0 +1,286 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxmirror.sh	1.2 3/3/97 03:16:02 - cmd.vxvm:common/support/vxmirror.sh
+#ident	"@(#)cmd.vxvm:common/support/vxmirror.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+set_rootdisk
+
+progname=vxmirror
+usage=`progname="$progname" egettxt \
+	"Usage:\t$progname [-d yes|no] media [newmedia ...]
+	$progname [-d yes|no] -a [newmedia ...]
+	$progname -d yes|no
+	$progname -D" vxvmshm:544`
+
+a_all=
+verbose=
+Verbose=
+v_opt=
+V_opt=
+g_diskgroup=rootdg
+d_default=
+d_set_default=
+D_query_default=
+default_file=${VOL_DEFAULTS_FILE:=/etc/default/vxassist}
+tmpfile1=${TMPDIR:-/tmp}/vx1.$$
+
+doit()
+{
+	echo "! $*" >&2
+	"$@"
+}
+quit()
+{
+	rm -f "$tmpfile1"
+	exit $1
+}
+
+trap "quit 1" INT HUP QUIT TERM
+
+while getopts :avVg:d:D c
+do
+	case $c in
+	a)	a_all=yes;;
+	v)	verbose=yes; v_opt=-v;;
+	V)	Verbose=yes; V_opt=-V;;
+	g)	g_diskgroup=$OPTARG;;
+	d)	d_set_default=yes; d_default=$OPTARG;;
+	D)	D_query_default=yes;;
+	?)	echo "$usage" >&2; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+if [ -n "$D_query_default" ] && [ $# -gt 0 -o -n "$a_all" ]
+then
+	echo "$usage" >&2
+	quit 1
+fi
+
+# if -d was specified, set the default mirroring policy to yes or no
+
+if [ -n "$d_set_default" ]
+then
+	[ -z "$g_diskgroup" ] || {
+		egettxt "vxvm:vxmirror: WARNING: -g option is ignored with -d" >&2
+	}
+	case $d_default in
+	[Yy][Ee][Ss] | [Yy] | [Tt][Rr][Uu][Ee] | [Tt] | [Oo][Nn] | 1)
+		d_default=yes;;
+	[Nn][Oo] | [Nn] | [Ff][Aa][Ll][Ss][Ee] | [Ff] | [Oo][Ff][Ff] | 0)
+		d_default=no;;
+	*) echo "$usage" >&2; quit 1;;
+	esac
+
+	if [ -f $default_file ]
+	then
+		grep -v '^mirror[ 	]*=' < $default_file \
+			> $default_file.new
+	fi
+	echo "mirror=$d_default		#MIRROR_DEFAULT" >> $default_file.new
+	mv $default_file.new $default_file || quit 1
+	if [ -z "$D_query_default" ] && [ -z "$a_all" ] && [ $# -eq 0 ]
+	then
+		quit 0
+	fi
+fi
+
+# if -D was specified, print the default mirroring policy as yes or no
+
+if [ -n "$D_query_default" ]
+then
+	if [ ! -f $default_file ]
+	then
+		egettxt "no" vxvmshm:640
+	else
+		line=`grep 'mirror[ 	]*=' $default_file | sed -n '$p'`
+		bool=`expr "\$line" : '^mirror[ 	]*=\([a-zA-Z01]*\).*'`
+		case $bool in
+		[Tt][Rr][Uu][Ee] | [Yy][Ee][Ss] ) egettxt "yes" vxvmshm:667;;
+		* ) egettxt "no" vxvmshm:640;;
+		esac
+	fi
+	quit 0
+fi
+
+# if -a wasn't specified, the first argument is the name of the disk
+# to mirror
+
+if [ -z "$a_all" ]
+then
+	if [ $# -eq 0 ]
+	then
+		echo "$usage" >&2
+		quit 1
+	fi
+	dmname=$1
+	shift
+fi
+
+# with -a, get all volumes that are candidates for mirroring, otherwise
+# limit to volumes that are on the given disk.  Volumes that are candidates
+# for mirroring are volumes that are not currently mirrored and that
+# are composed of subdisks on only one disk.
+
+if [ -n "$a_all" ]
+then
+	vnames=`vxprint -g "\$g_diskgroup" -F "%vname" -s \
+		-e "(!sd_is_log) && assoc.assoc.v_pl_num == 1 &&
+		    !any(assoc.aslist.sd_disk != sd_disk)" | sort -u`
+else
+	vnames=`vxprint -g "\$g_diskgroup" -F "%vname" -s \
+		-e "sd_dm_name==\\"\$dmname\\" &&
+		( assoc.pl_log ? !assoc.assoc.v_logging :
+		    assoc.assoc.v_pl_num == 1 ) &&
+		    !any(assoc.aslist.sd_disk != sd_disk)" | sort -u`
+fi
+if [ -z "$vnames" ]
+then
+	progname="$progname" egettxt \
+		"$progname: No volumes to mirror" vxvmshm:74 >&2
+	quit 1
+fi
+
+succeed_list=
+fail_list=
+
+handle_special=
+
+# get the name of the root volume, if there is one
+rootvol=`vxprint -g rootdg -nve 'v_usetype="root"' | head -1`
+rootmkpart=
+
+if [ "X$g_diskgroup" = "Xrootdg" ] &&
+   list_member $rootvol $vnames
+then
+	# mirroring the root volume requires creation of a partition 0
+	# on the destination disk that maps the root volume's mirror on
+	# that disk.
+
+	rootdisk=`vxprint -sF "%disk" -e 'assoc.assoc="rootvol"'`
+	if [ -z "$rootdisk" ]
+	then
+		progname="$progname" egettxt \
+	"$progname: Error: cannot get disk for rootvol volume" vxvmshm:69 >&2
+		quit 1
+	fi
+	alloc_disks=
+	for disk in "$@"
+	do
+		case $disk in
+		*=*)    :;;
+		*)      append_list alloc_disks $disk
+		esac
+	done
+ 
+	rootmkpart=yes
+	need=`expr 0 \`vxprint -F '+ %len' rootvol swapvol standvol\``
+	need2=`expr 0 \`vxprint -F '+ %len' usr var home 2> /dev/null\``
+	need=`expr $need + $need2`
+	vxdg -q -g "$g_diskgroup" free $alloc_disks |
+	grep -v "^$rootdisk[ 	]" > $tmpfile1
+
+	# look for a non-volatile disk large enough for vxrootmir
+	# skip volatile disks.  Also, if no newmedia arguments
+	# were specified, don't use reserved disks.
+
+	use_disk=
+	exec 3<&0 < $tmpfile1
+	while read disk device tag offset length flags
+	do
+		case $flags in
+		*v*)	continue;;
+		esac
+		if [ -z "$alloc_disks" ]
+		then
+			case $flags in
+			*r*)	continue;;
+			esac
+		fi
+		if [ $length -ge $need ]
+		then
+			use_disk=$disk
+			break
+		fi
+	done
+	exec <&3 3<&-
+	if [ -z "$use_disk" ]
+	then
+		progname="$progname" egettxt \
+"$progname: Insufficient space to mirror rootvol, swapvol, and standvol" vxvmshm:71 >&2
+		quit 1
+	fi
+	doit vxrootmir $V_opt $v_opt "$use_disk" || quit 1
+	use_disk="$use_disk" egettxt "  Disk $use_disk is now bootable." vxvmshm:22 >&2
+	append_list succeed_list rootvol swapvol standvol
+fi
+
+# go through the list of volumes and mirror them all in order
+
+for vol in $vnames
+do
+	#
+	# usr home and var carry importance only if they are on rootdisk
+	#
+	if [ -n "$rootmkpart" ] &&
+	   [ "X$vol" = Xrootvol -o "X$vol" = Xswapvol -o "X$vol" = Xstandvol \
+		-o "X$vol" = Xusr -o "X$vol" = Xvar -o "X$vol" = Xhome ]
+	then
+		continue
+	fi
+	[ -n "$fail_list" ] && {
+		append_list fail_list "$vol"
+		continue
+	}
+	[ -n "$Verbose" ] && {
+		vol="$vol" egettxt "  Mirror volume $vol ..." vxvmshm:23
+	}
+	doit vxassist $v_opt -g "$g_diskgroup" mirror "$vol" "$@"
+	if [ $? -eq 0 ]
+	then
+		append_list succeed_list "$vol"
+	else
+		append_list fail_list "$vol"
+	fi
+done
+
+if [ -n "$fail_list" ]
+then
+	progname="$progname" egettxt \
+	"$progname: The following volumes were not mirrored:" vxvmshm:75 >&2
+	for i in $fail_list; do echo $i; done |
+	awk '
+	BEGIN { col=2; printf "  "; }
+	    {
+		if (col + length + 1 > 64) {
+		    col=2; printf "  ";
+		}
+		printf(" %s", $1);
+	    }
+	END { print; }
+	' >&2
+	quit 1
+fi
+
+quit 0

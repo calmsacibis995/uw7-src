@@ -1,0 +1,115 @@
+#ident	"@(#)choose	15.1	98/03/04"
+
+function choose
+{
+	typeset useenv=no
+	integer force=0 setup=0 nitems=0
+	typeset CHOICE
+	typeset exitline=: winparms="-below 0 -border_fg $COMBO1_FG -fg $COMBO1_FG -bg $COMBO1_BG" helpline=""
+
+	while [ -n "$1" ]
+	do
+		case "$1" in
+		-winparms)
+			shift
+			winparms="$1"
+			;;
+		-exit)
+			shift
+			exitline="$1"
+			;;
+		-help)
+			shift
+			helpline="$1"
+			;;
+		-f)
+			force=1
+			;;
+		-e)
+			[ $useenv != both ] && useenv=only
+			;;
+		-b)
+			useenv=both
+			;;
+		*)
+			break
+			;;
+		esac
+		shift
+	done
+	typeset val="$1" cur i
+	shift
+	integer choices=$#
+
+	if (( !force && choices < 5 ))
+	then
+		integer next=0
+		for i
+		do
+			if (( next ))
+			then
+				set_choice "$i"
+				$exitline
+				return 0
+			fi
+			if [ "$i" = "$val" ]
+			then
+				next=1
+			fi
+		done
+		set_choice "$1"
+		$exitline
+		return 0
+	fi
+	integer cur=0
+	integer tmp=0
+	for i
+	do
+		if [ "$i" = "$val" ]
+		then
+			cur=tmp
+			break
+		fi
+		tmp=tmp+1
+	done
+	open_radio -exit "$exitline" -fg $COMBO1_FG -bg $COMBO1_BG
+	typeset rid=$RID
+	for i
+	do
+		if [ -n "$helpline" ]
+		then
+			add_radio -help "$helpline" -entry "useenv=$useenv set_choice \"$i\"" "$i"
+		else
+			add_radio -entry "useenv=$useenv set_choice \"$i\"" "$i"
+		fi
+		nitems=nitems+1
+	done
+	integer MAXCHOICEROWS=${MAXCHOICEROWS:-6}
+	[ $nitems -lt $MAXCHOICEROWS ] && MAXCHOICEROWS=$nitems
+	while :
+	do
+		radio_runparms $rid $MAXCHOICEROWS
+		if (( RADIO_WIN_WIDTH < COLUMNS ))
+		then
+			break
+		fi
+		let MAXCHOICEROWS=MAXCHOICEROWS+1
+	done
+	if (( ${#CHOOSE_TITLE}+2 > RADIO_WIN_WIDTH ))
+	then
+		integer width=${#CHOOSE_TITLE}+2
+	else
+		integer width=RADIO_WIN_WIDTH
+	fi
+	place_window $width $RADIO_WIN_HEIGHT -current 'msg; footer "$CHOOSE_FOOTER"' $winparms -title "$CHOOSE_TITLE"
+	run_radio $rid $cur $RADIO_ROWS
+}
+
+function set_choice
+{
+	[ $useenv != no ] &&
+		CHOICE="$1"
+
+	[ $useenv != only ] &&
+		call -v set_choice "@string_t:|$1|"
+}

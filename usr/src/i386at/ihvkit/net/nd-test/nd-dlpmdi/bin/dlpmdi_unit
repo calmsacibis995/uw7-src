@@ -1,0 +1,1447 @@
+#ident "@(#)dlpmdi_unit	29.1"
+#
+#	Copyright (C) The Santa Cruz Operation, 1997
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+tet_startup=""
+tet_cleanup=""
+
+iclist=$ICLIST
+
+ic1="start"
+ic2="frametest"
+ic3="framemcst"
+ic4="framebcst"
+ic5="framembcst"
+ic6="loopback"
+ic7="loopmcst"
+ic8="loopbcst"
+ic9="loopmbcst"
+ic10="largepkt"
+ic11="saptest"
+ic12="bindmax"
+ic13="bindbad"
+ic14="bind"
+ic15="unbind"
+ic16="macaddrtest"
+ic17="multicast"
+ic18="allmulticast"
+ic19="finish"
+
+. $TET_ROOT/inc/libant.sh
+
+
+start()
+{
+	dlpiut stop
+	sleep 4
+
+	# restart the dlpi daemon
+	ndsu 'nd stop'
+	sleep 2
+	ndsu 'nd start'
+        
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		sleep 3
+	fi
+
+	echoboth "start: start of dlpmdi_unit test, looking for other machine"
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	NETTYPE=$media
+	echoboth "NETTYPE=$media"
+	echo "NETTYPE=$media" > /tmp/ant$$
+	framing
+
+	if [ "$MASTERSLAVE" = "master" -a "$NETTYPE" = "token" ]
+	then
+		dlpiut srmode fd=$fd srmode=non > /dev/null
+
+	fi
+	dlpiut bind fd=$fd sap=$gsap framing=$gframing error=n > /dev/null
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	dlpiut getaddr fd=$fd > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OURADDR=$addr
+	OURMCHN=`uname -n`
+
+	echoboth "$OURMCHN=$OURADDR"
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$fd msg=$OURADDR sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=180 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$fd msg=$OURADDR sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=180 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDR=$msg
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$fd msg=$OURMCHN sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$fd msg=$OURMCHN sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		dlpiut stop
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERMCHN=$msg
+
+	echoboth "$OTHERMCHN=$OTHERADDR"
+
+	echo OURMCHN=$OURMCHN >> /tmp/ant$$
+	echo OTHERMCHN=$OTHERMCHN >> /tmp/ant$$
+	echo OURADDR=$OURADDR >> /tmp/ant$$
+	echo OTHERADDR=$OTHERADDR >> /tmp/ant$$
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		echo 'framelist="ethernet 802.3 llc802.3 snap802.3 xns"' \
+			>> /tmp/ant$$
+		echo 'saplist="1234 f0 f0 800 ff"' >> /tmp/ant$$
+	else
+		echo 'framelist="802.5 llc802.5 snap802.5"' >> /tmp/ant$$
+		echo 'saplist="a0 a0 800"' >> /tmp/ant$$
+	fi
+	chmod 775 /tmp/ant$$
+
+	echo PASS
+	tet_result PASS
+}
+
+finish()
+{
+	echoboth "finish: cleanup"
+	dlpiut stop
+	ndsu 'nd stop'
+	rm -f /tmp/ant$$
+	echo PASS
+	tet_result PASS
+        
+}
+
+# bind_sap is used to bind to appropriate saps for framing tests
+bind_sap()
+{
+	dlpiut unbind fd=0 > /dev/null
+	if [ "$framing" = "snap802.3" -o \
+	     "$framing" = "snap802.5" ]
+	then
+		dlpiut bind fd=0 sap=aa framing=$framing \
+			error=n > /tmp/tmp$$
+		checkfail $?
+		dlpiut sbind fd=0 sap=$sap error=n > /tmp/tmp$$
+	else
+		dlpiut bind fd=0 sap=$sap framing=$framing \
+			error=n > /tmp/tmp$$
+	fi
+	checkfail $?
+}
+
+frametest()
+{
+	echoboth "frametest: test all frame types"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	echoboth "syncup frametest 180"
+	syncup frametest 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR odstaddr=$OURADDR \
+				delay=0 loop=n > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR delay=0 loop=n > /tmp/tmp$$
+		fi
+		passfail $?
+	done
+
+	dlpiut unbind fd=0
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echo "frametest: all $ret"
+	tet_result $ret
+}
+
+framemcst()
+{
+	echoboth "framemcst: test all frame types to multicast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		MMCADDR=030000000001
+		SMCADDR=030000000002
+	else
+		MMCADDR=c00000000004
+		SMCADDR=c00000000020
+	fi
+
+	syncup framemcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut addmca fd=0 ourdstaddr=$MMCADDR error=n > \
+				/tmp/tmp$$
+			checkfail $?
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$SMCADDR \
+				odstaddr=$MMCADDR delay=0 loop=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut delmca fd=0 ourdstaddr=$MMCADDR error=n > \
+				/tmp/tmp$$
+			checkfail $?
+		else
+			dlpiut addmca fd=0 ourdstaddr=$SMCADDR error=n > \
+				/tmp/tmp$$
+			checkfail $?
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$MMCADDR \
+				odstaddr=$SMCADDR delay=0 loop=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut delmca fd=0 ourdstaddr=$SMCADDR error=n > \
+				/tmp/tmp$$
+			checkfail $?
+		fi
+		[ "$ret" = "PASS" ] && echoboth PASS
+	done
+
+	dlpiut unbind fd=0
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "framemcst: all $ret"
+	tet_result $ret
+}
+
+framebcst()
+{
+	echoboth "framebcst: test all frame types to broadcast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+	BCST=ffffffffffff
+
+	syncup framebcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "framebcst: all $ret"
+	tet_result $ret
+}
+
+framembcst()
+{
+	echoboth "framembcst: test all frame types to multicast broadcast"
+
+	. /tmp/ant$$
+	ret=PASS
+
+	# Test only for token-ring. Don't do anything for ethernet
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		echoboth "framembcst: all $ret"
+		tet_result $ret
+		return
+	fi
+
+	BCST=c000ffffffff
+
+	syncup framembcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y \
+				> /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST odstaddr=$BCST \
+				delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "framembcst: all $ret"
+	tet_result $ret
+}
+
+loopback()
+{
+	echoboth "loopback: test all frame types"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup frametest 180 || return
+
+	set -- $saplist
+
+	[ "$MASTERSLAVE" = "slave" ] && {
+		syncup framedone 120 || return
+		echo PASS
+		tet_result PASS
+		return
+	}
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		dlpiut sendloop fd=0 sap=$sap framing=$framing \
+			omchnaddr=$OURADDR ourdstaddr=$OURADDR \
+			odstaddr=$OURADDR delay=0 loop=n > /tmp/tmp$$
+
+		passfail $?
+
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	syncup framedone 60 || return
+
+	echoboth "loopback: all $ret"
+	tet_result $ret
+}
+
+loopmcst()
+{
+	echoboth "loopmcst: loop all frame types to multicast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		MCADDR=030000000001
+	else
+		MCADDR=c00000000004
+	fi
+
+	syncup framemcst 120 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut addmca fd=0 ourdstaddr=$MCADDR error=n \
+				> /tmp/tmp$$
+			checkfail $?
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$MCADDR \
+				odstaddr=$MCADDR delay=0 loop=y > /tmp/tmp$$
+			checkfail $?
+			dlpiut delmca fd=0 ourdstaddr=$MCADDR error=n \
+				> /tmp/tmp$$
+			checkfail $?
+		else
+			dlpiut addmca fd=0 ourdstaddr=$MCADDR error=n \
+				> /tmp/tmp$$
+			checkfail $?
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$MCADDR \
+				odstaddr=$MCADDR delay=0 loop=y > /tmp/tmp$$
+			checkfail $?
+			dlpiut delmca fd=0 ourdstaddr=$MCADDR error=n > \
+				/tmp/tmp$$
+			checkfail $?
+		fi
+		[ "$ret" = "PASS" ] && echoboth PASS
+
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "loopmcst: all $ret"
+	tet_result $ret
+}
+
+loopbcst()
+{
+	echoboth "loopbcst: loop all frame types to broadcast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+	BCST=ffffffffffff
+
+	syncup loopbcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "loopbcst: all $ret"
+	tet_result $ret
+}
+
+loopmbcst()
+{
+	echoboth "loopmbcst: loop all frame types to multicast broadcast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	# Test for token-ring only. Don't do anything for ethernet
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		echoboth "loopmbcst: all $ret"
+		tet_result $ret
+		return
+	fi
+
+	BCST=c000ffffffff
+
+	syncup loopmbcst 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		echoboth "Framing $framing sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut sendloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		else
+			dlpiut recvloop fd=0 sap=$sap framing=$framing \
+				omchnaddr=$OTHERADDR ourdstaddr=$BCST \
+				odstaddr=$BCST delay=0 loop=y > /tmp/tmp$$
+		fi
+
+		passfail $?
+	done
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "loopmbcst: all $ret"
+	tet_result $ret
+}
+
+# Not work for token-ring because of streams bug
+largepkt()
+{
+	echoboth "largepkt: loop all frame types to broadcast"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "token" ] 
+	then
+		echoboth "largepkt: $ret"
+		tet_result $ret
+		return
+	fi
+
+	syncup largepkt 180 || return
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut unbind fd=0 > /dev/null
+		dlpiut bind fd=0 sap=1234 framing=ethernet error=n > /tmp/tmp$$
+		checkfail $?
+		dlpiut send fd=0 sap=1234 ourdstaddr=010203040506 \
+			framing=ethernet loop=n len=1501 > /tmp/tmp$$
+		passfail $?
+		dlpiut unbind fd=0 > /dev/null
+		dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+	fi
+
+	echoboth "largepkt: $ret"
+	tet_result $ret
+}
+
+saptest()
+{
+	echoboth "saptest: try ends of sap ranges"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup saptest 180 || return
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		saplist="5dd ffff 2 fe 02 fe 5dd ffff"
+		framelist="ethernet ethernet 802.3 802.3 llc802.3 llc802.3 snap802.3 snap802.3"
+	else
+		saplist="5dd ffff 2 fe 2 fe"
+		framelist="snap802.5 snap802.5 802.5 802.5 llc802.5 llc802.5"
+	fi
+
+	set -- $framelist
+
+	for sap in $saplist
+	do
+		framing=$1
+		shift
+		echoboth "Sap $sap"
+
+		bind_sap
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut syncsend fd=0 msg="saptest" sap=$sap timeout=20 \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR framing=$framing loop=n \
+				match=y > /tmp/tmp$$
+		else
+			dlpiut syncrecv fd=0 msg="saptest" sap=$sap timeout=20 \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR framing=$framing loop=n \
+				match=y > /tmp/tmp$$
+		fi
+		passfail $?
+	done	
+
+	dlpiut unbind fd=0 > /dev/null
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	echoboth "saptest: $ret"
+	tet_result $ret
+}
+
+bindmax()
+{
+	echoboth "bindmax: bind to NETXSAPMAXSAPS fds"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup bindmax 180 || return
+
+	[ "$MASTERSLAVE" = "slave" ] && {
+		syncup bindmaxdone 180 || return
+		echo PASS
+		tet_result PASS
+		return
+	}
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		bsap=5E0
+		framing=ethernet
+	else
+		bsap=A0
+		framing=802.5
+	fi
+	i=0
+	fdlist=0
+	netX=`basename $DEVICE`
+	netX=`echo $netX | tr [a-z] [A-Z]`
+	max=`ndsu "/etc/conf/bin/idtune -g ${netX}SAPMAXSAPS" | awk '{print $1}'`
+	saplist=$bsap
+	while [ $i -lt `expr $max - 2` ]
+	do
+		i=`expr $i + 1`
+		fdlist="$fdlist $i"
+		ih=`echo "obase=16;$i" | bc`
+		saplist="$saplist `echo \"obase=16;ibase=16;$bsap + $ih\" | bc`"
+	done
+	saplist=`echo $saplist | tr [A-Z] [a-z]`
+
+	set -- $fdlist
+
+	dlpiut stop
+	for sap in $saplist
+	do
+		fd=$1
+		shift
+
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		code=$?
+		. /tmp/tmp$$
+		checkfail $code
+		if [ "$NETTYPE" = "token" ]
+		then
+			dlpiut srmode fd=$fd srmode=non > /dev/null
+			checkfail $?
+		fi
+
+		dlpiut bind fd=$fd sap=$sap error=n framing=$framing > /tmp/tmp$$
+		passfail $?
+	done
+
+	echoboth "Open $max time"
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	if [ "$?" = "0" ]
+	then
+		echoboth "17th Open suceeded unexpectedly"
+		echoboth FAIL
+		ret=FAIL
+	else
+		echoboth PASS
+	fi
+
+	dlpiut stop
+
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	code=$?
+	. /tmp/tmp$$
+	checkfail $code
+	if [ "$NETTYPE" = "token" ]
+	then
+		dlpiut srmode fd=0 srmode=non > /dev/null
+	fi
+	checkfail $?
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	syncup bindmaxdone 30 || return
+
+	echoboth "bindmax: $ret"
+	tet_result $ret
+}
+
+bindbad()
+{
+	echoboth "bindbad: Bad bind tests"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup bindbad 180 || return
+
+	[ "$MASTERSLAVE" = "slave" ] && {
+		syncup bindbaddone 180 || return
+		echo PASS
+		tet_result PASS
+		return
+	}
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		sap=5dd
+		framing=ethernet
+		framelist="llc802.3 802.3 802.3 802.3 ethernet llc802.3 llc802.3 llc802.3 802.3 802.3 llc802.3 snap802.3 snap802.3"
+		saplist="ff 100 01 00 5dc 00 1 0 fffffffd ffffffff 100f0 5dc 10000"
+	else
+		sap=a0
+		framing=802.5
+		framelist="802.5 802.5 802.5 802.5 802.5 802.5 802.5 snap802.5 snap802.5"
+		saplist="fffffffd ffffffff 0 1 ff 100 800 5dc 10000"
+	fi
+
+# first bind before dlpi module linked
+	echoboth "Bind before dlpi module linked"
+	sleep 5
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	checkfail $?
+	dlpiut bind fd=0 sap=$sap error=y framing=$framing > /tmp/tmp$$
+	passfail $?
+
+	dlpiut stop
+	ndsu 'nd stop'
+	sleep 3
+	ndsu 'nd start'
+	sleep 3
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	checkfail $?
+	if [ "$NETTYPE" = "token" ]
+	then
+		dlpiut srmode fd=0 srmode=non > /dev/null
+	fi
+	checkfail $?
+
+
+	echoboth "Try bad saps"
+	set -- $framelist
+	for sap in $saplist
+	do
+		framing=$1
+		shift
+
+		echoboth "sap $sap framing $framing"
+		if [ "$framing" = "snap802.3" -o "$framing" = "snap802.5" ]
+		then
+			dlpiut bind fd=0 sap=aa framing=$framing error=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut sbind fd=0 sap=$sap error=y > /tmp/tmp$$
+		else
+			dlpiut bind fd=0 sap=$sap framing=$framing error=y > /tmp/tmp$$
+		fi
+		passfail $?
+		dlpiut unbind fd=0 > /dev/null
+	done
+
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	syncup bindbaddone 30 || return
+
+	echoboth "bindbad: $ret"
+	tet_result $ret
+}
+
+bind()
+{
+	echoboth "bind: bind testing"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup bind 180 || return
+
+	[ "$MASTERSLAVE" = "master" ] && {
+		if [ "$NETTYPE" = "ethernet" ]
+		then
+			sap=1234
+			dstaddr=010203040506
+			framing=ethernet
+		else
+			sap=a0
+			dstaddr=000003040506
+			framing=802.5
+		fi
+
+		dlpiut unbind fd=0 > /dev/null
+
+		echoboth "send before bind"
+		dlpiut send fd=0 sap=$sap ourdstaddr=$dstaddr framing=$framing \
+			loop=n len=20 > /tmp/tmp$$ && {
+			echoboth "Send before Bind suceeded, should have failed"
+			passfail 1
+		}
+
+		echoboth "two binds: first bind"
+		dlpiut bind fd=0 sap=$sap error=n framing=$framing > /tmp/tmp$$
+		passfail $?
+
+		echoboth "two binds: second bind"
+		dlpiut bind fd=0 sap=$sap error=y framing=$framing > /tmp/tmp$$
+		passfail $?
+		dlpiut unbind fd=0 > /dev/null
+		dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+	}
+
+	syncup binddone 60 || return
+
+	echoboth "bind: all $ret"
+	tet_result $ret
+}
+
+unbind()
+{
+	echoboth "unbind: unbind testing"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup unbind 180 || return
+
+	[ "$MASTERSLAVE" = "master" ] && {
+		if [ "$NETTYPE" = "ethernet" ]
+		then
+			sap=1234
+			dstaddr=010203040506
+			framing=ethernet
+		else
+			sap=a0
+			dstaddr=000003040506
+			framing=802.5
+		fi
+
+		dlpiut unbind fd=0 > /dev/null
+
+		echoboth "bind, unbind, send, rebind, send"
+		dlpiut bind fd=0 sap=$sap error=n framing=$framing > /tmp/tmp$$
+		checkfail $?
+		dlpiut unbind fd=0
+
+		dlpiut send fd=0 sap=$sap ourdstaddr=$dstaddr framing=$framing \
+			loop=n len=20 > /tmp/tmp$$ && {
+			echoboth "Send after unbind suceeded, should have failed"
+			passfail 1
+		}
+		dlpiut bind fd=0 sap=$sap error=n framing=$framing > /tmp/tmp$$
+		checkfail $?
+		dlpiut send fd=0 sap=$sap ourdstaddr=$dstaddr framing=$framing \
+			loop=n len=20 > /tmp/tmp$$ || {
+			echoboth "Send after rebind failed"
+			passfail 1
+		}
+		dlpiut unbind fd=0 > /dev/null
+		dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+	}
+
+	syncup unbinddone 60 || return
+
+	echoboth "unbind: all $ret"
+	tet_result $ret
+}
+
+# Test the DL_SET_PHYS_ADDR_REQ and DL_PHYS_ADDR_REQ DLPI primitives.
+# SETADDR should persist across an close/open, but is reset across an
+# unlink/link of the driver. Send some data using the newly set address to
+# determine that the SETADDR really worked.
+#
+# Token ring is a bit funny. The SETADDR doesn't take effect until a reopen
+# of the driver is done. This test should work equally well for both token
+# ring and ethernet drivers.
+macaddrtest()
+{
+	echoboth "macaddrtest: test MAC address set and get operations"
+	ret=PASS
+	TEST_ADDR=008392000000	# bogus number for setaddr testing
+
+	syncup macaddrtest 180 || return
+	PREVIOUS_OTHERADDR=$OTHERADDR
+	
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut stop
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+		code=$?
+		. /tmp/tmp$$
+		checkfail $code
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "get current MAC address"
+			dlpiut getaddr fd=0 > /tmp/tmp$$ 2>/tmp/frik
+			code=$?
+			. /tmp/tmp$$
+			CURR_ADDR=$addr
+			checkfail $code
+			echoboth $ret
+		fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "get factory MAC address"
+			dlpiut getraddr fd=0 > /tmp/tmp$$
+			code=$?
+			. /tmp/tmp$$
+			FACT_ADDR=$addr
+			checkfail $code
+			echoboth $ret
+		fi
+
+		# send our new ethernet address to the slave BEFORE we
+		# change it on the card. This way the slave will be able
+		# to respond to the subsequent messages from us.
+		if [ $code -eq 0 ]
+		then
+			echoboth "send new MAC address"
+			dlpiut syncsend fd=0 msg=$TEST_ADDR sap=$gsap \
+				framing=$gframing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR timeout=180 loop=n match=y \
+				> /tmp/tmp$$
+			checkfail $code
+			echoboth $ret
+		fi
+
+		#if [ $code -eq 0 ]
+		#then
+		#	echoboth "set current MAC address (non-root)"
+		#	dlpiut -n setaddr fd=0 ourdstaddr=$TEST_ADDR error=y \
+		#		> /tmp/tmp$$
+		#	code=$?
+		#	checkfail $code
+		#	echoboth $ret
+		#fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "set current MAC address (root)"
+			dlpiut setaddr fd=0 ourdstaddr=$TEST_ADDR error=n > /tmp/tmp$$
+			code=$?
+			checkfail $code
+			echoboth $ret
+
+			# set OURADDR to the newly set MAC address
+			if [ $code -eq 0 ]
+			then
+				OURADDR=$TEST_ADDR
+			fi
+			echoboth "$OURMCHN=$OURADDR"
+		fi
+
+
+		# Do something here to close and reopen the device to verify
+		# that the current MAC address is preserved across opens.
+		# This also helps us to test token ring protocol because
+		# the newly set address isn't available until the card is
+		# reopened (MAC addr must be set "before" open).
+		if [ $code -eq 0 ]
+		then
+			echoboth "close"
+			dlpiut close fd=0
+			code=$?
+			checkfail $code
+			echoboth $ret
+
+			echoboth "open"
+			dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+			code=$?
+			checkfail $code
+			echoboth $ret
+
+			echoboth "bind"
+			dlpiut bind fd=0 sap=$gsap framing=$gframing \
+				error=n > /tmp/tmp$$
+			code=$?
+			checkfail $code
+			echoboth $ret
+		fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "get current MAC address"
+			dlpiut getaddr fd=0 > /tmp/tmp$$ 2>/tmp/frik
+			code=$?
+			. /tmp/tmp$$
+			NEW_CURR_ADDR=$addr
+			if [ "$NEW_CURR_ADDR" != "$OURADDR" ]
+			then
+				echoboth "current MAC address mismatch"
+				echoboth "expected $OURADDR"
+				echoboth "got $NEW_CURR_ADDR"
+				errout < /tmp/tmp$$
+				code=1
+			fi
+			checkfail $code
+			echoboth $ret
+		fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "get factory MAC address"
+			dlpiut getraddr fd=0 > /tmp/tmp$$ 2>/tmp/frik
+			code=$?
+			. /tmp/tmp$$
+			NEW_FACT_ADDR=$addr
+			if [ "$NEW_FACT_ADDR" != "$FACT_ADDR" ]
+			then
+				echoboth "factory MAC address changed"
+				echoboth "expected $FACT_ADDR"
+				echoboth "got $NEW_FACT_ADDR"
+				errout < /tmp/tmp$$
+				code=1
+			fi
+			checkfail $code
+			echoboth $ret
+		fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "send data using new MAC address"
+			dlpiut syncsend fd=0 msg=macaddrtestdata sap=$gsap \
+				framing=$gframing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR timeout=180 loop=n match=y \
+				> /tmp/tmp$$
+		fi
+
+		echoboth "close NETX device"
+		dlpiut close fd=0
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		maj=`ls -l $DEVICE | awk '{print $6}'| sed -e 's/,//'`
+		prefix=`awk "\\\$6 == \"$maj\" { print \\\$2; }" /etc/conf/mdevice.d/*`
+		mdi=`ndsu "/etc/nd getmdi $prefix" | awk '{print $2}'`
+		mdimaj=`ls -l /dev/mdi/$mdi | awk '{print $5}'| sed -e 's/,//'`
+		mdiprefix=`awk "\\\$6 == \"$mdimaj\" { print \\\$2; }" /etc/conf/mdevice.d/*`
+
+		echoboth "stop ND"
+		ndsu "/etc/nd stop"
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "unload NETX device \"$prefix\""
+		ndsu "/sbin/modadmin -U $prefix"
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "unload MDI device \"$mdiprefix\""
+		ndsu "/sbin/modadmin -U $mdiprefix"
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "unload DLPI device \"dlpi\""
+		ndsu "/sbin/modadmin -U dlpi"
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "start ND"
+		ndsu "/etc/nd start"
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "open NETX device \"$DEVICE\""
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "bind to NETX device"
+		dlpiut bind fd=0 sap=$gsap framing=$gframing \
+			error=n > /tmp/tmp$$
+		code=$?
+		checkfail $code
+		echoboth $ret
+
+		echoboth "get current MAC address"
+		dlpiut getaddr fd=0 > /tmp/tmp$$ 2>/tmp/frik
+		code=$?
+		. /tmp/tmp$$
+		NEW_CURR_ADDR=$addr
+		if [ "$NEW_CURR_ADDR" != "$FACT_ADDR" ]
+		then
+			echoboth "current MAC address mismatch"
+			echoboth "expected $FACT_ADDR"
+			echoboth "got $NEW_CURR_ADDR"
+			errout < /tmp/tmp$$
+			code=1
+		fi
+		checkfail $code
+		echoboth $ret
+
+		# unlink/link of driver should have reset the MAC address
+		# back to initial settings. This is important for the test
+		# completion phase.
+
+		OURADDR=$CURR_ADDR
+		echoboth "$OURMCHN=$OURADDR"
+	else
+		echoboth "receive new MAC address"
+		dlpiut syncrecv fd=0 msg=$TEST_ADDR sap=$gsap \
+			framing=$gframing \
+			omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+			odstaddr=$OURADDR timeout=180 loop=n match=y \
+			> /tmp/tmp$$
+		code=$?
+		. /tmp/tmp$$
+		NEW_OTHERADDR=$msg
+		checkfail $code
+		echoboth $ret
+
+		if [ $code -eq 0 ]
+		then
+			OTHERADDR=$NEW_OTHERADDR
+			echoboth "$OTHERMCHN=$OTHERADDR"
+			echoboth "respond using new MAC address"
+			dlpiut syncrecv fd=0 msg=macaddrtestdata sap=$gsap \
+				framing=$gframing \
+				omchnaddr=$OTHERADDR ourdstaddr=$OTHERADDR \
+				odstaddr=$OURADDR timeout=180 loop=n match=y \
+				> /tmp/tmp$$
+			code=$?
+			checkfail $code
+			echoboth $ret
+		fi
+
+		if [ $code -eq 0 ]
+		then
+			echoboth "restore previous MAC address"
+			OTHERADDR=$PREVIOUS_OTHERADDR
+			echoboth "$OTHERMCHN=$OTHERADDR"
+		fi
+	fi
+
+	syncup macaddrtestdone 180 || return
+	echoboth "macaddrtest: all $ret"
+	tet_result $ret
+}
+
+multicast()
+{
+	echoboth "multicast: test multicast primitives"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		MCAOK=010203040506
+		MCAOK1=010203040507
+		MCABAD=000102030405
+		PRE=0102030405
+	else
+		MCAOK=c00003040506
+		MCAOK1=c00003040507
+		MCABAD=000102030405
+		PRE=c000030405
+	fi
+
+	syncup multicast 180 || return
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut stop
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+
+		if [ "$NETTYPE" = "token" ]
+		then
+			dlpiut srmode fd=0 srmode=non > /dev/null
+		fi
+
+		echoboth "Add valid multicast address"
+		dlpiut addmca fd=0 ourdstaddr=$MCAOK error=n > /tmp/tmp$$
+		passfail $?
+
+		echoboth "Add invalid multicast address"
+		dlpiut addmca fd=0 ourdstaddr=$MCABAD error=y > /tmp/tmp$$
+		passfail $?
+
+		echoboth "getmca, expect a single good address"
+		dlpiut getmca fd=0 table=$MCAOK > /tmp/tmp$$
+		passfail $?
+
+		echoboth "delmca delete a fictitious address"
+		dlpiut delmca fd=0 ourdstaddr=$MCAOK1 error=y > /tmp/tmp$$
+		passfail $?
+
+		echoboth "delmca, delete our one good address"
+		dlpiut delmca fd=0 ourdstaddr=$MCAOK error=n
+		passfail $?
+
+		echoboth "getmca, expect an empty table"
+		dlpiut getmca fd=0 table="" > /tmp/tmp$$
+		passfail $?
+
+		echoboth "Add valid multicast address"
+		dlpiut addmca fd=0 ourdstaddr=$MCAOK error=n > /tmp/tmp$$
+		passfail $?
+
+		dlpiut close fd=0 > /tmp/tmp$$
+		checkfail $?
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+
+		if [ "$NETTYPE" = "token" ]
+		then
+			dlpiut srmode fd=0 srmode=non > /dev/null
+		fi
+
+		echoboth "getmca after close, expect address table empty"
+		dlpiut getmca fd=0 table="" > /tmp/tmp$$
+		passfail $?
+
+		echoboth "Add 90 addresses to the table on primary SAP"
+		i=10
+		while [ $i -le 99 ]
+		do
+			MCA=${PRE}${i}
+			if [ "$MCATBL" = "" ]
+			then
+				OMCATBL=""
+				MCATBL="$MCA"
+			else
+				OMCATBL="$MCATBL"
+				MCATBL="$MCATBL,$MCA"
+			fi
+			dlpiut addmca fd=0 ourdstaddr=$MCA error=n > /tmp/tmp$$
+			passfail $?
+			if [ "$ret" = FAIL ]
+			then
+				MCATBL=$OMCATBL
+				break
+			fi
+			i=`expr $i + 1`
+		done
+
+		echoboth "Check full table"
+		dlpiut getmca fd=0 table="$MCATBL" > /tmp/tmp$$
+		passfail $?
+
+		echoboth "getmca on unbound secondary SAP, expect all addresses"
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		. /tmp/tmp$$
+		rm -f /tmp/tmp$$
+		dlpiut getmca fd=$fd table="$MCATBL" > /tmp/tmp$$
+		passfail $?
+
+		echoboth "getmca on bound secondary SAP, expect no addresses"
+		dlpiut bind fd=$fd sap=$gsap framing=$gframing error=n > /dev/null
+		dlpiut getmca fd=$fd table="" > /tmp/tmp$$
+		passfail $?
+
+		echoboth "getmca on primary SAP after close, expect no addrs"
+		dlpiut close fd=0 > /tmp/tmp$$
+		checkfail $?
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+		dlpiut getmca fd=0 table="" > /tmp/tmp$$
+		passfail $?
+
+		dlpiut stop
+		dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+		if [ "$NETTYPE" = "token" ]
+		then
+			dlpiut srmode fd=0 srmode=non > /dev/null
+		fi
+		dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+	fi
+
+	syncup multidone 60 || return
+
+	echoboth "multicast: all $ret"
+	tet_result $ret
+}
+
+allmulticast()
+{
+	echoboth "allmulticast (*OPTIONAL*): setallmca and recieve multicast frames"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		PRE=0102030405
+	else
+		PRE=c0007040c0
+	fi
+
+	syncup allmulticast 180 || return
+
+	set -- $saplist
+
+	for framing in $framelist
+	do
+		sap=$1
+		shift
+		if [ "$ret" = FAIL ]
+		then
+			break
+		fi
+		echoboth "Framing $framing sap $sap"
+
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			dlpiut setallmca fd=0 error=n > /tmp/tmp$$
+			checkfail $?
+			if [ "$ret" = FAIL ]
+			then
+				break
+			fi
+			action=syncsend
+		else
+			action=syncrecv
+		fi
+		for i in 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f \
+			 10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f \
+			 20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f
+		do
+			if [ "$MASTERSLAVE" = "master" ]
+			then
+				dlpiut $action fd=0 msg="allmca" \
+					sap=$sap framing=$framing \
+					omchnaddr=$OTHERADDR \
+					ourdstaddr=$OTHERADDR \
+					odstaddr=$PRE$i timeout=5 \
+					loop=n match=y > /tmp/tmp$$
+			else
+				dlpiut $action fd=0 msg="allmca" \
+					sap=$sap framing=$framing \
+					omchnaddr=$OTHERADDR ourdstaddr=$PRE$i \
+					odstaddr=$OURADDR timeout=5 \
+					loop=n match=y > /tmp/tmp$$
+			fi
+			passfail $?
+			if [ "$ret" = FAIL ]
+			then
+				break
+			fi
+		done
+	done
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut delallmca fd=0 error=n > /tmp/tmp$$
+		checkfail $?
+	fi
+
+	echoboth "allmulticast (*OPTIONAL*): all $ret"
+	tet_result $ret
+}
+
+. $TET_ROOT/inc/xpg3sh/mytet.h
+
+echo done

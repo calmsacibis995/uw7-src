@@ -1,0 +1,52 @@
+#ident	"@(#)initpkg:i386/cmd/initpkg/init.d/mse	1.11"
+
+if [ ! -d /usr/lib ]
+then			# /usr not mounted
+	exit
+fi
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/mse { start | stop }"
+
+case "$1" in
+'start')
+	/usr/lib/mousemgr &
+	;;
+'stop')
+	exec >/dev/null 2>&1
+	# read X pid now because killing
+	# xdm may make X exit and remove file
+	XPIDFILE=/dev/X/server.0.pid
+	test -s $XPIDFILE && read Xpid <$XPIDFILE
+
+	XDMPIDFILE=/dev/X/xdm-pid
+	test -s $XDMPIDFILE && read XDMpid <$XDMPIDFILE
+	if [ "$XDMpid" != "" ]
+	then
+		kill -2 $XDMpid
+	fi
+
+	if [ "$Xpid" != "" ]
+	then
+		kill -2 $Xpid
+	fi
+	# we let the killall kill the mousemgr
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	;;
+esac

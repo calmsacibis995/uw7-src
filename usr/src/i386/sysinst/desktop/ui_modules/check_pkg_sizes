@@ -1,0 +1,35 @@
+#!/sbin/sh
+#ident "@(#)check_pkg_sizes	15.1	98/03/04"
+
+# This module checks the IVAR selected_size and compares it to
+# SLSIZE[1], the size of the Root filesystem. If selected_size is bigger
+# than the root filesystem, then the user cannot proceed.
+
+. /isl/ui_modules/common.rc
+. /isl/ui_modules/disk.rc
+
+function show_error {
+	[ -n "$debug" ] && set -x
+
+	display -w "$1" -fg $2 -bg $3 
+	[ "$3" = "$ERROR_BG" ] && footer "$ERR_FOOTER" || footer "$GENERIC_FOOTER"
+	set_hotkey 9 "ii_exit PREV"
+	input_handler
+}
+
+# No check if we are going backwards
+[ "$1" = PREV ] && ii_exit PREV
+
+selected_size=`ivar get selected_size`
+load_disk_info
+
+if (( selected_size > SLSIZE[1] ))
+then
+	show_error "$SIZE_ERR" $ERROR_FG $ERROR_BG
+	ii_exit PREV
+# If more than 80% of the disk is used
+elif (( selected_size > SLSIZE[1] * 80 / 100 ))
+then
+	show_error "$SIZE_WARN" $BLUE $WHITE
+fi	
+ii_exit NEXT

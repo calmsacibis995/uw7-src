@@ -1,0 +1,64 @@
+#!/bin/ksh
+#ident	"@(#)getsubnetmask	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter subnet mask using dot notation (optional): $NL"  
+  read -r SNADDR
+  if [ "$SNADDR" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$SNADDR" = "?" ]
+  then
+    echo ""
+    echo "Subnetting is an optional addressing scheme that allows you to"
+    echo "partition the host address portion of an IP address into"
+    echo "discrete subnetworks.  This allows several physical networks to"
+    echo "share the same network address to form one logical network."
+    echo ""
+    echo "A subnet mask identifies which bits in an IP address correspond"
+    echo "to the network address (bits = 1) and which bits correspond to the"
+    echo "host identifier (bits = 0).  A subnet mask for the peripheral is only"
+    echo "required if subnetting is being used.  An example of a valid subnet"
+    echo "mask in dot notation is 255.255.0.0."
+    echo ""
+    echo "If a subnet mask is not specified, the default network mask is used"
+    echo "(which depends on the class of the IP address)."
+    echo ""
+    $QUITHELP
+    continue
+  fi
+  echo $SNADDR | egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' > /dev/null
+  if [ $? -eq 0 ]
+  then
+    break
+  else
+    if [ -z "$SNADDR" ]
+    then
+      break
+    else
+      echo "\nFormat error in the subnet mask.  An example of a"
+      echo "valid subnet mask is 255.255.0.0 for an IP address"
+      echo "of 15.43.4.7"
+    fi
+  fi
+done
+
+echo $SNADDR	> "$TMP/SNMASK"
+exit 0

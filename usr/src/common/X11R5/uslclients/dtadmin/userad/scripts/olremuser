@@ -1,0 +1,128 @@
+#!/usr/bin/sh
+
+#ident	"@(#)dtadmin:userad/scripts/olremuser	1.12"
+#copyright	"%c%"
+
+Prefix="UX:`/usr/bin/basename $0`"
+. ${XWINHOME:-/usr/X}/adm/dtuser.msgs
+
+if [ "$1" = "" ]
+then
+        MSG=`$GETTXT $TXT_EnterLogin`
+        printf "\n\t$MSG"
+	read LOGIN
+        if [ "$LOGIN" = "" ]
+        then
+                exit 0
+        fi
+else
+	LOGIN=$1
+fi
+
+#
+# Now will validate login
+#
+
+VALIDATE=0
+NISUSER=0
+# First check if user is a NIS user.
+PLUSPASS=`/usr/bin/grep "^+$LOGIN:" /etc/passwd 2>/dev/null`
+if [ "$?" = 0 ]
+then
+NISUSER=1
+NISPASS=`/usr/bin/ypmatch $LOGIN passwd 2>/dev/null`
+      if [ "$?" != 0 ]
+      then
+      MSG=`$GETTXT $TXT_NoNisInfo`
+      printf "\n\t$MSG\n" >& 2
+      exit 1
+      fi
+PASS=`echo $NISPASS | /usr/bin/cut -d: -f1,6,7 2>/dev/null`
+else
+PASS=`/usr/bin/grep "^$LOGIN:" /etc/passwd | /usr/bin/cut -d: -f1,6,7 2>/dev/null`
+fi
+for ENTRY in $PASS
+do
+        FIRST=`echo $ENTRY | /usr/bin/cut -d: -f1`
+        # Strip "+" from NIS entries
+        TEST=`echo $FIRST | /usr/bin/sed -e "s/^+//"`
+        if [ "$LOGIN" = "$TEST" ]
+    	then
+    	        VALIDATE=1
+                LOGINDIR=`echo $ENTRY | /usr/bin/cut -d: -f2`
+		LOGINSHELL=`echo $ENTRY | /usr/bin/cut -d: -f3`
+		if [ "`basename $LOGINSHELL`" = "csh" ]
+		then
+			STARTUP_FILE=.login
+		else
+			STARTUP_FILE=.profile
+		fi
+             	break
+  	fi
+done
+
+if [ "$NISUSER" = "1" ]
+then
+   LOCALHOME=`echo $PLUSPASS | /usr/bin/cut -d: -f6 2>/dev/null`
+   if [ -n "$LOCALHOME" ]
+   then
+   LOGINDIR=$LOCALHOME
+   fi
+   LOCALSHELL=`echo $PLUSPASS | /usr/bin/cut -d: -f7 2>/dev/null`
+   if [ -n "$LOCALSHELL" ]
+   then
+   LOGINSHELL=$LOCALSHELL
+   fi
+fi
+
+
+if [ "$VALIDATE" = "0" ]
+then
+        MSG=`$GETTXT $TXT_BadLoginId`
+        printf "\n\t$MSG\n" $Prefix >& 2
+	exit 1
+fi
+if [ "$LOGINDIR" = "" ]
+then
+        MSG=`$GETTXT $TXT_MissingHome`
+        printf "\n\t$MSG\n" $Prefix $USER >& 2
+	exit 1
+fi
+
+#
+# Found the home directory, remove as much OPEN LOOK stuff as possible
+#
+
+if [ ! -r $LOGINDIR -o ! -w $LOGINDIR -o ! -x $LOGINDIR ]
+then
+        MSG=`$GETTXT $TXT_AccessHome`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 1
+fi
+
+cd $LOGINDIR
+/usr/bin/rm -f  .olsetup   .olinitrc
+/usr/bin/rm -f  .oliniterr .olinitout .olprograms
+#if [ -f .Xdefaults-old ]
+#then
+#	echo "\n\tRenamed ${LOGIN}'s .Xdefaults-old file back to .Xdefaults"
+#	/usr/bin/mv .Xdefaults-old .Xdefaults
+#fi
+if [ ! -r $STARTUP_FILE -o ! -w $STARTUP_FILE ]
+then
+        MSG=`$GETTXT $TXT_AccessProfile`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+	exit 1
+else
+# note that the regex below contains a tab followed by a space
+# in between ".olsetup" and "#!@"
+/usr/bin/ed $STARTUP_FILE >/dev/null <<!
+g/ \$HOME\/.olsetup	 #!@ Do not edit this line !@/d
+w
+q
+!
+fi
+/usr/bin/chmod +r     $STARTUP_FILE 2> /dev/null
+/usr/bin/chown $LOGIN $STARTUP_FILE 2> /dev/null
+exit 0
+

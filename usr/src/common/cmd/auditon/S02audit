@@ -1,0 +1,51 @@
+#ident	"@(#)S02audit	1.3"
+
+# NOTICE: Auditing is not turned on by default. To enable it uncomment
+#	  the lines executing auditon and auditoff
+
+if [ ! -d /usr/bin ]
+then			# /usr not mounted
+	exit
+fi
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/audit { start | stop }"
+
+case "$1" in
+'start')
+	# Enable Auditing when going to multi-user mode
+	#/usr/sbin/auditon
+	
+	# The system returns to single-user mode if auditing cannot be enabled 
+	# The following return codes are defined as success:
+	# 0-auditing successfully enabled or already enabled
+	# 3 -audit package is installed but not included in the current "unix"
+	if [ $? -ne 0 -a $? -ne 3 ]
+	then
+		pfmt -l $LABEL -s warn -g $CAT:3 "Cannot enable auditing, changing to single user mode\n"
+		/sbin/init S
+	fi
+	;;
+'stop')
+	# Disable Auditing when going down to single user mode,
+	# FIRMWARE or power off.
+	#/usr/sbin/auditoff
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	;;
+esac

@@ -1,0 +1,32 @@
+#!/usr/bin/wksh -openlook
+
+VALUE=1
+
+toggleCB() {	# $1 = widget handle of label
+	case "$VALUE" in
+	1)
+		XtSetValues $1 label:"Two"
+		let VALUE=VALUE+1
+		;;
+	2)
+		XtSetValues $1 label:"One"
+		let VALUE=VALUE-1
+		;;
+	esac
+}
+  
+quitCB() { # No arguments
+	exit 0
+}
+
+OlInitialize TOPLEVEL quit2 Quit2 "$@" -openlook
+XtCreateManagedWidget CONTROL control controlArea $TOPLEVEL \
+	layoutType:fixedcols measure:1
+
+XtCreateManagedWidget QBUTTON qbutton oblongButton $CONTROL label:Quit
+XtAddCallback $QBUTTON select quitCB
+
+XtCreateManagedWidget TOGBUTTON tbutton oblongButton $CONTROL label:One
+XtAddCallback $TOGBUTTON select "toggleCB $TOGBUTTON"
+XtRealizeWidget $TOPLEVEL
+XtMainLoop

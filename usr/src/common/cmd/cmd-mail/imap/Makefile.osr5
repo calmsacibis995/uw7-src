@@ -1,0 +1,38 @@
+#ident	"@(#)Makefile.osr5	11.1"
+
+SHELL =		/bin/sh
+
+LOCALINC =	-I../c-client
+LOCALDEF =	-DANOFILE=\"/etc/anonymous/newsgroups\" \
+		-DOpenServer \
+		-DALERTFILE=\"/etc/imapd.alert\"
+
+include		../cmdrules.osr5
+
+LDLIBS =	-L$(USRLIB) ../c-client/libc-client.a -lgen -lsocket
+
+OBJS =		imapd.o
+
+build:		imapd
+
+imapd:		$(OBJS)
+		$(CC) -b elf $(CFLAGS) $(DEFLIST) -o imapd $(OBJS) $(LDLIBS)
+
+install:
+		if [ ! -d $(ETC) ] ; then mkdir -p $(ETC) ; fi
+		$(INS) -f $(ETC) imapd
+
+local-install:
+		cp imapd /etc/imapd
+	echo services:   imap		143/tcp				# IMAP
+	echo inetd.conf: imap	stream	tcp	nowait	root	/etc/imapd	imapd
+
+local-remove:
+		rm -f /etc/imapd
+
+clean:
+		rm -f $(OBJS)
+
+clobber:	clean
+		rm -f imapd
+

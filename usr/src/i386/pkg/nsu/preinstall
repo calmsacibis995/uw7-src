@@ -1,0 +1,285 @@
+#ident	"@(#)preinstall	1.3"
+#ident	"$Header$"
+#
+#  For cases when request script is not run, we set up for LOCALE 
+#  specific menus here.
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+MENU_DIR=/etc/inst/locale/${LOCALE}/menus/${PKG}
+[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+
+MENUS="menu.nsu"
+
+for i in $MENUS
+do
+   if [ ! -f ${MENU_DIR}/$i ]
+   then
+      if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ]
+      then
+           cp ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ${MENU_DIR}
+      else
+           cp ${REQDIR}/${PKG}/$i ${MENU_DIR}
+      fi
+   fi
+done
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+environ=$1
+>${environ}
+
+addenv () {
+	eval echo $1 >>${environ}
+}
+
+
+##########
+#
+# ${VARSPOOLLP} and ${ETCLP} are the names of the new directories where
+# things are now kept.
+##########
+
+addenv VARSPOOL=/var/spool > /dev/null
+addenv VARSPOOLLP=${VARSPOOL}/lp > /dev/null
+addenv ETCLP=${ETC}/lp > /dev/null
+addenv USRLIBLP=${USRLIB}/lp > /dev/null
+addenv OLD_VERSION=NONE > /dev/null
+#
+#
+#	if ls ${VARSPOOLLP}/requests/*/* 1>/dev/null 2>&1
+#	then
+#		echo "
+#There are still some print requests queued for printing.  Installation
+#of the new Spooler over the old configuration will DESTROY them."
+#
+#		CONTINUE "
+#		If you answer \"n\" (or \"no\") installation will stop
+#		to give the queued print requests a chance to be printed.
+#		If you answer \"y\" (or \"yes\") installation will proceed
+#		WITHOUT SAVING any currently queued jobs.
+#\n\n
+#		If you suspect that there really are no requests still
+#		queued, look for strange files in the directories under
+#		${SPOOLDIR}/request."
+#	fi
+
+
+##########
+##
+## Shutdown Spooler
+## 
+##
+##########
+
+if [ -x "/usr/sbin/lpshut" ]
+then
+	/usr/sbin/lpshut >/dev/null 2>&1
+fi
+
+##########
+##
+## Save Non-networking Spooler and lpadmin
+## 
+##
+##########
+
+#echo "Saving non-networking lpsched. . ."
+
+cp /usr/lib/lp/lpsched /usr/lib/lp/lpsched.LPM
+
+#echo "Non-networking lpsched saved in /usr/lib/lp/lpsched.LPM"
+
+#echo "Saving non-networking lpadmin. . ."
+
+cp /usr/sbin/lpadmin /usr/sbin/lpadmin.LPM
+
+#echo "Non-networking lpadmin saved in /usr/sbin/lpadmin.LPM"
+
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && {
+	set -x
+	goany
+}
+
+UPINSTALL=/etc/conf.sav
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=${UPGRADE_STORE}/${PKGINST}.env
+#AUTOMERGE=NULL
+
+# If $UPGFILE exists than either this is an upgrade or overlay
+# done during boot-floppy installation or the request script
+# created it.  If request was run, then $UPGFILE contains NREG. 
+# Otherwise, NREG must be set now. 
+
+[ -f $UPGFILE ] && . $UPGFILE
+
+[ "$NREG" ] || {
+
+	# Since NREG is not set, this is either a boot-floppy 
+	# installation or we are pkgadding a set and installing 
+	# nsu in automatic mode. Do not determine PKGINSTALL_TYPE 
+	# or AUTOMERGE if this is a boot-floppy install since these 
+	# variables are in UPGFILE already.
+
+	if [ ! -f /etc/inst/scripts/postreboot.sh ]
+	then 
+		# We are installing nsu by pkgadding a set.
+		PKGINSTALL_TYPE=NEWINSTALL
+	
+		# Call chkpkgrel to determine installation type.
+		${SCRIPTS}/chkpkgrel
+		PKGVERSION=$?
+		
+		case $PKGVERSION in
+			2)	PKGINSTALL_TYPE=OVERLAY ;;
+			4)	PKGINSTALL_TYPE=UPGRADE ;;
+			6)	PKGINSTALL_TYPE=UPGRADE2 ;;
+			*)	;;
+		esac
+		rm -f $UPGFILE	
+	fi
+
+	# Since the new mtune.d/ptm is not installed yet, we get the
+	# number of default pseudo-ttys from the pkginfo file.
+
+	NREG=$DFLT_REG
+
+	[ "$PKGINSTALL_TYPE" = UPGRADE ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+			PTM=$UPINSTALL
+		else
+			PTM=/etc/conf
+		fi	
+		
+		if [ -f $PTM/sdevice.d/ptm ]
+		then
+		# We are upgrading from a pre-UnixWare 2.0 release that used 
+		# different drivers for SCO and regular ptys. The sdevice.d/ptm 
+		# file will have only the number of regular ptys.
+			grep "^ptm	" $PTM/sdevice.d/ptm >/tmp/ptm.$$ 2>/dev/null
+			OFS=$IFS
+			IFS="	"	#tab
+			read Dev Conf LAST_REG x4 </tmp/ptm.$$
+			[ "$Conf" = N ] && LAST_REG=$DFLT_REG
+			IFS=$OFS
+			rm -f /tmp/ptm.$$
+
+			[ "$LAST_REG" -gt "$DFLT_REG" ] && NREG=$LAST_REG
+			[ "$NREG" -gt "$MAX_REG_PTS" ] && NREG=$MAX_REG_PTS
+		else
+		# This is the odd case when we cannot find the old values. 
+		# Use the defaults.
+				continue
+		fi
+
+		# We need to remove all existing smtp binaries because they have 
+		# been totally revised in UnixWare 2.x.  Some of them still have 
+		# the same names, and some do not.  We'll just remove them all
+		# for completeness' sake.  We also need to remove cron jobs
+		# that run smtploop along with the comments for them.
+		smtpdir="/usr/lib/mail/surrcmd"
+		for file in in.smtpd smtp smtpbatch smtpd smtploop smtpqer smtpsched
+		    do
+			if [ -f $smtpdir/$file ]
+			then
+			    rm $smtpdir/$file
+			fi
+		    done
+
+		file=/var/spool/cron/crontabs/smtp
+		cat $file | grep -v smtploop | grep -v "Run smtpsched once per hour" | grep -v "Clean up queues and send warnings" > $file.tmp
+		cp $file.tmp $file
+		rm $file.tmp
+		if [ ! -s $file ]
+		then
+		    rm $file
+		fi
+	}
+
+	[ "$PKGINSTALL_TYPE" = OVERLAY -o "$PKGINSTALL_TYPE" = UPGRADE2 ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+			PTM=$UPINSTALL
+			if [ -f $PTM/node.d/pts ]
+			then
+				NREG=`cut -f2 $PTM/node.d/pts|grep ttyp|wc -l`
+				[ "$NREG" -gt "$MAX_REG_PTS" ] && 
+				   NREG=$MAX_REG_PTS
+			else
+			# We cannot calculate NREG from $PTM/node.d/pts. 
+			# Use the default value of NREG.
+				continue
+			fi
+		else
+		# We are installing using pkgadd on a running system.
+			PTM=/etc/conf
+			if [ -f $PTM/mtune.d/ptm ]
+			then
+				line=`/etc/conf/bin/idtune -g NUMREGPT`
+				set - $line
+				NREG=$1
+				[ "$NREG" -gt "$MAX_REG_PTS" ] && NREG=$MAX_REG_PTS
+			else
+			# This is the odd case when we cannot find the old values.
+			# Use the defaults.
+				continue
+			fi
+		fi	
+		# We need to remove any smtp binaries from 1.1x that no longer
+		# exist in UnixWare 2.x.  These would be left over only if this
+		# machine was upgraded from 1.x to 2.01 and is now being upgraded
+		# to 2.1. We also need to remove cron jobs that run smtploop (an
+		# old 1.x binary) along with the comments for them.
+		smtpdir="/usr/lib/mail/surrcmd"
+		for file in in.smtpd smtpbatch smtploop smtpsched
+		    do
+			if [ -f $smtpdir/$file ]
+			then
+			    rm $smtpdir/$file
+			fi
+		    done
+
+		file=/var/spool/cron/crontabs/smtp
+		cat $file | grep -v smtploop | grep -v "Run smtpsched once per hour" | grep -v "Clean up queues and send warnings" > $file.tmp
+		cp $file.tmp $file
+		rm $file.tmp
+		if [ ! -s $file ]
+		then
+		    rm $file
+		fi
+	}
+}
+############# End  UPGRADE AND OVERLAY #######################
+
+	# Save volatile files for upgrades and overlays
+	${SCRIPTS}/pkgsavfiles ${PKGINST}
+# pkgsavfiles may change AUTOMERGE to NULL if there are no
+# files to merge or if it is a new installation. Therefore,
+# find out what values it set. Don't just overwrite them.
+. $UPGFILE
+
+echo "PKGINSTALL_TYPE=${PKGINSTALL_TYPE}" >$UPGFILE || exit 1
+echo "AUTOMERGE=${AUTOMERGE}" >>$UPGFILE || exit 1
+echo "NREG=${NREG}" >>$UPGFILE || exit 1
+
+exit 0

@@ -1,0 +1,133 @@
+#!/sbin/sh
+#ident "@(#)security	15.1	97/12/19"
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	current_sec=`ivar get security`
+	[ -z "$current_sec" ] && ivar set security ${sec_code[$default_option]}
+}
+
+. /isl/ui_modules/common.rc
+
+keys="$SEC_KEYS"
+
+sec_name[0]="$SEC_LOW"
+sec_code[0]=low
+sec_name[1]="$SEC_TRADITIONAL"
+sec_code[1]=traditional
+sec_name[2]="$SEC_IMPROVED"
+sec_code[2]=improved
+sec_name[3]="$SEC_HIGH"
+sec_code[3]=high
+
+default_option=1
+
+function noop
+{
+       beep
+}
+
+function create_menu
+{
+[ -n "$debug" ] && set -x
+	integer n num_secs selected
+
+	open_menu -x 3 -y 1
+	menu_id=$MID
+	selected=$default_option
+	num_secs=${#sec_code[*]}
+	n=0
+	while (( n < num_secs ))
+	do
+		add_menu_item -entry "pick_sec ${sec_code[$n]}" 	\
+			-select done_picking 				\
+			"${sec_name[$n]}"
+		[ "${sec_code[$n]}" = "$current_sec" ] && selected=$n
+		(( n += 1 ))
+	done	
+	(( num_secs += 2 ))
+	place_window 25 $num_secs -title "$SEC_CHOOSE"	\
+		-above 6 -below 1
+	window_id=$CURWIN
+	run_menu $menu_id $selected
+	msg
+#	msg "$SEC_CHOOSE2"
+	footer "$keys"
+	set_hotkey 9 go_back
+	set_hotkey 1 get_help
+	set_hotkey 2 noop
+}
+
+
+function pick_sec
+{
+[ -n "$debug" ] && set -x
+	current_sec=$1
+}
+
+
+function done_picking
+{
+[ -n "$debug" ] && set -x
+	wclose $window_id
+}
+
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	wclose $window_id
+	#
+	# Save the currently selected security, so it will be selected
+	# when we get run again.
+	#
+	ivar set security "$current_sec"
+	ii_exit PREV
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the currently selected security, so it will be selected
+	# when we get run again.
+	#
+	ivar set security "$current_sec"
+	#
+	ivar set help_topic security
+	ii_exit HELP
+}
+
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+current_sec=`ivar get security`
+[ -z "$current_sec" ] && current_sec=${sec_code[$default_option]}
+
+#
+# Let the user choose one
+#
+display "$SEC_PROMPT" \
+-above 1 -below 4
+create_menu
+input_handler
+
+#
+# Save their choice
+#
+ivar set security "$current_sec"
+
+#
+# Done
+#
+ii_exit NEXT
+

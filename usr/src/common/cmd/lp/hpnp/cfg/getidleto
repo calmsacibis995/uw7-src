@@ -1,0 +1,58 @@
+#!/bin/ksh
+#ident	"@(#)getidleto	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter idle timeout in seconds (default=90): $NL"  
+  read -r IDLETO
+  if [ -z "$IDLETO" ]
+  then
+    break
+  fi
+  if [ "$IDLETO" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$IDLETO" = "?" ]
+  then
+    echo ""
+    echo "Idle timeout is the number of seconds after which the peripheral"
+    echo "will close an idle print data connection from a host.  An idle "
+    echo "timeout of 0 disables the timeout mechanism.  The acceptable range "
+    echo "of values is 0 to 3600 seconds (1 hour) with a default of 90 seconds."
+    echo ""
+    $QUITHELP
+    continue
+  fi
+  echo $IDLETO | egrep '^[0-9]+$' > /dev/null
+  if [ $? -eq 0 ]
+  then
+    if [ $IDLETO -gt 3600 ]
+    then
+      echo "\nIdle timeout range is from 0 through 3600.  The range was exceeded."
+    else
+      break
+    fi
+  else
+    echo "\nFormat error in the idle timeout, the value must be a numeric value"
+    echo "in the range of 0 through 3600." 
+  fi
+done
+
+echo $IDLETO	> "$TMP/IDLETO"
+exit 0

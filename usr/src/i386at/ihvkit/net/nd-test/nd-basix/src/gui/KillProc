@@ -1,0 +1,147 @@
+#*  MODIFICATION HISTORY
+#*      Created:  Hari Hara Vinayaka Ram.N Wipro Infotech Limited  Oct 22 1994
+#*
+#*
+# This file contains the routines for Killing Processes
+
+KILL_selectLIST2() 
+{
+	
+	OlFlatGetValues $KILL_FLIST2 $CB_INDEX  label:TEST
+	if [ "$TEST" = "" ]
+	then
+		OlFlatSetValues $KILL_FLIST2 $CB_INDEX set:False
+		return
+	fi
+	eval KILLLIST$IND_KILL_COUNT=$CB_INDEX
+	(( IND_KILL_COUNT=IND_KILL_COUNT + 1 ))
+}
+
+KILL_unselectLIST2() {
+	(( IND_KILL_COUNT= IND_KILL_COUNT - 1 ))
+		  }
+
+KILL_Apply_LIST2() {
+typeset i D1 PROC
+	i=0
+	if [ $IND_KILL_COUNT -eq 0 ]
+	then
+		warn "No Process Has Been Selected"
+	return
+	fi
+	PROC=""
+	while [ $i -lt $IND_KILL_COUNT ]
+	do
+			eval D1=\$KILLLIST$i
+			OlFlatGetValues $KILL_FLIST2 $D1  label:TEST
+			set $TEST
+			D2=`echo $TEST | awk '{for (i=3; i<=NF; i++) printf "%s ",$i }'`	
+			D1=`echo $D2 | sed 's/.*\(RUN_[^ ]*\).*/\1/'`
+			A=`echo $TET_SUITE_ROOT/*/$D1`
+			D2=`dirname $A`
+			D1=${D2##$TET_SUITE_ROOT/}
+			su_kill -9 $1 >/dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				PROC="$PROC $D1"
+			else
+		     		echo $D1 1 KILLED >> ${TET_SUITE_ROOT}/tmp/Test_urg
+			fi
+		(( i= i + 1 ))
+	done
+	if [ "$PROC" != "" ]
+	then
+		warn "Unable to Kill Process(es) $PROC "
+	fi
+}
+
+KILL_Cancel_LIST2() {
+	i=0
+	while [ $i -lt $IND_KILL_COUNT ]
+	do
+			eval D1=\$KILLLIST$i
+			OlFlatSetValues $KILL_FLIST2 $D1  set:False
+		        (( i= i + 1 ))
+	done
+	IND_KILL_COUNT=0
+}
+KillProc()
+{
+typeset j k
+PREV_NUM_ITEMS=$NUM_ITEMS
+rm -f $PROCFILE
+NUM_ITEMS=`ps -ef | grep -v grep | nawk -f ${TET_SUITE_ROOT}/bin/procs.old.awk ACT=$ACT PROC_NAME=ndcert_menu PROCFILE=$PROCFILE`
+
+TOT=$NUM_ITEMS
+
+if [ $NUM_ITEMS -eq 0 ]
+then
+	warn "No Process is currently running"
+	return
+fi
+	
+if [ $NUM_KILL -eq 0 ]   #<If for the first time>
+then
+	(( NUM_KILL = NUM_KILL + 1 ))
+	j=$NUM_ITEMS 
+	ACT=NOSHOW
+	while [ $j -lt 30 ]
+	do
+		echo "{      }" >>$PROCFILE
+		(( j = j + 1 ))
+	done
+
+	PROC_ITEMS=`cat $PROCFILE`
+
+	cps KILL_POPUP popup popupWindowShell $FORM \
+		title:"UnixWare NIC Certification Test Suite:Kill Processes " 
+
+	cmw SW sw scrolledWindow $KILL_POPUP_UCA \
+		forceVerticalSB:true viewHeight:100 viewWidth:850 x:400
+
+	cmw KILL_FLIST2 flist flatList $SW \
+		exclusives:false \
+		viewHeight:5 \
+		numItemFields:1 \
+		itemFields:'{label}' \
+		items:"$PROC_ITEMS"
+
+	sv $KILL_FLIST2 selectProc:KILL_selectLIST2 unselectProc:KILL_unselectLIST2
+
+	cmw OK1 Ok1 flatButtons $KILL_POPUP_LCA \
+		numItems:2 \
+		numItemFields:1 \
+		itemFields:'{label}' \
+		items:"{Kill},{Cancel}"
+
+	sv $OK1 selectProc:BUTTON_Apply
+#	orh $KILL_POPUP "FlatList Source" -f `pwd`/Flatlist
+
+else  #<If it has already been popped up>
+	j=0
+	while [ $j -lt 30 ]
+	do
+		read DATA
+		OlFlatSetValues $KILL_FLIST2 $j label:"$DATA"
+		(( j = j + 1 ))
+	done <$PROCFILE
+fi
+	pu $KILL_POPUP GrabNone
+}
+
+BUTTON_Apply() {	
+
+	OlFlatGetValues $CB_WIDGET $CB_INDEX label:LABEL
+	case "$LABEL" in
+	Cancel)
+		KILL_Cancel_LIST2
+		IND_KILL_COUNT=0
+		pd $KILL_POPUP
+		;;
+	Kill)
+		KILL_Apply_LIST2	
+		KILL_Cancel_LIST2
+		pd $KILL_POPUP
+		;;
+	esac
+}

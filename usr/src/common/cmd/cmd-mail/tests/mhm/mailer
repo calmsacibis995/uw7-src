@@ -1,0 +1,594 @@
+#!/bin/sh
+#ident "@(#)mailer	11.1"
+
+#
+# Automated test script for multihome mailer
+#
+# Attempts to achieve complete statement coverage of multihome.c
+#
+
+# utility routines
+
+savecount=0
+
+savecnt() \
+{
+	if [ -f multihome.cnt ]
+	then
+		mv multihome.cnt trace.$savecount
+		savecount=`expr $savecount + 1`
+	fi
+}
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -fr /tmp/out /tmp/out1 /tmp/err /tmp/err1
+	rm -fr /var/internet/ip
+	rm -fr /tmp/msg
+	rm -fr /var/mail/sys /var/mail/bin
+}
+
+# only needed if queue always option is set.
+waitmail() \
+{
+	sleep 2
+	/usr/lib/sendmail -q
+}
+
+msg1() \
+{
+	cat << DONE > $1
+From: kurth
+To: user1@$virt1
+Subject: Test Message
+
+Body.
+DONE
+}
+
+# our first canned configuration
+setup1() \
+{
+	mkdir -p $datadir
+	# basic virtusers file
+	echo "user1@$virt1 sys" > $datafile
+	echo "user2@$virt1 bin" >> $datafile
+	echo "user3@$virt1 adm" >> $datafile
+	echo "user1@$virt2 sys" >> $datafile
+	echo "user2@$virt2 bin" >> $datafile
+	echo "user3@$virt2 adm" >> $datafile
+	/etc/mail/makemap hash $datafile < $datafile
+
+	# basic virtdomains file
+	echo "$virt1 $virt1ip" > $domainfile
+	echo "$virt2 $virt2ip" >> $domainfile
+	/etc/mail/makemap hash $domainfile < $domainfile
+
+	# an alias file in one domain
+	mkdir -p $virt1dir
+	echo "user1 sys@$host, bin@$host" > $virt1alias
+	echo "user4 daemon@$host, adm@$host" >> $virt1alias
+	/etc/mail/makemap -N hash $virt1alias < $virt1alias
+}
+
+# our second canned configuration, same as first but host1 is hard coded
+# to preserve sorting order for aliasing tests.
+setup2() \
+{
+	host1=unetsco.pdev.sco.com
+	mkdir -p $datadir
+	# basic virtusers file
+	echo "user1@$virt1 sys" > $datafile
+	echo "user2@$virt1 bin" >> $datafile
+	echo "user3@$virt1 adm" >> $datafile
+	echo "user1@$virt2 sys" >> $datafile
+	echo "user2@$virt2 bin" >> $datafile
+	echo "user3@$virt2 adm" >> $datafile
+	/etc/mail/makemap hash $datafile < $datafile
+
+	# basic virtdomains file
+	echo "$virt1 $virt1ip" > $domainfile
+	echo "$virt2 $virt2ip" >> $domainfile
+	/etc/mail/makemap hash $domainfile < $domainfile
+
+	# an alias file in one domain
+	mkdir -p $virt1dir
+	echo "user1 sys@$host1, bin@$host1" > $virt1alias
+	echo "user4 daemon@$host1, adm@$host1" >> $virt1alias
+	/etc/mail/makemap -N hash $virt1alias < $virt1alias
+}
+
+test_1() \
+{
+	cleanup
+
+	$pgm > /tmp/out 2>& 1
+	ret=$?
+	savecnt
+
+	if [ $ret -eq 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/out > /tmp/err
+	cat << DONE > /tmp/out1
+usage: multihome [-t/-d] recipient...
+    multihome routes users in virtual domains
+    to their correct physical users.
+    stdin is set to the mail message to be routed.
+    this program also supports aliasing for each virtual domain
+    -t - address test mode:
+        outputs new recipient list after aliasing and user mapping
+    -d - debug mode:
+        like -t, but prints addresses at each stage of lookup
+    -t and -d do not process a message from stdin
+DONE
+	diff /tmp/err /tmp/out1
+	passfail $?
+}
+
+test_2() \
+{
+	cleanup
+	setup2
+
+	$pgm -d \
+		user2@$virt1 \
+		user1@$virt1 \
+		user2@$virt2 \
+		user1@$virt2 \
+		user4@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+
+Parsed list sorted by domain first
+user1@kurthlap.pdev.sco.com
+user2@kurthlap.pdev.sco.com
+user4@kurthlap.pdev.sco.com
+user1@yohoho.pdev.sco.com
+user2@yohoho.pdev.sco.com
+
+After Alias Pass 1
+Finished list (no alias was found for these)
+user2@kurthlap.pdev.sco.com
+user1@yohoho.pdev.sco.com
+user2@yohoho.pdev.sco.com
+Remaining list for next alias pass
+sys@$host1
+bin@$host1
+daemon@$host1
+adm@$host1
+
+Aliased list before sort
+user2@kurthlap.pdev.sco.com
+user1@yohoho.pdev.sco.com
+user2@yohoho.pdev.sco.com
+sys@$host1
+bin@$host1
+daemon@$host1
+adm@$host1
+
+Aliased list sorted by domain first
+user2@kurthlap.pdev.sco.com
+adm@$host1
+bin@$host1
+daemon@$host1
+sys@$host1
+user1@yohoho.pdev.sco.com
+user2@yohoho.pdev.sco.com
+
+Mapped list before non-uniq items removed
+bin
+adm@$host1
+bin@$host1
+daemon@$host1
+sys@$host1
+sys
+bin
+
+Final recipient list, not sorted
+adm
+adm@$host1
+bin@$host1
+daemon@$host1
+sys@$host1
+sys
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+test_3() \
+{
+	cleanup
+	setup2
+
+	$pgm -t \
+		user2@$virt1 \
+		user1@$virt1 \
+		user2@$virt2 \
+		user1@$virt2 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+bin
+bin@$host1
+sys@$host1
+sys
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+test_4() \
+{
+	cleanup
+	setup1
+
+	$pgm -t \
+		user1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Bad address for multihome: user1
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_5() \
+{
+	cleanup
+	setup1
+
+	# an alias file with a loop
+	echo "user1 user2" > $virt1alias
+	echo "user2 user1" >> $virt1alias
+	/etc/mail/makemap -N hash $virt1alias < $virt1alias
+
+	$pgm -t \
+		user1@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Alias loop detected in the following recipients:
+user1@kurthlap.pdev.sco.com
+
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_6() \
+{
+	cleanup
+	setup1
+
+	# an alias file with a too long string
+	echo "user1 really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfskljfskldjf" > $virt1alias
+	/etc/mail/makemap -N hash $virt1alias < $virt1alias
+
+	$pgm -t \
+		user1@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+User aliases to long string: user1@kurthlap.pdev.sco.com: really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfskljfsk...
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_7() \
+{
+	cleanup
+	setup1
+
+	# a map file with a too long string
+	echo "user3@$virt1 really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfskljfskldjf" > $datafile
+	/etc/mail/makemap hash $datafile < $datafile
+
+	$pgm -t \
+		user3@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+User user3@kurthlap.pdev.sco.com mapped to invalid string:
+Got: really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfskljfsk...
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_8() \
+{
+	cleanup
+	setup1
+
+	$pgm -t \
+		user@really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfskljfskldjf \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Address too long: user@really_long_string_lskdfjslfjsldkfsklfjskljfksljfsljfsklfjskljksljfsljflsjfsljlsdjfsljflsjflsjfslfjsljfsljfsljfksljfksljfsk...
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_9() \
+{
+	cleanup
+	setup1
+
+	$pgm -t \
+		user@unknown.domain.com \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Domain not valid for multihome: user@unknown.domain.com
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_10() \
+{
+	cleanup
+	setup1
+
+	echo "user1 ," > $virt1alias
+	/etc/mail/makemap -N hash $virt1alias < $virt1alias
+
+	$pgm -t \
+		user1@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Invalid null alias for user1@kurthlap.pdev.sco.com
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_11() \
+{
+	cleanup
+	setup1
+
+	echo "$virt1 really.long.ip.address.that.does.not.fit.sdgssdfsfsdf.sdfsdfsfsdfds.sdfsdsdfdsd.fsdfsdfsd.sdfsdfsdf" > $domainfile
+	/etc/mail/makemap hash $domainfile < $domainfile
+
+	$pgm -t \
+		user1@$virt1 \
+		> /tmp/out 2> /tmp/err
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 67 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	sed -e "/^INFO/d" < /tmp/err > /tmp/err1
+	cat << DONE > /tmp/out1
+Ip address to long for user1@$virt1: really.long.ip.address.that.does.not.fit.sdgssdfsfsdf.sdfsdfsfsd...
+DONE
+	diff /tmp/err1 /tmp/out1
+	passfail $?
+}
+
+test_r1() \
+{
+	cleanup
+	setup1
+
+	msg1 > /tmp/msg
+	$pgm \
+		user1@$virt1 \
+		> /tmp/out 2> /tmp/err < /tmp/msg
+	ret=$?
+	savecnt
+
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out /tmp/err
+		passfail 1
+		return
+	fi
+	waitmail
+	grep Body /var/mail/bin > /dev/null
+	if [ $? -ne 0 ]
+	then
+		echo mail to bin not found
+		passfail 1
+		return
+	fi
+	grep Body /var/mail/sys > /dev/null
+	if [ $? -ne 0 ]
+	then
+		echo mail to sys not found
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+real_1() \
+{
+	cleanup
+	setup1
+
+	msg1 > /tmp/msg
+	/usr/lib/sendmail user1@$virt1 < /tmp/msg
+	ret=$?
+
+	if [ $ret -ne 0 ]
+	then
+		passfail 1
+		return
+	fi
+	waitmail
+	waitmail
+	grep Body /var/mail/bin > /dev/null
+	if [ $? -ne 0 ]
+	then
+		echo mail to bin not found
+		passfail 1
+		return
+	fi
+	grep Body /var/mail/sys > /dev/null
+	if [ $? -ne 0 ]
+	then
+		echo mail to sys not found
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+TEST=""
+
+pgm=/etc/mail/multihome
+
+# configuration variables:
+datadir=/var/internet/ip/127.0.0.1/mail
+datafile=/var/internet/ip/127.0.0.1/virtusers
+domainfile=/var/internet/ip/127.0.0.1/mail/virtdomains
+
+# our main machine
+host=eclipse.pdev.sco.com
+
+# our first virtual domain
+virt1=kurthlap.pdev.sco.com
+virt1ip=132.147.193.196
+virt1dir=/var/internet/ip/$virt1ip/mail
+virt1alias=$virt1dir/mail.aliases
+# our second virtual domain
+# it should also sort after virt1 in case-insensitive comparisons.
+virt2=yohoho.pdev.sco.com
+virt2ip=132.147.193.197
+virt2dir=/var/internet/ip/$virt2ip/mail
+virt2alias=$virt2dir/mail.aliases
+
+ cleanup
+
+test="1 2 3 4 5 6 7 8 9 10 11 r1"
+real="1"
+
+#testlist real_ 1
+#exit 0
+
+testlist test_ $test
+testlist real_ $real
+ cleanup

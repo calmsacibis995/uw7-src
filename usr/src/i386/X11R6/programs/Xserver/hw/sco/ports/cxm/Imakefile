@@ -1,0 +1,121 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:00:19
+ *	@(#) Imakefile 12.1 95/05/09 
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+#include <Server.tmpl>
+
+#if defined(USLArchitecture)
+VIDCONFDIR	=	$(USRLIBDIR)/vidconf
+#endif
+
+SRCS =	cxmBres.c     cxmData.c     cxmGlyph.c    cxmMono.c     cxmStip.c \
+	cxmClip.c     cxmFillSp.c   cxmImage.c    cxmRectOps.c  cxmWin.c  \
+	cxmCmap.c     cxmGC.c       cxmInit.c     cxmScreen.c \
+	cxmCursor.c   cxmGlCache.c  cxmMisc.c     cxmSlab.c
+
+OBJS =	cxmBres.o     cxmData.o     cxmGlyph.o    cxmMono.o     cxmStip.o \
+	cxmClip.o     cxmFillSp.o   cxmImage.o    cxmRectOps.o  cxmWin.o  \
+	cxmCmap.o     cxmGC.o       cxmInit.o     cxmScreen.o  \
+	cxmCursor.o   cxmGlCache.o  cxmMisc.o     cxmSlab.o
+
+STD_DEFINES = ServerDefines
+
+#if defined(USLArchitecture)
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+#else
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+#endif
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+       DDXLIBS = libcxm.a
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(cxm,$(OBJS))
+ProfiledLibraryTarget(cxm,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(cxm,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(cxm,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+#if defined(USLArchitecture)
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o:
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+
+#else	/*	USLArchitecture	*/
+
+NormalLibraryObjectRule()
+
+#endif	/*	USLArchitecture */
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+#if defined(USLArchitecture)
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget(cxm,$(OBJS))
+SharedXDriverTarget(cxm,6.0,$(OBJS),shared,..)
+#endif
+
+#else	/*	USLArchitecture	*/
+
+NormalLibraryTarget(cxm,$(OBJS))
+
+#endif	/*	USLArchitecture */
+
+LintLibraryTarget(cxm,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRuleSCP(cxm,$(DDXLIBS),cxmInit.c)
+
+#define IHaveSubdirs
+
+#if defined(USLArchitecture)
+SUBDIRS= grafinfo/AOF grafinfo/ati
+#else
+SUBDIRS= grafinfo/ati
+#endif
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+
+DependTargetSCP(cxmInit.c)

@@ -1,0 +1,130 @@
+#!/sbin/sh
+#ident "@(#)net_wrapper	15.2	98/01/18"
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func	# common.rc invokes this if skip_lang is True
+{
+:
+}
+
+. /isl/ui_modules/common.rc
+
+################################################################################
+
+function create_menu
+{
+[ -n "$debug" ] && set -x
+	integer selected
+
+	nics_status=$(svar get nics_status)
+	prot=$(ivar get SEC_MEDIUM_TYPE)
+	prot_status=$(svar get ${prot}_status)
+	selected=0
+	[ $nics_status -ne 0 ] && {
+		selected=1
+		[ $prot_status -gt 1 ] &&
+			selected=2
+	}
+	open_menu -x 3 -y 1
+	menu_id=$MID
+	max ${#INETINST_HW_CONF_TITLE} \
+		${#INETINST_NET_CONF_TITLE} \
+		${#INETINST_CONTINUE_INSTALL}
+	II_WIDTH=$?
+        footer "$GENERIC_FOOTER_NOHELP"
+
+	add_menu_item -select "ii_exit NICS" "${INETINST_HW_CONF_TITLE}"
+	add_menu_item -select "config_protocol; return 0" "${INETINST_NET_CONF_TITLE}"
+	add_menu_item -select "save_exit NEXT" "${INETINST_CONTINUE_INSTALL}"
+
+	place_window  $(( II_WIDTH + 6 )) 5 -below 1 -above 4
+
+	window_id=$CURWIN
+	run_menu $menu_id $selected
+	set_hotkey  9 "save_exit PREV"
+
+}
+
+function config_protocol 
+{
+	[ -n "$debug" ] && set -x
+	typeset -u protexit
+	nics_status=$(svar get nics_status)
+	[ $nics_status -ne 0 ] && {
+		prot=$(ivar get SEC_MEDIUM_TYPE)
+		protexit=$prot
+		ii_exit ${protexit}
+	}
+	display -w "${INETINST_MUST_CONF_HW}" -fg $ERROR_FG -bg $ERROR_BG
+	input_handler
+	return 1
+}
+
+function done_picking
+{
+	[ -n "$debug" ] && set -x
+	prot=$(ivar get SEC_MEDIUM_TYPE)
+	prot_status=$(svar get ${prot}_status)
+	nics_status=$(svar get nics_status)
+	netinstall_state=0
+	[ $nics_status -ne 0 ] && {
+		netinstall_state=1
+		[ $prot_status -ne 0 ] &&
+			netinstall_state=2
+	}
+
+	case $netinstall_state in
+	0)
+		MESSAGE="${INETINST_MUST_CONF_HW}"
+		;;
+	1)
+		SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+		eval MESSAGE=\"${INETINST_MUST_CONF_PROTOCOL}\"
+		;;
+	*)
+		wclose $window_id
+		# go ahead and clean up now.
+		netinst_clean SUCCESS
+		return 0
+	esac
+	display -w "$MESSAGE" -fg $ERROR_FG -bg $ERROR_BG
+	input_handler
+	return 1
+}
+
+function save_exit
+{
+	[ -n "$debug" ] && set -x
+	[ "$1" != "NEXT" ] && {
+		ii_exit $1
+	}
+	done_picking
+	[ $? -ne 0 ] && {
+		return 1
+	}
+	ii_exit $1
+}
+
+
+
+#
+# Main
+#
+
+[ -n "$debug" ] && set -x
+
+#
+# Let the user choose one
+#
+while [ 1 == 1 ]
+do
+	display "${INETINST_NETWRAPPER_PROMPT}" -title "${INETINST_TITLE}" -above 1 -below 4
+	DISPWIN=$CURWIN
+	create_menu
+	input_handler
+	wclose $DISPWIN
+done

@@ -1,0 +1,72 @@
+/**/#pragma ident	"@(#)MGizmo:Imakefile	1.12"
+
+#if Release5
+
+#define DoNormalLib	NO
+#define DoSharedLib	YES
+
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+
+#else
+
+#define DynamicLibraryObjectRule()                                      @@\
+.c.o:                                                                   @@\
+                $(CC) -c -KPIC $(CFLAGS) $<
+
+#define SharedLibraryTarget(libname,objlist,dependlib,otherlib)         @@\
+lib/**/libname/**/.so:: objlist dependlib                               @@\
+        $(RM) lib/**/libname/**/.so                                     @@\
+        $(CC) $(YFLAGS) -G objlist -o lib/**/libname/**/.so -h lib/**/libname/**/.so.1 $(SHLIBFLAGS) dependlib otherlib
+
+#endif
+
+    DTLIBSRC = $(LIBSRC)/Dt
+   DTILIBSRC = $(USLCLIENTSRC)/libMDtI
+
+    INCLUDES = -I. -I$(LIBSRC) -I$(DTLIBSRC) -I$(DTILIBSRC)
+     LIBNAME = MGizmo
+         LIB = lib$(LIBNAME).so
+
+EXTRA_DEFINES= -DNOVELL -DDONT_USE_DT_FUNCS -UUSE_GMATCH -UUSE_FNMATCH
+
+        SRCS = \
+		AlphaGizmo.c \
+		BaseWGizmo.c \
+		ChoiceGizm.c \
+		ComboGizmo.c \
+		ContGizmo.c \
+		FileGizmo.c \
+		Gizmo.c \
+		IconBGizmo.c \
+		InputGizmo.c \
+		LabelGizmo.c \
+		ListGizmo.c \
+		MenuGizmo.c \
+		ModalGizmo.c \
+		MsgGizmo.c \
+		NumericGiz.c \
+		PopupGizmo.c \
+		ScaleGizmo.c \
+		SeparatorG.c \
+		SpaceGizmo.c \
+		TextGizmo.c
+
+OBJS = $(SRCS:.c=.o)
+HEADERS = $(SRCS:.c=.h)
+
+#if Release5
+LibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(SODTREV),$(OBJS),.,.)
+CreateRelocatableObjs($(LIBNAME),$(OBJS),.,.)
+InstallSharedLibrary_m($(LIBNAME),$(SODTREV),$(USRLIBDIR))
+#else
+all::	libMGizmo.so
+DynamicLibraryObjectRule()
+SharedLibraryTarget($(LIBNAME),$(OBJS),,)
+InstallLibrary($(LIBNAME),$(USRLIBDIR))
+#endif
+
+InstallMultiple($(HEADERS),$(INCROOT)/MGizmo)
+InstallMsgCatalog(mgizmo)
+DependTarget()

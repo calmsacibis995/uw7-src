@@ -1,0 +1,177 @@
+#ident	"@(#)ii_net_config	15.1"
+
+#
+#  This script is used to enter TCP network config information.  It comes
+#  already populated if BOOTP ran successfully.
+#
+
+
+# determine if IP address/netmask is correct
+function valid_ip_addr
+{
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+	typeset ii_net_err=${inet_illegal_addr}
+	if [ X$2 = Xnetmask ]
+	then
+		{
+		typeset ii_net_err=${inet_illegal_netmask}
+		case "$1" in
+		0x*)
+			{
+			case "$1" in
+			#non-hex?
+			0x*[!0-9a-fA-F]*)
+				errmsg "${ii_net_err}"
+				return 1;
+				;;
+			#leading is non-zero, len==len(0xffffff00)
+			0x[1-9a-fA-F]???????)
+				return 0;
+				;;
+			esac
+			errmsg "${ii_net_err}"
+			return 1;
+			}
+		esac
+		}
+		#if it did not start with 0x, must be dotted decimal
+	fi
+	case "$1" in
+	#illegal addresses have non-(digit dot)
+	#2 or more dots in a row
+	#4 or more dots in addr
+	#starting octet has leading zero?
+	*[!0-9.]*|*..*|*.*.*.*.*)
+		errmsg "${ii_net_err}"
+		return 1;
+		;;
+	#numbers greater than 255: four+ digits, [3-9]XX, 2[6-9]X, 25[6-9]
+	*[1-9][0-9][0-9][0-9]*|*[3-9][0-9][0-9]*|*2[6-9][0-9]*|*25[6-9]*)
+		errmsg "${ii_net_err}"
+		return 1; ;;
+	#MUST have 3 dots (note:127.0.0.1 == 127.0...but do we deal with it?)
+	*.*.*.*)
+		return 0;
+		;;
+	esac
+	#did not have exactly 3 dots
+	errmsg "${ii_net_err}"
+	return 1;
+}
+
+#
+#  Update /tmp/ii.parms with all of the shell variables we set here.
+#
+function net_config_update {
+	# set -x
+	# echo "======================= in net_config_update =====" > /dev/null
+
+	footer ""
+	msg ""
+
+	#
+	#  Make sure that this form is completely filled in with 
+	#  valid values.  Each address is piped to a read to eliminate
+	#  leading or trailing whitespace which can foul up commands
+	#  that will use these addresses (like pkgcat).
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	typeset chk_MY_INET_ADDR
+	typeset chk_MY_NETMASK
+	typeset chk_ROUTER_INET_ADDR
+	typeset chk_SERVER_INET_ADDR
+
+	echo "${MY_INET_ADDR}" | read chk_MY_INET_ADDR
+	valid_ip_addr "${chk_MY_INET_ADDR}"
+	[ $? != 0 -o -z "${chk_MY_INET_ADDR}" ] && {
+		II_FLD[${II_ERR}]="${INETINST_MY_INET_TITLE}"
+		let II_ERR+=1
+	}
+	
+	echo "${MY_NETMASK}" | read chk_MY_NETMASK
+	valid_ip_addr "${chk_MY_NETMASK}" netmask
+	[ $? != 0 -o -z "${chk_MY_NETMASK}" ] && {
+		II_FLD[${II_ERR}]="${INETINST_MY_MASK_TITLE}"
+		let II_ERR+=1
+	}
+
+	echo "${ROUTER_INET_ADDR}" | read chk_ROUTER_INET_ADDR
+	valid_ip_addr "${chk_ROUTER_INET_ADDR}"
+	[ $? != 0 ] && {
+		II_FLD[${II_ERR}]="${INETINST_ROUTER_INET_TITLE}"
+		let II_ERR+=1
+	}
+	
+	echo "${SERVER_INET_ADDR}" | read chk_SERVER_INET_ADDR
+	valid_ip_addr "${chk_SERVER_INET_ADDR}"
+	[ $? != 0 -o -z "${chk_SERVER_INET_ADDR}" ] && {
+		II_FLD[${II_ERR}]="${INETINST_SERVER_INET_TITLE}"
+		let II_ERR+=1
+	}
+	
+	if [ ${II_ERR} != 0 ] 
+	then
+		eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+		return 1
+	else
+		echo "MY_UNAME=\"$chk_MY_UNAME\"">>/tmp/ii.parms
+		echo "MY_INET_ADDR=\"$chk_MY_INET_ADDR\"">>/tmp/ii.parms
+		echo "SERVER_INET_ADDR=\"$chk_SERVER_INET_ADDR\"">>/tmp/ii.parms
+		echo "ROUTER_INET_ADDR=\"$chk_ROUTER_INET_ADDR\"">>/tmp/ii.parms
+		echo "MY_NETMASK=\"$chk_MY_NETMASK\"">>/tmp/ii.parms
+		return 0
+	fi
+}
+
+#
+#  We just came from ii_hw_config, which configured our networking
+#  card.  Now we need some information to configure the protocol
+#  stack (for TCP/IP).
+#
+function ii_net_config {
+	# set -x
+	# echo "======================= in ii_net_config =====" > /dev/null
+exec 2>>/tmp/ii_look
+#  Assign values given us by bootp to the values used in our menu.
+MY_INET_ADDR=${INET_YOUR_IP_ADDRESS}
+SERVER_INET_ADDR=${INET_SERVER_IP_ADDRESS}
+MY_NETMASK=${INET_SUBNET_MASK}
+ROUTER_INET_ADDR=${INET_ROUTER}
+
+
+	typeset wid=$CURWIN
+
+	FOOTER="$INETINST_FORM_FOOTER"
+
+	#
+	# Determine width of this menu
+	#
+	typeset II_WIDTH=19		# Width of input field
+	typeset II_WIDTH_MAX=0
+
+	[ ${#INETINST_MY_INET_TITLE} -gt ${II_WIDTH_MAX} ] &&
+		II_WIDTH_MAX=${#INETINST_MY_INET_TITLE}
+	[ ${#INETINST_MY_MASK_TITLE} -gt ${II_WIDTH_MAX} ] &&
+		II_WIDTH_MAX=${#INETINST_MY_MASK_TITLE}
+	[ ${#INETINST_ROUTER_INET_TITLE} -gt ${II_WIDTH_MAX} ] &&
+		II_WIDTH_MAX=${#INETINST_ROUTER_INET_TITLE}
+	[ ${#INETINST_SERVER_INET_TITLE} -gt ${II_WIDTH_MAX} ] &&
+		II_WIDTH_MAX=${#INETINST_SERVER_INET_TITLE}
+
+	let II_WIDTH=${II_WIDTH}+${II_WIDTH_MAX}
+
+	place_window -right 1 ${II_WIDTH} 6 -current 'footer "${INETINST_FORM_FOOTER}"' -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_NET_CONF_TITLE}"
+	open_form -exit "net_config_update"
+        typeset HWFID=$FID
+
+	add_field -help 'helpwin net.sysIP' -exit 'valid_ip_addr "${MY_INET_ADDR}"' -entry 'msgnoerr $INETINST_MY_INET_PROMPT' -p "${INETINST_MY_INET_TITLE}" -ilen 15 MY_INET_ADDR
+	add_field -help 'helpwin net.netmask' -exit 'valid_ip_addr "${MY_NETMASK}" netmask' -entry 'msgnoerr $INETINST_MY_MASK_PROMPT' -p "${INETINST_MY_MASK_TITLE}" -ilen 15 MY_NETMASK
+	add_field -help 'helpwin net.routeIP' -exit 'valid_ip_addr "${ROUTER_INET_ADDR}"' -entry 'msgnoerr $INETINST_ROUTER_INET_PROMPT' -p "${INETINST_ROUTER_INET_TITLE}" -ilen 15 ROUTER_INET_ADDR
+	add_field -help 'helpwin net.serveIP' -exit 'valid_ip_addr "${SERVER_INET_ADDR}"' -entry 'msgnoerr $INETINST_SERVER_INET_PROMPT' -p "${INETINST_SERVER_INET_TITLE}" -ilen 15 SERVER_INET_ADDR
+
+	run_form $HWFID
+}

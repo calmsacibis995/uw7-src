@@ -1,0 +1,703 @@
+#!/bin/sh
+#ident "@(#)admincmd	11.2"
+#
+# Automated test suite for cmd-line options of multihome adming program.
+#
+# Attempts to achieve complete branch coverage
+# of cmd.tcl and mh.tcl.
+# This script expects the test version (multihomet) to be installed
+# in /etc/mail/admin/multihome.
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+		${name}$i
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -fr /tmp/out /tmp/out1 /tmp/out2 /tmp/out1.db
+	rm -fr /var/internet/ip
+	if [ -f /etc/mail/makemap.rls ]
+	then
+		mv /etc/mail/makemap.rls /etc/mail/makemap
+	fi
+}
+
+core_usage() \
+{
+	cleanup
+	$pgm abd > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -eq 0 ]
+	then
+		passfail 1
+		return
+	fi
+	grep "Usage:" /tmp/out > /dev/null
+	passfail $?
+	cleanup
+}
+
+core_listd() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt2 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		list domains \
+		> /tmp/out 2>&1
+	cat << DONE > /tmp/out1
+$virt1
+$virt2
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+core_listu() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt2 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		list users $virt2 \
+		> /tmp/out 2>&1
+	cat << DONE > /tmp/out1
+user1 root
+user2 bin
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+core_delu() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt2 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		del user2 $virt2 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+user1@$virt2 root
+DONE
+	diff /tmp/out1 /var/internet/ip/127.0.0.1/virtusers
+	passfail $?
+}
+
+core_addu() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt2 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		add user3 sys $virt2 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+user1@$virt2 root
+user2@$virt2 bin
+user3@$virt2 sys
+DONE
+	diff /tmp/out1 /var/internet/ip/127.0.0.1/virtusers
+	passfail $?
+}
+
+core_aget() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/$virt1ip/mail
+	echo "abc def" > /var/internet/ip/$virt1ip/mail/mail.aliases
+	$pgm \
+		aliasget $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	passfail $?
+}
+
+core_aput() \
+{
+	cleanup
+	echo "abc def" > /tmp/out1
+	$pgm \
+		aliasput $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	diff /tmp/out1 /var/internet/ip/$virt1ip/mail/mail.aliases
+	passfail $?
+}
+
+core_rebuild() \
+{
+	cleanup
+	$pgm \
+		domain \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+$virt1 $virt1ip
+DONE
+	/etc/mail/makemap hash /tmp/out1 < /tmp/out1
+	cmp /tmp/out1.db /var/internet/ip/127.0.0.1/mail/virtdomains.db
+	passfail $?
+}
+
+cmd_list1() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		list abc \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Invalid list type: abc
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_del1() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		del yuck $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: User not found for delete: yuck
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_add1() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1/mail
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		add user1 root $virt2 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: User already exists in domain: user1@$virt2
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_aget1() \
+{
+	cleanup
+	$pgm \
+		aliasget $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Copy error on /var/internet/ip/$virt1ip/mail/mail.aliases
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_aput1() \
+{
+	cleanup
+	mv /etc/mail/makemap /etc/mail/makemap.rls
+	echo "abc def" > /tmp/out1
+	$pgm \
+		aliasput $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to make db file: /tmp/out1
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_aput2() \
+{
+	cleanup
+	echo "abc def" > /tmp/out1
+	$pgm \
+		-test cmd_aput2 \
+		aliasput $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Copy error on $virt1:/var/internet/ip/$virt1ip/mail/mail.aliases
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_aput3() \
+{
+	cleanup
+	echo "abc def" > /tmp/out1
+	$pgm \
+		-test cmd_aput3 \
+		aliasput $virt1 /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Copy error on $virt1:/var/internet/ip/$virt1ip/mail/mail.aliases.db
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_arg() \
+{
+	cleanup
+	echo "abc def" > /tmp/out1
+	$pgm \
+		aliasput $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Not enough arguments for command: aliasput
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_md1() \
+{
+	cleanup
+	$pgm \
+		-test cmd_md1 \
+		list domains \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to mkdir /var/internet/ip/127.0.0.1
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_parse() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1
+	echo "user1@$virt2 root" > /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		-test cmd_parse \
+		list domains \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to parse $host:/var/internet/ip/127.0.0.1/virtusers
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_dom() \
+{
+	cleanup
+	$pgm \
+		list users invalid \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Invalid domain: invalid
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_put1() \
+{
+	cleanup
+	$pgm \
+		-test cmd_put1 \
+		add user1 root $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to save: /var/internet/ip/127.0.0.1/virtusers
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_put2() \
+{
+	cleanup
+	$pgm \
+		-test cmd_put2 \
+		add user1 root $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to save: $host:/var/internet/ip/127.0.0.1/virtusers
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_put3() \
+{
+	cleanup
+	mv /etc/mail/makemap /etc/mail/makemap.rls
+	$pgm \
+		add user1 root $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to make map for /var/internet/ip/127.0.0.1/virtusers
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_put4() \
+{
+	cleanup
+	$pgm \
+		-test cmd_put4 \
+		add user1 root $virt1 \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Unable to save: $host:/var/internet/ip/127.0.0.1/virtusers.db
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+cmd_ret1() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1
+	echo "user1@$virt1 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt1 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	echo "user1@$virt2 root" >> /var/internet/ip/127.0.0.1/virtusers
+	echo "user2@$virt2 bin" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		retire root \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+user2@$virt1 bin
+user2@$virt2 bin
+DONE
+	diff /tmp/out1 /var/internet/ip/127.0.0.1/virtusers
+	passfail $?
+}
+
+cmd_ret2() \
+{
+	cleanup
+	mkdir -p /var/internet/ip/127.0.0.1
+	echo "user1@$virt1 root" > /var/internet/ip/127.0.0.1/virtusers
+	echo "user1@$virt2 root" >> /var/internet/ip/127.0.0.1/virtusers
+	$pgm \
+		retire bin \
+		> /tmp/out 2>&1
+	if [ $? = 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+multihome: Retire user not found in any domain: bin
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_op1() \
+{
+	cleanup
+	echo "user1@$virt1 root" > /tmp/out1
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		-test shortcut mh_open /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+ok
+ok
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_op2() \
+{
+	cleanup
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+fail
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_op3() \
+{
+	cleanup
+	echo "abcd" > /tmp/out1
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+parserr
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_op4() \
+{
+	cleanup
+	echo "abcd defg" > /tmp/out1
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+parserr
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_op5() \
+{
+	cleanup
+	echo "abcd@1@2 defg" > /tmp/out1
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out1
+parserr
+DONE
+	diff /tmp/out /tmp/out1
+	passfail $?
+}
+
+mh_wr1() \
+{
+	cleanup
+	echo "abcd@1 defg" > /tmp/out1
+	$pgm \
+		-test shortcut mh_open /tmp/out1 \
+		-test shortcut system '"rm -f /tmp/out1; mkdir /tmp/out1"' \
+		-test shortcut mh_write \
+		> /tmp/out 2>&1
+	if [ $? != 0 ]
+	then
+		cat /tmp/out
+		passfail 1
+		return
+	fi
+	cat << DONE > /tmp/out2
+ok
+0
+fail
+DONE
+	diff /tmp/out /tmp/out2
+	passfail $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+ cleanup
+TEST=""
+
+pgm=/etc/mail/admin/multihome
+
+# configuration variables:
+# our main machine
+host=eclipse.pdev.sco.com
+# our first virtual domain should be in DNS and be aliased.
+virt1=lunar.pdev.sco.com
+virt1ip=132.147.193.228
+# our second virtual domain should not be in DNS or have an alias.
+# it should also sort after virt1 in case-insensitive comparisons.
+virt2=yohoho.pdev.sco.com
+
+core="usage listd listu delu addu aget aput rebuild"
+cmd="list1 del1 add1 aget1 aput1 aput2 aput3 arg md1 parse dom put1 put2 put3 put4 ret1 ret2"
+mh="op1 op2 op3 op4 op5 wr1"
+
+#testlist core_ rebuild
+#exit 0
+
+testlist core_ $core
+testlist cmd_ $cmd
+testlist mh_ $mh
+ cleanup

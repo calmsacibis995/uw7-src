@@ -1,0 +1,316 @@
+#!/sbin/sh
+#ident "@(#)welcome	15.1	97/12/19"
+#--------------------------------------------
+. /isl/ui_modules/common.rc
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	ivar set help_topic welcome
+	ii_exit HELP
+}
+
+function noop
+{
+	:
+}
+
+function read_data
+{
+[ -n "$debug" ] && set -x
+	wclose $main_window
+	display -w "$WELCOME_INSERT_DISK"
+	set_hotkey 9 "wclose $CURWIN; main; ii_exit NEXT"
+	msg
+	footer "$WELCOME_INSERT_KEYS"
+	input_handler
+	rm /tmp/ii_contents
+	msg
+	footer
+	display "$WELCOME_EXAMINE_DISK"
+	msg_window=$CURWIN
+	cpio -it </dev/rdsk/f0t >/tmp/ii_contents 2>/dev/null
+	if [ $? -ne 0 ]
+	then
+		#
+		# lets look for a DOS filesys
+		#
+		modreg 4 dosfs
+                sh_modadmin -l /etc/conf/fsmod.d/dosfs >/dev/null 2>&1
+
+		FLPY=/flpy2
+		sh_mount -Fdosfs -r /dev/dsk/f0t ${FLPY}
+		if [ $? -ne 0 ]
+		then
+			wclose $msg_window
+			display -w "$WELCOME_ERROR_DISK"
+			msg "$WELCOME_PRESS_RETURN"
+			input_handler
+			main
+			ii_exit NEXT
+		fi
+
+		#
+		# check the disk has all the files
+		#
+		[ -f "$FLPY/disk.inf" ] &&
+		[ -f "$FLPY/partitn.inf" ] &&
+		[ -f "$FLPY/slice.inf" ] &&
+		[ -f "$FLPY/ifile" ] || {
+			wclose $msg_window
+			display -w "$WELCOME_WRONG_DISK" -bg $ERROR_BG -fg $ERROR_FG
+			msg
+			footer "$WELCOME_PRESS_RETURN"
+			input_handler
+			sh_umount ${FLPY}
+			main
+			ii_exit NEXT
+		}
+
+		#
+		# Get a whole new set of ivar variables
+		#
+		cd /
+		wclose $msg_window
+		msg
+		display "$WELCOME_READ_ANSWERS"
+		msg_window=$CURWIN
+		#
+		# Save some variables, to restore later
+		#
+		num_hba=`ivar get NUM_HBA`
+		initstate=`ivar get INITSTATE`
+		kbm=`ivar get KEYBOARD_MAPPED`
+		pd=`ivar get partitions_done`
+
+		# stop the ivar mechanism
+		ivar stop
+
+		errs=0
+		cp $FLPY/disk.inf /isl/disk.info  >/dev/null 2>/dev/null
+		errs += $?
+		cp $FLPY/partitn.inf /isl/partition.info  >/dev/null 2>/dev/null
+		errs += $?
+		cp $FLPY/slice.inf /isl/slice.info  >/dev/null 2>/dev/null
+		errs += $?
+		cp $FLPY/ifile /isl/ifile  >/dev/null 2>/dev/null
+		errs += $?
+
+		#
+		# read the new ifile into memory
+		#
+		ivar restart
+		ivar source /isl/ifile
+
+		if [ $errs -ne 0 ]
+		then
+			wclose $msg_window
+			display -w "$WELCOME_ERROR_DISK" 
+			msg "$WELCOME_PRESS_RETURN"
+			input_handler
+		fi
+
+		#
+		# Restore some of the variables 
+		#
+		ivar set NUM_HBA "$num_hba"
+		ivar set dcu_already_run "false"
+		ivar set INITSTATE "$initstate"
+		ivar set KEYBOARD_MAPPED "$kbm"
+		ivar set partitions_done "$pd"
+		sh_umount ${FLPY}
+		wclose $msg_window
+	else
+		#grep /isl/ifile /tmp/ii_contents >/dev/null 2>/dev/null
+		#cat /tmp/ii_contents | grep /isl/ifile | grep /isl/disk.info | \
+		#grep /isl/parition.info | grep /isl/slice.info >/dev/null 2>/dev/null
+	
+		grep "/isl/disk.info" /tmp/ii_contents 2>/dev/null >/dev/null &&
+		grep "/isl/partition.info" /tmp/ii_contents 2>/dev/null >/dev/null &&
+		grep "/isl/slice.info" /tmp/ii_contents 2>/dev/null >/dev/null &&
+		grep "/isl/ifile" /tmp/ii_contents 2>/dev/null >/dev/null || {
+			wclose $msg_window
+			display -w "$WELCOME_WRONG_DISK" -bg $ERROR_BG -fg $ERROR_FG
+			msg
+			footer "$WELCOME_PRESS_RETURN"
+			input_handler
+			main
+			ii_exit NEXT
+		}
+		wclose $msg_window
+		rm /tmp/ii_contents
+		cd /
+		msg
+		display "$WELCOME_READ_ANSWERS"
+		msg_window=$CURWIN
+		#msg "$reading2"
+		#
+		# Save some variables, to restore later
+		#
+		num_hba=`ivar get NUM_HBA`
+		initstate=`ivar get INITSTATE`
+		kbm=`ivar get KEYBOARD_MAPPED`
+		pd=`ivar get partitions_done`
+
+		# stop the ivar mechanism
+		ivar stop
+
+		#
+		# Get a whole new set of ivar variables
+		#
+		cpio -iu < /dev/rdsk/f0t >/dev/null 2>/dev/null
+		if [ $? -ne 0 ]
+		then
+			wclose $msg_window
+			display -w "$WELCOME_ERROR_DISK" 
+			msg "$WELCOME_PRESS_RETURN"
+			ivar restart
+			ivar source /isl/ifile
+			input_handler
+		fi
+
+		#
+		# read the new ifile into memory
+		#
+		ivar restart
+		ivar source /isl/ifile
+	
+		#
+		# Restore some of the variables 
+		#
+		ivar set NUM_HBA "$num_hba"
+		ivar set dcu_already_run "false"
+		ivar set INITSTATE "$initstate"
+		ivar set KEYBOARD_MAPPED "$kbm"
+		ivar set partitions_done "$pd"
+		wclose $msg_window
+	fi
+
+	main
+	ii_exit NEXT
+}
+
+
+function check_mem
+{
+[ -n "$debug" ] && set -x
+	MEMSIZE=`ivar get MEMSIZEMB`
+	#min=`ivar get MIN_MEMSIZE`
+	#[ -z "$min" ] && min=16379904
+	min=16
+
+	if [ -z "$MEMSIZE" ]
+	then
+		display -w "$WELCOME_NO_MEM" -above 1 -below 3
+		input_handler
+		ivar set dead_info "$WELCOME_NO_MEM_DEAD"
+		#ii_exit DIE
+	fi
+	if (( MEMSIZE < min ))
+	then
+		display -w "
+ $WELCOME_YOU_HAVE $MEMSIZE $WELCOME_BYTES_NEED $min.
+" -above 1 -below 3
+		input_handler
+		ivar set dead_info "$WELCOME_YOU_HAVE $MEMSIZE $WELCOME_BYTES_NEED $min."
+		#ii_exit DIE
+	fi
+}
+ 
+#
+# Where are the two mapfiles
+#
+ui_mapfile=/isl/ui_map
+install_mapfile=/isl/install_map
+
+
+
+#
+# List all the modules. Looks in the module directories.
+# This is used to expand "all" in INITSTATE.
+#
+function list_all_modules
+{
+        (cd /
+         . $ui_mapfile
+         cd $module_path
+         echo -n * ""
+         cd /
+         . $install_mapfile
+         cd $module_path
+         echo *)
+}
+
+
+function main
+{
+[ -n "$debug" ] && set -x
+#
+# Check mem size
+#
+check_mem
+
+#
+# Display the welcome screen
+#
+display -w "$WELCOME" -above 1 -below 1
+main_window=$CURWIN
+msg
+
+INSTALL_FLOPPIES=`svar get INSTALL_FLOPPIES`
+
+# check of the lang module has been skipped, if so then do not 
+# display F9 in the footer
+
+if ivar check skip_lang
+then
+	footer "$WELCOME_KEYS_NOF9"
+	set_hotkey 9 noop
+elif [ "$INSTALL_FLOPPIES" = "2" ]
+then
+	footer "$WELCOME_KEYS"
+	set_hotkey 9 "ii_exit PREV"
+else
+	LANG_FILES=`svar get LANG_FILES`
+	if [ "$LANG_FILES" = "gone" ]
+	then
+		footer "$WELCOME_KEYS_NOF9"
+		set_hotkey 9 noop
+	else
+		footer "$WELCOME_KEYS"
+		set_hotkey 9 "ii_exit PREV"
+	fi
+fi
+set_hotkey 1 get_help
+set_hotkey 2 noop
+set_hotkey 3 read_data
+set_hotkey 4 noop
+set_hotkey 5 noop
+set_hotkey 6 noop
+set_hotkey 7 noop
+set_hotkey 8 noop
+set_hotkey 11 noop
+set_hotkey 12 noop
+input_handler
+
+if ivar check finsh_list
+then
+
+    for mod in `list_all_modules`
+    do
+	[[ $mod != *[!-A-Za-z_]* ]] &&
+		ivar set debug_$mod true
+    done
+Interrupt
+
+fi
+#
+# Done
+#
+msg
+footer 
+ii_exit NEXT
+}
+
+main
+

@@ -1,0 +1,56 @@
+#!/bin/sh
+#ident	"@(#)preremove	1.4"
+
+#
+#  preremove file for Language Supplement.
+#
+
+#
+LSVAR=/var/opt/ls
+PKGMSG=ls.pkg
+ICONV=/usr/lib/iconv
+if [ -f $LSVAR/config ] ; then
+	. $LSVAR/config > /dev/null 2>&1
+fi
+
+#  Reset the font to PC437 and reset the keyboard
+#  to the default
+#
+#tput clear
+pfmt -s nostd -g ${PKGMSG}:1 "Resetting console, keyboard, and display font to defaults...\n"
+
+defadm locale LANG=C > /dev/null
+if [ -x /usr/bin/pcfont ] ; then
+	/usr/bin/pcfont > /dev/null 2> /dev/null
+fi
+defadm -d cofont COFONT
+defadm coterm TERM="AT386"
+defadm coterm-M TERM="AT386-M"
+
+if [ -x /usr/bin/mapkey ] ; then
+	/usr/bin/mapkey > /dev/null 2> /dev/null
+fi
+#
+#  Reset the mapchan mappings
+#
+/usr/bin/mapchan -n > /dev/null 2> /dev/null
+
+defadm -d keyboard KEYBOARD XKEYBOARD MAPCHAN NUMLOCK 2> /dev/null
+defadm -d Xim XMODIFIERS XNLSPATH 2> /dev/null
+
+if [ "$GRAPHICS" != "YES" ]; then
+   exit 0
+fi
+    
+#
+# Remove the lines we inserted into the C-locale's ol_locale_def.
+#
+
+/usr/bin/ed /usr/X/lib/locale/C/ol_locale_def <<EOSS >/dev/null 2>&1
+g/!Next line installed by ls/.,+1d
+w
+q
+EOSS
+
+#  Exit with the correct code
+exit 0

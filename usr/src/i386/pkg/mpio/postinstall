@@ -1,0 +1,147 @@
+#ident	"@(#)pkg.mpio:postinstall	1.1"
+
+abort_install () {
+
+	MODULE=$1
+	SVDIR=/var/sadm/${PKGINST}.save/$MODULE
+	message -d ${FAIL_INST}
+	if [ $OVERLAY -a -d $SVDIR ]
+	then
+ 
+		cp $SVDIR/Master $CONFDIR/mdevice.d/$MODULE
+		cp $SVDIR/System $CONFDIR/sdevice.d/$MODULE
+		[ -f $SVDIR/Drvmap ] && 
+			cp $SVDIR/Drvmapp $CONFDIR/drvmap.d/$MODULE
+		cp $SVDIR/Driver.o $CONFDIR/pack.d/$MODULE/Driver.o
+		[ -f $SVDIR/Space.c ] &&
+			cp $SVDIR/Space.c $CONFDIR/pack.d/$MODULE/space.c
+		[ -f $SVDIR/disk.cfg ] && 
+			cp $SVDIR/disk.cfg $CONFDIR/pack.d/$MODULE/disk.cfg
+			
+		[ -d $SVDIR/usr/include/sys ] && 
+			cp $SVDIR/usr/include/sys/* /usr/include/sys
+	fi
+
+	exit $FAILURE
+}
+
+save_drv () {
+
+	MODULE=$1
+	SVDIR=/var/sadm/${PKGINST}.save/$MODULE
+
+	[ -d $SVDIR ] || mkdir -p $SVDIR 2>&1 >/dev/null
+
+	cp $CONFDIR/mdevice.d/$MODULE $SVDIR/Master
+	cp $CONFDIR/sdevice.d/$MODULE $SVDIR/System
+	[ -f $CONFDIR/drvmap.d/$MODULE ] && 
+			cp $CONFDIR/drvmap.d/$MODULE $SVDIR/Drvmap
+	cp $CONFDIR/pack.d/$MODULE/Driver.o $SVDIR/Driver.o
+	[ -f $CONFDIR/pack.d/$MODULE/space.c ] && 
+			cp $CONFDIR/pack.d/$MODULE/space.c $SVDIR/Space.c
+	[ -f $CONFDIR/pack.d/$MODULE/disk.cfg ] && 
+			cp $CONFDIR/pack.d/$MODULE/disk.cfg $SVDIR/disk.cfg
+
+	[ -d /tmp/${PKGINST}/$MODULE/usr/include/sys ] && {
+		[ -d $SVDIR/usr/include/sys ] ||
+			mkdir -p $SVDIR/usr/include/sys 2>&1 >/dev/null
+		
+		OPWD=`pwd`
+		cd /tmp/${PKGINST}/$MODULE/usr/include/sys
+		for f in *
+		do
+			cp /usr/include/sys/$f $SVDIR/usr/include/sys/$f
+		done
+		cd $OPWD
+	}
+}
+
+do_install () {
+
+	MODULE=$1
+	${CONFBIN}/idinstall -P ${PKGINST} -a $MODULE > ${ERR} 2>&1
+	RET=$?
+	if [ ${RET} != 0 ]
+	then
+		OVERLAY=1
+
+		save_drv $MODULE
+
+		${CONFBIN}/idinstall -P ${PKGINST} -u $MODULE > ${ERR} 2>&1
+	fi
+	
+	[ -d usr/include/sys ] && {
+		cd usr/include/sys
+		for f in *
+		do
+			cp $f /usr/include/sys	
+			chown bin:bin /usr/include/sys/$f
+			installf -c none ${PKGINST} /usr/include/sys/$f
+			removef $PKGINST \
+				/tmp/${PKGINST}/$MODULE/usr \
+				/tmp/${PKGINST}/$MODULE/usr/include \
+				/tmp/${PKGINST}/$MODULE/usr/include/sys \
+				/tmp/${PKGINST}/$MODULE/usr/include/sys/$f \
+				> /dev/null 2>&1
+		done
+	}
+
+	cd /tmp/${PKGINST}
+	rm -fr /tmp/${PKGINST}/$MODULE >/dev/null 2>&1
+	removef ${PKGINST} \
+			/tmp/${PKGINST}/$MODULE \
+			/tmp/${PKGINST}/$MODULE/Master \
+			/tmp/${PKGINST}/$MODULE/System \
+			/tmp/${PKGINST}/$MODULE/Drvmap \
+			/tmp/${PKGINST}/$MODULE/Driver.o \
+			/tmp/${PKGINST}/$MODULE/Space.c \
+			/tmp/${PKGINST}/$MODULE/disk.cfg \
+		>/dev/null 2>&1
+}
+
+# Messaging related stuff
+PKGMSG=hba.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+LC_MESSAGES=/usr/lib/locale/$LOCALE
+
+if [ ! -f ${LC_MESSAGES}/LC_MESSAGES/${PKGMSG} ]
+then
+	if [ -f ${REQDIR}/inst/locale/${LOCALE}/$PKGMSG} -a \
+		-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+			${LC_MESSAGES}/LC_MESSAGES
+	fi
+fi
+FAIL_INST=`pfmt -s ERROR -g ${PKGMSG}:2 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module.  The file %s contains the errors." "${PKGINST}" "${ERR}" 2>&1`
+
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+ERR=/tmp/err.out
+
+cd /tmp/${PKGINST}
+
+for MODULE in *
+do
+	[ -d /tmp/${PKGINST}/$MODULE ] || continue
+
+	cd /tmp/${PKGINST}/$MODULE
+
+	[ -f Master -a -f System -a -f Driver.o ] &&
+		do_install $MODULE
+
+done
+
+installf -c none ${PKGINST} /etc/loadmods
+installf -f ${PKGINST} >/dev/null 2>&1
+
+# Cleanup temporary files and directories
+rm -fr /tmp/${PKGINST} >/dev/null 2>&1
+removef ${PKGINST} /tmp /tmp/${PKGINST}
+removef -f ${PKGINST} >/dev/null 2>&1
+
+/etc/conf/bin/idbuild
+exit 0

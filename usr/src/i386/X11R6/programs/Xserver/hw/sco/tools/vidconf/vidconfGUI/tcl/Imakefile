@@ -1,0 +1,96 @@
+/*
+ *	@(#)Imakefile	11.1	10/22/97	12:38:50
+ *	@(#) Imakefile 12.11 96/03/06 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1993-1997.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+TCLI18N	=	../../tools/tcli18n.tcl
+NLSDIR	=	$(USRLIBDIR)/nls/msg
+VIDCONFDIR	=	$(USRLIBDIR)/vidconf
+TARGETDIR	=	$(USRLIBDIR)/vidconf/tcl
+VTCLBASE	=	$(TOOLS)
+TCL_LIBRARY=$(VTCLBASE)/usr/lib/tcl7.6/
+TCLX_LIBRARY=$(VTCLBASE)/usr/lib/tclX/7.6.0
+TCL=LD_LIBRARY_PATH=$(VTCLBASE)/usr/lib $(VTCLBASE)/usr/bin/tcl
+RUNTCL=TCL_LIBRARY=$(TCL_LIBRARY) TCLX_LIBRARY=$(TCLX_LIBRARY) $(TCL)
+MKCATDECL=$(RUNTCL) $(TOOLS)/usr/bin/mkcatdecl
+
+SRC =	globals attrib misc ppl autodetect display devices \
+	grafload lists update main 
+
+all: vidconfGUI 
+
+vidconfGUI: vidconfGUI.cat_en
+
+vidconfGUI.msg.tcl_en: vidconfGUI.msg_en_cp vidconfGUI.msg.tcl
+	$(CP) vidconfGUI.msg.tcl vidconfGUI.msg.tcl_en
+
+vidconfGUI.all.tcl: $(SRC)
+	cat $(SRC) > vidconfGUI.all.tcl
+
+vidconfGUI.msg.tcl \
+vidconfGUI.msg.tcl_fr \
+vidconfGUI.msg.tcl_de: vidconfGUI.master.msg vidconfGUI.all.tcl
+	$(RUNTCL) $(TCLI18N) vidconfGUI.all.tcl
+	$(RM) vidconfGUI.msg.tcl vidconfGUI.gen
+	$(MKCATDECL) -M vidconfGUI.master.msg -i moduleIds -m SCO_VIDCONF_GUI -c vidconfGUI.msg
+	$(RM) vidconfGUI.master.gen
+
+/* default master msg file (-M) is English */
+vidconfGUI.master.msg: vidconfGUI.msg_en
+	$(RM) $@ vidconfGUI.master.gen
+	$(CP) vidconfGUI.msg_en vidconfGUI.master.msg
+
+/* English - default */
+vidconfGUI.msg_en_cp:
+	$(RM) vidconfGUI.msg vidconfGUI.msg.tcl
+	$(CP) vidconfGUI.msg_en vidconfGUI.msg
+
+vidconfGUI.cat_en: vidconfGUI.msg_en_cp vidconfGUI.msg.tcl
+	$(RM) $@
+	gencat $@ vidconfGUI.gen
+
+/* French */
+vidconfGUI.msg_fr_cp:
+	$(RM) vidconfGUI.msg vidconfGUI.msg.tcl
+	$(CP) vidconfGUI.msg_fr vidconfGUI.msg
+
+vidconfGUI.cat_fr: vidconfGUI.msg_fr_cp vidconfGUI.msg.tcl_fr
+	$(RM) $@
+	gencat $@ vidconfGUI.gen
+
+/* German */
+vidconfGUI.msg_de_cp:
+	$(RM) vidconfGUI.msg vidconfGUI.msg.tcl
+	$(CP) vidconfGUI.msg_de vidconfGUI.msg
+
+vidconfGUI.cat_de: vidconfGUI.msg_de_cp vidconfGUI.msg.tcl_de
+	$(RM) $@
+	gencat $@ vidconfGUI.gen
+
+depend::
+
+InstallNonExecFile(attrib,$(TARGETDIR))
+InstallNonExecFile(autodetect,$(TARGETDIR))
+InstallNonExecFile(devices,$(TARGETDIR))
+InstallNonExecFile(display,$(TARGETDIR))
+InstallNonExecFile(globals,$(TARGETDIR))
+InstallNonExecFile(grafload,$(TARGETDIR))
+InstallNonExecFile(lists,$(TARGETDIR))
+InstallNonExecFile(main,$(TARGETDIR))
+InstallNonExecFile(misc,$(TARGETDIR))
+InstallNonExecFile(ppl,$(TARGETDIR))
+InstallNonExecFile(update,$(TARGETDIR))
+InstallNamedNonExec(vidconfGUI.msg.tcl_en,vidconfGUI.msg.tcl,$(TARGETDIR))
+InstallNamedNonExec(vidconfGUI.cat_en,vidconfGUI.cat,$(NLSDIR)/english/XDrivers)
+InstallNamedNonExec(vidconfGUI.cat_fr,vidconfGUI.cat,$(NLSDIR)/fr_FR.ISO8859-1/XDrivers)
+InstallNamedNonExec(vidconfGUI.cat_de,vidconfGUI.cat,$(NLSDIR)/de_DE.ISO8859-1/XDrivers)
+
+InstallNamedProg(enter.sh,enter.sh,$(VIDCONFDIR))
+
+clean::
+	$(RM) vidconfGUI.msg vidconfGUI.msg.tcl vidconfGUI.msg.tcl_en vidconfGUI.cat_en vidconfGUI.cat_fr vidconfGUI.cat_de vidconfGUI.gen vidconfGUI.all.tcl vidconfGUI.master.msg vidconfGUI.master.gen
+

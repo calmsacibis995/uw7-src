@@ -1,0 +1,173 @@
+<HTML><HEAD>
+<TITLE>vidconfGUI design notes </TITLE>
+</HEAD><BODY>
+
+<pre>
+	@(#)notes.html	11.1	10/22/97	12:39:28
+
+Notes made while reading vidconfGUI.all.tcl - representing all the
+	tcl source in vidconGUI - hiramc@sco.COM
+
+		(which is made during the build by:
+	SRC =   globals attrib misc ppl autodetect display devices \
+		grafload lists update main
+	cat $(SRC) > vidconfGUI.all.tcl
+		)
+
+=============================================================================
+Data Structures:  Please note the 'globals' file contains
+	descriptions and examples of the data structures
+
+screenList - all cards, monitors, resolutions in one list
+<A NAME="ttyList">
+ttyList </A> - array of keyed lists -
+		{vendor, model, class, mode} repeating for multi-headed
+ 	Manipulated by GetVendor, GetModel, GetClass, GetTTYVendor,
+	GetTTYClass, GetMode, GetTTYMode, GetTTYElement,
+	SetTTYElement, SetTTYValid, GetTTYValid, GetTTYHeadLen,
+	GetTTYDescription
+<A NAME="ttyString">
+ttyString </A> - relates tty device to a string, manipulated by
+	GetTTYString and SetTTYSTring
+<A NAME="videoList">
+videoList </A> - array of keyed lists - each entry has all the info from
+	one grafinfo file - accesed via GetVendor, GetModel and GetClass
+videoListMap - array indexed by vendor.model to provide an
+	index to reference an entry in videoList
+videoVendorList - array indexed by vendor - each entry is a list of
+	models for that vendor
+resPos - an array indexed by position number of a resolution
+	on the resolution form relating class and mode to the resolution
+monitorList - array of keyed lists - holds sorted monitor information
+	from the moninfo file.  Manipulated by
+	GetMonitorElement, SetMonElement
+monitorListMap - array indexed by vendor.model to provide a
+	monitorList index
+<A NAME="monList">
+monList </A> - array indexed by vendor.model, each element containing
+	the monvendor and monmodel information.  Manipulated by:
+	GetMonVendor, GetMonModel, GetMonIndexes, GetMonElement,
+	SetMonElement, SyncMonList
+
+
+=============================================================================
+main:
+	SetTrap - to trap signals SIGLIST "1 2 3 15"
+	SetViewAccess - check if $user is "root", set ViewOnly flag
+	if $PROGNAME is vidsetup it runs non-interactively (proc Vidsetup)
+	BuildDocHook - rebuilds Doc hook file each time
+	VtOpen - establish connection to Visual TCL with pointer to help doc
+	sets columnValue to Maximum and errorCallback to ErrorCB
+	determines if in charm mode and sets CHARM flag
+
+	<A HREF="#DisplayMainScreen"> DisplayMainScreen </A> - displays main form
+
+	<A HREF="#InitLists"> InitLists </A> is run under the error catcher
+
+	vtMainLoop is entered
+=============================================================================
+<A NAME="DisplayMainScreen">
+DisplayMainScreen:
+</A>
+	set titlestr - to an I10N title with ViewOnly msg when necessary
+		..._MAIN_TITLE
+	creates a VtFormDialog: mainfn
+	starts a VtLabel: lab1 - an I10N message and GetTotalCards
+		is referenced ..._LABEL_MAIN_LIST_TOP
+	sets columns based on Charm mode flag
+	Display ViewOnly message when ViewOnly flag is on
+	Creates a DrawnList: dlist - using DrawChainTree
+	starts a VtLabel: lab2 - an I10N message ..._MAIN_LIST_BOTTOM
+	Creates a VtList: mainfn.devicelist
+	sets statusbar
+	sets mainfn.rc - a row/column resource with lab1
+	sets the ADD push button: _MAIN_ADD
+	sets the MODify push button: _MAIN_MOD
+	sets the REMove push button: _MAIN_REM
+	SetValues on the dlist based on the CHARM flag for display appearance
+	creating a list: tablist
+	SetValues on mainfn -tablist
+	SetValues on devicelist
+	SetValues on statusbar
+	and VxSetVar on all these items into mainfn
+	finally VtShowDialog $mainfn
+=============================================================================
+<A NAME="InitLists">
+InitLists:
+</A>
+	When interactive: VtLock (displays wait cursor, prevents input)
+	VerifyFilesFatal - sets status bar, checks directories:
+		UTMPDIR GRAFINFO MONINFO VIDPATH DEVICES
+		and an executable GRAFPARSE, and if [! ViewOnly} also
+		the executable VIDPARSE
+		FatalErr exit if any of these checks fail
+		(/usr/tmp, /usr/X11R6.1/lib/grafinfo,
+		/usr/X11R6.1/lib/grafinfo/moninfo, /usr/X11R6.1/lib/vidconf,
+                /usr/X11R6.1/lib/vidconf/devices,
+		/usr/X11R6.1/lib/vidconf/grafparse,
+		/usr/X11R6.1/lib/vidconf/vidparse )
+	RunPreScripts - runs all *.sh in VIDPATH/scripts (SCRIPTS)
+		/usr/X11R6.1/lib/vidconf/scripts/*.sh
+	LoadConfigFiles =
+		<A HREF="#LoadDevices"> LoadDevices </A>
+		<A HREF="#LoadGrafDev"> LoadGrafDev </A>
+		<A HREF="#LoadGrafMon"> LoadGrafMon </A>
+	InitPromptStrings =
+		<A HREF="#InitTTYListPrompts"> InitTTYListPrompts </A>
+		<A HREF="#InitMonListDescriptions"> InitMonListDescriptions </A>
+	VerifyTTYListPrompts
+	When interactive: displays a status bar message, LoadMainScreen,
+		displays a status bar message, VtUnLock -once
+=============================================================================
+<A NAME="LoadDevices">
+LoadDevices:
+	Calls grafparse with -T option which directs grafparse to
+		read every file found in vidconf/devices
+	grafparse outputs the contents of each file one to a line,
+		the look like:
+		/dev/console console - from vidconf/devices/console
+		/dev/tty01 F1 - from vidconf/devices/tty01
+		etc...
+	using SetTTYElement and SetTTYString it sets, e.g.
+		ttyList(/dev/console) to NULL (all ttyList to NULL)
+		ttyString(/dev/console) to console (each ttyString to F1...)
+	<A HREF="#ttyList"> ttyList </A> ends up being an array with indexes:
+		/dev/console, /dev/tty01, /dev/tty02, ...
+		and all contents set to NULL
+	<A HREF="#ttyString"> ttyString </A> ends up being an array with
+		indexes: /dev/console, /dev/tty01, /dev/tty02, ...
+		and contents being set to: console, F1, F2, ...
+</A>
+=============================================================================
+<A NAME="LoadGrafDev">
+LoadGrafDev:
+	reads and parses each line in grafinfo/grafdev file
+	splits up the vendor.model.class.mode elements of each line
+	Using SetTTYElement it sets <A HREF="#ttyList"> ttyList($tty) </A>
+		to the keyed list: VALID 1 VENDOR $vendor MODEL $model
+			CLASS $class MODE $mode
+</A>
+=============================================================================
+<A NAME="LoadGrafMon">
+LoadGrafMon:
+</A>
+	reads and parses each line in the grafinfo/grafmon file
+	creates the <A HREF="#monList"> monList </A> array
+=============================================================================
+<A NAME="InitTTYListPrompts">
+InitTTYListPrompts:
+</A>
+	using GetTTYVendorModelPairs it obtains a list of all
+		vendor.model pairs in <A HREF="ttyList"> ttyList </A>
+	using those vendor.model pairs, calls SetVideos which
+		reads the grafinfo/vendor/mode.xgi file, extracting
+		all resolutions from that file to create an
+		entry into the videoList structure
+=============================================================================
+<A NAME="InitMonListDescriptions">
+InitMonListDescriptions:
+</A>
+=============================================================================
+</pre>
+
+</BODY></HTML>

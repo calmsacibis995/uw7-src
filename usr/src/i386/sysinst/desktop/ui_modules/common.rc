@@ -1,0 +1,105 @@
+#
+# common.rc -- ksh header for ISL UI modules:  all modules?
+#
+#ident "@(#)common.rc	15.1	97/12/19"
+
+module=${0##*/}
+
+# Common stuff:
+. /funcrc
+. /globals.sh
+#
+# Modules only get one command line argument - the direction the sequencer
+# was going when it called us. If the last module to run exited "PREV", the
+# sequencer is backing up, and $1="PREV". In all other cases, $1="NEXT".
+# This is only important for the no-user-interaction case.
+#
+direction=$1
+
+#
+# Should we output a debug trace?
+#
+. /isl/ivar.ksh
+. /isl/exit_codes.ksh
+
+if ivar check debug_$module
+then
+	exec 2>> /tmp/log/$module
+	set -x
+	sh_date 1>&2
+	debug=True
+else
+	exec 2> /dev/null
+fi
+
+# If doing the services or packages module,
+# and that module has been told to run silently,
+# give the screen a generic title while passing thru.
+GENERIC_HEADER="Gemini Installation"
+[[ $module = services || $module = packages ]] && {
+	run_silent=`ivar get silent_$module`
+	[ "$run_silent" != 1 ] && {
+		GENERIC_HEADER="$CAN_HEADER"
+		#ii_exit $direction
+	}
+}
+
+#-------------------------------------------------------
+
+if typeset -f skip_test > /dev/null; then
+	skip_test
+fi
+
+#
+# Should we skip the user interaction?
+#
+if ivar check skip_$module
+then
+	#
+	# If the module has the function 'skip_func' defined, run it.
+	#
+	if typeset -f skip_func > /dev/null; then
+		skip_func
+	fi
+	#
+	# If we got here by going forward, keep going forward. 
+	# If we got here by going back, keep going back. 
+	#
+	ii_exit $direction
+fi	
+
+#--------------------------------------------------------
+
+#
+# What language?
+#
+LANG=`ivar get LANG`
+[ -z "$LANG" ] && LANG=C
+export LANG
+
+#
+# Dot in the appropriate set of strings for the currently running module.
+#
+#. /etc/inst/locale/${LANG}/menus/config  # JAY not needed by all modules, but small.
+
+. /etc/inst/locale/$LANG/menus/global.txtstrings
+if [ -r /etc/inst/locale/$LANG/menus/$module.txtstrings ] ; then
+	. /etc/inst/locale/$LANG/menus/$module.txtstrings
+#else
+	# Eventually, each module should have its own txtstrings file,
+	# and this huge (slow) master file should not be used at all.
+	#. /etc/inst/locale/$LANG/menus/txtstrings
+fi
+
+#
+# Dot in all the winxksh initialization scripts.
+#
+. /etc/inst/scripts/winrc
+. /etc/inst/scripts/scr_init
+
+if [ -n "$debug" ]
+then
+	PS4='[$LINENO]+ '
+#	set -x
+fi
+

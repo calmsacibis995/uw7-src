@@ -1,0 +1,24 @@
+#!/usr/bin/xksh
+#ident	"@(#)oemcd:mach.build/unbundle	1.1"
+
+export FPATH=$PROTO/desktop/buildscripts
+
+#main()
+ulimit unlimited > /dev/null 2>&1 || {
+	# We don't really need to set the ulimit, but it's a handy way of checking
+	# whether the calling process has root privilege.
+	print -u2 ERROR: You must be root to run this program.
+	exit 1
+}
+(
+read_header > ds.head || exit 1
+integer count=100
+while :
+do
+	mkdir arch.$count
+	cd arch.$count
+	/usr/bin/cpio -icdumv -D -Z || exit
+	cd ..
+	(( count += 1 ))
+done
+) < $1

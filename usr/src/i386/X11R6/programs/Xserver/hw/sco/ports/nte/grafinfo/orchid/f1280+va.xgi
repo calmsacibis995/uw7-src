@@ -1,0 +1,267 @@
+/*
+ *	@(#) f1280+va.xgi 11.1 97/10/22
+ *
+ *      Copyright (C) The Santa Cruz Operation, 1993.
+ *
+ * 	The information in this file is provided for the exclusive use
+ *	of the licensees of The Santa Cruz Operation, Inc.  Such users 
+ *	have the right to use, modify, and incorporate this code into
+ *	other products for purposes authorized by the license agreement
+ *	provided they include this notice and the associated copyright
+ *	notice with any such product.  The information in this file is 
+ *	provided "AS IS" without warranty.
+ * 
+ */
+
+VENDOR ORCHID      "Orchid"
+ MODEL  F1280+VA     "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C        ""
+   MODE   1280x1024-16   "1280x1024 16-colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(VGA,EFF);
+
+	DATA
+	{
+		XDRIVER     = "s3c";	/* S3 86C911 Carrera driver	*/
+		VISUAL      = "PseudoColor";
+		PIXWIDTH    = 1280;	/* horz resolution in pixels	*/
+		PIXHEIGHT   = 1024;	/* vert resolution in pixels	*/
+		DEPTH       = 4;	/* pixel depth in bits		*/
+		MODEASSIST  = 0;	/* no driver help to set mode	*/
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8208;
+		int10(r0, 2);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR ORCHID "Orchid"
+ MODEL  F1280+VA "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C ""
+   MODE   1024x768-256 "1024x768 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 1024;
+		PIXHEIGHT   = 768;
+		RGBBITS     = 6;
+		S3HWCURSOR = 0;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8205;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR ORCHID "Orchid"
+ MODEL  F1280+VA "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C ""
+   MODE   800x600-64K "800x600 64K colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox16";
+		VISUAL      = "TrueColor";
+		DEPTH       = 16;
+		PIXWIDTH    = 800;
+		PIXHEIGHT   = 600;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x0114;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+
+		out(0x3d4, 0x58);
+		in(r0, 0x3d5);
+		and(r0, 0xef);
+		out(0x3d5, r0); /* switch off linear addressing */
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		and(r0, 0xf7);
+		out(0x3d5, r0); /* disable fast write buffer! */
+		outw(0xbee8, 0xe040); /* slow read/write/modify cycle! */
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR ORCHID "Orchid"
+ MODEL  F1280+VA "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C ""
+   MODE   800x600-256 "800x600 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 800;
+		PIXHEIGHT   = 600;
+		RGBBITS     = 6;
+		S3HWCURSOR = 0;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8203;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR ORCHID "Orchid"
+ MODEL  F1280+VA "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C ""
+   MODE   640x480-64K "640x480 64K colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox16";
+		VISUAL      = "TrueColor";
+		DEPTH       = 16;
+		PIXWIDTH    = 640;
+		PIXHEIGHT   = 480;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8111;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+
+		out(0x3d4, 0x58);
+		in(r0, 0x3d5);
+		and(r0, 0xef);
+		out(0x3d5, r0); /* switch off linear addressing */
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}
+
+VENDOR ORCHID "Orchid"
+ MODEL  F1280+VA "Fahrenheit 1280 Plus/VA"
+  CLASS  S3C ""
+   MODE   640x480-256 "640x480 256 colors"
+
+	MEMORY(0xA0000,0x10000);
+	PORT(EFF,VGA);
+
+	DATA
+	{
+		XDRIVER     = "eox8";
+		VISUAL      = "PseudoColor";
+		DEPTH       = 8;
+		PIXWIDTH    = 640;
+		PIXHEIGHT   = 480;
+		RGBBITS     = 6;
+		S3HWCURSOR = 0;
+	}
+
+	PROCEDURE SetGraphics
+	{
+		r0 = 0x4F02;
+		r1 = 0x8201;
+		int10(r0, 2);
+
+		out(0x3d4, 0x38);
+		out(0x3d5, 0x48);
+		out(0x3d4, 0x39);
+		out(0x3d5, 0xad);
+		out(0x3d4, 0x40);
+		in(r0, 0x3d5);
+		or(r0, 0x1);
+		out(0x3d5, r0);
+	}
+
+	PROCEDURE SetText
+	{
+		r0 = 0x4F02;
+		r1 = 0x0003;
+		int10(r0, 2);
+	}

@@ -1,0 +1,106 @@
+# general configuration parameters for M&M system tests
+
+# master machine name
+MASTER=eclipse.pdev.sco.com
+
+# virtual domain name
+VIRTUAL=lunar.pdev.sco.com
+
+# slave machine name
+SLAVE=unetsco.pdev.sco.com
+
+# working directory for slave tests
+SLAVEDIR=/tmp/load
+
+# all above machine names should be in DNS for the following to work.
+MASTERIP=`/usr/sbin/host $MASTER | sed -e 's/.*address //'`
+VIRTUALIP=`/usr/sbin/host $VIRTUAL | sed -e 's/.*address //'`
+SLAVEIP=`/usr/sbin/host $SLAVE | sed -e 's/.*address //'`
+
+# for open server this needs to be rcmd instead of rsh for gemini.
+RCMD=rsh
+
+# usercount is number of users in the group tests.
+# users called userX will be created (user0, user1, ...).
+# with passwords equivalent to their login names.
+# local, pop and imap user counts, will add up to USERCOUNT.
+LOCALUSERS=40
+POPUSERS=80
+IMAPUSERS=80
+USERCOUNT=`expr $LOCALUSERS + $POPUSERS + $IMAPUSERS`
+POPSTART=$LOCALUSERS
+IMAPSTART=`expr $POPUSERS + $LOCALUSERS`
+
+# aliasize is size of alias mailings, must evenly divide into USERCOUNT.
+ALIASIZE=5
+
+GROUPCOUNT=`expr $USERCOUNT / $ALIASIZE`
+
+# base user id, place to start making user id's.
+USERBASE=2000
+
+# string prefix for user account names that are created.
+USERPREFIX=user
+
+# string prefix for mail aliases
+# three alias names are generated from the prefix:
+#	prefixX - regular mail aliases, X is a number
+#	prefixPX - virtual pass through aliases, X is a number
+#	prefixFX - virtual fan out aliases, X is a number
+ALIASPREFIX=alias
+
+# percent chance per message that an IMAP client will
+# EXPUNGE, close the socket, and reconnect on the next poll.
+IMAPCONNECT=5
+
+# approximate poll interval for mailread imap and pop programs
+# should be about one user per second polling.
+# the actual average poll interval is one half the number specified here.
+READPOLL=$USERCOUNT
+
+# pop killer process intervals (provoke rebuilds of mailboxes).
+# interval of zero is no killers (recommend about 5 times the poll interval).
+KILL_INTERVAL=0
+#KILL_INTERVAL=`expr $READPOLL \* 5`
+KILLER="./killer"
+
+# delete messages after they are read? adds some overhead to the system.
+# comment it out if you don't want this
+DELETE="-delete"
+
+# log protocol output to /tmp files? useful for debugging.
+# comment out if you don't want this.
+#PROTOCOL="-protocol"
+
+# duration in seconds, interval in seconds, speed is msgs per interval.
+# each of the three types combine together for the total load.
+
+DURATION=600
+START_DELAY=30
+# messages sent to base aliases are implied by the duration, interval and speed.
+INTERVAL_ALIAS=3
+SPEED_ALIAS=1
+# messages sent to the pass thru alias.
+INTERVAL_ALIASP=9
+SPEED_ALIASP=1
+# messages sent to the fan out alias.
+INTERVAL_ALIASF=9
+SPEED_ALIASF=1
+
+# calculated values from the above.
+MSGS_ALIAS=`expr $DURATION \* $SPEED_ALIAS / $INTERVAL_ALIAS`
+MSGS_ALIAS=`expr $MSGS_ALIAS / $GROUPCOUNT`
+MSGS_START=0
+MSGS_ALIASP=`expr $DURATION \* $SPEED_ALIASP / $INTERVAL_ALIASP`
+MSGS_ALIASP=`expr $MSGS_ALIASP / $GROUPCOUNT`
+MSGS_STARTP=$MSGS_ALIAS
+MSGS_ALIASF=`expr $DURATION \* $SPEED_ALIASF / $INTERVAL_ALIASF`
+MSGS_ALIASF=`expr $MSGS_ALIASF / $GROUPCOUNT`
+MSGS_STARTF=`expr $MSGS_STARTP + $MSGS_ALIASP`
+
+MSGS_TOTAL=`expr $MSGS_ALIAS + $MSGS_ALIASP + $MSGS_ALIASF`
+
+echo MSGS_ALIAS $MSGS_ALIAS MSGS_START $MSGS_START
+echo MSGS_ALIASP $MSGS_ALIASP MSGS_STARTP $MSGS_STARTP
+echo MSGS_ALIASF $MSGS_ALIASF MSGS_STARTF $MSGS_STARTF
+echo MSGS_TOTAL $MSGS_TOTAL

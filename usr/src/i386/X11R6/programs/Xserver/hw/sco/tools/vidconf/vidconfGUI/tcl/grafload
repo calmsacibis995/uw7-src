@@ -1,0 +1,940 @@
+#******************************************************************************
+#                                grafload
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)grafload	11.1	10/22/97	12:38:59
+#       @(#) grafload 55.1 96/06/27 
+#
+# Copyright (C) 1995-1996 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+#====================================================================== INT ===
+# GetInstanceList
+#	reformat names and host for use by RunCmd
+#	- from scoadmin/sysAdm/presObjs/defaults/defaults.tcl 27 Jan 1997
+#
+# Arguments: names, and hostname
+# Results: returns reformatted list.
+#
+#------------------------------------------------------------------------------
+
+proc GetInstanceList { names host} {
+
+    set instanceList {}
+    if { $host == "localhost" } {
+        foreach name $names {
+            set instance [list $name]
+            lappend instanceList $instance
+        }
+    } else {
+        foreach name $names {
+            set instance [list [list systemId $host] [list $name]]
+            lappend instanceList $instance
+        }
+    }
+    return $instanceList
+}
+
+#====================================================================== INT ===
+# RunCmd
+#	Run a command on a host.
+#	- from scoadmin/sysAdm/presObjs/defaults/defaults.tcl 27 Jan 1997
+#
+# Arguments: host to run on, command and arguments, error ID.
+# Results: return return value of command
+#
+#------------------------------------------------------------------------------
+
+proc RunCmd {host cmd args errMsgId} {
+	set class [ list sco remoteCommand ]
+	set instance [GetInstanceList NULL $host]
+	set command [list ObjectAction  $class $instance $cmd $args]
+
+	VtLock
+	set result [SaMakeObjectCall $command]
+	VtUnLock
+
+	set result [lindex $result 0]
+	if { [BmipResponseErrorIsPresent result] } {
+		set errorStack [BmipResponseErrorStack result]
+		ErrorPush errorStack 1 $errMsgId
+		return {}
+	}
+	set retVal [BmipResponseActionInfo result]
+	return $retVal
+}
+
+
+#====================================================================== INT ===
+# WriteFile
+#	take a data list and write it to the specified file
+#
+# Arguments:  file name, data list
+# Results: returns 1 when failed, 0 when OK
+# Algorithm: gets data from text widget, saves it off to file, and then
+#	either writes it out to file on local machine, or has SaMachGroupProc
+#	arrange to write it out on a remote machine.
+#
+#------------------------------------------------------------------------------
+
+proc WriteFile { fileName data } {
+
+	if {[catch {set outfd [open $fileName w]} returnVal] != 0} {
+		return 1
+	} else {
+		puts $outfd $data
+		close $outfd
+		return 0
+	}
+	return 1
+}
+
+#====================================================================== INT ===
+# ReadFile
+#	Read a file from a machine.
+#	- from scoadmin/sysAdm/presObjs/defaults/defaults.tcl 27 Jan 1997
+#
+# Arguments: file to read, and host machine to read it from.
+# Results: returns empty list, or contents of file.
+# Algorithm: executes a "cat" command on remote host.
+#
+#------------------------------------------------------------------------------
+
+proc ReadFile { host file } {
+
+	set cat_cmd [list RunCmd $host "cat" $file \
+		"remote cat error in ReadFile"]
+
+    	if {[catch {set fileStr [eval $cat_cmd]} returnVal] != 0} {
+		return {}
+	}
+	return $fileStr
+}
+
+#====================================================================== INT ===
+# SaveFile
+#	Save a file on a host machine
+#	- from scoadmin/sysAdm/presObjs/defaults/defaults.tcl 27 Jan 1997
+#
+# Arguments: host machine to save to, file to save to, file to read from.
+# Results: returns 1 on error, 0 on success.
+# Algorithm: uses remote OSA to write out tmpfile to real file.
+#
+#------------------------------------------------------------------------------
+
+proc SaveFile { host errStack file tmpfile} {
+	global localHostName
+
+	upvar $errStack errorStack
+
+	set class [list sco remoteCopy]
+	set instance [GetInstanceList NULL $host]
+
+	set fileVal [RunCmd $localHostName cat $tmpfile \
+		"remote cat error in SaveFile" ]
+
+	set command [list ObjectAction $class $instance [list $fileVal]]
+
+	VtLock
+	set result [SaMakeObjectCall $command]
+	VtUnLock
+
+	set result [lindex $result 0]
+	if { [BmipResponseErrorIsPresent result] } {
+		set errorStack [BmipResponseErrorStack result]
+		ErrorPush errorStack 1 SCO_DEFAULTS_GUI_ERR_remFileWrite
+		return 1
+	}
+	return 0
+}
+
+#==========================================================================
+# BuildAdapterList --
+#       Given an adapter string of the form "vendor model class mode", 
+#	return a keyed list adapter string.
+#	If the grafinfo file doesn't exist, save the name off for 
+#	an error message later.
+#
+# Parameters:
+#       adapter - a string in split/trimmed format to reference
+# Returns:
+#       adapterList - a keyed list adapter string
+#--------------------------------------------------------------------------
+proc BuildAdapterList {adapter} \
+{
+    set adapterList {}
+    set vendor [lindex $adapter 0]
+    set model [lindex $adapter 1]
+
+    keylset adapterList VALID 1
+    keylset adapterList VENDOR $vendor
+    keylset adapterList MODEL $model
+    keylset adapterList CLASS [lindex $adapter 2]
+    keylset adapterList MODE  [lindex $adapter 3]
+
+    return $adapterList
+}
+
+
+#==========================================================================
+# LoadGrafDev --
+#       Reads in the GRAFDEV file line by line.  Updates the ttyList
+#	array with each tty found in the grafdev file.  Each line of the 
+#	GRAFDEV file has the format:
+#	    tty:vendor.model.class.mode[,vendor.model.class.mode[,...]]
+#	Repeated tty's and any tty's not already in ttyList are discarded.
+#	The indexes to ttyList were obtained from files in the ~/devices 
+#	directory.  To add a new tty, create a file in the ~/devices 
+#	directory.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadGrafDev {} \
+{
+   global ttyList GRAFDEV FAIL appvals
+
+   set tmpFileName "/tmp/$appvals(managedhost).grafdev.[pid]"
+   set FileName $GRAFDEV
+   if { ! $appvals(onlocalhost) } {
+	set FileName $tmpFileName
+	set fileText [ReadFile $appvals(managedhost) $GRAFDEV]
+	if { ! [lempty $fileText] } {
+		if { [WriteFile $tmpFileName $fileText] } {
+	FatalErrMesg \
+		"Cannot create temporary file: $tmpFileName" \
+		"for remote $GRAFDEV data." \
+		$FAIL
+		}
+	} else {
+	FatalErrMesg \
+		"Remote host $appvals(managedhost) not responding to read request" \
+		"of $GRAFDEV file." \
+		$FAIL
+	# not reached
+	}
+   }
+
+   # ttyList defaults to Not Configured
+   if {![file exists $FileName]} {
+      return
+   }
+
+   for_file line $FileName {
+       # comment character is #
+       set line [string trimleft $line]
+       set char0 [string index $line "0"]
+       if {$char0 == "#"} {
+	  continue
+       }
+       
+       # split tty:vendor.model.class.mode on the colon
+       set line [split $line : ]
+
+       # zero out
+       set adapters {}
+
+       # split tty:vendor.model.class.mode,vendor.model.class.mode,...
+       # at each comma
+       foreach adapter [split [lindex $line 1] ,] {
+           # now trim and then split vendor.model.class.mode on the periods
+           set adapter [split [string trim $adapter] .]
+           lappend adapters [BuildAdapterList $adapter]
+       }
+       # if grafinfo file specified doesn't exist, 'adapters' could be {}
+       if {$adapters == "{}"} { continue }
+
+       # only add an adapters list if the tty device is a valid tty (must exist)
+       if {[info exists ttyList([lindex $line 0])]} {
+       	   # And only add an adapters list if one wasn't already added.
+	   # Prevents problems when users have more then one /dev/tty?? 
+	   # entry in the grafdev file. 
+	   if {![llength $ttyList([lindex $line 0])]} {
+              SetTTYElement [lindex $line 0] $adapters
+	   }
+       }
+   }
+   #Display ttyList
+   if { [file exists $tmpFileName] } {
+	unlink -nocomplain $tmpFileName
+   }
+}
+
+
+#==========================================================================
+# LoadGrafMon --
+#       Reads in the GRAFMON file line by line.  Builds the 
+#	monList array.  Each line of the GRAFMON file has 
+#	the format:
+#	    vendor.model:monvendor.monmodel
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadGrafMon {} \
+{
+   global monList GRAFMON
+
+   if {![file exists $GRAFMON]} {
+      return
+   }
+
+   for_file line $GRAFMON {
+       # comment character is #
+       set line [string trimleft $line]
+       set char0 [string index $line "0"]
+       if {$char0 == "#"} {
+	  continue
+       }
+
+       # split vendor.model:monvendor.monmodel on the colon
+       set line [split $line :]
+
+       # get just monvendor
+       keylset monVMlist MONVENDOR [lindex [split [lindex $line 1] .] 0]
+       # get just monmodel
+       keylset monVMlist MONMODEL  [lindex [split [lindex $line 1] .] 1]
+
+       # grafmon could end up containing duplicate video card entries 
+       # if hand edited.  Save the first vendor.model entry only.
+       if {![info exists monList([lindex $line 0])]} {
+           SetMonElement [lindex $line 0] $monVMlist
+       } else {
+	  #echo "Skipping $line."
+       }
+   }
+   #Display monList
+}
+
+
+#==========================================================================
+# LoadVideos--
+#	Builds videoList, videoListMap and videoVendorList arrays.  
+#
+#	videoListMap() array usage:
+#	Given a vendor and model videoListMap is used to quickly 
+#	map to a videoList array element.
+#
+#	videoList() array usage:
+#	A sorted list of video adapters can quickly be obtained by 
+#	sorting the indexes of videoList.  This is needed for point 
+#	and pick list access.  Sorting videoListMap does not buy you 
+#	anything.
+#
+#	videoVendorList() array usage: 
+#	Given a vendor, quickly obtain the model's for that specific 
+#	vendor.  Used to determine if a VIDSCRIPT removed or added any
+#	new XGI files to a vendor directory rather then searching the 
+#	entire videoList.  New XGI files correspond to model names.
+#
+#	   videoListMap($vendor.$model) pos
+#		      vvv---------------^^^
+#	   videoList($pos) VENDOR vendor VENDORPR vendorpr MODEL model ...
+#
+#	   videoVendorList($vendor) model1 model2 ...
+#
+#	Confusing?  Yes it is.
+#
+#	grafparse -V reads in the video adapters from
+#	/usr/X11R6.1/lib/grafinfo/*/*
+#	and prints them to stdout one per line sorted by vendorprompt and
+#	modelprompt strings. This routine reads each line until EOF is read.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadVideos {} \
+{
+   global videoList videoListMap videoVendorList vlMapCnt
+   global GRAFINFO GRAFDEV XGI GRAFPARSE VLOADED
+
+   # only load if we haven't loaded before or if a VIDSCRIPT is found
+   # VIDSCRIPT causes VLOADED to be reset causing a complete reread
+   if {$VLOADED} { 
+      return
+   }
+
+   VtLock
+   set VLOADED 1
+   if {[info exists videoListMap]} {
+      unset videoListMap
+   }
+   if {[info exists videoVendorList]} {
+      unset videoVendorList
+   }
+
+   # note - if an error occurs in GRAFPARSE and data comes down 
+   # stderr, ErrorCB gets called automatically by close (I think).
+   set options "-V"
+   set fh [open [format "|%s %s" $GRAFPARSE $options] r]
+   set line {}
+
+   set inEOF 0
+   set pos 0
+   while {(!$inEOF)} {
+      set vendor {}
+      set model {}
+      incr pos
+      if {[lgets $fh line] < 1} {
+          set inEOF 1
+      } else {
+	  set vendor [GetVendor $line]
+	  set model [GetModel $line]
+          # for duplicates, save the first video adapter encountered
+          if {![info exists videoListMap($vendor.$model)]} {
+	      # build the videoListMap entry
+	      set videoListMap($vendor.$model) $pos
+	      # build the videoList entry
+              set videoList($pos) $line
+	  } else {
+             #echo "Skipping $line."
+          }
+
+	  # used to easily track models for a specific vendor
+	  if {![info exists videoVendorList($vendor)]} {
+		# create the index
+		set videoVendorList($vendor) $model
+	  } else {
+		lappend videoVendorList($vendor) $model
+	  }
+
+      }
+   }
+   close $fh
+
+   # copy any of the elements high up in videoList to where
+   # they belong in videoList.
+   while {$vlMapCnt != 1000} {
+      keylget videoList($vlMapCnt) VENDOR vendor
+      keylget videoList($vlMapCnt) MODEL model
+      set videoList($videoListMap($vendor.$model)) $videoList($vlMapCnt)
+      unset videoList($vlMapCnt)
+      set vlMapCnt [expr "$vlMapCnt-1"]
+   }
+
+   #Display videoList
+   VtUnLock -once
+}
+
+
+#==========================================================================
+# LoadMonitors--
+#	grafparse -M reads in the video monitors from
+#	/usr/X11R6.1/lib/grafinfo/
+#	moninfo/*/* and prints them to stdout one per line.  This routine 
+#	reads each line until EOF is read.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadMonitors {} \
+{
+   global monitorList monitorListMap
+   global GRAFPARSE MLOADED
+
+   if {$MLOADED} { 
+      return
+   }
+
+   VtLock
+   set MLOADED 1
+   # since -M reads in the moninfo file contents, just blow away 
+   # the old monitorList and monitorListMap arrays and build new ones.
+   if {[info exists monitorListMap]} {
+      unset monitorListMap
+   }
+   if {[info exists monitorList]} {
+      unset monitorList
+   }
+
+   set options "-M"
+   set fh [open [format "|%s %s" $GRAFPARSE $options] r]
+   set line {}
+
+   set inEOF 0
+   set pos 0
+   while {(!$inEOF)} {
+      set vendor {}
+      set model {}
+      set vendorPr {}
+      set modelPr {}
+      incr pos
+      if {[lgets $fh line] < 1} {
+          set inEOF 1
+      } else {
+   	  keylget line "MONVENDOR" vendor
+   	  keylget line "MONMODEL" model
+          # for duplicates, save the first monitor only
+          if {![info exists monitorListMap($vendor.$model)]} {
+	      # build the monitorListMap entry
+	      set monitorListMap($vendor.$model) $pos
+	      # build the monitorList entry
+              set monitorList($pos) $line
+	  } else {
+             #echo "Skipping $line."
+          }
+
+      }
+   }
+   close $fh
+
+   # reset mlMapCnt back to initial value of 1000
+   set mlMapCnt 1000
+
+   #Display monitorList
+   VtUnLock -once
+}
+
+
+#==========================================================================
+# LoadDevices --
+#	grafparse -T reads the TTY devices and prints them to 
+#	stdout one per line.  This routine reads each line until 
+#	EOF is read.  
+#	
+#	New devices are added by creating a file in the directory 
+#	/usr/X11R6.1/lib/vidconf/devices and having it contain a single 
+#	line holding the pathname of the device and a string that 
+#	represents the device. If the device does not exit, it is 
+#	ignored by grafparse.
+#
+#	For example:
+#	/usr/X11R6.1/libvidconf/devices/console: /dev/console console
+#	/usr/X11R6.1/libvidconf/devices/tty01: /dev/tty01 F1
+#	/usr/X11R6.1/libvidconf/devices/tty02: /dev/tty02 F2
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadDevices {} \
+{
+   global ttyList GRAFPARSE
+
+   set options "-T"
+   set fh [open [format "|%s %s" $GRAFPARSE $options] r]
+   set line {}
+
+   set inEOF 0
+   while {(!$inEOF)} {
+      if {[gets $fh line] < 1} {
+          set inEOF 1
+      } else {
+          # for duplicates, save the first tty device only
+          if ![info exists ttyList([lindex $line 0])] {
+	      set tty [lindex $line 0]
+              SetTTYElement $tty {}
+              SetTTYString $tty [lindex $line 1]
+          }
+      }
+   }
+   close $fh
+   #Display ttyList
+}
+
+
+#==========================================================================
+# SetVideos --
+#	Obtain video resolutions for adapters. Set them in video list.
+# 	SetVideos is called with a list of unique vendor/model pairs to 
+#	set resolutions in the videoList.  grafparse -v is used to
+#	obtain the resolutions from the corresponding vendor/model
+#	grafinfo file.
+#
+#	Since it is possible that the grafinfo file has changed, always
+#	go out to disk and pull the latest information from the .xgi file.
+#
+#	If an incorrect vendor/model is passed to grafparse, grafparse 
+#	returns a newline and sends an error to standard out.  The 
+#	newline causes the incorrect vendor/model to be skipped over.
+#	
+# Parameters: 
+#	VMList - multiple lists containing unique vendor/model pairs
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetVideos {VMList} \
+{
+   global videoList videoListMap vlMapCnt
+   global GRAFPARSE GRAFINFO GRAFDEV XGI 
+   global OK FAIL
+
+   if {$VMList == {}} {
+	return
+   }
+   if {[IsInteractive]} {
+      VtLock
+   }
+
+   # note - if an error occurs in GRAFPARSE and data comes down 
+   # stderr, ErrorCB gets called automatically by close (I think).
+   set options "-v"
+   set fh [open [format "|%s %s" $GRAFPARSE $options] r+]
+
+   foreach VMPair $VMList {
+      set lineList {}
+      set vendor [lindex $VMPair 0]
+      set model [lindex $VMPair 1]
+      set filename [format "%s/%s/%s%s" $GRAFINFO $vendor $model $XGI]
+      set errstr [CheckFile $filename]
+      if {$errstr != ""} {
+         # bogus video configuration - reset it.
+	 ReLoad
+	 if {[IsInteractive]} {
+	    close $fh
+	    VtUnLock
+	    MainLoop
+	 } else {
+	    # non-interactive - WARNING - code execution continues at the 
+	    # end of this loop after the break occurs - this isn't a problem.
+	    break
+	 }
+      }
+
+      puts $fh $VMPair
+      flush $fh
+   
+      set inEOF 0
+      # run thru loop twice for each new entry - 
+      # once to get data list, a second time to get newline (EOF marker)
+      while {(!$inEOF)} {
+         if {[lgets $fh lineList] < 1} {
+             set inEOF 1
+         } else {
+	    if {![info exists videoListMap($vendor.$model)]} {
+	       # store nonexistent elements starting at index 1001
+	       set vlMapCnt [expr "$vlMapCnt+1"]
+	       # should only happen during initial startup
+	       set videoListMap($vendor.$model) $vlMapCnt
+	       set videoList($vlMapCnt) $lineList
+ 	    } else {
+	       set videoList($videoListMap($vendor.$model)) $lineList
+	    }
+         }
+      }
+   }
+   close $fh
+   if {[IsInteractive]} {
+      VtUnLock -once
+   }
+   #Display videoList
+}
+
+
+#==========================================================================
+# SetMonitors --
+#	Obtain the specified monitors. Set them in the monitor list.
+# 	SetMonitors is called with a list of monvendor/monmodel 
+#	pairs to set up monitor descriptions.  grafparse -m is 
+#	used to obtain the descriptions from the corresponding 
+#	monvendor/monmodel moninfo files.
+#
+# Parameters: 
+#	MonVMList - multiple lists containing monvendor/monmodel pairs
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetMonitors {MonVMList} \
+{
+   global monitorList monitorListMap mlMapCnt
+   global GRAFPARSE GRAFMON MONINFO MON
+   global OK FAIL
+
+   if {$MonVMList == {}} {
+	return
+   }
+   if {[IsInteractive]} {
+      VtLock
+   }
+   set options "-m"
+   set fh [open [format "|%s %s" $GRAFPARSE $options] r+]
+
+   foreach VMPair $MonVMList {
+      set lineList {}
+      set monvendor [lindex $VMPair 0]
+      set monmodel [lindex $VMPair 1]
+
+      set filename [format "%s/%s/%s%s" $MONINFO $monvendor $monmodel $MON]
+      set errstr [CheckFile $filename]
+      if {$errstr != ""} {
+	 # skip broken entries and mark as unknown
+	 continue
+      }
+
+      # if the information is already loaded, use it instead of going to disk
+      if {[info exists monitorListMap($monvendor.$monmodel)]} {
+	 #echo "Skipping duplicate $monvendor.$monmodel entry."
+         continue
+      }
+
+      puts $fh $VMPair
+      flush $fh
+   
+      set inEOF 0
+      while {(!$inEOF)} {
+         if {[lgets $fh lineList] < 1} {
+             set inEOF 1
+         } else {
+            if {![info exists monitorListMap($monvendor.$monmodel)]} {
+               # store nonexistent elements starting at index 1001
+	       set mlMapCnt [expr "$mlMapCnt+1"]
+               # should only happen during initial startup
+               set monitorListMap($monvendor.$monmodel) $mlMapCnt
+               set monitorList($mlMapCnt) $lineList
+            } else {
+               set monitorList($monitorListMap($monvendor.$monmodel)) $lineList
+	    }
+	 }
+      }
+   }
+   close $fh
+   if {[IsInteractive]} {
+      VtUnLock -once
+   }
+   #Display monitorList
+}
+
+
+#==========================================================================
+# InitPromptStrings --
+#	Read in the prompt strings for ~/grafinfo and ~/moninfo files
+# 	configured in grafdev and grafmon - we need to view them.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InitPromptStrings {} \
+{
+   if {[IsInteractive]} {
+      SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+        [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_LOAD_STRINGS]
+   }
+   InitTTYListPrompts
+   InitMonListDescriptions
+}
+
+
+#==========================================================================
+# InitTTYListPrompts --
+#       Obtain the prompt strings for each of the video adapters
+#	currently in ttyList (just read from grafdev).
+#
+#	At this time we know that videoList is empty and does not 
+#	contain any prompt strings for any adapters.  We need to 
+#	initialize it so the prompt strings for each adapter are 
+#	available.
+#
+#	If -update or -rc run all VIDSETUP scripts for adapters and rebuild 
+#	videoList with new .xgi file contents.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InitTTYListPrompts {} \
+{
+   # obtain a list of all the vendor model pairs currently in ttyList.
+   set VendorModelList [GetTTYVendorModelPairs]
+
+   SetVideos $VendorModelList
+   RunVidsetupScripts
+   #Display videoList
+}
+
+
+#==========================================================================
+# VerifyTTYListPrompts --
+# 	Verify all entries in ttyList have a corresponding class 
+#	and mode entry in videoList.  If a class/mode is missing
+#	exit with an error.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc VerifyTTYListPrompts {} \
+{
+   global OK FAIL
+   global GRAFINFO GRAFDEV XGI
+
+   if {[IsInteractive]} {
+      SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_VERIFY_STRINGS]
+   }
+
+   foreach tty [GetTTYIndexes {}] {
+      set i 0
+      set adapters [GetTTYHeadLen $tty]
+      while {$i != $adapters} {
+	 set vendor {}; set model {}; set class {}; set mode {}
+	 # pull entrie from ttyList
+         set vendor [GetTTYVendor $tty $i]
+         set model [GetTTYModel $tty $i]
+         set class [GetTTYClass $tty $i]
+         set mode [GetTTYMode $tty $i]
+
+	 # make sure a corresponding entry exists in videoList
+	 set reslist [GetResolutions $vendor $model]
+	 if {($reslist == "") || \
+	     ([GetClassModePr $class $mode $reslist] == {})} {
+		 # bogus video configuration - reset it.
+		 ReLoad
+	 } 
+	 incr i
+      }
+   }
+}
+
+
+#==========================================================================
+# InitMonListDescriptsions --
+#       Obtain the monitor descriptions for each of the monitors 
+#	currently in monList (just read from grafmon).
+#
+#	At this time we know that monitorList is empty and does not 
+#	contain any descriptions for any monitors.  We need to 
+#	initialize it so the descriptions for each monitor are 
+#	available.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InitMonListDescriptions {} \
+{
+   # obtain a list of all monitor vendor model pairs currently in monlist
+   set MonVendorModelList [GetMonVendorModelPairs]
+
+   SetMonitors $MonVendorModelList
+   #Display monitorList
+}
+
+
+#==========================================================================
+# GetTTYVendorModelPairs --
+#       Return a list containing each unique vendor and model name pair
+#	currently stored in ttyList.
+#
+# Parameters: none
+# Returns: 
+#	VMList - list containing vendor model pairs in ttyList
+#--------------------------------------------------------------------------
+proc GetTTYVendorModelPairs {} \
+{
+   set VMList {}
+   foreach tty [GetTTYIndexes {}] {
+      set i 0
+      set adapters [GetTTYHeadLen $tty]
+      while {$i != $adapters} {
+         set vendor [GetTTYVendor $tty $i]
+         if {$vendor == {}} {
+            continue
+         }
+
+         set model [GetTTYModel $tty $i]
+         if {$model == {}} {
+            continue
+         }
+	 if {[lsearch -exact $VMList [list $vendor $model]] == -1} {
+         	lappend VMList [list $vendor $model]
+	 }
+         incr i
+      }
+    }
+    return $VMList
+}
+
+
+#==========================================================================
+# GetMonVendorModelPairs --
+#       Return a list containing each unique monvendor and monmodel name
+#	pair currently stored in monList.
+#
+# Parameters: none
+# Returns: 
+#	MonVMList - list containing unique monitor vendor model pairs 
+#	in monList
+#--------------------------------------------------------------------------
+proc GetMonVendorModelPairs {} \
+{
+   set MonVMList {}
+   foreach mon [GetMonIndexes] {
+
+      set monvendor [GetMonVendor $mon]
+      if {$monvendor == {}} {
+         continue
+      }
+
+      set monmodel [GetMonModel $mon]
+      if {$monmodel == {}} {
+         continue
+      }
+
+      if {[lsearch -exact $MonVMList [list $monvendor $monmodel]] == -1} {
+   	   lappend MonVMList [list $monvendor $monmodel]
+      }
+   }
+   return $MonVMList
+}
+
+
+#==========================================================================
+# ReLoad --
+#       ReLoad the configuration files if bogus entry found in grafdev.
+#	Reset internal structures to defaults so a reload can be done.
+#
+#	These 3 comments prevent complaints during make.
+#	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_GRAF_LOAD_FILE]
+#	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_GRAF_LOAD_MV_RECOVER]
+#	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_GRAFDEV_LOAD_RES]
+#	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR]
+#
+#	Could happen for the following reasons:
+#		if wrong path specified to grafinfo file.
+#		if the grafinfo file is removed - name changed.
+# 		if a mode doesn't exist in the grafinfo file.
+#		...
+#
+#	Reassign bogus grafmon entries to the default monitor and save
+#	to the grafmon file.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ReLoad {} \
+{
+   global ttyList vlMapCnt videoListMap videoList monList 
+   global OK FAIL RELOAD GRAFMON GRAFDEV IBMVGA
+
+   if {$RELOAD > 0} {
+      # Something went wrong or default video configuration file is corrupt.
+      system "> $GRAFDEV"
+      system "> $GRAFMON"
+      FatalErrMesg \
+	[format "%s\n%s" \
+	   $IBMVGA \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_CONFIG_INVALID3]] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+	$FAIL
+   }
+   set RELOAD 1
+   SetDefaultConfiguration
+
+   set vlMapCnt 1000
+   if {[info exists ttyList]} {
+	unset ttyList
+   }
+   if {[info exists videoListMap]} {
+	unset videoListMap
+   }
+   if {[info exists videoList]} {
+	unset videoList
+   }
+   if {[info exists monList]} {
+	unset monList
+   }
+   InitLists
+}
+

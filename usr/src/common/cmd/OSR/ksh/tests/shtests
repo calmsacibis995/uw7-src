@@ -1,0 +1,30 @@
+#ident	"@(#)OSRcmds:ksh/tests/shtests	1.1"
+#	@(#) shtests 25.2 92/12/11 
+#
+#	Copyright (C) The Santa Cruz Operation, 1990-1992
+#	Copyright (C) AT&T, 1984-1992
+#		All Rights Reserved.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+# This program runs ksh regression tests
+
+unset ENV
+export PATH PWD SHELL
+PWD=`pwd`
+SHELL=${SHELL-ksh}
+case $0 in
+/*)	d=`dirname $0`;;
+*/*)	d=$PWD/`dirname $0`;;
+*)	d=$PWD;;
+esac
+export d
+PATH=/bin:/usr/bin:$d
+for i in ${*-*.sh}
+do	echo test $i begins at `date`
+	if	$SHELL $i
+	then echo test $i passed at `date`
+	else	rval=$?
+		echo test $i failed at `date` with exit code $rval
+	fi
+done

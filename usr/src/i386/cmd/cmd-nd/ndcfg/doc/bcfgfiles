@@ -1,0 +1,2614 @@
+Document Version: 19.2
+Date(YY/MM/DD):   98/03/03
+
+                 Net Driver Configuration Specification
+
+Summary
+-------
+SCO's Gemini project will merge two different network driver 
+architectures into one.  This document describes the steps
+necessary for creating and testing the driver configuration
+file, known as the "bcfg file".
+
+Contents
+XXX. Not implemented yet
+XXX. Terminology
+XXX. Background
+XXX. New Gemini features for users familiar with OpenServer 5 MDI drivers:
+XXX. New Gemini features for users familiar with UnixWare 2.1 ODI/DLPI drivers:
+XXX. New design and architecture
+XXX. New bcfg file format
+XXX. Testing your bcfg file
+XXX. bcfg file variables
+XXX. NetInstall
+XXX. Sample bcfg files
+
+Appendix A: Creating custom installable DOS floppies for SCO OpenServer 5.0
+Appendix B: References
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Not implemented yet
+
+The following bcfg parameters you will read about in this document are 
+not yet implemented in ndcfg.  They are valid in a bcfg file today though. 
+
+- the number to use for ACTUAL_SEND_SPEED
+- the number to use for ACTUAL_RECEIVE_SPEED
+- FAILOVER support 
+- HELPFILE text
+- NET_BOOT
+- NUM_PORTS
+- REBOOT (ndcfg passes it up to netcfg; but netcfg doesn't do an init 6)
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Terminology
+
+bcfg file - a text file that can be interpreted as a Bourne shell script. 
+The only function you can perform in your .bcfg file is to set variables.
+Other Bourne shell constructs (if, while, etc.) beyond setting variables 
+is not permitted.  bcfg files always have a suffix of .bcfg.  
+bcfg files originated in UnixWare and are used in Gemini.
+
+ACFG - Automated ConFiGuration utility.  Used on OpenServer 5 to read, and
+optionally write, the network adapter firmware or hardware on ISA machines
+only.  Replaced on Gemini with xxx_config(...CFG_VERIFY) from DDI8 for 
+reading and writing NVRAM/EEPROM from information supplied in the bcfg file.
+
+AOF - Adapter Options File.  Used on OpenServer 5 to describes a type of 
+network adapter that the driver supports.  Information in an AOF is 
+stored in OSF stanza file format.  Replaced on Gemini with bcfg file.
+
+lkcfg - shell script on OpenServer 5 to install, reconfigure, or delete 
+the network driver from the Unix link-kit.  Not needed on Gemini
+
+Stanza file format.  A means of describing information for OpenServer 5
+drivers.  Its general syntax is:
+
+       Section_name:
+                 # this is a comment
+                 Attribute1_name=Attribute1_value
+                 Attribute2_name=Attribute2_value
+                 Attribute3_name=Attribute3_value
+
+SYSDB - Link Kit Configuration utility specific to OpenServer 5.
+        Replaced with bcfg file.  stored in /var/opt/K/SCO/lli/*/sysdb
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. Background
+
+The Gemini product will have two important changes for both OpenServer
+and UnixWare 2.1 driver writers:
+
+1) new link kit options for OpenServer NIC drivers
+2) new netconfig options for UnixWare 2.1 NIC drivers.
+
+This document describes each of the above in more detail and describes
+the syntax of bcfg files for Gemini NIC drivers.
+
+SCO's OpenServer product line uses a number of files for managing
+the installation and removal of drivers into the product:  
+
+- AOF files     - description of driver physical settings and options
+- acfg file     - read and optionally write NIC firmware on ISA machines.
+- lkcfg file    - install, reconfigure, or delete the NIC from link-kit;
+                  uses parameters from SYSDB file which contains 
+                  selections from user
+
+Each of these 3 files is written by the vendor and submitted with the
+driver for inclusion into the product. 
+
+SCO's UnixWare 2.1 product uses one file to describe all network
+driver attributes:  the .bcfg file.  This file is a series of shell
+variable assignments and is sourced in by the windowing Korn shell
+script niccfg.  Here are a few examples of lines from a .bcfg file:
+
+         NAME=My_Wonder_Card
+         DRIVER_NAME=wond
+         INT="2 3 4 5 7 9 10 11 15"
+         PORT="
+         240-25F 260-27F 280-29F 300-31F
+         320-33F 340-35F 360-37F 380-39F
+         "
+         MEM="
+         C0000-C3FFF C4000-C7FFF C8000-CBFFF CC000-CFFFF
+         D0000-D3FFF D4000-D7FFF D8000-DBFFF DC000-DFFFF
+         "
+
+
+Gemini replaces niccfg with a modified version of the OpenServer 5
+netconfig program, renamed /usr/sbin/netcfg.  netcfg supports the 
+following driver types:
+
+    1) Gemini MDI drivers (bcfg).  These are known as #$version 1 bcfg 
+       files.
+    2) Gemini IHV diskettes.  The format of these disks will likely
+       be DOS format as specified elsewhere in this file but the
+       program that will read in these disks has not yet been 
+       determined.  It will not be netcfg but may be another
+       short shell script which calls installf to fake a pkgadd
+       installation.  These disks must also be read by the
+       NetInstall process.  
+       pkgadd format diskettes are considered outside the scope of this
+       document.
+    3) UW2.1 DLPI/ODI drivers and their bcfg files
+
+UnixWare 2.1 IHV diskette format may not be supported for use with netcfg
+and NetInstall.
+
+netcfg will not accept OSR5-style MDI drivers consisting of AOF, acfg, 
+and lkcfg files.  netcfg will only process UnixWare device drivers with
+a bcfg file describing the driver.
+
+The UnixWare 2.1 bcfg format is slightly modified to eliminate some of
+the UW2.1 restrictions and to support new functionality found in
+AOF/acfg/lkcfg/SYSDB files.  However, old-style UW2.1 bcfg files will be 
+accepted and parsed by the netcfg.  bcfg files are now versioned so 
+new features can be added and not break backwards compatability.
+
+A back-end program called /usr/lib/netcfg/bin/ndcfg parses all bcfg files
+and is called by netcfg to do the work of installing, modifying, and 
+removing drivers from the system.  It ensures that the bcfg file doesn't 
+have any syntax errors and also ensures that the bcfg files doesn't try 
+and set parameters that are invalid for the particular release of the 
+bcfg file.  ndcfg can be run to verify that 
+
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. New Gemini features for users familiar with OpenServer 5 MDI drivers:
+
+ - resmgr database consolidates all driver hardware and configuration
+   parameters.  No more parameters in Space.c or space.h
+ - ACFG files eliminated; drivers now do this themselves with their 
+   verify routine.  No more repetition of code.
+ - lkcfg files eliminated; SCO-supplied ndcfg program does all of the work 
+   for you.  
+ - AOF files replaced with bcfg file
+ - Gemini bcfg files retain some "Stanza-like" look and feel. 
+ - SYSDB files eliminated.
+ - bcfg files are syntax-checked, eliminating problems with typos in
+   your AOF file.
+ - drivers can set their own configurable custom parameters 
+   (cable type, media speed, etc.) in the bcfg file and the user will
+   select the desired option when installing/modifying the driver.
+   These go directly into the resmgr for immediate use.
+ - drivers can be loaded and unloaded on demand
+ - drivers can be used immediately after configuration with netcfg; no 
+   complete relink/reboot required.
+ - optional driver version information displayed to the user in netcfg to
+   identify the release of the driver directly from the Driver.o.
+ - smart bus (PCI, EISA, MCA) parameters like slot, device id, vendor id,
+   etc. automatically set in the resmgr for you when the machine boots up.
+   Complete detailed EISA NVRAM/PCI config space information viewable 
+   with ndcfg.  No more back-end eisadump/pcislot program.
+ - HTML documentation file displays help information you require to the user.
+ - much-improved native multiprocessor support for multithreading your driver.
+ - failover support
+ - ISA parameter filtering:  for ISA drivers, if a complete set of ISA 
+   parameters isn't available in the resmgr from information in the bcfg
+   file, then the user won't see the board to select it.
+ - ISA parameter filtering:  for ISA drivers, the user will only see 
+   usable choices that aren't taken in the resmgr.  IRQ2 is silently mapped
+   to IRQ9.
+--------------------------------------------------------------------------
+**************************************************************************
+XXX. New Gemini features for users familiar with UnixWare 2.1 ODI/DLPI drivers:
+
+ - bcfg files are syntax-checked, eliminating problems with typos in
+   your UnixWare 2.1 bcfg file
+ - bcfg files now organized into "Stanza-like" sections
+ - optional driver version information displayed to the user in netcfg
+   to identify the release of the driver directly from the Driver.o.
+ - HTML documentation file replaces helpfile in custom prompts.
+ - new required and optional parameters added to bcfg files.
+ - new DDI version 8
+ - failover support for MDI drivers.
+ - support for transmogrifying ODI drivers removed.  Previously
+   transmogrified ODI drivers for UnixWare 2.1 will continue to work.
+ - new MDI driver format.  Existing DLPI drivers will continue to work.
+   Existing DLPI driver writers are strongly encouraged to convert their
+   driver to be a MDI driver instead.  This eliminates the cumbersome details
+   of the DLPI infrastructure which is taken care of by the dlpi module
+   for MDI drivers and also allows your driver to support failover support.
+ - spaces allowed in the NAME= description string in bcfg file
+ - ISA parameter filtering:  for ISA drivers, if a complete set of ISA 
+   parameters isn't available in the resmgr from information in the bcfg
+   file, then the user won't see the board to select it.
+ - ISA parameter filtering:  for ISA drivers, the user will only see 
+   usable choices that aren't taken in the resmgr.  IRQ2 is silently mapped
+   to IRQ9.
+ - New lines added to CUSTOM[] syntax.
+ - CUSTOM parameters properly added to the resmgr during netinstall.   
+   ODISTRx is still added for backwards compatability.
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. New design and architecture
+
+The Gemini network driver configuration specification will put all of its
+information into a single enhanced bcfg file.  AOF, acfg, SYSDB, and lkcfg 
+files are eliminated, although their concepts still live on in many ways.
+Existing UW2.1 bcfg files will be accepted and parsed to provide
+backwards compatability for existing ODI and DLPI drivers.
+Most of the AOF file information is moved to the bcfg file in a pseudo-
+stanza file format for future enhancements.
+The search portion of acfg functionality for ISA boards has been moved to 
+the driver's xxx_config(CFG_VERIFY) routine.  
+The write portion of acfg functionality for ISA boards has been moved
+to the driver's xxx_config(CFG_VERIFY) routine.
+SYSDB information is moved into the resmgr database.
+
+Stanza-like files are retained for simplicity and the section definitions
+will be used if present.  Since UW2.1 bcfg files do not have the 
+concept of a stanza, all variables will be assigned a default 
+section to minimize changes to existing code.  Also, both niccfg and
+dcu source in the bcfg file as a Bourne shell script.  To minimize
+dcu changes stanza sections will checked to ensure they only appear
+in #$version 1 bcfg files.
+
+In summary, the new #$version 1 bcfg file format could still be treated 
+as a Bourne shell script which simply sets variables were it not for
+the stanze section declarations.
+
+The overall goal is to place as much information as possible into the 
+resmgr so that drivers do not need to save configuration information
+in space.c or space.h files but can instead obtain it dynamically at
+init time.   This includes information like:
+I/O address, IRQ, RAM address & size, ROM address & size, DMA, 
+media type and speed, and any custom tunables.  
+This eliminates the need for space.[ch] files, back-end configuration 
+files that save state information, and allows drivers as dynamically 
+loadable modules to access information without being rebuilding an entire
+new kernel.  Adapter section pararameters discussed further in 
+the "bcfg file variables" section in this document.  Non-obvious 
+parameters (inter-frame gap, debugging parameters) should continue
+to exist within the Space.c file, as users will not be expected to
+modify these files.
+
+Certain attributes are not necessary for autoconfiguring smart-bus drivers 
+(DMA, INT, MEM, and PORT).  These drivers are typically found on
+PCI/EISA/MCA platforms.
+
+A general method of specifying custom parameters is provided in the 
+bcfg file.  This allows any configuration parameter to be set
+in the resmgr with the following characteristics:
+
+1) Name of custom variable that will stored in resmgr as a string for this 
+   parameter
+2) a single word/number many word(s)/number(s)
+   (these are what driver sees w/ cm_getval(D3))
+3) List of choices(text strings)user sees in Choices box (user press 
+   F2 key) for netinstall or the short-help line with netcfg.
+4) Title for choices that the user will see
+5) the word "RESERVED"
+6) Prompt given to the user
+7) basic or advanced section that this option should appear in.
+   Note:  this line is specific to #$version 1 bcfg files and doesn't 
+          exit in #$version 0 (i.e. existing UW2.1) bcfg files.
+8) The topologies this parameter is applicable to.
+   Note:  this line is specific to #$version 1 bcfg files and doesn't 
+          exit in #$version 0 (i.e. existing UW2.1) bcfg files.
+9) If this parameter is meaningful for each board, driver, or globally.
+   Note:  this line is specific to #$version 1 bcfg files and doesn't 
+          exit in #$version 0 (i.e. existing UW2.1) bcfg files.
+
+Numeric values can be input in either decimal, octal, or hex.  They will
+appear in the resmgr as a string
+
+For support and debugging purposes, ndcfg can display all resmgr parameters
+and all values for any resmgr key.
+
+Drivers no longer modify space.c/space.h but instead use the configuration
+manager database.
+
+Each time a bcfg file is loaded it is parsed to ensure that each line
+is both syntatically and semantically correct:
+
+- all mandatory variables for the applicable #$version are defined.
+  There are no defaults.
+- all variables that can only be "true" or "false" are true or false
+- all variables that contain numbers or numeric ranges are numeric
+  (there is an implied number base for each numeric value.  Interrupts
+  are in decimal but memory address ranges are in hex.)
+- all variables that can not contain multiple values do not try to
+  define multiple values
+- if the BUS is ISA that certain variables (INT, MEM) are defined
+  (if the card doesn't use a memory address range it must still
+  define a null range)
+- unknown variables names are not allowed.
+
+IHV disks can be added on the fly.  OPEN ISSUE: It is unclear if 
+drivers added from an IHV disk will reside in a different 
+directory or be merged with the native drivers.  If not, which 
+takes precedence?  If so, should the pkgadd information in 
+/var/sadm/install/contents be updated with installf(1M)?
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. New bcfg file format
+
+
+The new style bcfg file is as follows:
+
+#$version 1
+#MANIFEST:
+    variable=values
+#DRIVER:
+    variable=values
+#ADAPTER:                  ------ only if driver controls hardware
+    variable=values        ------ only if driver controls hardware
+
+$version and stanza section identifiers (MANIFEST, DRIVER, and ADAPTER)
+must be proceeded with a pound symbol ('#').  This allows the dcu
+to treat the bcfg file as a shell script.  The dcu then "sources" in
+the file.  the new netcfg does not source in the bcfg file so if your
+bcfg file tries to use programming constructs other than setting
+variables (conditionals, switch, while, etc.) it won't work.
+Also, the new netcfg enforces the variables that you can define
+to those shown in this document.
+
+All possible variables for the three possible section names (#MANIFEST, 
+#DRIVER, and #ADAPTER) are described in the "bcfg file variables" 
+section.
+
+Single value parameters do not have any quotes.  These can be decimal
+numbers or a single word (i.e. foo, true, false, cat, dog)
+Multivalue parameters are in double quotes and each possible value
+is deliminated by a space(' ').
+
+Whitespace (tab or space) is ignored on all lines except for NAME,
+which prints each word seperated by a space.
+
+comments start with # and mean "ignore rest of line".  You cannot
+have a comment when in single or double quote state:
+
+     FOO="bar bax   # this is a test
+         "
+
+The above example will not work.
+
+The bcfg file is parsed by ndcfg, a dual-parser lex and yacc program which 
+enforces type and syntax checking.
+
+Here is an example of a Gemini bcfg file.
+-----------------
+# this is a comment for our sample bcfg file
+# the #$version 1 is required for all Gemini bcfgs
+#$version 1
+
+#MANIFEST:
+# FILES has *all* files used by this driver
+        FILES="Driver.o Space.c Drvmap Node netdrvr1.mod
+               bcfg locale/C/msg.o locale/C/tx_buf_num
+               locale/C/cable_type locale/es/msg.o
+               locale/es/tx_buf_num locale/es/cable_type"
+        PRE_SCRIPT=en596e_pre                   # resides in same dir
+        POST_SCRIPT=nflxe_pos                   # resides in same dir
+#DRIVER:
+        AUTOCONF=true # if BUS=PCI/MCA/EISA & AUTOCONF=false 
+                      # then you must list irq/port/mem/dma below
+        IDTUNE_NUM=3
+        IDTUNE_ARRAY[1]="LSL_1KCHUNKS, 8"
+        IDTUNE_ARRAY[2]="LSL_2KCHUNKS, 2"
+        IDTUNE_ARRAY[3]="LSL_6KCHUNKS, 16"          
+        DEPEND=ethtsm                           # ODI only
+        TYPE=ODI                                # DLPI, ODI, MDI
+        DRIVER_NAME=mydrv                       # as defined in Master
+        REBOOT=true    # if driver puts things in space.c requiring reboot
+        NAME="Western Digital/SMC 8003/8013 Microchannel Series,
+              IBM Ethernet Adapter/A (WD8003E/A compatible),
+              IBM PS/2 Adapter/A (SMC8013E/A compatible) Series"
+        CUSTOM_NUM=2
+        CUSTOM[1]='MYPARAMETER
+                 TXBUFFERS=4 TXBUFFERS=8
+                 4 8
+                 Transmit buffers
+                 RESERVED
+                 Please select the number of transmit buffers
+                 ADVANCED
+                 FDDI
+                 DRIVER
+                '
+        CUSTOM[2]='MEDIATYPE
+                 1 0 2
+                 AUI BNC TP
+                 Cable Type
+                 RESERVED
+                 Please select the cable type
+                 BASIC
+                 ETHER
+                 BOARD
+                '
+
+#ADAPTER:
+        BOARD_IDS="0x10110002 0x10110014" # must match Drvmap
+                                          # example for PCI
+        CONFORMANCE=0x0100                # hex number with 0x
+        DMA="0 1 3 5 6 7"                 # optional
+        INT="2 3 6 7 9"                   # not required if AUTOCONF=true
+        BUS=PCI                           # only one bus per bcfg file.
+        MEM="0xC8000-0xC9FFF 0xCC000-0xCDFFF"
+        NUM_PORTS=1                       # only one port on this board
+        PORT="0x300-0x31F 0x320-0x33F 0x340-35F 0x360-0x37F"
+        TOPOLOGY="ETHER, TOKEN, FDDI, ISDN, ATM" # can be multi valued
+
+If the commonly known attributes (DMA, INT, MEM) have multiple values
+the user will be prompted to choose the correct ones.  
+
+If BUS is ISA and AUTOCONF=false, all mandatory attributes (DMA, INT, 
+MEM, and PORT) must be specified, even if the driver does not use
+that field (for example, if the board uses programmed I/O instead
+of memory, you would still need to define MEM="")
+
+If a board must use two memory ranges, they must be specified as one
+large memory range for selection purposes.
+
+If the board supports multiple media types, they can be specified
+in a CUSTOM prompt and queried by the driver in its cm_* routine.
+
+At the end of this the user can try to verify the parameters.  
+However, if the driver doesn't have a xxx_verify routine this will fail.
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. Testing your bcfg file
+
+
+This is essential to ensure there aren't any syntax errors in your bcfg
+file.  If there are, netcfg will not display the bcfg file to the user,
+preventing the driver from being installed.  Follow these steps.
+
+1) Make your driver (this will copy the Driver.o into driver.cf)
+   Makefile guidelines and driver framework issues are discussed in 
+   a separate document.
+
+2) change directories to driver.cf.  This is where your DSP components
+   (Driver.o, Master, System, Drvmap, Node, etc.) and bcfg files are.
+
+3) sh
+   # for i in *.bcfg
+    do
+    /usr/lib/netcfg/bin/ndcfg -f `pwd`/${i}
+    done
+
+4) Ensure there aren't any syntax errors reported.  Note that if 
+   you are testing a bcfg that isn't valid for the bus you're running
+   ndcfg on, you'll see the message 
+  
+   "error in /my/path/name/foo.cf/foo.bcfg: skipping bcfg since only for 
+    non-applicable bus XXX"
+
+   For example, the bcfg file declares BUS=MCA but you ran ndcfg on a
+   machine that only has an ISA bus.  If you see this message, run
+   ndcfg on a machine that actually has that bus type.
+
+   Success is indicated by the message
+
+   "ndcfg: no errors found in /my/path/name/foo.cf/foo.bcfg"
+
+-------------------------------------------------------------------------
+**************************************************************************
+XXX. bcfg file variables
+
+The most important file is the bcfg file.  This file is used to 
+specify capabilities, attributes, and features of the NIC driver
+to niccfg.  It is a cross between an OSF stanza file and a Bourne shell
+script file and will parsed by the new netcfg.  It defines 
+variables for later netcfg processing.  Each driver must have
+at least one bcfg file and possibly more if multiple busses are involved.
+
+Here is a description of the bcfg variables you can use and the section
+that you must define the variable in or obsolete if the variable is not
+applicable to Gemini.  You will only need to define a subset of these in 
+your bcfg file.  The following variables are mandatory and must be 
+defined for all #$version 1 bcfg files:
+
+BUS CONFORMANCE DRIVER_NAME FILES NAME TOPOLOGY TYPE
+
+The following symbols must be defined if BUS=ISA:
+
+DMA INT MEM PORT 
+
+You cannot use "" as a possible value for these parameters.
+
+TESTING YOUR BCFG FILE
+----------------------
+There are two steps to test your bcfg file:  from "ndcfg -f /my/filename.bcfg"
+and from the bourne shell.  From your bourne shell prompt, source it in:
+
+$ . ./mydriver.bcfg
+
+This should succeed
+
+BCFG FILE FORMAT
+----------------
+
+#$version 1
+-----------
+Required first line in bcfg file.  Specified the version of the bcfg
+file.  This is different than the #$version in the Master(4) file.
+If #$version is not found then the bcfg file is assumed to be a UW2.1 
+bcfg file whose version is 0.  This variable controls the following 
+settings in the lexer:
+
+versions supported
+------------------
+0 (default if #$version 1 not found)    - SCO UnixWare 2.1, 2.1.1 bcfg file
+1                                       - SCO Gemini bcfg file.
+
+
+Version 1 has the following changes compared to version 0.
+
+- Stanza sections required (#MANIFEST, #ADAPTER, #DRIVER)
+- UPGRADE_CHECK removed.
+  OLD_DRIVER_NAME unsupported
+  DLPI removed; use TYPE instead.
+  ADDRM removed; use AUTOCONF instead.
+- Range support for memory addresses added, similar to OpenServer 5 AOF.
+- carriage return no longer separator for multi-valued 
+  attributes; must use comma instead (comma with c/r is ok)
+- CONTROL_HW parameter added
+- spaces allowed in your NAME= line.
+- CONFORMANCE parameter added 
+- CUSTOM[x] changes to CUSTOMx with a different syntax
+- FILES parameter added
+
+Version 2 does not exist yet.  It will likely add support for 
+OLD_DRIVER_NAME.  Version 0 may or may not still be supported when
+version 2 bcfg file support is added.
+
+The remainder of this section describes version 1 bcfg file format with
+its stanza section in parenthesis.  
+
+The following parameters are obsolete for #$version 1 bcfg files:
+ADDRM, DLPI, ODIMEM, OLD_DRIVER_NAME, UPGRADE_CHECK, VERIFY
+
+ACTUAL_RECEIVE_SPEED(#ADAPTER) 
+------------------------------
+This required parameter is intended to provide some measure of the 
+performance of a particular card/driver combination to protocol 
+stacks that wish to make use of this information.  It does not 
+reflect the speed of the underlying media(that will be available
+to stacks as part of a returned DL_GET_STATISTICS_ACK structure).  
+Currently, SCO TCP/IP uses this information to determine appropriate 
+performance parameters for the perf argument to ifconfig(1M)(ADMN), 
+which is used by the tcp driver for calculating the send and receive 
+window sizes (the value used is the maximum of the interface's perf 
+speed and in_recvspace/in_sendspace in /etc/default/inet).  
+
+The value for the ACTUAL_RECEIVE_SPEED parameter is a single positive 
+decimal integer number and represents how fast the card/driver
+combination is.  The lowest acceptable value is 1.  The value "0"
+(set by ndcfg for UW2.1 bcfg files) indicates "unknown".  
+The number will be determined by running the sped/spew driver.
+
+Examples:
+ 10Mb/s Ethernet will have the value 10
+100Mb/s Ethernet will have the value 100
+ 16Mb/s Token Ring will have the value 16.
+10/100Mb/s Ethernet will have the value 100.
+
+We have agreed to extend the MAC_INFO_ACK structure to 
+reflect the current send/receive speed of the underlying media
+(10/100 or 4/16Mbit/sec) and to add this value to DL_GET_STATISTICS_ACK
+structure.  This information isn't known yet so it can't go in bcfg
+files.  Drivers will set the send and receive speeds in a MAC_INFO_ACK
+structure. However, the relative performance of the card/driver combo 
+won't change (even as different with different CPU speeds)
+Implementation note: we must also ensure that any 
+DL_GET_STATISTICS_REQ send by stack but received by a UW2.1 DLPI driver 
+sends back the correct structure.  Ditto for ODI drivers.
+
+ACTUAL_SEND_SPEED(#ADAPTER) 
+---------------------------
+This required parameter is intended to provide some measure of the 
+performance of a particular card/driver combination to protocol 
+stacks that wish to make use of this information.  It does not 
+reflect the speed of the underlying media(that will be available
+to stacks as part of a returned DL_GET_STATISTICS_ACK structure).  
+Currently, SCO TCP/IP uses this information to determine appropriate 
+performance parameters for the perf argument to ifconfig(1M)(ADMN), 
+which is used by the tcp driver for calculating the send and receive 
+window sizes (the value used is the maximum of the interface's perf 
+speed and in_recvspace/in_sendspace in /etc/default/inet).  
+
+The value for the ACTUAL_SEND_SPEED parameter is a single positive 
+decimal integer number and represents how fast the card/driver
+combination is.  The lowest acceptable value is 1.  The value "0"
+(set by ndcfg for UW2.1 bcfg files) indicates "unknown".  
+The number will be determined by running the sped/spew driver.
+
+Examples:
+ 10Mb/s Ethernet will have the value 10
+100Mb/s Ethernet will have the value 100
+ 16Mb/s Token Ring will have the value 16.
+10/100Mb/s Ethernet will have the value 100.
+
+We have agreed to extend the MAC_INFO_ACK structure to 
+reflect the current send/receive speed of the underlying media
+(10/100 or 4/16Mbit/sec) and to add this value to DL_GET_STATISTICS_ACK
+structure.  This information isn't known yet so it can't go in bcfg
+files.  Drivers will set the send and receive speeds in a MAC_INFO_ACK
+structure. However, the relative performance of the card/driver combo 
+won't change (even as different with different CPU speeds)
+Implementation note: we must also ensure that any 
+DL_GET_STATISTICS_REQ send by stack but received by a UW2.1 DLPI driver 
+sends back the correct structure.  Ditto for ODI drivers.
+
+AUTOCONF(#DRIVER)
+-----------------
+This variable is used when the network driver is either EISA, PCCARD, 
+PCI, or MCA, (see BUS) but is NOT automatically configured by the 
+confmgr/resmgr at kernel init time(e.g., this might be the case with a 
+network card that is integrated into the mother board).  The configuration 
+file would set AUTOCONF=false (which means that the network card is NOT 
+autoconfigurable).  If AUTOCONF=false then configuration file must also 
+list the Interrupt Vectors (INT), IO Addresses (PORT), Memory 
+Addresses (MEM), and DMA Channels (DMA) that the network card supports and
+the the configuration process will proceed as if this was an ISA board.
+That is, the user will be prompted for each of the above addresses.
+
+The user is prompted to enter in the proper settings that the network 
+card is configured at.  After this netcfg changes the IRQ from 2 
+to 9 and UNIT, IRQ, IOADDR, MEMADDR, and DMAC are added to the particular 
+key resmgr.
+
+This will also used by the NetInstall process.
+
+Note that silent installs cannot prompt the user for these values; your
+driver code should assume some reasonable defaults in this case.
+
+Since the autoconfiguration mechanism doesn't automatically add PCCARD
+and PNPISA bus information to the resmgr at kernel initialization time,
+all bcfgs with these bus types must set AUTOCONF=false.
+
+BOARD_IDS(#ADAPTER)
+-------------------
+List all of the Board IDs that this network card supports including what Smart
+Start might pass in as a Board ID (e.g., in the case of PCI cards, the Smart
+Start installation scripts append a 'PC' prefix to the Board ID - e.g.,
+PC10222000 for the AMD_PCnet card).  This must match the Drvmap file.
+
+Hex digits must be in upper case and not lower case.
+
+EISA board IDs are in uncompressed form.
+
+MCA board IDs are in the form:
+
+        0xDDDD
+
+where each D is a hex digit, 0 - 9 or A -  F.  MCA board IDs must be four 
+digits; when necessary leading zeroes must be used.  For example:
+
+0xABC is not correct.
+
+0x0ABC is correct.
+
+PCI board IDs are in the form:
+
+0xVVVVDDDD
+
+where V and D are hex digits, 0 - 9 or A - F(upper case!),
+VVVV is the vendor ID and DDDD is the device ID.
+Note the lower case 'x' above too.
+
+Note that PCI and MCA boards have a specific syntax.
+Wildcards cannot be used here as in Drvmap(4).
+You cannot have mixed-platform BOARD_IDS -- they must all be correct BOARD_IDS
+for your given BUS= line and match your Drvmap file.  Create multiple bcfg
+files, one for each BUS the driver supports, with the appropriate
+BOARD_IDS for each BUS in each bcfg file.
+
+Board revisions are not applicable for PCI devices.
+
+If BUS is PCI, EISA, or MCA, you must have BOARD_IDS set unless AUTOCONF=false,
+in which case you must also supply ISA parameters as well, or just set BUS=ISA
+and pretend it's an ISA board.
+
+BUS(#ADAPTER)
+-------------
+This variable contains the Bus Type of the network card.  Currently, the NICS
+package supports one of ISA, EISA, PCI, MCA, PCCARD (not PCMCIA).
+(there are hooks for PNPISA in the bus autodetection but it's not actually
+implemented so PNPISA is not an option for BUS)
+This value cannot be multi-valued.  This means that you must have multiple
+bcfg files for each bus type.  If this was multivalued, there would be
+problems with AUTOCONF when one of the values included a ISA bus.
+Note that multiple topologies are supported within a bus; see TOPOLOGY.
+
+This parameter is used to limit the selections that the user sees.  If
+the machine that the user runs netcfg on does not have the BUS= as
+specified in the .bcfg file, then they will not be able to select this
+bcfg file.
+
+If you set BUS to PCCARD or PNPISA, you must set AUTOCONF=false.
+If your board cannot be autodetected by the resmgr at kernel initialization
+time then you must set AUTOCONF=false as well.  Certain EISA boards have
+this requirement.
+
+CONFIG_CMDS(#MANIFEST)
+---------------------
+used by ii_do_netinst when executing netinstall and also ndcfg
+code.  Replacement for PRE_SCRIPT and POST_SCRIPT for network installations.
+
+Certain drivers require commands to be executed after the driver is
+loaded(i.e. download code).  This list contains the actual command string
+that must be run.  This is synonymous with the POST_SCRIPT variable
+described above.  You should also list this command in EXTRA_FILES so that
+the command is pulled from the media.  It is run with the following code:
+The proper way to have download code is to use a firmware.o file to
+load code on the board.  If you can't do that, use a Rc file in your
+driver DSP package which will run automatically when going multiuser.
+This parameter was only available for netinstall use under UnixWare 2.1 and
+was not used by niccfg.
+
+  CONFIG_CMDS is a list of commands (1 per line) to run after copying
+  in EXTRA_FILES.  netinstall executes each line.  The idea is to pump
+  microcode in to the firmware here.  exactly 1 command per line.
+  Must provide absolute pathname to command too.
+
+You must include each of the files used and required in CONFIG_CMDS 
+in EXTRA_FILES too.  See EXTRA_FILES for more information.
+
+CONFORMANCE(#ADAPTER)
+---------------------
+The version of the applicable specification that this driver adheres to.
+The value of this variable is a single hex number with a leading '0x':
+
+      TYPE=     CONFORMANCE=
+      -----     ------------
+       ODI        0x0110 (ODI 1.1) 0x0310 (ODI 3.1) or 0x0320 (ODI 3.2)
+                  The current transmogrifier sets 3.2 in the Master file.
+       MDI        0x0100 (from #define MDI_VERSION 0x0100 in mdi.h)
+      DLPI        0x02 (DL_CURRENT_VERSION) 
+   
+  Example:  CONFORMANCE="0x0100"
+
+See MAC_INFO_ACK (mac_info_ack_t structure) mac_driver_version
+
+CUSTOM[x](#DRIVER)
+------------------
+For customized parameters that a network card needs, other than the standard
+ones (i.e., IRQ, IO, MEM, DMA), the CUSTOM parameter is used.  Each CUSTOM[x]
+parameter corresponds to only one customized parameter that is needed.
+Therefore, if a network cards requires 3 such parameters, there will be 3
+CUSTOM[x] entries: CUSTOM[1], CUSTOM[2], and CUSTOM[3].
+Up to 9 CUSTOM parameters can be used.
+netcfg will store the value that the user sets into the resource 
+manager database.  Your driver can retrieve this
+value using cm_getval(D3).  See cm_args(D4), cm_getnbrd(D3) and 
+cm_getbrdkey(D3).  See CUSTOM_NUM.
+
+This is quite flexible but assumes the user is familiar with the
+item to be chosen.  Obscure driver features should probably not be
+selectable and if they are should be clearly labeled with an accompanying
+help file.  Obscure or debugging driver parameters really belong in 
+the Space.c file.
+
+Note that CUSTOM[x]= and IDTUNE_ARRAY[x]= information is saved in the resmgr 
+and not in Space.c or Space.h as with previous OpenServer releases..
+
+In the event that a custom parameter cannot be found in the resmgr, drivers
+should:
+- notify the user via cmn_err(CE_NOTE that the parameters cannot be found
+- assume a reasonable default and announce that via cmn_err(CE_CONT...
+
+CUSTOM[x] lines are useful for multiple port lines for a board.  If the
+NIC supports multiple media types, this is the way to add these 
+capabilities into the resmgr.
+
+CUSTOM[x] parameters comprise 7 physical lines and are in single 
+quotes("'").  Comments (with '#') are not allowed within CUSTOM[x] lines.
+
+   Line 1: Name of variable that is stored in the resmgr for this
+           parameter.  Multiple variables are not supported within
+           one CUSTOM[x] entry -- use another CUSTOM[x] definition instead
+           This parameter is always stored in the resmgr as a string, even
+           if the value in this line can be interpreted as a number or a
+           numeric range.
+           The name must be less than 11 characters long.
+           The following parameters can not be used for line 1:
+           IRQ, DMAC, IOADDR, MEMADDR, OLDIRQ, OLDDMAC, OLDIOADDR, OLDMEMADDR,
+           and KEY.
+           The name on line 1 cannot start with a '.' or '_'.
+   Line 2: Single or multi-valued values (these are what the driver sees
+           with cm_getval(D3)).  Separate with spaces.  Note the value
+           chosen by the user will be stored in the resmgr as a string
+           and not a number.  This allows text options to be stored
+           in the resmgr.  If you are storing numbers in the resmgr,
+           your driver code must convert this from an ascii string
+           to a real number.
+   Line 3: List of choices (text strings) user sees in choices 
+           box when user presses F2 key.  delimited by spaces.
+           If this line contains the single word "__STRING__"
+           then the user can enter free-form data.  That is,
+           Line 2 should have one word as well even though it will be
+           ignored, and the results of the users' input will be stored in 
+           the resmgr at the parameter indicated in line 1.
+           This is useful for entering things like a MAC address.
+           Note that there aren't any constraints on the formatting
+           of the input except that it cannot contain spaces.  Line 7 must
+           be BASIC if you use "__STRING__" as free form data isn't 
+           supported in ADVANCED mode.  The text may have punctuation and/or
+           be in upper or lower case -- your driver code must be prepared to 
+           handle this.  
+           NOTE: Network Installation does not support free-form data, and 
+           the user will see the literal text "__STRING__" instead of a 
+           meaningful list of choices.
+           Drivers must assume a reasonable default
+   Line 4: Title for choices.   Whole line interpreted as a text string.
+   Line 5: the text "RESERVED".  Previous releases interpreted this line as
+           the path name to a help file.
+   Line 6: Prompt given to the user.  Whole line interpreted as a text
+           string.
+
+   the following additional lines are only found in #$version 1 bcfg files
+   (that is, those found in Gemini).
+
+   Line 7: BASIC or ADVANCED to indicate the appropriate section the 
+           option should appear in.   The user will always be prompted
+           for a BASIC option and the associated parameter will be added 
+           to the resmgr.  ADVANCED choices will only be given to the
+           user if they select the "Advanced" section in netcfg, so 
+           the associated parameter specified at line 1 may not exist in
+           the resmgr.  Driver writers should remember this and use an 
+           appropriate default if they find that the ADVANCED parameter 
+           has not been set in the resmgr.
+   Line 8: The applicable topologies this parameter is applicable to,
+           separated by a space.  If TOPOLOGY="ETHER TOKEN FDDI ISDN ATM" 
+           then this line could read ETHER TOKEN  or just TOKEN
+           This is useful for things like token ring source routing 
+           parameters which aren't applicable to other topologies
+   Line 9: Is this parameter meaningful for BOARD, DRIVER, GLOBAL, or PATCH?
+           BOARD means that the parameter is specific to this instance
+           of the driver.  This parameter is unique to the board/instance
+           of the driver and changing this parameter for one board should
+           not change this parameter for another board in the resmgr.
+           DRIVER means that this parameter is general for the driver and
+           the driver has an Mtune/Dtune file.  An idtune of this parameter
+           will not cause a full kernel relink since the parameter is 
+           local to the driver
+           GLOBAL means that this parameter affects all MDI drivers on
+           the system as well as the DLPI subsystem.  An idtune of this
+           parameter will cause a full kernel relink.  This has the
+           advantage that you can do an idtune of any kernel parameter.
+           PATCH patches the specified variable in /dev/kmem after the
+           driver is loaded.  It does not patch the Driver.o file.
+
+   Examples:
+
+   #$version 1
+   #DRIVER:
+        CUSTOM_NUM=2
+        CUSTOM[1]='MYPARAM
+                 TXBUFFERS=4 TXBUFFERS=8
+                 4 8
+                 Transmit buffers
+                 RESERVED
+                 Please select the number of transmit buffers
+                 ADVANCED
+                 FDDI
+                 DRIVER
+                '
+        CUSTOM[2]='MEDIATYPE
+                 1 0 2
+                 AUI BNC TP
+                 Cable Type
+                 RESERVED
+                 Please select the cable type
+                 BASIC
+                 ETHER
+                 BOARD
+                '
+   #ADAPTER:
+        TOPOLOGY="ETHER FDDI ISDN"
+
+
+Other examples:
+
+        CUSTOM[1]="
+                ISDNADDR1
+                0
+                __STRING__
+                ISDN Address B-Channel 1
+                RESERVED
+                Enter ISDN Address
+                BASIC
+                ISDN
+                DRIVER
+                "
+
+        CUSTOM[2]="
+                ISDNSUBADR1
+                0
+                __STRING__
+                ISDN SubAddress B-Channel 1
+                RESERVED
+                Enter ISDN SubAddress
+                BASIC
+                ISDN
+                DRIVER
+                "
+
+
+   Here is a small code fragment to retrieve the value stored with CUSTOM[x].
+
+   NOTE:  DDI8 will replace the cm_getnbrds(D3), cm_getbrdkey(D3), and
+          others with a single function xxx_config:
+          xxx_config(rm_key_t key, cfg_func_t func, void *arg)
+          See DDI8 section for more information.
+
+        cm_args_t               cm_args;        /* args to cm_getval() */
+
+        /* indicates only the first value for a param is retrieved. */
+        cm_args.cm_n = 0;
+                /*
+                 *  Get cable type vector
+                 */
+                cm_args.cm_param = "CABLE_TYPE";
+                cm_args.cm_val = &(el16cable_type[i]);
+                cm_args.cm_vallen = sizeof(int);
+                if (cm_getval(&cm_args) == 0) {
+                        /*
+                         * convert value from to numeric form.
+                         */
+                        el16cable_type[i] =
+                         (int)(((char *)(&el16cable_type[i]))[0] - '0');
+                }
+
+
+CUSTOM_NUM(#DRIVER)
+-------------------
+The number of customized parameters that this driver requires.  The number
+here should correspond with the number of elements in the CUSTOM[x] array
+(i.e., if CUSTOM_NUM=2, then CUSTOM[1] and CUSTOM[2] should both be set).
+CUSTOM_NUM can be any number up to 9.
+NOTE:  The array elements begin with 1, NOT 0.  See CUSTOM[x].
+
+DEPEND(#DRIVER)
+---------------
+If a network card requires more than one driver to be installed, the DEPEND
+variable needs to be set to the name(s) of the other driver(s).
+This list is above and beyond the normal actions for drivers types:
+
+if TYPE=ODI,  automatically idinstall odimem, net, lsl, and msm moduels
+              automatically idinstall ethtsm, toktsm, or fdditsm based on
+              TOPOLOGY.
+if TYPE=MDI,  automatically idinstall dlpi module and a netX driver.
+if TYPE=DLPI, nothing additional to add.
+
+These additional drivers must reside in the same high level directory as the
+normal NICS drivers, currently /etc/inst/nics/drivers.  
+In the case of an IHV diskette requiring additional drivers, they should 
+be packaged as separate drivers on the same diskette.  Each of these drivers 
+should be a DLM with a Driver.mod file as described elsewhere in this document.
+
+NOTE:  DEPEND=drivers are NOT supported for netisl
+
+The DEPEND= drivers do not have their own bcfg files.
+
+For ODI and DLPI drivers, DEPEND= drivers are expected to live in
+/etc/inst/nics/drivers.  For MDI drivers, DEPEND= drivers are 
+expected to live in /etc/inst/nd/mdi
+
+When last board (and only then!) using a driver with a DEPEND 
+line is removed, the DEPEND= drivers are also be removed.
+
+Your DEPEND line will probably be the same as your $depend line in your Master
+file.
+
+This is not the same as "$interface mdi 2" in Master(4).
+
+DLPI(obsolete)
+--------------
+Obsoleted by TYPE keyword.  Gemini MDI drivers must not set this keyword.
+
+DMA(#ADAPTER)
+-------------
+The list of DMA Channels that the Network card supports.  The numbers are
+in decimal.
+
+Example:  DMA="2 4 5"
+
+DRIVER_NAME(#DRIVER)
+--------------------
+This variable contains the name of the driver associated with the network
+card that the configuration file represents.  If a network card requires more
+than one driver to be installed, the DEPEND variable needs to be used.
+
+  Example:  DRIVER_NAME=flash32
+
+EXTRA_FILES(#MANIFEST)
+----------------------
+Not used by ndcfg -- only used when cutting netinstall floppies.
+
+Some drivers require extra files to be installed other than the standard files
+that reside in the /etc/conf tree (special firmware.o files or a required
+download code file).  These are listed here.  Must be absolute pathnames,
+separated by a newline.   Should also contain all of CONFIG_CMDS=
+          **as well as those that they use or run**
+so that all of the programs will be bundled onto the netinstall floppies.
+This parameter was only available for netinstall use under UnixWare 2.1 and
+was not used by niccfg.
+
+  EXTRA_FILES is just a list of extra files besides the DSP that should
+  be installed on the system.  included as part of netinstall
+  Must have exactly one file per line.   Must be absolute path name too.
+  This is the only way to get your firmware.o and msg.o onto the net
+  install floppies since they are not part of Driver.mod.
+
+Example#1:
+          EXTRA_FILES="/etc/netflex/cet_start
+          /etc/netflex/unieth.bin
+          /etc/netflex/uniethf.bin"
+
+Example#2:
+          EXTRA_FILES="/etc/conf/pack.d/NE3200/firmware.o
+          /etc/conf/pack.d/NE3200/msg.o"
+
+
+Each of these files is copied relative to /unixware on the floppy.  If you're
+using a DOS formatted diskette you can't have long file names
+
+        [ -n "${EXTRA_FILES}" ] && {
+                for file in $EXTRA_FILES
+                do
+                        # NOTE: "${file%/*}" is like 'dirname ${file}'
+                        dir=${file%/*}  
+                        [ ! -d $dir ] && mkdir -p ${IIROOT}/$dir
+                        cp ${MNTROOT}/unixware/$file ${IIROOT}/$file
+                done
+        }
+
+Even though idinstall takes care of firmware.o and msg.o automatically,
+you must still list firmware.o and msg.o in EXTRA_FILES so that
+they will be bundled onto the netinstall disks.  This is required 
+because firmware.o and msg.o are not part of Driver.mod, which is
+normally all that is distributed on the netinstall disks.
+
+EXTRA_FILES="/etc/netflex/cet_start
+/etc/netflex/unieth.bin
+/etc/netflex/uniethf.bin"
+
+EXTRA_FILES="/etc/netflex/cet_start
+/etc/netflex/ap.nflxsr
+/etc/netflex/unitok.bin
+/etc/netflex/unitokf.bin"
+
+
+IMPORTANT NOTE:  cut.netflop.sh assumes that each file in EXTRA_FILES will
+- be an absolute pathname to the file
+- exist as ${ROOT}/${MACH}/pathname
+
+this means that it's up to the driver's makefile to do a $(INSTALL) to
+copy all of the EXTRA_FILES files into ${ROOT}/${MACH}
+
+FAILOVER (#DRIVER)
+------------------
+Specifies if the driver is failover-capable.  To meet this requirement the 
+driver must have a configurable MAC address and support the setting of 
+the following multicast attributes:
+- single address
+- set all multicast addresses (MACIOC_SETALL?)
+- set of an "unlimited" number of single multicast addresses.   
+
+The value should be either true or false.  If not present the default is  
+false.
+
+FILES(#MANIFEST)
+----------------
+A list of all of the files that are part of this driver(Driver.o, 
+Drvmap, Space.c, Driver.mod, etc.).  All files that are part of
+your DSP which are used by idinstall must be listed.
+Each of these files will be checked to ensure it exists before 
+working with the driver.  No forward slashes needed.
+
+HELPFILE(#DRIVER)
+-----------------
+This mandatory parameter tells the help file book.
+Can contain any text
+
+Example:  HELPFILE="netdrvr 20"
+
+OPEN ISSUE:  the exact text to use here has not yet been determined.
+
+IDTUNE_ARRAY[x](#DRIVER)
+------------------------
+A parameter which allows drivers to non-interactively change tunable parameters
+on the system.  Each parameter contains the name of the tunable along with the
+new value, separated by a comma, signifying a (parameter, value) tuple.   
+Do not use more than one value -- only two items should be specified, separated
+by a comma.
+Up to 9 IDTUNE_ARRAY parameters may be specified.
+The NICS package only allows one of these cards to be configured into the 
+system (since the tunable values would then have to be added together if 
+more than one were installed).  Currently only used for ODI token ring drivers.
+
+   Example #1:
+
+       IDTUNE_NUM=5
+
+       IDTUNE_ARRAY[1]="LSL_1KCHUNKCS, 8"
+       IDTUNE_ARRAY[2]="LSL_2KCHUNKS, 2"
+       IDTUNE_ARRAY[3]="LSL_6KCHUNKS, 16"          
+       IDTUNE_ARRAY[4]="LSL_10KCHUNKS, 0"
+       IDTUNE_ARRAY[5]="LSL_36KCHUNKS, 1"
+
+OPEN ISSUES: when driver removed should kernel parameter be restored?
+             multiple cards using same driver - what happens?
+             If multiple drivers installed that modify same parameters?
+             Right now IDTUNE variables are not per adapter.
+
+
+IDTUNE_NUM(#DRIVER)
+-------------------
+This is set to the number of tunables that must be changed.  The number 
+here should correspond with the number of elements in the IDTUNE_ARRAY[x] 
+array (i.e., if IDTUNE_NUM=2, then IDTUNE_ARRAY[1] and IDTUNE_ARRAY[2] 
+should both be set).  
+IDTUNE_NUM can be up to 9.
+
+NOTE:  The array elements begin with 1, NOT 0.  See IDTUNE_ARRAY[x].
+
+INT(#ADAPTER)
+-------------
+This variable contains the interrupt vectors that the network card supports.
+The list should be space separated and surrounded by quotes.  This variable
+is NOT required if the network card is autoconfigurable.
+The numbers are in decimal.
+
+If your bcfg describes an ISA board, use 9 instead of 2.
+
+Example:  INT="3 4 5 6 9"
+
+ISAVERIFY(#DRIVER)
+------------------
+The ISAVERIFY parameter is an optional parameter that is specific to
+ISA boards(that is, BUS=ISA).  If your bcfg file is for a smart-bus board
+(PCI, EISA, MCA), you do not need to supply this parameter.  If you do
+not have a verify routine in your driver then you should not list list
+this parameter in the bcfg file.
+If your driver does have a verify routine then you must include
+this parameter in your .bcfg file.
+
+The values for this parameter declare the write-back capability for
+the firmware.  This does not include custom parameters.
+
+Example:
+   ISAVERIFY="READIOADDR READIRQ READMEMADDR WRITEIOADDR WRITEIRQ WRITEMEMADDR"
+
+See the companion isaverify document for more information on ISA autodetection
+and what this means for drivers.
+
+MAX_BD(#ADAPTER)
+----------------
+This required parameter has a value which is the number of adapters 
+supported by the driver minus 1.  That is, starting from 0, the highest 
+numbered adapter supported.  For example, if a driver supports up to 4 
+adapters in a single machine, the MAX_BD attribute would look like MAX_BD=3.
+Attempts to add more than MAX_BD boards will fail.
+
+MEM(#ADAPTER)
+-------------
+This variable contains the memory addresses that the network card supports.
+It holds a space separated list and each memory address must contain the
+starting and ending address separated by a '-'.  The list must be surrounded
+by quotes.  This variable is only required if the card supports memory
+addressing.  This variable is NOT required if the network card is
+autoconfigurable.  Always displayed to the user in hex.
+The numbers are in upper case hex without a leading "0x".  Example:
+
+MEM="D0000-D1FFF D2000-D3FFF"
+
+NAME(#DRIVER)
+-------------
+This variable contains the full name of the Network Card.  This name will be
+displayed to the user during the NIC selection process (where the user
+actually selects the number of cards installed).  You should surround the
+name with double quotes as
+1) this allows spaces
+2) can have multiple values separated with a comma if driver handles 
+   multiple boards
+The following restrictions apply:
+- cannot have a comma or apostrophe in text
+
+NOTE:  When used for NetInstall any spaces in the bcfg files NAME=
+       will be converted to underscores('_').
+
+Example:
+        NAME="My Zoom driver Series"
+
+A version number string should not appear here.  It will be automatically
+added by netcfg from the Driver.o if the Driver.o file is found to contain
+a version string.  Driver version numbers with the _ndversion symbol
+are discussed in another document.
+
+NET_BOOT(#ADAPTER)
+------------------
+This optional parameter is used by the installation kernel for 
+network installations.  The values specified in the NET_BOOT parameter 
+indicate the level of support for boot configuration parameters.  The
+value for this parameter is one of static, dynamic, or autosearch.
+If no NET_BOOT parameter is present and the driver is present and the 
+driver is used in the installation kernel, NET_BOOT defaults to static.
+
+  Value                 Description
+  -----                 -----------
+  static           Driver neither obtains configuration parameters from
+                   boot line nor searches for adapters
+  dynamic          Driver obtains configuration parameters from boot line
+  autosearch       If no boot line KEY is specified, the driver uses the
+                   first available adapter (for EISA, MCA, and PCI busses
+                   only).
+
+This is not currently supported for Gemini as the network install
+technology is based on UW2.1 where this information is not necessary.
+
+NUM_PORTS(#ADAPTER)
+-------------------
+Some network cards support more than one port simultaneously (there are
+dual-port and quad-port cards on the market) *on the same card*.  If 
+this is one of those network cards, set this variable to the number of 
+ports the single card supports.  A similar but different parameter is UNIT.
+Not currently implemented - use CUSTOM parameters to set aspects of card
+behaviour.
+
+ODIMEM(obsolete)
+----------------
+only necessary for ODI drivers.
+if set to true then the odimem driver should be linked in statically.
+As more ODIMEM=true drivers are added, niccfg increases the
+ODIMEM_NUMBUF and ODIMEM_MBLK_NUMBUF tunables.
+
+OLD_DRIVER_NAME(obsolete)
+-------------------------
+If this driver existed under a different name in a previous release, set this
+variable to that name.  This is needed for upgrade installations.
+Unsupported for Gemini.
+
+PORT(#ADAPTER)
+--------------
+This variable contains the IO Addresses that the network card supports.  It
+holds a space separated list and each IO address must contain the starting
+and ending address separated by a '-'.  The list must be surrounded by
+quotes.  This variable is only required if the card supports IO addressing.
+This variable is NOT required if the network card is autoconfigurable.
+The numbers are in upper case hex without a leading "0x".  Example:
+
+PORT="3FA-3FF 3BC-3EF"
+
+
+POST_SCRIPT(#MANIFEST)
+--------------------
+POST_SCRIPT is called upon the last removal of the driver from the system.
+the exit status is ignored.
+
+Normal driver DSP files will be deleted automatically by idinstall.
+Note you must take care to ensure the files are only deleted when the last 
+instance of the driver is removed.
+
+This parameter will be UNDOCUMENTED for vendors.  In fact, it doesn't
+even need to exist.  idinstall will take a Init/Rc/Sd file which can do
+the same thing.
+
+NOTE:  POST_SCRIPT is not supported for network installations - use
+firmware.o instead.  Note you must add firmware.o to EXTRA_FILES to get 
+it on the netinstall floppies.  See EXTRA_FILES for more information.
+Note that CONFIG_CMDS is supported for network installations though.
+
+PRE_SCRIPT(#MANIFEST)
+-------------------
+Similar to POST_SCRIPT but the PRE_SCRIPT program is run for the first
+installation of the driver.  Other additional instances of the driver
+will not cause the PRE_SCRIPT to be invoked.  If your driver requires some
+back-end processing, here is where you must do it.
+
+The exit status is ignored.
+This parameter will be UNDOCUMENTED for vendors.  In fact, it doesn't
+even need to exist.  idinstall will take a Init/Rc/Sd file which can do
+the same thing.
+
+NOTE:  PRE_SCRIPT is not supported for network installations - use
+firmware.o instead.  Note you must add firmware.o to EXTRA_FILES to get 
+it on the netinstall floppies.  See EXTRA_FILES for more information.
+Note that CONFIG_CMDS is supported for network installations though.
+
+REBOOT(#DRIVER)
+---------------
+Forces the user to reboot the machine after this driver has been idbuild'ed
+into the kernel.  You must add a line to
+/tmp/nics.reboot.list and /tmp/nics.reboot if it doesn't exist.
+Possibly IBM family?: IBM_AUTOLST_32 IBM_EST_32 IBM_LST_16 IBM_LST_32
+TOKENBM.   Probably for those driver that aren't loadable modules.
+Syntax:  REBOOT=true   if necessary
+you can eliminate this or say REBOOT=false if you don't need to reboot.
+
+REBOOT=true causes the installation of each instance of the driver to
+cause a shutdown and reboot.
+
+Can't have this with NetInstall
+
+RM_ON_FAILURE(#DRIVER)
+-----------------------
+contains a list of files to remove if an error occurs while installing
+the driver.  Traditionally contains files that are put into place
+with PRE_SCRIPT.  
+
+RM_ON_FAILURE="/etc/init.d/nflxt /etc/rc0.d/K85nflxt 
+               /etc/rc2.d/S02nflxt"
+
+TOPOLOGY(#ADAPTER)
+------------------
+This variable contains the list of topologies supported by the hardware
+and driver.  It can be multivalued if the card is dual-topology capable.
+The following topologies are supported: 
+
+ETHER, TOKEN, ISDN, FDDI, ATM, X25, FRAMERELAY, and OTHER.
+
+This parameter is used by netcfg for selecting drivers of a particular 
+type. (e.g., TOPOLOGY="ETHER" or TOPOLOGY="ETHER TOKEN").  In the case of
+dual-topology cards, you will want to have CUSTOM[x] variables to 
+query the user for more information about which topology the card should
+use if it cannot autodetect the media in use.  Note that in any case
+you must determine the correct topology to use early so that your 
+MAC_INFO_ACK reply (mac_info_ack_t structure) mac_mac_type can contain 
+the correct *single* value (one of MAC_CSMACD, MAC_TPR, or MAC_FDDI).
+
+Also see BUS and CUSTOM[x] line 8.
+
+TYPE(#DRIVER)
+-------------
+The type of driver this is.  Possible values are DLPI, MDI, and ODI.
+This is needed because all ODI driver require the ODI core stack to be 
+installed, built, and loaded onto the system.  
+If this variable is set to DLPI or MDI the ODI core stack can be ignored.  
+Also used by NetInstall to prevent loading in odimem net lsl msm modules.
+
+UNIT(#ADAPTER)
+--------------
+Certain network cards require that the UNIT field be correct in the resource
+manager.  This will tell the driver how many cards are actually configured in
+the system.  If a network driver needs this or if a network card works in
+both 'Single Port' and 'Dual Port', the value of this variable will be saved
+in both the resource manager and the /etc/conf/sdevice.d/Driver_name file.
+Note that UNIT does *not* serve to uniquely identify a driver (a different
+UNIT at each key); drivers for autodetected hardware (PCI/EISA/MCA) and
+ISA drivers should all call cm_getnbrd() to determine how many boards are 
+configured into the system.  Autodetected boards will have keys automatically
+added to the resmgr, and netcfg add keys for ISA boards to the resmgr.
+See NUM_PORTS.
+
+UPGRADE_CHECK(obsolete)
+-----------------------
+Often the same driver works on many different network cards.  During an
+upgrade installation, if the NICS package comes across one of these drivers,
+it tries to determine which is the correct card - sometimes the IO address
+range or the memory address mapping will be different.  This file should be
+set to a script that can be run to determine whether or not this driver works
+for the configuration settings of the card.  A file called /tmp/nic.upg.check
+can be read to obtain these settings or you can use resmgr to read them
+depending on the architecture of the card.  You will have to copy this file
+into the scripts directory(/etc/inst/nics/scripts). 
+Not supported in Gemini
+
+VERIFY(obsolete)
+----------------
+true or false.  Doesn't do anything in niccfg.  Obsolete for Gemini.
+
+WRITEFW(#DRIVER)
+----------------
+This parameter is intended for ISA cards that must program settings
+in NVRAM/EEPROM on firmware on the card for the card to be considered 
+functional.  The possible values are true or false.  If true, this means 
+that if a board cannot be found then the add operation should fail, since
+there's no way to program these settings in the card.
+
+
+            **************************************
+            NETWORK INSTALL VARIABLES NOW OBSOLETE
+            **************************************
+
+ADDRM(obsolete)
+---------------
+Although the network card is an auto-configurable type (e.g., EISA),
+sometimes there is no entry in the NVRAM/EEPROM (as in the case of some 
+embedded cards).  If this variable is set to true, then the network 
+installation scripts must manually add the entry for the driver to the 
+resmgr database.  Only supported for EISA, MCA, and PCI.
+
+In particular, ii_do_netinst (see the NetInstall document) calls 
+ii_add_key when ADDRM=true.  In this case it changes the IRQ from 2 to 9
+and adds UNIT, IRQ, IOADDR, MEMADDR, and DMAC to the particular key
+in resmgr.
+
+This parameter is OBSOLETE for Gemini and is no longer needed;
+use AUTOCONF= instead.
+
+-----------------------------------------------------------------------------
+**************************************************************************
+XXX. NetInstall
+
+NetInstall floppy format topics are not covered in this document.  However, the
+basic driver framework is sufficient for network installation purposes:
+multiple drivers would be saved on a disk similar to the IHV disk format.
+
+--------------------------------------------------------------------------
+**************************************************************************
+Appendix A: Creating custom installable DOS floppies for SCO OpenServer 5.0
+
+While not applicable to Gemini, this appendix will be included in the
+final documentation to show vendors how they can create a DOS floppy
+containing drivers for Gemini, OSR5, Windows, and NetWare.  The
+Gemini IHV floppy format is discussed elsewhere; this section
+describes how a driver can be packaged on a DOS diskette
+for OSR5 custom.  The driver will 
+
+
+                        Revision 1.0
+
+Abstract
+
+This document is intended to provide developers with the information needed
+to cut Custom(ADM) installable SCO Unix compatible products on DOS floppy
+filesystems.
+
+Introduction
+
+The Everest version (1994 product family release) of Custom(ADM) has been
+enhanced to support installation of SCO Unix compatible products, from a DOS
+5.0 or earlier floppy filesystem. This feature allows vendors with products
+smaller than a single floppy (generally driver manufacturers) to distribute
+both DOS and UNIX versions of their product on a single floppy disk, thus
+reducing media costs.
+
+This document describes the method for cutting a Custom(ADM) installable
+product on a DOS floppy.
+
+Guidelines
+
+Overview
+
+Installation from DOS floppies onto SCO Unix systems is accomplished by
+placing a standard Custom(ADM) installable distribution image onto an
+existing DOS floppy filesystem. The image is generated using existing SCO
+distribution mastering tools, and is then copied into a directory on the DOS
+floppy, and given a pre-defined filename.
+
+Note that the target SCO Unix system need not have DOS filesystem support
+linked into the kernel. The management of the DOS floppy, by Custom(ADM), is
+done using the SCO Unix dos(C) utilities.
+
+Except for the distribution size ( must be smaller than a single floppy ),
+all standard installation features are supported for products distributed on
+DOS floppies.
+
+Cutting the distribution
+
+Below is a description of the steps required to create a Custom(ADM)
+installable DOS floppy. These instructions assume that the reader is already
+familiar with the concepts and tools required to cut Custom(ADM) installable
+distributions ( on media other than DOS floppies ).
+
+  1. Cut Distribution Image
+
+     A Custom(ADM) installable distribution image must be cut using SCO
+     distribution mastering tools. Only one image is supported per product,
+     and the image must fit on a single floppy volume.
+     Image Creation using the Software Mastering Toolkit
+          For perms-list based products, the SMT (see SCO Product
+          Engineering Guide) should be used to cut the distribution image.
+
+          Given the desired (floppy) device and media size, the mkcuts(SMT)
+          utility will generate enough media-sized tar(C) images to contain
+          the entire distribution.
+
+          If more than one image is generated, the product is too large to
+          use the DOS floppy distribution feature.
+
+          Because the SMT generated images are padded to the specified media
+          size (e.g. 1.44M), tar(C) must be used to extract the files from
+          the generated image into a directory. Tar(C) can then be used to
+          re- archive the directory into a new non-padded product image.
+          This is the image that will be placed on the DOS floppy.
+
+     Image Creation using Custom Distribution Mastering Toolkit
+          For a new style Software Storage Object based distribution, the
+          CDMT (see Everest Component Developer Installation and Upgrade
+          Guidelines) should be used.
+
+          Information about the specific CDMT commands is not yet available,
+          but a method will be provided to generate distribution media
+          images.
+
+          Again, if more than one media image is generated, the distribution
+          is too large to use the DOS floppy distribution feature.
+
+          The image that is generated by CDMT will be either a tar(C) or
+          cpio(C) archive. Either archive format may be placed on the DOS
+          floppy.
+  2. Create the DOS Floppy
+
+     A DOS floppy can be created using either the format command from DOS,
+     or the dosformat(C) command from SCO Unix.
+
+     Once a floppy has been formatted, a directory called \SCO should be
+     created in the DOS filesystem. Directories can be created on the floppy
+     using the mkdir command from DOS, or the dosmkdir(C) command from SCO
+     Unix.
+
+  3. Place the Image on the Floppy
+
+     The single volume media image that was generated by the mastering tools
+     should be copied on to the DOS floppy as \SCO\CUSTOM.DST. The image can
+     be copied using the doscp(C) command from SCO Unix.
+
+Installing the distribution
+
+Once a Custom(ADM) installable distribution has been placed on a DOS floppy,
+it can be installed onto an Everest or later version of SCO Unix. This can
+be done in the following ways:
+
+   * Installation from the Command Line
+        o Insert the floppy into a floppy drive
+        o As root, type the command: custom -p [product name] -i [-m floppy
+          device]
+   * Installation from the Graphical User Interface
+
+     The following process works from either an X windows interface
+     (recommended) or a character terminal.
+        o Start custom with the command : custom
+        o From the Software menu, select the Run Installation... option.
+        o In the dialog box, select the appropriate disk drive (floppy drive
+          0 or 1)
+        o
+        o Insert the floppy disk into the appropriate disk drive
+        o Click either the full or partial buttons.
+
+Limitations
+
+The following limitations apply to Custom(ADM) distributions placed on DOS
+floppy filesystems:
+
+   * Single Archive -- Custom(ADM) will recognize only a single distribution
+     archive on a DOS floppy, and it must be named \SCO\CUSTOM.DST.
+   * Archive Format -- The \SCO\CUSTOM.DST distribution image must be a
+     valid tar(C) or cpio(C) archive.
+   * Single Volume -- The Custom(ADM) installable portion of a product
+     distributed in this manner may not be spread across multiple floppies.
+   * Dos(C) Commands -- The dos commands doscp(C) and dosdir(C) must exist (
+     in /usr/bin ) on the target SCO Unix system. Therefore, the user should
+     be informed to make sure that the SCO Unix package containing these
+     utilities has been installed.
+   * DOS Floppy Version -- The DOS floppy must have been formatted with DOS
+     5.0 or earlier.
+   * Target System Version -- The system onto which the DOS floppy
+     distribution is installed must be the Everest release or later of SCO
+     Unix.
+-----------------------------------------------------------------------------
+**************************************************************************
+Appendix B: References
+
+cm_getval(D3), cm_args(D4), cm_getnbrd(D3) and cm_getbrdkey(D3).  
+configure(1M), configure_inet(1M), netinfo(1M), installf(1M), removef(1M), 
+idconfupdate(1M), idmodreg(1M), configure(1M), 
+interface(4), netdrivers(4), admin(4)
+/var/sadm/install/contents, and /var/sadm/pkg/nics/install/* for 
+postinstall/preinstall/preremove scripts
+/usr/sbin/niccfg
+Enhancements to the Design of the NICS Package in Eiger - Draft 1 (many
+errors)
+
+-----------------------------------------------------------------------------
+**************************************************************************
+XXX. Sample bcfg files
+Here are some sample bcfg files to show you how they are structured:
+Each file starts with a #ident line.  Enclosed are the following bcfg files.
+
+e3B/e3B.cf/e3B.bcfg
+e3C/e3C.cf/e3C.bcfg
+e3D/e3D.cf/e3D.bcfg
+ne/ne.cf/ne.bcfg
+tok/tok.cf/tok-isa-auto.bcfg
+tok/tok.cf/tok-isa.bcfg
+tok/tok.cf/tok-mca.bcfg
+wdn/wdn.cf/wdn-isa.bcfg
+wdn/wdn.cf/wdn-mca-ibm.bcfg
+wdn/wdn.cf/wdn-mca.bcfg
+
+
+**********************HERE IS e3B/e3B.cf/e3B.bcfg
+#ident "@(#)e3B.bcfg	5.2"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node System"
+
+#####################################
+#DRIVER:
+
+NAME="3Com 3C503 EtherLink II"
+
+HELPFILE="foo bar"
+
+FAILOVER=false
+
+TYPE=MDI
+
+DRIVER_NAME=e3B
+
+CUSTOM_NUM=1
+
+CUSTOM[1]='
+CABLE_TYPE
+1 0 0
+AUI BNC TP
+Cable Type
+/etc/inst/locale/$LOCALE/menus/nics/help/cable_type
+Select Cable Type
+BASIC
+ETHER
+BOARD
+'
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=ISA
+
+TOPOLOGY=ETHER
+
+INT="2 3 4 5"
+
+PORT="250-25F 280-28F 2A0-2AF 2E0-2EF 300-30F 310-31F 330-33F 350-35F"
+
+**********************HERE IS e3C/e3C.cf/e3C.bcfg
+#ident "@(#)e3C.bcfg	5.2"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node System"
+
+#####################################
+#DRIVER:
+
+NAME="3Com 3C523 EtherLink/MC"
+
+HELPFILE="foo bar"
+
+FAILOVER=false
+
+TYPE=MDI
+
+DRIVER_NAME=e3C
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=MCA
+
+BOARD_IDS=0x6042
+
+TOPOLOGY=ETHER
+
+**********************HERE IS e3D/e3D.cf/e3D.bcfg
+#ident "@(#)e3D.bcfg	5.1"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="3Com 3C507 EtherLink 16 Series"
+
+HELPFILE="foo bar"
+
+FAILOVER=false
+
+TYPE=MDI
+
+DRIVER_NAME=e3D
+
+CUSTOM_NUM=3
+
+CUSTOM[1]="
+CABLE_TYPE
+1 0
+BNC/TP AUI
+Cable Type
+RESERVED
+Select Cable Type
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[2]="
+ZEROWAITSTATE
+0 1
+Disabled Enabled
+Zero Wait State
+RESERVED
+Select Zero Wait State
+ADVANCED
+ETHER
+BOARD
+"
+
+CUSTOM[3]="
+DATAMODE
+0 1
+Standard Turbo
+Data Mode
+RESERVED
+Select the Data Mode
+ADVANCED
+ETHER
+BOARD
+"
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+TOPOLOGY=ETHER
+
+# old way:
+#INT="2 3 4 5"
+#PORT="250-25F 280-28F 2A0-2AF 2E0-2EF 300-30F 310-31F 330-33F 350-35F"
+#we use AOF values instead
+
+# VALUES=3, 5, 7, 9, 10, 11, 12, 15
+INT="3 5 7 9 10 11 12 15"
+
+# VALUES=200-260:10, 280-2e0:10, 300-360:10, 380-3a0:10, 3e0
+PORT="200-20F 210-21F 220-22F 230-23F 240-24F 250-25F 260-26F 
+      280-28F 290-29F 2A0-2AF 2B0-2BF 2C0-2CF 2D0-2DF 2E0-2EF
+      300-30F 310-31F 320-32F 330-33F 340-34F 350-35F 360-36F
+      380-38F 390-39F 3A0-3AF 
+      3E0-3EF"
+
+# VALUES=c0000-d0000:8000(16|32|48|64), d8000(16|32), f00000-f80000:20000(64)
+#   16K         32K         48K         64K
+MEM="
+C0000-C3FFF C0000-C7FFF C0000-CBFFF C0000-CFFFF
+C8000-CBFFF C8000-CFFFF C8000-D3FFF C8000-D7FFF
+D0000-D3FFF D0000-D7FFF D0000-DBFFF D0000-DFFFF
+D8000-DBFFF D8000-DFFFF
+F00000-F03FFF F00000-F07FFF F00000-F0BFFF F00000-F0FFFF
+F20000-F23FFF F20000-F27FFF F20000-F2BFFF F20000-F2FFFF
+F40000-F43FFF F40000-F47FFF F40000-F4BFFF F40000-F4FFFF
+F60000-F63FFF F60000-F67FFF F60000-F6BFFF F60000-F6FFFF
+F80000-F83FFF F80000-F87FFF F80000-F8BFFF F80000-F8FFFF
+"
+
+BUS=ISA
+
+**********************HERE IS ne/ne.cf/ne.bcfg
+#ident "@(#)ne.bcfg	5.2"
+#ident "$Header$"
+
+# quick stab at a ne3200 bcfg file.  
+# I'm leaving out the processor CUSTOM prompt since ne will be properly
+# multithreaded.  Besides, that information can't go into the resmgr
+# and must go into the last field in the System file, which ndcfg doesn't do.
+# eventually we'll want to create separate bcfg files with
+# different NAME= lines for the different vendors, even though they
+# all have the same BOARD_ID
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+# NAME="Novell/Eagle/Microdyne/National Semi. NE3200 Bus Master and Compatible"
+NAME="Novell NE3200 Bus Master and Compatible"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=ne
+
+TYPE=MDI
+
+FAILOVER=false
+
+#####################################
+#ADAPTER:
+
+# ne driver calls cm_getnbrd("ne") so crank up the limit
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=EISA
+
+TOPOLOGY=ETHER
+
+BOARD_IDS="NVL0701 NVL0702"
+
+**********************HERE IS tok/tok.cf/tok-isa-auto.bcfg
+#ident "@(#)tok-isa-auto.bcfg	6.1"
+#ident "$Header$"
+
+# This is a quick implementation of tok's bcfg file.   The driver needs work.
+# In particular:
+# -driver should call cm_getval for CM_IRQ, which it doesn't.
+# -driver should call cm_getval routines to retrieve custom parameters
+#  declared here from the resmgr
+# -move the hardware address to the space.c file
+#
+# note that the dcu can still find the bcfg file in /etc/conf/bcfg.d
+# even if the Drvmap doesn't have the undocumented bcfg path name in it.
+# see /etc/dcu.d/menus/boards line 474 on a UW2.1 machine
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="IBM Auto 16/4 Token-Ring Network ISA-16 (Shared RAM)"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=tok
+
+# ignore CUSTOM[2]... for now
+CUSTOM_NUM=1
+
+# we can't set the hardware address in a CUSTOM prompt
+
+CUSTOM[1]="
+FRAMESZ
+988 1500 2000
+988 1500 2000
+Maximum Frame Size
+RESERVED
+Select the Maximum Frame Size
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[2]="
+PRIMARY
+1 0
+Primary Alternate
+Primary or Alternate Address
+RESERVED
+Select the Primary or Alternate Address
+BASIC
+TOKEN
+BOARD
+"
+
+CUSTOM[3]="
+SOURCEROUTE
+0 1
+None Auto
+Source Routing Mode
+RESERVED
+Select the Source Routing Mode
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[4]="
+USEARE
+0 1
+No Yes
+Route Optimization(Use AREs)
+RESERVED
+Select if you want Route Optimization
+ADVANCED
+TOKEN
+BOARD
+"
+
+TYPE=MDI
+
+FAILOVER=false
+
+#####################################
+#ADAPTER:
+
+# AOF file says only 1 of these allowed.
+MAX_BD=1
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=ISA
+
+TOPOLOGY=TOKEN
+
+# we must set INT so that board will be considered valid to ndcfg
+# however the driver doesn't call cm_getval for IRQ and instead
+# uses a canned table.  If all of these are taken, then we will
+# have a generic problem, so I include it here.
+# Also, INT="" won't work
+#   static unchar isa_irq[2][4] = {
+#      { 9, 3, 6, 7 },
+#      { 9, 3, 10, 11 }
+
+# While this is the "Auto" tok board, we must still have these in the bcfg file
+# by virtue of being an ISA card or else ndcfg will reject it.
+
+INT="3 6 7 9 10 11"
+
+MEM="C0000-C3FFF C4000-C7FFF C8000-CBFFF CC000-CFFFF D0000-D3FFF
+                 D4000-D7FFF D8000-DBFFF DC000-DFFFF"
+
+**********************HERE IS tok/tok.cf/tok-isa.bcfg
+#ident "@(#)tok-isa.bcfg	6.1"
+#ident "$Header$"
+
+# This is a quick implementation of tok's bcfg file.   The driver needs work.
+# In particular:
+# -driver should call cm_getval for CM_IRQ, which it doesn't.
+# -driver should call cm_getval routines to retrieve custom parameters
+#  declared here from the resmgr
+# -move the hardware address to the space.c file
+#
+# note that the dcu can still find the bcfg file in /etc/conf/bcfg.d
+# even if the Drvmap doesn't have the undocumented bcfg path name in it.
+# see /etc/dcu.d/menus/boards line 474 on a UW2.1 machine
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="IBM Token-Ring Network ISA Series (Shared RAM)"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=tok
+
+# ignore CUSTOM[2]... for now 
+CUSTOM_NUM=1
+
+# we can't set the hardware address in a CUSTOM prompt
+
+CUSTOM[1]="
+FRAMESZ
+988 1500 2000
+988 1500 2000
+Maximum Frame Size
+RESERVED
+Select the Maximum Frame Size
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[2]="
+PRIMARY
+1 0
+Primary Alternate
+Primary or Alternate Address
+RESERVED
+Select the Primary or Alternate Address
+BASIC
+TOKEN
+BOARD
+"
+
+CUSTOM[3]="
+SOURCEROUTE
+0 1
+None Auto
+Source Routing Mode
+RESERVED
+Select the Source Routing Mode
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[4]="
+USEARE
+0 1
+No Yes
+Route Optimization(Use AREs)
+RESERVED
+Select if you want Route Optimization
+ADVANCED
+TOKEN
+BOARD
+"
+
+TYPE=MDI
+
+FAILOVER=false
+
+#####################################
+#ADAPTER:
+
+MAX_BD=4
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=ISA
+
+TOPOLOGY=TOKEN
+
+# we must set INT so that board will be considered valid to ndcfg
+# however the driver doesn't call cm_getval for IRQ and instead
+# uses a canned table.  If all of these are taken, then we will
+# have a generic problem, so I include it here.
+# Also, INT="" won't work
+#   static unchar isa_irq[2][4] = {
+#      { 9, 3, 6, 7 },
+#      { 9, 3, 10, 11 }
+
+INT="3 6 7 9 10 11"
+
+MEM="C0000-C3FFF C4000-C7FFF C8000-CBFFF CC000-CFFFF D0000-D3FFF
+                 D4000-D7FFF D8000-DBFFF DC000-DFFFF"
+
+**********************HERE IS tok/tok.cf/tok-mca.bcfg
+#ident "@(#)tok-mca.bcfg	6.1"
+#ident "$Header$"
+
+# This is a quick implementation of tok's bcfg file.   The driver needs work.
+# In particular:
+# -driver should call cm_getval for CM_IRQ, which it doesn't.
+# -driver should call cm_getval routines to retrieve custom parameters
+#  declared here from the resmgr
+# -move the hardware address to the space.c file
+#
+# note that the dcu can still find the bcfg file in /etc/conf/bcfg.d
+# even if the Drvmap doesn't have the undocumented bcfg path name in it.
+# see /etc/dcu.d/menus/boards line 474 on a UW2.1 machine
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="IBM Token-Ring Network Adapter/A and 16/4 Adapter/A"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=tok
+
+# ignore CUSTOM[2]... for now 
+CUSTOM_NUM=1
+
+# we can't set the hardware address in a CUSTOM prompt
+
+CUSTOM[1]="
+FRAMESZ
+988 1500 2000
+988 1500 2000
+Maximum Frame Size
+RESERVED
+Select the Maximum Frame Size
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[2]="
+PRIMARY
+1 0
+Primary Alternate
+Primary or Alternate Address
+RESERVED
+Select the Primary or Alternate Address
+BASIC
+TOKEN
+BOARD
+"
+
+CUSTOM[3]="
+SOURCEROUTE
+0 1
+None Auto
+Source Routing Mode
+RESERVED
+Select the Source Routing Mode
+ADVANCED
+TOKEN
+BOARD
+"
+
+CUSTOM[4]="
+USEARE
+0 1
+No Yes
+Route Optimization(Use AREs)
+RESERVED
+Select if you want Route Optimization
+ADVANCED
+TOKEN
+BOARD
+"
+
+TYPE=MDI
+
+FAILOVER=false
+
+#####################################
+#ADAPTER:
+
+# AOF says only 1 allowed
+MAX_BD=1
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=MCA
+
+TOPOLOGY=TOKEN
+
+BOARD_IDS="0xE000 0xE001"
+**********************HERE IS wdn/wdn.cf/wdn-isa.bcfg
+#ident "@(#)wdn-isa.bcfg	6.1"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="SMC/Western Digital 8003/8013 Series"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=wdn
+
+FAILOVER=false
+
+TYPE=MDI
+
+# ignore the MEDIATYPE, WAITSTATEENABLED, and LINKINTEGRITY by setting
+# CUSTOM_NUM to 0.  These are to be set by the setup program supplied by 
+# the vendor.
+CUSTOM_NUM=0
+
+CUSTOM[1]="
+MEDIATYPE
+0 1 2
+BNC TP AUI
+Media Type
+RESERVED
+Select the Media Type
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[2]="
+WAITSTATEENABLED
+0 1
+No Yes
+Wait State Enabled
+RESERVED
+Select if the Wait State should be enabled
+ADVANCED
+ETHER
+BOARD
+"
+
+CUSTOM[3]="
+LINKINTEGRITY
+0 1
+Disabled Enabled
+Link Integrity
+RESERVED
+Select Link Integrity
+ADVANCED
+ETHER
+BOARD
+"
+
+## the problem here is that if we want to ask the user for a ROM address
+## and make the user select it you must make one huge line (larger than
+## what vi can handle out of the choices.  This will probably blow
+## up some lex internal buffer.  Another choice is to have 3 separate
+## CUSTOM prompts for the ROM address: a 16K, 32K, and 64K choice list,
+## each with "disabled" in it so that the user can choose disable for each
+## if a ROM is not installed.
+## The possible ROM address table size is included below.
+##    16K         32K         64K  ROM
+##A0000-A3FFF A0000-A7FFF A0000-AFFFF
+##A2000-A5FFF A2000-A9FFF A2000-B1FFF
+##A4000-A7FFF A4000-ABFFF A4000-B3FFF
+##A6000-A9FFF A6000-ADFFF A6000-B5FFF
+##A8000-ABFFF A8000-AFFFF A8000-B7FFF
+##AA000-ADFFF AA000-B1FFF AA000-B9FFF
+##AC000-AFFFF AC000-B3FFF AC000-BBFFF
+##AE000-B1FFF AE000-B5FFF AE000-BDFFF
+##B0000-B3FFF B0000-B7FFF B0000-BFFFF
+##B2000-B5FFF B2000-B9FFF B2000-C1FFF
+##B4000-B7FFF B4000-BBFFF B4000-C3FFF
+##B6000-B9FFF B6000-BDFFF B6000-C5FFF
+##B8000-BBFFF B8000-BFFFF B8000-C7FFF
+##BA000-BDFFF BA000-C1FFF BA000-C9FFF
+##BC000-BFFFF BC000-C3FFF BC000-CBFFF
+##BE000-C1FFF BE000-C5FFF BE000-CDFFF
+##C0000-C3FFF C0000-C7FFF C0000-CFFFF
+##C2000-C5FFF C2000-C9FFF C2000-D1FFF
+##C4000-C7FFF C4000-CBFFF C4000-D3FFF
+##C6000-C9FFF C6000-CDFFF C6000-D5FFF
+##C8000-CBFFF C8000-CFFFF C8000-D7FFF
+##CA000-CDFFF CA000-D1FFF CA000-D9FFF
+##CC000-CFFFF CC000-D3FFF CC000-DBFFF
+##CE000-D1FFF CE000-D5FFF CE000-DDFFF
+##D0000-D3FFF D0000-D7FFF D0000-DFFFF
+##D2000-D5FFF D2000-D9FFF D2000-E1FFF
+##D4000-D7FFF D4000-DBFFF D4000-E3FFF
+##D6000-D9FFF D6000-DDFFF D6000-E5FFF
+##D8000-DBFFF D8000-DFFFF D8000-E7FFF
+##DA000-DDFFF DA000-E1FFF DA000-E9FFF
+##DC000-DFFFF DC000-E3FFF DC000-EBFFF
+##DE000-E1FFF DE000-E5FFF DE000-EDFFF
+##E0000-E3FFF E0000-E7FFF E0000-EFFFF
+##E2000-E5FFF E2000-E9FFF E2000-F1FFF
+##E4000-E7FFF E4000-EBFFF E4000-F3FFF
+##E6000-E9FFF E6000-EDFFF E6000-F5FFF
+##E8000-EBFFF E8000-EFFFF E8000-F7FFF
+##EA000-EDFFF EA000-F1FFF EA000-F9FFF
+##EC000-EFFFF EC000-F3FFF EC000-FBFFF
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=ISA
+
+TOPOLOGY=ETHER
+
+INT="2 3 4 5 6 7 10 11 14 15"
+
+PORT="200-21F 220-23F 240-25F 260-27F 280-29F 2A0-2BF 2C0-2DF 2E0-2FF 
+      300-31F 320-33F 340-35F 360-37F 380-39F 3A0-3BF 3C0-3DF 3E0-3FF"
+
+#If you're familiar with AOF files, here's the definition:
+#VALUES=a0000-f0000:1000(8|16|32|64),
+#       f1000-f8000:1000(8|16|32),
+#       f9000-fc000:1000(8|16),
+#       fd000(8),
+#       fe000(8)
+#        8K          16K         32K         64K
+MEM="A0000-A1FFF A0000-A3FFF A0000-A7FFF A0000-AFFFF
+     A1000-A2FFF A1000-A4FFF A1000-A8FFF A1000-B0FFF
+     A2000-A3FFF A2000-A5FFF A2000-A9FFF A2000-B1FFF
+     A3000-A4FFF A3000-A6FFF A3000-AAFFF A3000-B2FFF
+     A4000-A5FFF A4000-A7FFF A4000-ABFFF A4000-B3FFF
+     A5000-A6FFF A5000-A8FFF A5000-ACFFF A5000-B4FFF
+     A6000-A7FFF A6000-A9FFF A6000-ADFFF A6000-B5FFF
+     A7000-A8FFF A7000-AAFFF A7000-AEFFF A7000-B6FFF
+     A8000-A9FFF A8000-ABFFF A8000-AFFFF A8000-B7FFF
+     A9000-AAFFF A9000-ACFFF A9000-B0FFF A9000-B8FFF
+     AA000-ABFFF AA000-ADFFF AA000-B1FFF AA000-B9FFF
+     AB000-ACFFF AB000-AEFFF AB000-B2FFF AB000-BAFFF
+     AC000-ADFFF AC000-AFFFF AC000-B3FFF AC000-BBFFF
+     AD000-AEFFF AD000-B0FFF AD000-B4FFF AD000-BCFFF
+     AE000-AFFFF AE000-B1FFF AE000-B5FFF AE000-BDFFF
+     AF000-B0FFF AF000-B2FFF AF000-B6FFF AF000-BEFFF
+     B0000-B1FFF B0000-B3FFF B0000-B7FFF B0000-BFFFF
+     B1000-B2FFF B1000-B4FFF B1000-B8FFF B1000-C0FFF
+     B2000-B3FFF B2000-B5FFF B2000-B9FFF B2000-C1FFF
+     B3000-B4FFF B3000-B6FFF B3000-BAFFF B3000-C2FFF
+     B4000-B5FFF B4000-B7FFF B4000-BBFFF B4000-C3FFF
+     B5000-B6FFF B5000-B8FFF B5000-BCFFF B5000-C4FFF
+     B6000-B7FFF B6000-B9FFF B6000-BDFFF B6000-C5FFF
+     B7000-B8FFF B7000-BAFFF B7000-BEFFF B7000-C6FFF
+     B8000-B9FFF B8000-BBFFF B8000-BFFFF B8000-C7FFF
+     B9000-BAFFF B9000-BCFFF B9000-C0FFF B9000-C8FFF
+     BA000-BBFFF BA000-BDFFF BA000-C1FFF BA000-C9FFF
+     BB000-BCFFF BB000-BEFFF BB000-C2FFF BB000-CAFFF
+     BC000-BDFFF BC000-BFFFF BC000-C3FFF BC000-CBFFF
+     BD000-BEFFF BD000-C0FFF BD000-C4FFF BD000-CCFFF
+     BE000-BFFFF BE000-C1FFF BE000-C5FFF BE000-CDFFF
+     BF000-C0FFF BF000-C2FFF BF000-C6FFF BF000-CEFFF
+     C0000-C1FFF C0000-C3FFF C0000-C7FFF C0000-CFFFF
+     C1000-C2FFF C1000-C4FFF C1000-C8FFF C1000-D0FFF
+     C2000-C3FFF C2000-C5FFF C2000-C9FFF C2000-D1FFF
+     C3000-C4FFF C3000-C6FFF C3000-CAFFF C3000-D2FFF
+     C4000-C5FFF C4000-C7FFF C4000-CBFFF C4000-D3FFF
+     C5000-C6FFF C5000-C8FFF C5000-CCFFF C5000-D4FFF
+     C6000-C7FFF C6000-C9FFF C6000-CDFFF C6000-D5FFF
+     C7000-C8FFF C7000-CAFFF C7000-CEFFF C7000-D6FFF
+     C8000-C9FFF C8000-CBFFF C8000-CFFFF C8000-D7FFF
+     C9000-CAFFF C9000-CCFFF C9000-D0FFF C9000-D8FFF
+     CA000-CBFFF CA000-CDFFF CA000-D1FFF CA000-D9FFF
+     CB000-CCFFF CB000-CEFFF CB000-D2FFF CB000-DAFFF
+     CC000-CDFFF CC000-CFFFF CC000-D3FFF CC000-DBFFF
+     CD000-CEFFF CD000-D0FFF CD000-D4FFF CD000-DCFFF
+     CE000-CFFFF CE000-D1FFF CE000-D5FFF CE000-DDFFF
+     CF000-D0FFF CF000-D2FFF CF000-D6FFF CF000-DEFFF
+     D0000-D1FFF D0000-D3FFF D0000-D7FFF D0000-DFFFF
+     D1000-D2FFF D1000-D4FFF D1000-D8FFF D1000-E0FFF
+     D2000-D3FFF D2000-D5FFF D2000-D9FFF D2000-E1FFF
+     D3000-D4FFF D3000-D6FFF D3000-DAFFF D3000-E2FFF
+     D4000-D5FFF D4000-D7FFF D4000-DBFFF D4000-E3FFF
+     D5000-D6FFF D5000-D8FFF D5000-DCFFF D5000-E4FFF
+     D6000-D7FFF D6000-D9FFF D6000-DDFFF D6000-E5FFF
+     D7000-D8FFF D7000-DAFFF D7000-DEFFF D7000-E6FFF
+     D8000-D9FFF D8000-DBFFF D8000-DFFFF D8000-E7FFF
+     D9000-DAFFF D9000-DCFFF D9000-E0FFF D9000-E8FFF
+     DA000-DBFFF DA000-DDFFF DA000-E1FFF DA000-E9FFF
+     DB000-DCFFF DB000-DEFFF DB000-E2FFF DB000-EAFFF
+     DC000-DDFFF DC000-DFFFF DC000-E3FFF DC000-EBFFF
+     DD000-DEFFF DD000-E0FFF DD000-E4FFF DD000-ECFFF
+     DE000-DFFFF DE000-E1FFF DE000-E5FFF DE000-EDFFF
+     DF000-E0FFF DF000-E2FFF DF000-E6FFF DF000-EEFFF
+     E0000-E1FFF E0000-E3FFF E0000-E7FFF E0000-EFFFF
+     E1000-E2FFF E1000-E4FFF E1000-E8FFF E1000-F0FFF
+     E2000-E3FFF E2000-E5FFF E2000-E9FFF E2000-F1FFF
+     E3000-E4FFF E3000-E6FFF E3000-EAFFF E3000-F2FFF
+     E4000-E5FFF E4000-E7FFF E4000-EBFFF E4000-F3FFF
+     E5000-E6FFF E5000-E8FFF E5000-ECFFF E5000-F4FFF
+     E6000-E7FFF E6000-E9FFF E6000-EDFFF E6000-F5FFF
+     E7000-E8FFF E7000-EAFFF E7000-EEFFF E7000-F6FFF
+     E8000-E9FFF E8000-EBFFF E8000-EFFFF E8000-F7FFF
+     E9000-EAFFF E9000-ECFFF E9000-F0FFF E9000-F8FFF
+     EA000-EBFFF EA000-EDFFF EA000-F1FFF EA000-F9FFF
+     EB000-ECFFF EB000-EEFFF EB000-F2FFF EB000-FAFFF
+     EC000-EDFFF EC000-EFFFF EC000-F3FFF EC000-FBFFF
+     ED000-EEFFF ED000-F0FFF ED000-F4FFF ED000-FCFFF
+     EE000-EFFFF EE000-F1FFF EE000-F5FFF EE000-FDFFF
+     EF000-F0FFF EF000-F2FFF EF000-F6FFF EF000-FEFFF
+     F0000-F1FFF F0000-F3FFF F0000-F7FFF F0000-FFFFF
+     F1000-F2FFF F1000-F4FFF F1000-F8FFF
+     F2000-F3FFF F2000-F5FFF F2000-F9FFF
+     F3000-F4FFF F3000-F6FFF F3000-FAFFF
+     F4000-F5FFF F4000-F7FFF F4000-FBFFF
+     F5000-F6FFF F5000-F8FFF F5000-FCFFF
+     F6000-F7FFF F6000-F9FFF F6000-FDFFF
+     F7000-F8FFF F7000-FAFFF F7000-FEFFF
+     F8000-F9FFF F8000-FBFFF F8000-FFFFF
+     F9000-FAFFF F9000-FCFFF
+     FA000-FBFFF FA000-FDFFF
+     FB000-FCFFF FB000-FEFFF
+     FC000-FDFFF FC000-FFFFF
+     FD000-FEFFF
+     FE000-FFFFF"
+**********************HERE IS wdn/wdn.cf/wdn-mca-ibm.bcfg
+#ident "@(#)wdn-mca-ibm.bcfg	6.1"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="IBM PS/2 Adapter/A (WD8003E/A and SMC8013E/A compatible) for Ethernet"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=wdn
+
+FAILOVER=false
+
+TYPE=MDI
+
+# ignore the MEDIATYPE, WAITSTATEENABLED, and LINKINTEGRITY by setting
+# CUSTOM_NUM to 0.  These are to be set by the setup program supplied by 
+# the vendor.
+CUSTOM_NUM=0
+
+CUSTOM[1]="
+MEDIATYPE
+0 1 2
+BNC TP AUI
+Media Type
+RESERVED
+Select the Media Type
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[2]="
+WAITSTATEENABLED
+0 1
+No Yes
+Wait State Enabled
+RESERVED
+Select if the Wait State should be enabled
+ADVANCED
+ETHER
+BOARD
+"
+
+CUSTOM[3]="
+LINKINTEGRITY
+0 1
+Disabled Enabled
+Link Integrity
+RESERVED
+Select Link Integrity
+ADVANCED
+ETHER
+BOARD
+"
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD even though OSR5 MCA AOF has max of 3
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=MCA
+
+TOPOLOGY=ETHER
+
+BOARD_IDS="0xEFE5 0xEFD4 0xEFD5"
+
+**********************HERE IS wdn/wdn.cf/wdn-mca.bcfg
+#ident "@(#)wdn-mca.bcfg	6.1"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="Western Digital/SMC 8003/8013 Microchannel Series"
+
+HELPFILE="foo bar"
+
+DRIVER_NAME=wdn
+
+FAILOVER=false
+
+TYPE=MDI
+
+# ignore the MEDIATYPE, WAITSTATEENABLED, and LINKINTEGRITY by setting
+# CUSTOM_NUM to 0.  These are to be set by the setup program supplied by 
+# the vendor.
+CUSTOM_NUM=0
+
+CUSTOM[1]="
+MEDIATYPE
+0 1 2
+BNC TP AUI
+Media Type
+RESERVED
+Select the Media Type
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[2]="
+WAITSTATEENABLED
+0 1
+No Yes
+Wait State Enabled
+RESERVED
+Select if the Wait State should be enabled
+ADVANCED
+ETHER
+BOARD
+"
+
+CUSTOM[3]="
+LINKINTEGRITY
+0 1
+Disabled Enabled
+Link Integrity
+RESERVED
+Select Link Integrity
+ADVANCED
+ETHER
+BOARD
+"
+
+#####################################
+#ADAPTER:
+
+# we call cm_getnbrd so crank up MAX_BD even though OSR5 MCA AOF has max of 3
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+BUS=MCA
+
+TOPOLOGY=ETHER
+
+BOARD_IDS="0x6FC0 0x6FC1 0x6FC2 0x61C8 0x61C9"
+

@@ -1,0 +1,136 @@
+#
+#ident "@(#)mail.osr5	11.2
+#
+# System Wide Mail configuration defaults
+
+#
+# The message store (Version 1.0) supports two folder formats:
+#	MMDF style (ctrl-A message delimiters) or
+#	Sendmail style (From sender date delimiters only)
+#
+# MMDF is better from a performance and data consistency perspective.
+# Sendmail format is generally more compatible with other mail user agents.
+# So set sendmail only if you install a user agent that does not understand
+# MMDF folder format.
+# for OSR5 the mmdftailor variable MMBXPREF may be set to ""
+# to turn off MMDF folder format and thus enable berkeley format.
+# only the four ctrl-A lines are supported.
+#
+#MS1_FOLDER_FORMAT=MMDF
+
+#
+# The message store (1.0) allows you to choose
+# where the default inbox for each user is located.
+# for OSR5 /usr/mmdf/mmdftailor is examined for MDLVRDIR and MMBXPREF
+# MDLVRDIR and MMBXPREF take precedence over the variables described below
+#
+# two variables are combined into the default inbox name.
+# MS1_INBOX_DIR is the spool directory where inboxes are located.
+#	It defaults to the home directory for each user.
+# MS1_INBOX_NAME is the name of the inbox for each user.
+#	It defaults to the username for each user.
+#
+# The two expected configurations are as follows:
+#
+# All inboxes reside in /var/mail (a central spool directory):
+# MS1_INBOX_DIR=/var/mail
+# MS1_INBOX_NAME=
+# This effectively means that a mailbox for each user using each
+# user's name will be created in /var/mail.
+#
+# All inboxes reside each user's home directory and have the name .mailbox.
+# MS1_INBOX_DIR=
+# MS1_INBOX_NAME=.mailbox
+#
+# MS1_INBOX_DIR defaults to /usr/spool/mail
+# MS1_INBOX_NAME defaults to null (user name inboxes)
+#
+#MS1_INBOX_DIR=/usr/spool/mail
+#MS1_INBOX_NAME=
+
+#
+# The Message Store always flushes it's data to the UNIX buffer cache.
+# Enabling FSYNC will cause the flushes to go all the way through to disk.
+# This improves data reliability in the case of system crashes
+# since the buffer cache normally takes up to 30 seconds to flush to disk,
+# but it can reduce performance as flushing every write operation through
+# to disk is more expensive than using the buffer cache.
+MS1_FSYNC=FALSE
+
+#
+# Folders are split into two files: a backwards compatible folder file
+# and an index file, if a non-message store user agent modifies
+# the folder, two levels of checking are available for message
+# store aware applications to detect that the folder has been modified
+# and that the index needs to be rebuilt (an expensive operation).
+# extended checking is normally not necessary, unless you have a mail
+# user agent that modifies the folder contents but does not modify
+# the modification time on the folder (sets the mod time back).
+#
+MS1_EXTENDED_CHECKS=FALSE
+
+#
+# Deleting messages from folders is an expensive operation for large folders
+# as the folder is completely rewritten.
+# The Message Store has the capability to reduce the number of rebuild
+# operations that take place by marking messages as deleted but not
+# rebuilding the folder until some percentage of bytes have become unused.
+# A threshold can be specified where if the number of bytes still used
+# by undeleted messages drops below a certain percentage then
+# the folder will be rebuilt on close.
+#
+# 100 percent means always rebuild the folder on close if messages were deleted,
+#	which provides maximum backwards compatibility but no performance gains.
+# 0 percent is a potentially non-useful case where the folder is never rebuilt
+#	it just grows forever accumulating deleted messages.
+# any other number is the percent of bytes that must be used for valid
+# messages, so when the percentage of bytes drops below that number
+# the folder will be rebuilt when the user agent closes that mailbox.
+#
+# The compatibility you lose is that deleted messages become visible
+# to non-message store aware user agents as messages where the from
+# address and the subject were both "deleted", which could be annoying.
+# As this value is overrideable for individual users
+# setting the threshold to around 50 is a good idea if the majority
+# of users are using message store aware mail user agents.
+#
+MS1_EXPUNGE_THRESHOLD=100
+
+#
+# The Message Store has the capability to read entire mailboxes into
+# core which provides some performance improvements at a potentially
+# large cost in memory.  This is useful for single user (desktop) systems.
+#
+MS1_FOLDERS_INCORE=FALSE
+
+#
+# old style folder.lock lock file creation is supported, normally
+# just kernel locks are used.  Turn this on and folder.lock will
+# be created.  Kernel locks are still used as well.
+MS1_FILE_LOCKING=FALSE
+
+#
+# mailboxes must be locked in order to access them.
+# if a lock times out the folder cannot be accessed.
+# on heavily loaded systems a longer lock timeout may prevent requeuing
+# of messages in the deliver process.
+# However it will annoy users as it will take longer to time out
+# on locked files.
+#
+MS1_LOCK_TIMEOUT=10
+
+#
+# a umask for folder creation is provided.
+# this mask is in addition to normal UNIX umask support.
+#
+# for POSIX compliance it should be zero.
+# for maximum security it should be 077 (which is recommended)
+# Please leave the exec (search) permissions there because
+# this mask is used to create directories as well as files.
+#
+# Note that mail delivery from the mail transport (slocal)
+# always sets the UNIX umask to 077 before calling the message store.
+# Therefore this value is primarily useful for clients that create
+# folders (such as mailx and IMAP clients).
+#
+MS1_UMASK=077

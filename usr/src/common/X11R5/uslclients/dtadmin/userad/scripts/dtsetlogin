@@ -1,0 +1,94 @@
+#!/usr/bin/sh
+
+#ident	"@(#)dtadmin:userad/scripts/dtsetlogin	1.3"
+#copyright	"%c%"
+
+# 
+# used by dtadduser and LoginMgr to modify .profile or .login
+# (depending on the user's default shell) so that .olsetup is 
+# invoked when the user logs in.  The file is created if needed. 
+# 
+# Since this is not intended to be invoked by hand it doesn't need 
+# to be "friendly" so it uses positional parameters and does minimal 
+# validation of them.
+#
+# ASSUMPTIONS: 
+#
+# C-shell is named csh (though it can be in any directory),
+# C-shell is the only shell that doesn't use .profile as its startup-file,
+# Arguments are valid and in correct order.
+
+Prefix=UX:`/usr/bin/basename $0`
+
+XDIR=${XWINHOME:-/usr/X}
+
+. $XDIR/adm/dtuser.msgs
+
+if [ "$#" != "4" ]
+then
+        
+        MSG=`$GETTXT $TXT_Usage`
+        printf "$MSG" $Prefix 
+        MSG=`$GETTXT $TXT_dtsetlogin`
+        printf "$MSG\n"
+	exit 1
+fi
+
+LOGINDIR=$1
+LOGINSHELL=$2
+GROUP=$3
+USER=$4
+
+if [ "`basename $LOGINSHELL`" = "csh" ]
+then
+    STARTUP_FILE=.login
+else
+    STARTUP_FILE=.profile
+fi
+
+if [ ! -r $LOGINDIR -o ! -w $LOGINDIR -o ! -x $LOGINDIR ]
+then
+        MSG=`$GETTXT $TXT_AccessHome`
+        printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+        exit 3
+fi
+
+cd $LOGINDIR
+
+if [ ! -f $STARTUP_FILE ]
+then
+	echo > $STARTUP_FILE
+	/usr/bin/chmod 644    $STARTUP_FILE
+	/usr/bin/chgrp $GROUP $STARTUP_FILE
+	/usr/bin/chown $USER  $STARTUP_FILE
+
+else if [ ! -r $STARTUP_FILE -o ! -w $STARTUP_FILE ]
+	then
+                MSG=`$GETTXT $TXT_AccessProfile`
+                printf "\n\t$MSG\n" $Prefix $LOGINDIR >& 2
+		exit 4
+	fi
+fi
+
+# in the regex's below the brackets [] contain a space and a tab
+
+if [ "$STARTUP_FILE" = ".login" ]	# C shell user
+then
+    /usr/bin/grep '^[ 	]*setenv[ 	][ 	]*SHELL' $STARTUP_FILE > /dev/null 2>&1
+    if [ $? != 0 ]
+    then	    # tab--------v	v----space
+        echo 'setenv SHELL $shell	 #!@ Do not edit this line !@' >> $STARTUP_FILE
+    fi
+    /usr/bin/grep '^[ 	]*exec /usr/bin/sh $HOME/.olsetup' $STARTUP_FILE > /dev/null 2>&1
+    if [ $? != 0 ]
+    then			# tab--------v	v----space
+        echo 'exec /usr/bin/sh $HOME/.olsetup	 #!@ Do not edit this line !@' >> $STARTUP_FILE
+    fi
+else					# Bourne or Korn Shell user
+    /usr/bin/grep '^[ 	]*. $HOME/.olsetup' $STARTUP_FILE  > /dev/null 2>&1
+    if [ $? != 0 ]
+    then	# tab---------v	v----space
+        echo '. $HOME/.olsetup	 #!@ Do not edit this line !@' >> $STARTUP_FILE
+    fi
+fi
+exit 0

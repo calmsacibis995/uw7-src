@@ -1,0 +1,56 @@
+% SCCS information: /s/xtcp/usr/src/common/cmd/lp/filter/postscript/postio/s.romfonts.ps  1.2  96/08/08  16:06:52
+%
+% This PostScript progam dumps a list of all ROM and disk fonts, in 
+% alphabetical order, available in a PostScript printer.  It can be run 
+% with the postio command for PostScript printers attached on a serial 
+% line, as follows:
+%
+%	postio -t -L<outputfile> -l<tty>
+%
+%   where
+%	outputfile	will contain font names (and some other stuff)
+%	tty		can be obtained using the lpstat command
+%
+% The list of fonts can be placed in the file named 
+%	/etc/lp/printers/<printer>/residentfonts
+% to prevent those fonts from being downloaded by the download utility.
+%
+
+/AllFonts {
+	/AllFontNames FontDirectory maxlength array def
+	AllFontNames 0 0 put
+
+	FontDirectory {pop AllFontNames Insert} forall
+
+	/filenameforall where {
+		pop
+		(fonts/*)
+		{(fonts/) search pop pop pop AllFontNames Insert}
+		200 string
+		filenameforall
+	} if
+	1 1 AllFontNames 0 get {
+		AllFontNames exch get cvn ==
+	} for
+} bind def
+
+/Insert {		% name in a sorted list
+	/List exch def
+	/Name exch 128 string cvs def
+
+	/Slot 1 def
+	List 0 get {
+		Name List Slot get le {exit} if
+		/Slot Slot 1 add def
+	} repeat
+
+	List 0 get -1 Slot {
+		dup List exch get
+		List 3 1 roll exch 1 add exch put
+	} for
+	List Slot Name put
+	List 0 List 0 get 1 add put
+} bind def
+
+AllFonts
+

@@ -1,0 +1,90 @@
+
+	@(#)Design.README	11.1	10/22/97	12:39:45
+
+GEMINI vidconfGUI design - the X11R6 X server video configuration tool
+
+					-- Hiram Clawson - hiramc@sco.COM
+
+If you have ever seen vidconf function on an OpenServer installation,
+you have essentially seen the vidconf of Gemini.  We are porting
+the vidconf GUI from OpenServer to Gemini.  We will keep the same
+look and feel with only slight additions.
+
+1.  Add "Test" button to check configuration choice.
+2.  Add remote configuration.  No "Test" allowed on a remote machine.
+
+Both of these additional features may require some interesting work.
+
+1.  Testing a video configuration has always been a problem.
+	What happens if the video card becomes "stuck" in some mode
+	and cannot be returned to a sane state ?  We can do our
+	best to force a video card into a sane state, and most will
+	succeed, however there will always be the odd card that will
+	not cooperate.
+2.  Is the remote configuration done with a full OSA implementation,
+	or is there prehaps a simpler method to achieve the same
+	results.  It looks like we do not need to do a full OSA
+	implementation.
+
+Work to do on the current version of vidconfGUI in BL6 to bring it
+to "final gemini" status:
+
+1.  Fix the autodetection code so it won't crash on ISA only bus machines.
+	It currently works properly on PCI and EISA bus machines.
+	No autodetection should be attempted on ISA only bus machines.
+	This is a simple fix in the ndscript file.
+	The ndscript performs a simple process of obtaining the vendor's
+	magic numbers from the card, then comparing the magic number
+	to the AOF files to find which cards match the magic number.
+	Currently ndscript obtains this magic number depending upon
+	the bus type of the machine via other scripts such as pciinfo.
+	This is working fine and we can continue to use this process.
+	However, there are queries of why we don't use the resmgr
+	to obtain this magic number.  My position on this is, if the
+	resmgr finalizes on a usable interface and it can deliver a magic
+	number to ndscript, then we will use that.  Until then, we will
+	use pciinfo, etc...
+2.  Find out why the button labels are not displaying correctly.
+	There are probably some app-defaults files to add to the delivery.
+3.  Add the appropriate checks for system administration authorization.
+	There is a standard method to use on UnixWare to decide if the
+	application is allowed to make system changes.  When not authorized,
+	vidconf can only be used to "View" the configuration.
+	The logic for this transition is already in vidconf, currently
+	it simply triggers on whether the invoking login is root or not.
+	We just need to fix that test.
+4.  A full OSA implementation is not needed.  vidconf does indeed interact
+	with the system on which it is configuring the video card.  However,
+	all these interactions are simple I/O and are isolated and
+	easily identifible in the vidconf code.
+	1.  Read and write the file grafinfo/grafdev
+	2.  Read and write the file grafinfo/grafmon
+	3.  Read any .xgi file in the grafinfo/* hierarchy.
+	4.  Run ndscript on the system and read the resulting output.
+		ndscript may run other scripts on the system, e.g. pciinfo
+		but this is all internal to ndscript.
+	5.  Run any script in vidconf/scripts and receive a return code.
+	6.  Run some "system" commands to copy files, remove files.
+	7.  Running "vidparse" will not be needed on gemini.
+
+	These forms of I/O can be performed by the generic remote
+	command OSA.
+	We can decide on whether to run them locally or remotely depending
+	upon the requested mode of operation.  For example, simply
+	copy the grafinfo/grafdev file from the remote system to the
+	local system and read it from a temporary file.  Copy it back
+	when the manipulation is complete.
+5.  vidconf already has a "silent" option to perform all its work unattended.
+	If there are any ISL issues where vidconf needs to run, we can
+	use this silent option here.
+6.  Clean up the multiple unnecessary screens upon exit.  This is a legacy
+	of the old class.h situation, no longer needed.
+7.  Send appropriate read-only configuration information to the resmgr 
+	database so the configuration can be viewed in the DCU also.
+8.  Add the test button function.  I believe we can do this with
+	the cooperation of the X server by adding a command line option
+	to the X server to cause it to exit after a few seconds and
+	have it really do its best to force the card back to VGA text mode.
+	We can either cause the test to appear on an unused multiscreen,
+	or perhaps ask the currently running X server to give up the screen
+	in the Merge Xsight extension fashion.

@@ -1,0 +1,107 @@
+#ident	"@(#)request	1.2"
+#ident	"$Header$"
+
+#
+#  Main routine
+#  
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+MENU_RESP=$1
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+export INSTALL_MODE PKGINSTALL_TYPE AUTOMERGE
+
+#  set INSTALL_MODE to CUSTOM, if not set
+[ "$INSTALL_MODE" ] || INSTALL_MODE=CUSTOM
+
+PKGINSTALL_TYPE=NEWINSTALL
+AUTOMERGE=NULL
+
+# nfs does not have any volatile files. 
+# Therefore no upnover is required for preserving config files.
+
+# is it upgrade or overlay?
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	*)	;;
+esac
+
+############# End  UPGRADE AND OVERLAY #######################
+
+#
+#  Do we have Desktop Metaphor installed?
+#
+pkginfo -i desktop > /dev/null 2>&1
+USE_DTM=$?
+
+#
+#  Set defaults:
+#	If DTM is not installed,
+#		then don't install DTM related files.
+#
+DTM=YES
+[ "${USE_DTM}" != "0" ] && DTM="NO"
+
+#
+#  Do we have OA&M Package installed?
+#
+${SCRIPTS}/chkpkgrel oam
+USE_OAM=$?
+
+#
+#  Set defaults:
+#	If OAM is not installed or
+#	   non SVR4.2 OAM is installed,
+#		then don't install OAM related files.
+#
+OAM=YES
+[ "${USE_OAM}" = "0" ] && OAM="NO"
+[ "${USE_OAM}" = "1" -o "${USE_OAM}" = "4" ] && OAM="NO"
+
+#
+# Are we installing desktop or oam now...if so then set DTM & OAM...
+#
+for i in $PKGLIST
+do
+        case $i in
+        desktop)        DTM=YES;;
+        oam)            OAM=YES;;
+        esac
+done
+
+
+[ "$PKGINSTALL_TYPE" = OVERLAY ] && REINSTALL=YES	
+
+[ "$UPDEBUG" = YES ] && goany
+
+export OAM DTM REINSTALL
+
+unset CLASSES
+[ "$REINSTALL" != NO ] && CLASSES="none build"
+[ "${OAM}" = "YES" ] && CLASSES=${CLASSES}" OAMadmin"
+[ "${DTM}" = "YES" ] && CLASSES=${CLASSES}" DTMadmin"
+
+# if nothing to install, exit w/ code 77 for pkging tools to exit gracefully.
+
+[ "$CLASSES" ] || exit 77
+
+############# Begin  UPGRADE AND OVERLAY #######################
+
+echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+echo AUTOMERGE=\"${AUTOMERGE}\" >> ${MENU_RESP}
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${MENU_RESP}
+echo INSTALL_MODE=\"${INSTALL_MODE}\" >> ${MENU_RESP}
+
+############# End  UPGRADE AND OVERLAY #######################
+
+[ "$UPDEBUG" = YES ] && goany
+
+exit 0

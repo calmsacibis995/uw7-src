@@ -1,0 +1,2089 @@
+#ident	"@(#)cg:i386/stin	1.111"
+#	stin - input description for 386 CG Code generator.
+#
+#
+
+SHAPES
+
+#	basic shapes
+
+FR:	'FREE';			# evaluate for effects only
+CC:	'CC';			# evaluate for condition codes (ignore value)
+
+# NAIL nodes for copy, jumps, and uninitialized storage
+
+COPY:   'COPY';
+COPYASM:'COPYASM';
+CSE:    'CSE';			# common subexpression
+FCON:   'FCON';			# floating constant
+JUMP:   'JUMP';
+EH_LABEL:   'EH_LABEL';
+NOP:	'NOP';
+RETURN: 'RETURN';
+UNINIT: 'UNINIT';
+
+# Different flavors of constants
+
+CS:	POSRANGE	5;	# 0	   - 31
+CBs:	SGRANGE		7;	# -128     - 127
+CBu:	POSRANGE	8;	# 0        - 255
+CBpos:	POSRANGE	7;	# 0	   - 127
+CWs:	SGRANGE		15;	# -32768   - 32767
+CWu:	POSRANGE 	16;	# 0        - 65535
+CWpos:	POSRANGE	15;	# 0	   - 32767
+CLs:	SGRANGE 	31;	# -(2**31) - 2**31 - 1
+CLu:	POSRANGE	32;	# 0	   - 2**32 - 1
+CLpos:	POSRANGE	31;	# 0	   - 2**31 - 1
+CLLs:	SGRANGE		63;	# -(2**63) - 2**63 - 1
+CLLu:	POSRANGE	64;	# 0	   - 2**64 - 1
+CLLpos:	POSRANGE	63;	# 0	   - 2**63 - 1
+CLLhi:	NEGRANGE	32;	# -(2**32) - -1 (0xffffffffxxxxxxxx)
+C0:	CONVAL		0;
+C1:	CONVAL		1;
+C2:	CONVAL		2;
+C3:	CONVAL		3;
+C4:	CONVAL		4;
+C8:	CONVAL		8;
+C32:	CONVAL		32;
+Cneg1:	NCONVAL		1;
+C: ;				# constant
+CB:	CBs, CBu;		# Possible Byte constants
+CW:	CWs, CWu;		# Possible Word constants
+CL:	CLs, CLu;		# Possible Long constants
+CLL:	CLLs, CLLu;		# Possible Long Long constants
+
+N:	'NAME'	;		# including address constants
+NON:	NONAME  ;		
+T:	'TEMP'	;		# temporary
+A:	'AUTO'	;		# auto
+P:	'PARAM'	;		# incoming arg
+R:	'REG'	;		# "register"
+RNODE:	'RNODE'	;		# Used in returning floats/doubles
+QNODE:	'QNODE'	;		# Used in ?: for    floats/doubles
+UCALL:	'UCALL'	;		# Also used in returning floats/doubles
+CALL:	'CALL'	;		# Also used in returning floats/doubles
+DUMMYARG:'DUMMYARG';
+
+NCL:	CL, C[iuip];
+
+#	Register Definitions
+
+EAX:	R{0}	;		# %eax
+EDX:	R{1}	;		# %edx
+ECX:	R{2}	;		# %ecx
+
+FP0:	R{3}	;		# %st0
+
+EBX:	R{4}	;		# %ebx
+ESI:	R{5}	;		# %esi
+EDI:	R{6}	;		# %edi
+
+ESP:	R{8}	;		# %esp
+EBP:	R{7}	;		# %ebp
+
+Rsscr:	R{0-2}	;		# Scalar scratch registers
+Rfscr:	R{3}	;		# Floating Point scratch registers
+Rsvar:	R{4-7}	;		# Scalar register variables
+Raxdx:	EAX, EDX;		# Frequently used hardwired pair
+Rbyte:	EAX, EDX, ECX, EBX;	# Byte addressable registers
+Rsbyt:	EAX, EDX, ECX;		# Byte addressable scratch registers
+Rsreg:	Rsscr, Rsvar, CSE;	# All scalar registers (arithmetic)
+
+#	addressing modes
+
+STK:	T, A, P;		# K(%esp) or K(%ebp)
+# Rind can be int/uint in some odd-ball cases resulting from conversions
+# pushed down onto the operand of *
+Rind:	(*Rsreg);		# (%exx)
+Ridx:	*(Rsreg+NCL),
+	*(Rsreg-NON);		# NCL(%exx) and -NCL(%exx)
+
+AUTOID:	*(Rsreg ++ NCL),
+	*(Rsreg -- NCL);	# auto-increment/decrement
+OREG:	STK, Rind, Ridx;	# PCC1 "OREG" node
+NTOREG:	A, P, Rind, Ridx;	# Modified "OREG" node (for FP)
+fp0:	FP0,CSE[fdx];		# floating point CSE must be in FP0
+
+#	Based/Indexed modes
+
+#	Index only indirect (No base)
+Iindns1:
+	(Rsreg[iuip]+NCL);
+Iindns:
+	((Rsreg[iui]<<C1)+NCL),
+	((Rsreg[iui]<<C2)+NCL),
+	((Rsreg[iui]<<C3)+NCL);
+Iind:	*Iindns, *Iindns1;
+
+#	Base with Index modes
+#		First Without Displacements
+#		Then With Positive Displacements
+#		Then With Negative Displacements
+#	&AUTO is equivalent to Rbreg[p]+NCL, where Rbreg
+#		is a base register, namely %ebp (or %esp for fixed frame)
+
+# Double indexing with one regular register (and
+# implicit stack pointer).
+B1regns:
+	((&A)+Rsreg[iui]),
+	((&A)+(Rsreg[iui]<<C1)),
+	((&A)+(Rsreg[iui]<<C2)),
+	((&A)+(Rsreg[iui]<<C3)),
+
+	(((&A)+Rsreg[iui])+NCL),
+	(((&A)+(Rsreg[iui]<<C1))+NCL),
+	(((&A)+(Rsreg[iui]<<C2))+NCL),
+	(((&A)+(Rsreg[iui]<<C3))+NCL);
+B1reg:	*B1regns;
+
+# Double indexing with two explicit regular registers.
+B2regns1:
+	(Rsreg[iuip]+Rsreg[iuip]);
+B2regns:
+	(Rsreg[iuip]+(Rsreg[iui]<<C1)),
+	(Rsreg[iuip]+(Rsreg[iui]<<C2)),
+	(Rsreg[iuip]+(Rsreg[iui]<<C3)),
+
+	((Rsreg[iuip]+Rsreg[iuip])+NCL),
+	((Rsreg[iuip]+(Rsreg[iui]<<C1))+NCL),
+	((Rsreg[iuip]+(Rsreg[iui]<<C2))+NCL),
+	((Rsreg[iuip]+(Rsreg[iui]<<C3))+NCL),
+
+	((Rsreg[iuip]+Rsreg[iuip])-NON),
+	((Rsreg[iuip]+(Rsreg[iui]<<C1))-NON),
+	((Rsreg[iuip]+(Rsreg[iui]<<C2))-NON),
+	((Rsreg[iuip]+(Rsreg[iui]<<C3))-NON);
+B2reg:	*B2regns, *B2regns1;
+
+Bindns:	B1regns, B2regns;
+Bind:	B1reg, B2reg;
+
+MEM:	OREG, Iind, Bind, N;		# Memory addr op types
+NTMEM:	NTOREG, Iind, Bind, N;		# Memory addr op types (modified for FP)
+MEM1R:	OREG, N;			# At most one reg memory (for long long)
+# Operands suitable for divisor, by virtue of taking only a single
+# (explicit) register.  Rather than do Rind shape, prefer to get
+# actual operand into a register.
+DVcom:	Rsvar, STK, Ridx, Iind, B1reg, N, CSE;
+DVSOR:	DVcom, ECX;
+DVDEND:	DVcom, Raxdx;
+
+NTMEMnB:NTOREG, Iind, N;	# Memory addr op types (used in FP = operator)
+
+SBAWD:	MEM[c], Rbyte[c];	# Signed Byte addr op
+UBAWD:	MEM[uc], Rbyte[uc];	# Unsigned Byte addr op
+BAWD:	SBAWD, UBAWD;		# Signed/Unsigned Byte addr op
+
+SWAWD:	MEM[s], Rsreg[s];	# Signed Short addr op
+UWAWD:	MEM[us], Rsreg[us];	# Unsigned Short addr op
+WAWD:	SWAWD, UWAWD;		# Signed/Unsigned Short addr op
+
+SLAWD:	MEM[i], Rsreg[i];	# Signed Int addr op
+ULAWD:	MEM[uip], Rsreg[uip];	# Unsigned Int addr op
+LAWD:	SLAWD, ULAWD;		# Signed/Unsigned Int addr op
+
+SLLAWD:	MEM[L], Rsreg[L];	# Signed Long Long addr op
+ULLAWD:	MEM[uL], Rsreg[uL];	# Unsigned Long Long addr op
+LLAWD:	SLLAWD, ULLAWD;		# Signed/Unsigned Long Long addr op
+
+SLLMEM:	MEM1R[L];		# At most one reg Signed Long Long addr op
+ULLMEM:	MEM1R[uL];		# At most one reg Unsigned Long Long addr op
+LLMEM:	SLLMEM, ULLMEM;		# At most one reg Signed/Unsigned Long Long
+
+FAWD:	FP0[f], CSE[f], NTMEMnB[f], N[f];
+DAWD:	FP0[d], CSE[d], NTMEM[d], N[d];
+XAWD:	FP0[x], CSE[x], NTMEM[x], N[x];
+FPAWD:	FAWD, DAWD, XAWD;	# Any floating point addressable word
+FAWD1:	STK[f], N[f];
+DAWD1:	STK[d], N[d];
+XAWD1:	STK[x], N[x];
+DSTAR:	('STAR' Rsreg)[d];	# Reg Pointer to a double fp var.
+XSTAR:	('STAR' Rsreg)[x];	# Reg Pointer to a long double fp var.
+
+AWD:	BAWD, WAWD, LAWD;	# Any Addressable Word (not including LL)
+
+FLD:	'FLD' AWD;		# FLD Addresses (not including LL fields)
+LLFLD:	'FLD' LLAWD;		# long long typed fields
+
+STKADR:	'UAND' STK;		# Address of stack items
+MEMADR:	'UAND' MEM;		# Address of Memory items
+
+STADR:	C[p], STKADR, MEMADR, Rsreg;	# STASG, STARG memory addresses
+STMEM:  MEM, STADR;
+
+#	With Conversion
+cSBAWD:	'CONV' (MEM[c]), 'CONV' (Rbyte[c]);
+cUBAWD:	'CONV' (MEM[uc]), 'CONV' (Rbyte[uc]);
+cBAWD:	cSBAWD, cUBAWD;
+
+cSWAWD:	'CONV' (MEM[s]), 'CONV' (Rsreg[s]);
+cUWAWD:	'CONV' (MEM[us]), 'CONV' (Rsreg[us]);
+cWAWD:	cSWAWD, cUWAWD;
+
+cSLAWD:	'CONV' (MEM[i]), 'CONV' (Rsreg[i]);
+cULAWD:	'CONV' (MEM[uip]), 'CONV' (Rsreg[uip]);
+cLAWD:	cSLAWD, cULAWD;
+CDAWD:	'CONV' (MEM[i]);
+
+cRrc:	'CONV'	(Rbyte[c]);
+cRruc:	'CONV'	(Rbyte[uc]);
+cRrs:	'CONV'	(Rsreg[s]);
+cRrus:	'CONV'	(Rsreg[us]);
+
+cRMc:	'CONV'	(MEM[c]);
+cRMuc:	'CONV'	(MEM[uc]);
+cRMs:	'CONV'	(MEM[s]);
+cRMus:	'CONV'	(MEM[us]);
+
+cRsi:	'CONV'	Rbyte[susiuilulp];
+
+cNTMEMf: 'CONV' NTMEM[f];
+
+# the following shape should be used in arithmetic fp templates because
+# conversions of float to double are very common.
+
+cNTMEM:	cNTMEMf[d], NTMEM;
+
+#	Special Shapes used in leaf nodes
+
+INREG:	MEM[cucsusiuip];
+INREGF: MEM[fdx];
+INREGLL:	MEM[LuL];
+
+# Shape to subsume frequent operands to CALL/UCALL.
+FARG:	R, MEM;
+
+#pair of blocks:
+BB:     Rsscr[p] 'CM' Rsscr[p] ;
+SRC:	Rsscr, CLu;		# for count of block moves
+
+#Binary Arithmetic shapes used to factor floating point templates
+
+FP0_CDAWD: 	FP0+(CDAWD[d]),		FP0-(CDAWD[d]),	
+		FP0*(CDAWD[d]),		FP0/(CDAWD[d]);
+CDAWD_FP0: 	(CDAWD[d])+FP0, 	(CDAWD[d])-FP0, 	
+		(CDAWD[d])*FP0, 	(CDAWD[d])/FP0;
+
+OPCODES
+
+#	generate a label
+
+'GENLAB'	FR	{$N}		".\\LL:\n";
+'GENLAB'[fdx]	R[fdx]	{$1:FP0 $[}	".\\LL:\n";
+'GENLAB'[LuL]	R[LuL]	{2:Raxdx $1 $<}	".\\LL:\n";
+'GENLAB'	R 	{$1:EAX $[}	".\\LL:\n";
+
+#	conditional branch
+
+'GENBR'		CC		{$N}	"ZlZG\tZC";
+'GENBR'[LuL]	LLAWD		{$N}	"ZDLZlZG\tZC";
+
+#	generate a branch
+
+'GENUBR'	C	{$N}		"	jmp	.\\LL\n";
+'GENUBR'	R	{$N}	 	"	jmp	*AL\n";
+'GENUBR'	FR	{$N}		"	jmp	.\\LL\n";
+
+#	integral conversions
+
+#	Convert Up
+'CONV'[sus]	SBAWD	{ $1:Rsscr $< }	"	movsbw	AL,A1\n";
+'CONV'[sus]	UBAWD	{ $1:Rsscr $< }	"	movzbw	AL,A1\n";
+
+'CONV'[iuip]	LAWD	{ $L }		"";
+'CONV'[iuip]	SWAWD	{ $1:Rsscr $< }	"	movswl	AL,A1\n";
+'CONV'[iuip]	UWAWD	{ $1:Rsscr $< }	"	movzwl	AL,A1\n";
+'CONV'[iuip]	SBAWD	{ $1:Rsscr $< }	"	movsbl	AL,A1\n";
+'CONV'[iuip]	UBAWD	{ $1:Rsscr $< }	"	movzbl	AL,A1\n";
+
+#For signed to long long, use cltd for %eax->%edx:%eax
+'CONV'[LuL]	SLAWD	{2:Raxdx $1 $<}	"RL!1	movl	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	ULAWD	{$P $1:Rsscr $<}
+					"RL!1	movl	AL,A1\n"
+					"	xorl	U1,U1\n";
+'CONV'[LuL]	SWAWD	{2:Raxdx $<}	"	movswl	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	UWAWD	{$P $1:Rsscr $<}
+					"	movzwl	AL,A1\n"
+					"	xorl	U1,U1\n";
+'CONV'[LuL]	SBAWD	{2:Raxdx $<}	"	movsbl	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	UBAWD	{$P $1:Rsscr $<}
+					"	movzbl	AL,A1\n"
+					"	xorl	U1,U1\n";
+
+#	Convert Down
+'CONV'[cuc] Rbyte[susiuiLuLp]	{ $L }	"";
+'CONV'[cuc] Rsreg[susiuiLuLp]	{ $1:Rsbyt }
+					"ZB4	movl	ZAL,ZA1Zb\n";
+'CONV'[sus] Rsreg[iuiLuLp]	{ $L }	"";
+'CONV'[cuc] MEM[susiuiLuLp]	{ $1:Rsbyt $< }
+					"RL!1	movb	AL,A1\n";
+'CONV'[sus] MEM[iuiLuLp]	{ $1:Rsscr $< }
+					"RL!1	movw	AL,A1\n";
+'CONV'[iuip] Rsreg[LuL]		{ $L }	"";
+'CONV'[iuip] MEM[LuL]		{ $1:Rsscr $< }
+					"RL!1	movl	AL,A1\n";
+
+
+#	leaf nodes (Also matches some conversions of leaves)
+
+#	INREG is used to get the special addressing modes
+AUTOID[cuc]	{ $1:Rsbyt }		"	movb	(A(LL)),A1\n"
+					"Z+.";
+AUTOID[susiuip]	{ $1:Rsscr }		"	movZT.	(A(LL)),ZA1Zb\n"
+					"Z+.";
+AUTOID[LuL]	{ $P $1:Rsscr }		"	movl	(A(LL)),A1\n"
+					"	movl	4(A(LL)),U1\n"
+					"Z+.";
+
+INREG		{ $1:Rsscr $> }		"	movZT.	A.,A1\n";
+INREGLL		{ $P $1:Rsscr $> }	"Z=1.";	# sharing is all important!
+C[cucsusiuip]	{ $1:Rsscr }		"ZB4	movl	$C.,ZA1Zb\n";
+C[cucsusiuip]	{ $1:Rsscr $C }		"ZB4	movl	$C.,ZA1Zb\n"
+					"	testl	ZA1Zb,ZA1Zb\n";
+C[LuL]		{ $P $1:Rsscr }		"	movl	A.,A1\n"
+					"	movl	U.,U1\n";
+Rsvar[cucsusiuip] { $1:Rsscr }		"ZB4	movl	ZAR,ZA1Zb\n";
+Rsvar[LuL]	{ $P $1:Rsscr }		"	movl	AR,A1\n"
+					"	movl	UR,U1\n";
+
+CSE[cucsusiuip]	{ $1:Rsscr }		"ZB4	movl	ZAR,ZA1Zb\n";
+CSE[LuL]	{ $P $1:Rsscr }		"	movl	AR,A1\n"
+					"	movl	UR,U1\n";
+
+#	Get address of things
+Iindns		{ $1:Rsscr $[ $] }	"	leal	Z*.,A1\n";
+Bindns		{ $1:Rsscr $[ $] }	"	leal	Z*.,A1\n";
+
+'FLD' CSE[uc]		{ $1:Rsbyt $[ $C }
+					"ZB1"
+					"RL!1	movb	AL,ZA1\n"
+					"?	testb	$MR,ZA1Zb\n"
+					"?EH?R	shrb	$HR,ZA1\n"
+					"?E	andb	$NR,ZA1Zb\n";
+'FLD' CSE[c]		{ $1:Rsbyt $[ }	"ZB1"
+					"RL!1	movb	AL,ZA1\n"
+					"	shlb	$8-HR-SR,ZA1\n"
+					"	sarb	$8-SR,ZA1\n";
+'FLD' AWD[uc]		{ $1:Rsbyt $[ $C }
+					"ZB1"
+					"RL!1	movb	AL,ZA1\n"
+					"?	testb	$MR,ZA1Zb\n"
+					"?EH?R	shrb	$HR,ZA1\n"
+					"?E	andb	$NR,ZA1Zb\n";
+'FLD' AWD[c]		{ $1:Rsbyt $[ }	"ZB1"
+					"RL!1	movb	AL,ZA1\n"
+					"	shlb	$8-HR-SR,ZA1\n"
+					"	sarb	$8-SR,ZA1\n";
+'FLD' AWD[us]		{ $1:Rsscr $[ $C }
+					"ZB2"
+					"RL!1	movw	AL,ZA1\n"
+					"?	testw	$MR,ZA1Zb\n"
+					"?EH?R	shrw	$HR,ZA1\n"
+					"?E	andw	$NR,ZA1Zb\n";
+'FLD' AWD[s]		{ $1:Rsscr $[ }	"ZB2"
+					"RL!1	movw	AL,ZA1\n"
+					"	shlw	$16-HR-SR,ZA1\n"
+					"	sarw	$16-SR,ZA1\n";
+'FLD' AWD[uip]		{ $1:Rsscr $[ $C }
+					"ZB4"
+					"RL!1	movl	AL,ZA1\n"
+					"?	testl	$MR,ZA1Zb\n"
+					"?EH?R	shrl	$HR,ZA1\n"
+					"?E	andl	$NR,ZA1Zb\n";
+'FLD' AWD[i]		{ $1:Rsscr $[ } "ZB4"
+					"RL!1	movl	AL,ZA1\n"
+					"	shll	$32-HR-SR,ZA1\n"
+					"	sarl	$32-SR,ZA1\n";
+	#too many special cases...do it in zzzcode().
+'FLD' SLLAWD	{$P $1:Rsscr}		"ZFv";
+'FLD' ULLAWD	{$P $1:Rsscr $C}	"?ZFtEZFv";
+
+'CONV'[sus]	Rsreg[cuc]	{ $C }	"	testZTL	AL,AL\n";
+'CONV'[sus]	BAWD	{ $1:Rsscr $< $C }
+					"RL!1	movZtL	AL,A1\n"
+					"?	testZT.	A1,A1\n";
+'CONV'[iuip]	Rsreg[sus]	{ $C }	"	testZTL	AL,AL\n";
+'CONV'[iuip]	WAWD	{ $1:Rsscr $< $C }
+					"RL!1	movZtL	AL,A1\n"
+					"?	testZT.	A1,A1\n";
+'CONV'[iuip]	Rsreg[cuc]	{ $C }	"	testZTL	AL,AL\n";
+'CONV'[iuip]	BAWD	{ $1:Rsscr $< $C }
+					"RL!1	movZtL	AL,A1\n"
+					"?	testZT.	A1,A1\n";
+'CONV'[LuL]	Rsreg[iuip]	{ $C }	"	testl	AL,AL\n";
+'CONV'[LuL]	LAWD[i]	{ 2:Raxdx $1 $< }
+					"RL!1	movl	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	LAWD[uip] { $P $1:Rsscr $< }
+					"RL!1	movl	AL,A1\n"
+					"	xorl	U1,U1\n";
+'CONV'[LuL]	Rsreg[sus]	{ $C }	"	testZTL	AL,AL\n";
+'CONV'[LuL]	WAWD[s]	{ 2:Raxdx $1 $< }
+					"RL!1	movZtL	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	WAWD[us] { $P $1:Rsscr $< }
+					"RL!1	movZtL	AL,A1\n"
+					"	xorl	U1,U1\n";
+'CONV'[LuL]	Rsreg[cuc]	{ $C }	"	testZTL	AL,AL\n";
+'CONV'[LuL]	BAWD[c]	{ 2:Raxdx $1 $< }
+					"RL!1	movZtL	AL,A1\n"
+					"	cltd\n";
+'CONV'[LuL]	BAWD[uc] { $P $1:Rsscr $< }
+					"RL!1	movZtL	AL,A1\n"
+					"	xorl	U1,U1\n";
+
+
+MEM[t]	{$N}	"	//...whatever...\n";	# volatile struct/union...
+
+MEM[cucsusiuip]		{$C}		"	cmpZTR	$0,AR\n";
+Rsreg[cucsusiuip]	{$C}		"	testZTR	AR,AR\n";
+
+#		function arguments
+
+'REGARG' C		{ $N }		"ZFFr";
+DUMMYARG		{ $N }		"ZFFb";
+'FUNARG' C		{ $N }		"ZGZFFc";
+
+'REGARG' MEM[iuip]	{ $N }		"ZFFr";
+'FUNARG' MEM[iuipLuL]	{ 1:Rsscr $N }	"ZGZFFl";
+
+'REGARG' Rsreg[iuip]	{ $N }		"ZFFr";
+'FUNARG' Rsreg[iuipLuL]	{ $N }		"ZGZFFa";
+
+#	take address of
+
+'UAND'	MEM		{ $1:Rsscr $< }	"	leal	AL,A1\n";
+
+
+#	arithmetic ops -- take advantage of mod N bit arithmetic
+
++	MEM[cuc],C1	 { $1:Rsbyt $[ }
+					"	movb	AL,A1\n"
+					"	incb	A1\n";
++	MEM[cuc],CB	 { $1:Rsbyt $[ }
+					"	movb	AL,A1\n"
+					"ZB4	leal	CR(ZA1),ZA1\nZb";
++	Rsvar[cuc],CB	{ $1:Rsbyt }	"ZB4	leal	CR(ZAL),ZA1\nZb";
+
++[c]	MEM[cuc],Rsbyt[uc] { $R }	"	addb	AL,AR\n";
++	MEM[cuc],Rsbyt[cuc] { $R $C }	"	addb	AL,AR\n";
+
+
++	MEM[sus],C1	 { $1:Rsscr $[ }
+					"	movw	AL,A1\n"
+					"	incw	A1\n";
++	MEM[sus],CW	 { $1:Rsscr $[ }
+					"	movw	AL,A1\n"
+					"ZB4	leal	CR(ZA1),ZA1\nZb";
++	Rsvar[sus],CW	{ $1:Rsscr }	"ZB4	leal	CR(ZAL),ZA1\nZb";
+
++[s]	MEM[us],Rsscr[us] { $R }	"	addw	AL,AR\n";
++	MEM[sus],Rsscr[sus] { $R $C }	"	addw	AL,AR\n";
+
+
++	MEM[iuip],C1	 { $1:Rsscr $[ }
+					"	movl	AL,A1\n"
+					"	incl	A1\n";
++	MEM[iuip],NCL	 { $1:Rsscr $[ }
+					"	movl	AL,A1\n"
+					"	leal	CR(A1),A1\n";
++	Rsvar[iuip],NCL	{ $1:Rsscr }	"	leal	CR(AL),A1\n";
+
+	#An add of two unsigneds, cast to int, may overflow.
+	#The condition codes will not be right.
+	#Otherwise, the ansi std says the result is undefined
+	#so we say the condition codes are right.
++[i]	MEM[ui],Rsscr[ui] { $R }	"	addl	AL,AR\n";
++	MEM[iuip],Rsscr[iuip] { $R $C }	"	addl	AL,AR\n";
+
+# -= handles most integral subtractions
+-	Rsvar[cucsusiuip],CLpos	{ $1:Rsscr }
+					"ZB4	leal	-CR(ZAL),ZA1Zb\n";
+
+'UMINUS' AWD	{ $1:Rsbyt $< $C }	"RL!1	movZtL	AL,A1\n"
+					"	negZT.	A1\n";
+	# Implement by 1+(~x). ugh.
+	# Shouldn't ever be reached due to clocal() rewrite.
+'UMINUS' LLAWD	{ $P $1:Rsscr }		"	movl	AL,A1\n"
+					"	movl	UL,U1\n"
+					"	notl	A1\n"
+					"	notl	U1\n"
+					"	addl	$1,A1\n"
+					"	adcl	$0,U1\n";
+
+*[sus] CW,WAWD		{ $1:Rsscr $] }	"ZMR,L,R,1";
+*[sus] MEM[sus],CW	{ $1:Rsscr $[ }	"ZML,R,L,1";
+*[sus] MEM[sus],Rsscr[sus] { $R }	"	imulw	AL,AR\n";
+*[sus] Rsvar[sus],CW	{ $1:Rsscr $[ }	"ZML,R,L,1";
+*[sus] Rsvar[sus],Rsscr[sus] { $R }	"	imulw	AL,AR\n";
+
+*[iuip] NCL,LAWD	{ $1:Rsscr $] }		"ZMR,L,R,1";
+*[iuip] MEM[iuip],NCL	{ $1:Rsscr $[ }		"ZML,R,L,1";
+*[iuip] MEM[iuip],Rsscr[iuip] { $R }	"	imull	AL,AR\n";
+*[iuip] Rsvar[iuip],NCL	{ $1:Rsscr $[ }		"ZML,R,L,1";
+*[iuip] Rsvar[iuip],Rsscr[iuip] { $R }	"	imull	AL,AR\n";
+
+	#take advantage of 32*32->64
+*[LuL]	cSLAWD[LuL],cSLAWD[LuL] {2:Raxdx $1 $<}
+					"	movl	A(LL),%eax\n"
+					"	imull	A(RL)\n";
+*[LuL]	cULAWD[LuL],cULAWD[LuL] {2:Raxdx $1 $<}
+					"	movl	A(LL),%eax\n"
+					"	mull	A(RL)\n";
+
+
+# Avoid combinatoric nasties for chained divisions.
+/ DVDEND[il],DVSOR[il]  { 2:Raxdx $1 $< }
+					"RL!1	movl	AL,A1\n"
+					"	cltd\n"
+					"	idivl	AR\n";
+
+# The idea in these division templates is to pick off the
+# signed division first, which is when both operands are signed.
+# Let the normal compiler mechanism load the dividend; the
+# divisor is DVSOR so no extra registers are needed.  There's
+# only %ecx left (as a scratch register) anyway, so it's too
+# dangerous to look for double indexing.  Let the optimizer
+# clean up candidates for double indexing in the divide itself.
+
+/=	EAX[c],DVSOR[c]	{ $L }		"	cbtw\n"
+					"	idivb	AR\n" ;
+/=	EAX[cuc],DVSOR[cuc] { $L }	"	clrb	%ah\n"
+					"	divb	AR\n" ;
+/=	Raxdx[s],DVSOR[s] { 2:Raxdx $1 $< }
+					"RL=2	movw	A2,A1\n"
+					"	cwtd\n"
+					"	idivw	AR\n" ;
+
+/=	Raxdx[sus],DVSOR[sus] { 2:Raxdx $1 $< }
+					"RL=2	movw	A2,A1\n"
+					"	xorw	A2,A2\n"
+					"	divw	AR\n" ;
+/=	Raxdx[il],DVSOR[il] { 2:Raxdx $1 $< }
+					"RL=2	movl	A2,A1\n"
+					"	cltd\n"
+					"	idivl	AR\n" ;
+
+/=	Raxdx[iuilul],DVSOR[iuilul]	{ 2:Raxdx $1 $< }
+					"RL=2	movl	A2,A1\n"
+					"	xorl	A2,A2\n"
+					"	divl	AR\n" ;
+
+/=	MEM[L],C[L]	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgdivs\n";
+/=	MEM[uL],C[uL]	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgdivu\n";
+/=	MEM[L],SLLAWD	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgdivs\n";
+/=	MEM[uL],ULLAWD {3:Rsscr $1 $<} "	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgdivu\n";
+
+# The idea in these modulus templates is to pick off the
+# signed modulus first, which is when both operands are signed.
+# Let the normal compiler mechanism load the dividend.
+# See remarks for /= about the right operand.
+
+%=	EAX[c],DVSOR[c]	{ $L }		"	cbtw\n"
+					"	idivb	AR\n"
+					"	movb	%ah,%al\n" ;
+%=	EAX[cuc],DVSOR[cuc] { $L }	"	clrb	%ah\n"
+					"	divb	AR\n"
+					"	movb	%ah,%al\n" ;
+%=	Raxdx[s],DVSOR[s] { 2:Raxdx $2 $< }
+					"RL=2	movw	A2,A1\n"
+					"	cwtd\n"
+					"	idivw	AR\n" ;
+%=	Raxdx[sus],DVSOR[sus] { 2:Raxdx $2 $< }
+					"RL=2	movw	A2,A1\n"
+					"	xorw	A2,A2\n"
+					"	divw	AR\n" ;
+# Division of 0x80000000 by -1 gives trap, but the remainder is 0.
+# Avoid check for -1 for other constants.
+%=	Raxdx[il],Cneg1[il] { 2:Raxdx $2 }
+					"	clrl	A2\n" ;
+%=	Raxdx[il],C[il]	{ 2:Raxdx 1:ECX $2 $< }
+					"RL=2	movl	A2,A1\n"
+					"	movl	$CR,A3\n"
+					"	cltd\n"
+					"	idivl	A3\n" ;
+%=	Raxdx[il],DVSOR[il] { 2:Raxdx $2 $< }
+					"	cmpl	$-1,AR\n"
+					"ZL.2	jne	ZL1\n"
+					"	clrl	A2\n"
+					"	jmp	ZL2\n"
+					"ZL1:\n"
+					"RL=2	movl	A2,A1\n"
+					"	cltd\n"
+					"	idivl	AR\n"
+					"ZL2:\n" ;
+%=	Raxdx[iuilul],DVSOR[iuilul] { 2:Raxdx $2 $< }
+					"RL=2	movl	A2,A1\n"
+					"	xorl	A2,A2\n"
+					"	divl	AR\n" ;
+
+%=	MEM[L],C[L]	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgrems\n";
+%=	MEM[uL],C[uL]	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgremu\n";
+%=	MEM[L],SLLAWD	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgrems\n";
+%=	MEM[uL],ULLAWD {3:Rsscr $1 $<} "	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgremu\n";
+
+
+#	logical ops
+
+&[iuip]	cBAWD[iuip],CB	{ $C }		"	testb	$CR,A(LL)\n";
+
+&[iuip]	cBAWD[iuip],CBpos { $1:Rsbyt }	"ZB4	movl	$CR,ZA1\n"
+					"ZB1	andb	A(LL),ZA1\nZb";
+
+&[iuip]	cWAWD[iuip],CW	{ $C }		"	testw	$CR,A(LL)\n";
+
+&[iuip]	cWAWD[iuip],CWpos { $1:Rsscr }	"	movl	$CR,A1\n"
+					"ZB2	andw	A(LL),ZA1\nZb";
+
+&[iuip] cBAWD[iuip],cBAWD[iuip] { $C 1:Rsbyt }	"ZB1	movb	A(RL),ZA1\n"
+						"	testb	A(LL),ZA1\nZb";
+
+&[iuip] cWAWD[iuip],cWAWD[iuip] { $C 1:Rsscr }	"ZB2	movw	ZA(RL),ZA1\n"
+						"	testw	ZA(LL),ZA1Zb\n";
+
+
+&[cuc]	BAWD,CB		{ $C }		"	testb	$CR,AL\n";
+&[cuc]	MEM[cuc],CB	{ $1:Rsbyt $[ $C }
+					"	movb	AL,A1\n"
+					"?	testb	$CR,A1\n"
+					"?E	andb	$CR,A1\n";
+&[cuc]	Rsvar[cuc],CB	{ $1:Rsbyt $C }	"	movb	AL,A1\n"
+					"?	testb	$CR,A1\n"
+					"?E	andb	$CR,A1\n";
+&[cuc]	MEM[cuc],Rsbyt[cuc] { $R $C }	"?	testb	AL,AR\n"
+					"?E	andb	AL,AR\n";
+
+&[sus]	WAWD,CW		{ $C }		"	testw	$CR,AL\n";
+&[sus]	MEM[sus],CW	{ $1:Rsscr $[ $C }
+					"	movw	AL,A1\n"
+					"?	testw	$CR,A1\n"
+					"?E	andw	$CR,A1\n";
+&[sus]	Rsvar[sus],CW	{ $1:Rsscr $C }	"	movw	AL,A1\n"
+					"?	testw	$CR,A1\n"
+					"?E	andw	$CR,A1\n";
+&[sus]	MEM[sus],Rsscr[sus] { $R $C }	"?	testw	AL,AR\n"
+					"?E	andw	AL,AR\n";
+
+&[iuip]	LAWD,NCL	{ $C }		"	testl	$CR,AL\n";
+&[iuip]	MEM[iuip],NCL	{ $1:Rsscr $[ $C }
+					"	movl	AL,A1\n"
+					"?	testl	$CR,A1\n"
+					"?E	andl	$CR,A1\n";
+&[iuip]	Rsvar[iuip],NCL	{ $1:Rsscr $C }	"	movl	AL,A1\n"
+					"?	testl	$CR,A1\n"
+					"?E	andl	$CR,A1\n";
+&[iuip]	MEM[iuip],Rsscr[iuip] { $R $C }	"?	testl	AL,AR\n"
+					"?E	andl	AL,AR\n";
+&[LuL]	Rsscr[LuL],CLLhi	{$L}	"	andl	AR,AL\n";
+&[LuL]	Rsscr[LuL],CLu		{$L}	"	andl	AR,AL\n"
+					"	xorl	UL,UL\n";
+&[LuL]	Rsscr[LuL],C		{$L}	"	andl	AR,AL\n"
+					"	andl	UR,UL\n";
+&[LuL]	MEM[LuL],CLu {$P $1:Rsscr $<}	"	movl	AL,A1\n"
+					"	xorl	U1,U1\n"
+					"	andl	AR,A1\n";
+&[LuL]	MEM[LuL],CLLhi	{$P $1:Rsscr}	"	movl	AL,A1\n"
+					"	movl	UL,U1\n"
+					"	andl	AR,A1\n";
+&[LuL]	Rsscr[LuL],MEM[LuL]	{$L}	"	andl	AR,AL\n"
+					"	andl	UR,UL\n";
+&[LuL]	MEM[LuL],Rsscr[LuL]	{$R}	"	andl	AL,AR\n"
+					"	andl	UL,UR\n";
+
+|[cuc]	MEM[cuc],CB	{ $1:Rsbyt $[ $C }
+					"	movb	AL,A1\n"
+					"	orb	$CR,A1\n";
+|[cuc]	Rsvar[cuc],CB	{ $1:Rsbyt $C }	"	movb	AL,A1\n"
+					"	orb	$CR,A1\n";
+|[cuc]	MEM[cuc],Rsbyt[cuc] { $R $C }	"	orb	AL,AR\n";
+
+|[sus]	MEM[sus],CW	{ $1:Rsscr $[ $C }
+					"	movw	AL,A1\n"
+					"	orw	$CR,A1\n";
+|[sus]	Rsvar[sus],CW	{ $1:Rsscr $C }	"	movw	AL,A1\n"
+					"	orw	$CR,A1\n";
+|[sus]	MEM[sus],Rsscr[sus] { $R $C }	"	orw	AL,AR\n";
+
+
+|[iuip]	MEM[iuip],NCL	{ $1:Rsscr $[ $C }
+					"	movl	AL,A1\n"
+					"	orl	$CR,A1\n";
+|[iuip]	Rsvar[iuip],NCL	{ $1:Rsscr $C }	"	movl	AL,A1\n"
+					"	orl	$CR,A1\n";
+|[iuip]	MEM[iuip],Rsscr[iuip] { $R $C }	"	orl	AL,AR\n";
+|[LuL]	Rsscr[LuL],CLu		{$L}	"	orl	AR,AL\n";
+|[LuL]	Rsscr[LuL],CLLhi	{$L}	"	orl	AR,AL\n"
+					"	movl	$-1,UL\n";
+|[LuL]	Rsscr[LuL],C		{$L}	"	orl	AR,AL\n"
+					"	orl	UR,UL\n";
+|[LuL]	MEM[LuL],CLLhi {$P $1:Rsscr $<}	"	movl	AL,A1\n"
+					"	movl	$-1,U1\n"
+					"	andl	AR,A1\n";
+|[LuL]	MEM[LuL],CLu	{$P $1:Rsscr}	"	movl	AL,A1\n"
+					"	movl	UL,U1\n"
+					"	orl	AR,A1\n";
+|[LuL]	Rsscr[LuL],MEM[LuL]	{$L}	"	orl	AR,AL\n"
+					"	orl	UR,UL\n";
+|[LuL]	MEM[LuL],Rsscr[LuL]	{$R}	"	orl	AL,AR\n"
+					"	orl	UL,UR\n";
+
+
+^[cuc]	MEM[cuc],CB	{ $1:Rsbyt $[ $C }
+					"	movb	AL,A1\n"
+					"	xorb	$CR,A1\n";
+^[cuc]	Rsvar[cuc],CB	{ $1:Rsbyt $C }	"	movb	AL,A1\n"
+					"	xorb	$CR,A1\n";
+^[cuc]	MEM[cuc],Rsbyt[cuc] { $R $C }	"	xorb	AL,AR\n";
+
+^[sus]	MEM[sus],CW	{ $1:Rsscr $[ $C }
+					"	movw	AL,A1\n"
+					"	xorw	$CR,A1\n";
+^[sus]	Rsvar[sus],CW	{ $1:Rsscr $C }	"	movw	AL,A1\n"
+					"	xorw	$CR,A1\n";
+^[sus]	MEM[sus],Rsscr[sus] { $R $C }	"	xorw	AL,AR\n";
+
+
+^[iuip]	MEM[iuip],NCL	{ $1:Rsscr $[ $C }
+					"	movl	AL,A1\n"
+					"	xorl	$CR,A1\n";
+^[iuip]	Rsvar[iuip],NCL	{ $1:Rsscr $C }	"	movl	AL,A1\n"
+					"	xorl	$CR,A1\n";
+^[iuip]	MEM[iuip],Rsscr[iuip] { $R $C }	"	xorl	AL,AR\n";
+^[LuL]	Rsscr[LuL],CLu		{$L}	"	xorl	AR,AL\n";
+^[LuL]	Rsscr[LuL],C		{$L}	"	xorl	AR,AL\n"
+					"	xorl	UR,UL\n";
+^[LuL]	MEM[LuL],CLu	{$P $1:Rsscr}	"	movl	AL,A1\n"
+					"	movl	UL,U1\n"
+					"	xorl	AR,A1\n";
+^[LuL]	Rsscr[LuL],MEM[LuL]	{$L}	"	xorl	AR,AL\n"
+					"	xorl	UR,UL\n";
+^[LuL]	MEM[LuL],Rsscr[LuL]	{$R}	"	xorl	AL,AR\n"
+					"	xorl	UL,UR\n";
+
+
+~[cuc]	Rsbyt[cuc]	{ $L }		"	notb	AL\n";
+~[sus]	Rsscr[sus]	{ $L }		"	notw	AL\n";
+~[iuip]	Rsscr[iuip]	{ $L }		"	notl	AL\n";
+~[LuL]	Rsscr[LuL]	{ $L }		"	notl	AL\n"
+					"	notl	UL\n";
+
+#	shifts
+
+<<	C[iuip],ECX	{ $1:Raxdx }	"ZB4	movl	$CL,ZA1\n"
+					"	shlZTL	%cl,ZA1\n";
+<<	C[LuL],ECX	{ $P $1 }	"ZL.2	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	AL,U1\n"
+					"	xorl	A1,A1\n"
+					"	shll	%cl,U1\n"
+					"	jmp	ZL2\n"
+					"ZL1:	movl	UL,U1\n"
+					"	movl	AL,A1\n"
+					"	shldl	A1,U1\n"
+					"	shll	%cl,A1\n"
+					"ZL2:\n";
+>>	C[L],ECX	{ $P $1 }	"ZL.2	movl	UL,U1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	U1,A1\n"
+					"	sarl	$31,U1\n"
+					"	sarl	%cl,A1\n"
+					"	jmp	ZL2\n"
+					"ZL1:	movl	AL,A1\n"
+					"	shrdl	U1,A1\n"
+					"	sarl	%cl,U1\n"
+					"ZL2:\n";
+>>	C[uL],ECX	{ $P $1 }	"ZL.2	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,A1\n"
+					"	xorl	U1,U1\n"
+					"	shrl	%cl,A1\n"
+					"	jmp	ZL2\n"
+					"ZL1:	movl	UL,U1\n"
+					"	movl	AL,A1\n"
+					"	shrdl	U1,A1\n"
+					"	shrl	%cl,U1\n"
+					"ZL2:\n";
+
+
+#	assignment ops -- mod N bits!
+
++=	BAWD,C1			{ $L $C }	"	incZT.	AL\n";
++=[c]	MEM[uc],CB		{ $L }		"	addb	AR,AL\n";
++=	MEM[cuc],CB		{ $L $C }	"	addb	AR,AL\n";
++=[c]	Rbyte[uc],MEM[uc]	{ $L }		"	addb	AR,AL\n";
++=	Rbyte[cuc],MEM[cuc]	{ $L $C }	"	addb	AR,AL\n";
++=	Rbyte[cuc],CB		{ $L }		"ZB4	leal	CR(ZAL),ZAL\nZb";
++=[c]	BAWD,Rbyte[uc]		{ $L }		"	addb	AR,AL\n";
++=	BAWD,Rbyte[cuc]		{ $L $C }	"	addb	AR,AL\n";
++=	Rsreg[cuc],Rsreg[cuc]	{ $L }		"ZB4	addl	ZAR,ZAL\nZb";
+
++=	WAWD,C1			{ $L $C }	"	incZT.	AL\n";
++=[s]	MEM[us],CW		{ $L }		"	addw	AR,AL\n";
++=	MEM[sus],CW		{ $L $C }	"	addw	AR,AL\n";
++=[s]	Rsreg[us],MEM[us]	{ $L }		"	addw	AR,AL\n";
++=	Rsreg[sus],MEM[sus]	{ $L $C }	"	addw	AR,AL\n";
++=	Rsreg[sus],CW		{ $L }		"ZB4	leal	CR(ZAL),ZAL\nZb";
++=[s]	WAWD,Rsreg[us]		{ $L }		"	addw	AR,AL\n";
++=	WAWD,Rsreg[sus]		{ $L $C }	"	addw	AR,AL\n";
++=	Rsreg[sus],Rsreg[sus] 	{ $L }		"ZB4	addl	ZAR,ZAL\nZb";
+
++=	LAWD,C1			{ $L $C }	"	incZT.	AL\n";
++=[i]	MEM[ui],NCL		{ $L }		"	addl	AR,AL\n";
++=	MEM[iuip],NCL		{ $L $C }	"	addl	AR,AL\n";
++=[i]	Rsreg[ui],MEM[ui]	{ $L }		"	addl	AR,AL\n";
++=	Rsreg[iuip],MEM[iuip]	{ $L $C }	"	addl	AR,AL\n";
++=	Rsreg[iuip],NCL		{ $L }		"	leal	CR(AL),AL\n";
++=[i]	LAWD,Rsreg[ui]		{ $L }		"	addl	AR,AL\n";
++=	LAWD,Rsreg[iuip]	{ $L $C }	"	addl	AR,AL\n";
+
++=	Rsreg[LuL],C		{ $L }	"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
++=	MEM[LuL],C		{ $L }	"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
++=	Rsreg[LuL],MEM[LuL]	{ $L }	"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
++=	LLMEM,Rsreg[LuL]	{ $L }	"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
++=	Rsreg[LuL],Rsreg[LuL]	{ $L }	"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
++=	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	AR,A1\n"
+					"	addl	A1,AL\n"
+					"	movl	UR,A1\n"
+					"	adcl	A1,UL\n";
+
+-=	BAWD,C1		{ $L $C }	"	decZT.	AL\n";
+-=	WAWD,C1		{ $L $C }	"	decZT.	AL\n";
+-=	LAWD,C1		{ $L $C }	"	decZT.	AL\n";
+
+-=[c]	BAWD[uc],CB[uc]		{$L}	"	subb	AR,AL\n";
+-=	BAWD,CB			{$L $C}	"	subb	AR,AL\n";
+-=[c]	Rbyte[uc],MEM[uc]	{$L}	"	subb	AR,AL\n";
+-=	Rbyte[cuc],MEM[cuc]	{$L $C}	"	subb	AR,AL\n";
+-=[c]	BAWD,Rbyte[uc]		{$L}	"	subb	AR,AL\n";
+-=	BAWD,Rbyte[cuc]		{$L $C}	"	subb	AR,AL\n";
+-=	Rsreg[cuc],Rsreg[cuc]	{$L}	"ZB4	subl	ZAR,ZAL\nZb";
+
+-=[s]	WAWD[us],CW[us]		{$L}	"	subw	AR,AL\n";
+-=	WAWD,CW			{$L $C}	"	subw	AR,AL\n";
+-=[s]	Rsreg[sus],MEM[us]	{$L}	"	subw	AR,AL\n";
+-=	Rsreg[sus],MEM[sus]	{$L $C}	"	subw	AR,AL\n";
+-=[s]	WAWD,Rsreg[us]		{$L}	"	subw	AR,AL\n";
+-=	WAWD,Rsreg[sus]		{$L $C}	"	subw	AR,AL\n";
+-=	Rsreg[sus],Rsreg[sus]	{$L}	"ZB4	subl	ZAR,ZAL\nZb";
+
+-=[i]	LAWD[ui],C[ui]		{$L}	"	subl	AR,AL\n";
+-=	LAWD,NCL		{$L $C}	"	subl	AR,AL\n";
+-=[i]	Rsreg[ui],MEM[ui]	{$L}	"	subl	AR,AL\n";
+-=	Rsreg[iuip],MEM[iuip]	{$L $C}	"	subl	AR,AL\n";
+-=[i]	LAWD,Rsreg[ui]		{$L}	"	subl	AR,AL\n";
+-=	LAWD,Rsreg[iuip]	{$L $C}	"	subl	AR,AL\n";
+
+-=	Rsreg[LuL],C		{$L}	"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+-=	MEM[LuL],C		{$L}	"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+-=	Rsreg[LuL],MEM[LuL]	{$L}	"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+-=	LLMEM,Rsreg[LuL]	{$L}	"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+-=	Rsreg[LuL],Rsreg[LuL]	{$L}	"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+-=	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	AR,A1\n"
+					"	subl	A1,AL\n"
+					"	movl	UR,A1\n"
+					"	sbbl	A1,UL\n";
+
+*=[cuc]	 EAX[cuc],BAWD	{ $L }			"	mulb	AR\n";
+*=[sus]	 Rsreg[sus],CW	{ $L }			"ZML,R,L,L";
+*=[sus]	 Rsreg[sus],WAWD { $L }			"	imulw	AR,AL\n";
+*=[iuip] Rsreg[iuip],NCL { $L }			"ZML,R,L,L";
+*=[iuip] Rsreg[iuip],LAWD { $L }		"	imull	AR,AL\n";
+*=[LuL]	LLMEM,cULAWD[LuL] {2:Raxdx $L}	"	movl	UL,%eax\n"
+					"	mull	A(RL)\n"
+					"	movl	%eax,UL\n"
+					"	movl	AL,%eax\n"
+					"	mull	A(RL)\n"
+					"	movl	%eax,AL\n"
+					"	addl	%edx,UL\n";
+*=[LuL]	LLMEM,CLu	{2:Raxdx $L}	"	movl	AR,%eax\n"
+					"	mull	UL\n"
+					"	movl	%eax,UL\n"
+					"	movl	AR,%eax\n"
+					"	mull	AL\n"
+					"	movl	%eax,AL\n"
+					"	addl	%edx,UL\n";
+*=[LuL]	MEM[LuL],C	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgmul\n";
+*=[LuL]	MEM[LuL],LLAWD	{3:Rsscr $1 $<}	"	leal	AL,%ecx\n"
+					"/\A\L\I\A\S	AL	8\n"
+					"	movl	UR,%edx\n"
+					"	movl	AR,%eax\n"
+					"/\L\I\V\E: %eax\n"
+					"/\L\I\V\E: %edx\n"
+					"/\L\I\V\E: %ecx\n"
+					"	call2	__llasgmul\n";
+
+&=[cuc]	 BAWD,CB		{ $L $C }	"	andb	AR,AL\n";
+&=[cuc]	 MEM[cuc],Rsbyt[cuc]	{ $L $C }	"	andb	AR,AL\n";
+&=[cuc]	 Rsbyt[cuc],BAWD	{ $L $C }	"	andb	AR,AL\n";
+&=[sus]	 WAWD,CW		{ $L $C }	"	andw	AR,AL\n";
+&=[sus]	 MEM[sus],Rsreg[sus]	{ $L $C }	"	andw	AR,AL\n";
+&=[sus]	 Rsreg[sus],WAWD	{ $L $C }	"	andw	AR,AL\n";
+&=[iuip] LAWD,NCL		{ $L $C }	"	andl	AR,AL\n";
+&=[iuip] MEM[iuip],Rsreg[iuip]	{ $L $C }	"	andl	AR,AL\n";
+&=[iuip] Rsreg[iuip],LAWD	{ $L $C }	"	andl	AR,AL\n";
+&=[LuL]	Rsreg[LuL],CLLhi	{ $L }	"	andl	AR,AL\n";
+&=[LuL]	MEM[LuL],CLLhi		{ $L }	"	andl	AR,AL\n";
+&=[LuL]	Rsreg[LuL],CLu		{ $L }	"	andl	AR,AL\n"
+					"	xorl	UL,UL\n";
+&=[LuL]	MEM[LuL],CLu		{ $L }	"	andl	AR,AL\n"
+					"	movl	$0,UL\n";
+&=[LuL]	Rsreg[LuL],C		{ $L }	"	andl	AR,AL\n"
+					"	andl	UR,UL\n";
+&=[LuL]	MEM[LuL],C		{ $L }	"	andl	AR,AL\n"
+					"	andl	UR,UL\n";
+&=[LuL]	Rsreg[LuL],cULAWD[LuL]	{ $L }	"	andl	A(RL),AL\n"
+					"	clrl	UL\n";
+&=[LuL]	MEM[LuL],cULAWD[LuL] {$L $> 1:Rsscr} "	movl	A(RL),A1\n"
+					"	andl	A1,AL\n"
+					"	clrl	UL\n";
+&=[LuL]	Rsreg[LuL],MEM[LuL]	{ $L }	"	andl	UR,UL\n"
+					"	andl	AR,AL\n";
+&=[LuL]	LLMEM,Rsreg[LuL]	{ $L }	"	andl	AR,AL\n"
+					"	andl	UR,UL\n";
+&=[LuL]	Rsreg[LuL],Rsreg[LuL]	{ $L }	"	andl	UR,UL\n"
+					"	andl	AR,AL\n";
+&=[LuL]	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	AR,A1\n"
+					"	andl	A1,AL\n"
+					"	movl	UR,A1\n"
+					"	andl	A1,UL\n";
+
+|=[cuc]	 BAWD,CB		{ $L $C }	"	orb	AR,AL\n";
+|=[cuc]	 MEM[cuc],Rsbyt[cuc]	{ $L $C }	"	orb	AR,AL\n";
+|=[cuc]	 Rsbyt[cuc],BAWD	{ $L $C }	"	orb	AR,AL\n";
+|=[sus]	 WAWD,CW		{ $L $C }	"	orw	AR,AL\n";
+|=[sus]	 MEM[sus],Rsreg[sus]	{ $L $C }	"	orw	AR,AL\n";
+|=[sus]	 Rsreg[sus],WAWD	{ $L $C }	"	orw	AR,AL\n";
+|=[iuip] LAWD,NCL		{ $L $C }	"	orl	AR,AL\n";
+|=[iuip] MEM[iuip],Rsreg[iuip]	{ $L $C }	"	orl	AR,AL\n";
+|=[iuip] Rsreg[iuip],LAWD	{ $L $C }	"	orl	AR,AL\n";
+|=[LuL]	Rsreg[LuL],CLu		{ $L }	"	orl	AR,AL\n";
+|=[LuL]	MEM[LuL],CLu		{ $L }	"	orl	AR,AL\n";
+|=[LuL]	Rsreg[LuL],CLLhi	{ $L }	"	orl	AR,AL\n"
+					"	movl	$-1,UL\n";
+|=[LuL]	MEM[LuL],CLLhi		{ $L }	"	orl	AR,AL\n"
+					"	movl	$-1,UL\n";
+|=[LuL]	Rsreg[LuL],C		{ $L }	"	orl	AR,AL\n"
+					"	orl	UR,UL\n";
+|=[LuL]	MEM[LuL],C		{ $L }	"	orl	AR,AL\n"
+					"	orl	UR,UL\n";
+|=[LuL]	Rsreg[LuL],cULAWD[LuL]	{ $L }	"	orl	A(RL),AL\n";
+|=[LuL]	MEM[LuL],cULAWD[LuL] {$L $> 1:Rsscr} "	movl	A(RL),A1\n"
+					"	orl	A1,AL\n";
+|=[LuL]	Rsreg[LuL],MEM[LuL]	{ $L }	"	orl	UR,UL\n"
+					"	orl	AR,AL\n";
+|=[LuL]	LLMEM,Rsreg[LuL]	{ $L }	"	orl	AR,AL\n"
+					"	orl	UR,UL\n";
+|=[LuL]	Rsreg[LuL],Rsreg[LuL]	{ $L }	"	orl	UR,UL\n"
+					"	orl	AR,AL\n";
+|=[LuL]	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	AR,A1\n"
+					"	orl	A1,AL\n"
+					"	movl	UR,A1\n"
+					"	orl	A1,UL\n";
+
+^=[cuc]	 BAWD,CB		{ $L $C }	"	xorb	AR,AL\n";
+^=[cuc]	 MEM[cuc],Rsbyt[cuc]	{ $L $C }	"	xorb	AR,AL\n";
+^=[cuc]	 Rsbyt[cuc],BAWD	{ $L $C }	"	xorb	AR,AL\n";
+^=[sus]	 WAWD,CW		{ $L $C }	"	xorw	AR,AL\n";
+^=[sus]	 MEM[sus],Rsreg[sus]	{ $L $C }	"	xorw	AR,AL\n";
+^=[sus]	 Rsreg[sus],WAWD	{ $L $C }	"	xorw	AR,AL\n";
+^=[iuip] LAWD,NCL		{ $L $C }	"	xorl	AR,AL\n";
+^=[iuip] MEM[iuip],Rsreg[iuip]	{ $L $C }	"	xorl	AR,AL\n";
+^=[iuip] Rsreg[iuip],LAWD	{ $L $C }	"	xorl	AR,AL\n";
+^=[LuL]	Rsreg[LuL],CLu		{ $L }	"	xorl	AR,AL\n";
+^=[LuL]	MEM[LuL],CLu		{ $L }	"	xorl	AR,AL\n";
+^=[LuL]	Rsreg[LuL],C		{ $L }	"	xorl	AR,AL\n"
+					"	xorl	UR,UL\n";
+^=[LuL]	MEM[LuL],C		{ $L }	"	xorl	AR,AL\n"
+					"	xorl	UR,UL\n";
+^=[LuL]	Rsreg[LuL],cULAWD[LuL]	{ $L }	"	xorl	A(RL),AL\n";
+^=[LuL]	MEM[LuL],cULAWD[LuL] {$L $> 1:Rsscr} "	movl	A(RL),A1\n"
+					"	xorl	A1,AL\n";
+^=[LuL]	Rsreg[LuL],MEM[LuL]	{ $L }	"	xorl	UR,UL\n"
+					"	xorl	AR,AL\n";
+^=[LuL]	LLMEM,Rsreg[LuL]	{ $L }	"	xorl	AR,AL\n"
+					"	xorl	UR,UL\n";
+^=[LuL]	Rsreg[LuL],Rsreg[LuL]	{ $L }	"	xorl	UR,UL\n"
+					"	xorl	AR,AL\n";
+^=[LuL]	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	AR,A1\n"
+					"	xorl	A1,AL\n"
+					"	movl	UR,A1\n"
+					"	xorl	A1,UL\n";
+
+<<=	Rsreg[iuip],C1	{ $L }		"ZB4	leal	(,ZAL,ZOR),ZALZb\n";
+<<=	Rsreg[iuip],C2	{ $L }		"ZB4	leal	(,ZAL,ZOR),ZALZb\n";
+<<=	Rsreg[iuip],C3	{ $L }		"ZB4	leal	(,ZAL,ZOR),ZALZb\n";
+<<=	AWD[cucsusiuilulp],C1 { $L }	"	shlZTL	AL\n";
+<<=	AWD[cucsusiuilulp],CS { $L }	"	shlZTL	$CR,AL\n";
+<<=	AWD[cucsusiuilulp],ECX { $L }	"	shlZTL	%cl,AL\n";
+<<=	LLMEM,C1	{ 1:Rsscr $L }	"	movl	AL,A1\n"
+					"	shll	AL\n"
+					"	shldl	$1,A1,UL\n";
+<<=	Rsreg[LuL],C1	{ $L }		"	shldl	$1,AL,UL\n"
+					"	shll	AL\n";
+<<=	LLMEM,C32	{ 1:Rsscr $L }	"	movl	AL,A1\n"
+					"	movl	$0,AL\n"
+					"	movl	A1,UL\n";
+<<=	Rsreg[LuL],C32	{ $L }		"	movl	AL,UL\n"
+					"	xorl	AL,AL\n";
+<<=	LLMEM,CS	{ 1:Rsscr $L }	"	movl	AL,A1\n"
+					"	shll	AR,AL\n"
+					"	shldl	AR,A1,UL\n";
+<<=	Rsreg[LuL],CS	{ $L }		"	shldl	AR,AL,UL\n"
+					"	shll	AR,AL\n";
+<<=	LLMEM,CL	{ 1:Rsscr $L }	"	movl	AL,A1\n"
+					"	movl	$0,AL\n"
+					"	shll	AR&31,A1\n"
+					"	movl	A1,UL\n";
+<<=	Rsreg[LuL],CL	{ $L }		"	movl	AL,UL\n"
+					"	xorl	AL,AL\n"
+					"	shll	AR&31,UL\n";
+<<=	LLMEM,ECX	{ 1:Rsscr $L }	"ZL.2	movl	AL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,AL\n"
+					"	shll	%cl,A1\n"
+					"	movl	A1,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shll	%cl,AL\n"
+					"	shldl	A1,UL\n"
+					"ZL2:\n";
+<<=	Rsreg[LuL],ECX	{ $L }		"ZL.2	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	AL,UL\n"
+					"	xorl	AL,AL\n"
+					"	shll	%cl,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shldl	AL,UL\n"
+					"	shll	%cl,AL\n"
+					"ZL2:\n";
+<<=	LLMEM,LAWD {1:Rsscr 1:ECX $L $>}
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	AL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,AL\n"
+					"	shll	%cl,A1\n"
+					"	movl	A1,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shll	%cl,AL\n"
+					"	shldl	A1,UL\n"
+					"ZL2:\n";
+<<=	Rsreg[LuL],LAWD {1:ECX $L $>}	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	AL,UL\n"
+					"	xorl	AL,AL\n"
+					"	shll	%cl,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shldl	AL,UL\n"
+					"	shll	%cl,AL\n"
+					"ZL2:\n";
+<<=	LLMEM,LLAWD {1:Rsscr 1:ECX $L $>}
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	AL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,AL\n"
+					"	shll	%cl,A1\n"
+					"	movl	A1,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shll	%cl,AL\n"
+					"	shldl	A1,UL\n"
+					"ZL2:\n";
+<<=	Rsreg[LuL],LLAWD {1:ECX $L $>}	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	AL,UL\n"
+					"	xorl	AL,AL\n"
+					"	shll	%cl,UL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shldl	AL,UL\n"
+					"	shll	%cl,AL\n"
+					"ZL2:\n";
+
+>>=	AWD[csil],C1	{ $L }		"	sarZTL	AL\n";
+>>=	AWD[csil],CS	{ $L }		"	sarZTL	$CR,AL\n";
+>>=	AWD[csil],ECX	{ $L }		"	sarZTL	%cl,AL\n";
+>>=	AWD[cucsusiuilulp],C1 { $L }	"	shrZTL	AL\n";
+>>=	AWD[cucsusiuilulp],CS { $L }	"	shrZTL	$CR,AL\n";
+>>=	AWD[cucsusiuilulp],ECX { $L }	"	shrZTL	%cl,AL\n";
+>>=	SLLMEM,C1	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	sarl	UL\n"
+					"	shrdl	$1,A1,AL\n";
+>>=	Rsreg[L],C1	{ $L }		"	shrdl	$1,UL,AL\n"
+					"	sarl	UL\n";
+>>=	ULLMEM,C1	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	shrl	UL\n"
+					"	shrdl	$1,A1,AL\n";
+>>=	Rsreg[uL],C1	{ $L }		"	shrdl	$1,UL,AL\n"
+					"	shrl	UL\n";
+>>=	SLLMEM,CS	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	sarl	AR,UL\n"
+					"	shrdl	AR,A1,AL\n";
+>>=	Rsreg[L],CS	{ $L }		"	shrdl	AR,UL,AL\n"
+					"	sarl	AR,UL\n";
+>>=	ULLMEM,CS	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	shrl	AR,UL\n"
+					"	shrdl	AR,A1,AL\n";
+>>=	Rsreg[uL],CS	{ $L }		"	shrdl	AR,UL,AL\n"
+					"	shrl	AR,UL\n";
+>>=	SLLMEM,C32	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	sarl	$31,UL\n"
+					"	movl	A1,AL\n";
+>>=	Rsreg[L],C32	{ $L }		"	movl	UL,AL\n"
+					"	sarl	$31,UL\n";
+>>=	ULLMEM,C32	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	movl	$0,UL\n"
+					"	movl	A1,AL\n";
+>>=	Rsreg[uL],C32	{ $L }		"	movl	UL,AL\n"
+					"	xorl	UL,UL\n";
+>>=	SLLMEM,CL	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	sarl	$31,UL\n"
+					"	sarl	AR&31,A1\n"
+					"	movl	A1,AL\n";
+>>=	Rsreg[L],CL	{ $L }		"	movl	UL,AL\n"
+					"	sarl	$31,UL\n"
+					"	sarl	AR&31,AL\n";
+>>=	ULLMEM,CL	{ 1:Rsscr $L }	"	movl	UL,A1\n"
+					"	movl	$0,UL\n"
+					"	shrl	AR&31,A1\n"
+					"	movl	A1,AL\n";
+>>=	Rsreg[uL],CL	{ $L }		"	movl	UL,AL\n"
+					"	xorl	UL,UL\n"
+					"	shrl	AR&31,AL\n";
+>>=	SLLMEM,ECX	{ 1:Rsscr $L }	"ZL.2	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	sarl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[L],ECX	{ $L }		"ZL.2	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	sarl	%cl,UL\n"
+					"ZL2:\n";
+>>=	ULLMEM,ECX	{ 1:Rsscr $L }	"ZL.2	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,UL\n"
+					"	shrl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[uL],ECX	{ $L }		"ZL.2	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	xorl	UL,UL\n"
+					"	shrl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	shrl	%cl,UL\n"
+					"ZL2:\n";
+>>=	SLLMEM,LAWD	{ 1:Rsscr 1:ECX $L $> }
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	sarl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[L],LAWD	{ 1:ECX $L $> }	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	sarl	%cl,UL\n"
+					"ZL2:\n";
+>>=	ULLMEM,LAWD	{ 1:Rsscr 1:ECX $L $> }
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,UL\n"
+					"	shrl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[uL],LAWD	{ 1:ECX $L $> }	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	xorl	UL,UL\n"
+					"	shrl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	shrl	%cl,UL\n"
+					"ZL2:\n";
+>>=	SLLMEM,LLAWD	{ 1:Rsscr 1:ECX $L $> }
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	sarl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[L],LLAWD	{ 1:ECX $L $> }	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	sarl	$31,UL\n"
+					"	sarl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	sarl	%cl,UL\n"
+					"ZL2:\n";
+>>=	ULLMEM,LLAWD	{ 1:Rsscr 1:ECX $L $> }
+					"ZL.2	movl	AR,%ecx\n"
+					"	movl	UL,A1\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	$0,UL\n"
+					"	shrl	%cl,A1\n"
+					"	movl	A1,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrl	%cl,UL\n"
+					"	shrdl	A1,AL\n"
+					"ZL2:\n";
+>>=	Rsreg[uL],LLAWD	{ 1:ECX $L $> }	"ZL.2	movl	AR,%ecx\n"
+					"	cmpl	$31,%ecx\n"
+					"	jbe	ZL1\n"
+					"	movl	UL,AL\n"
+					"	xorl	UL,UL\n"
+					"	shrl	%cl,AL\n"
+					"	jmp	ZL2\n"
+					"ZL1:	shrdl	UL,AL\n"
+					"	shrl	%cl,UL\n"
+					"ZL2:\n";
+
+
+#	comparisons
+
+'CMP'	cSBAWD,CBs	{ $C }		"	cmpb	$CR,AL\n";
+'CMP'	cSWAWD,CWs	{ $C }		"	cmpw	$CR,AL\n";
+'CMP'	cRrc,cRMc	{ $C }		"	cmpb	AR,AL\n";
+'CMP'	cRMc,cRrc	{ $C }		"	cmpb	AR,AL\n";
+'CMP'	cRrc,cRrc	{ $C }		"	cmpb	AR,AL\n";
+'CMP'	cRruc[uiul],cRMuc[uiul]	{ $C }	"	cmpb	AR,AL\n";
+'CMP'	cRrs,cRMs	{ $C }		"	cmpw	AR,AL\n";
+'CMP'	cRMs,cRrs	{ $C }		"	cmpw	AR,AL\n";
+'CMP'	cRrs,cRrs	{ $C }		"	cmpw	AR,AL\n";
+'CMP'	cRrus[uiul],cRMus[uiul]	{ $C }	"	cmpw	AR,AL\n";
+'CMP'	MEM[iuip],NCL	{ $C }		"	cmpl	$CR,AL\n";
+'CMP'	MEM[iuip],Rsreg[iuip] { $C }	"	cmpl	AR,AL\n";
+'CMP'	Rsreg[iuip],NCL	{ $C }		"	cmpl	$CR,AL\n";
+'CMP'	Rsreg[iuip],LAWD { $C }		"	cmpl	AR,AL\n";
+'CMP'	cULAWD[LuL],CLu	{ $C }		"	cmpl	AR,AL\n";
+'CMP'	cSLAWD[LuL],CLs	{ $C }		"	cmpl	AR,AL\n";
+'CMP'	Rsreg[LuL],C		{$C}	"ZDL";
+'CMP'	Rsreg[LuL],LLAWD	{$C}	"ZDL";
+'CMP'	MEM[LuL],C		{$C}	"ZDL";
+'CMP'	MEM[LuL],Rsreg[LuL]	{$C}	"ZDL";
+
+
+#	post increment, decrement (rhs is amount)
+
+++[cuc] BAWD,C1		{$1:Rsbyt}	"F	movZT.	AL,A1\n"
+					"	incZT.	AL\n";
+++[sus] WAWD,C1		{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	incZT.	AL\n";
+++[iuip] LAWD,C1	{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	incZT.	AL\n";
+++[cuc] BAWD,CB		{$1:Rsbyt}	"F	movZT.	AL,A1\n"
+					"	addZT.	$CR,AL\n";
+++[sus] WAWD,CW		{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	addZT.	$CR,AL\n";
+++[iuip] LAWD,NCL	{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	addZT.	$CR,AL\n";
+++[LuL] LLAWD,C		{$P $1:Rsscr}	"F	movl	AL,A1\n"
+					"F	movl	UL,U1\n"
+					"	addl	AR,AL\n"
+					"	adcl	UR,UL\n";
+
+--[cuc] BAWD,C1		{$1:Rsbyt}	"F	movZT.	AL,A1\n"
+					"	decZT.	AL\n";
+--[sus] WAWD,C1		{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	decZT.	AL\n";
+--[iuip] LAWD,C1 	{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	decZT.	AL\n";
+--[cuc] BAWD,CB		{$1:Rsbyt}	"F	movZT.	AL,A1\n"
+					"	subZT.	$CR,AL\n";
+--[sus] WAWD,CW		{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	subZT.	$CR,AL\n";
+--[iuip] LAWD,NCL	{$1:Rsscr}	"F	movZT.	AL,A1\n"
+					"	subZT.	$CR,AL\n";
+--[LuL] LLAWD,C		{$P $1:Rsscr}	"F	movl	AL,A1\n"
+					"F	movl	UL,U1\n"
+					"	subl	AR,AL\n"
+					"	sbbl	UR,UL\n";
+
+# Add ++ and -- fld ops here if necessary.
+
+
+#	assignment
+
+#	same size or smaller integers
+
+=[cuc] Rbyte[cuc],C0	{ $L $C }	"	xorb	AL,AL\n";
+=[cuc] AUTOID[cuc],CB	{ $R }		"	movb	$CR,(A(LLL))\n"
+					"Z+L";
+=[cuc] BAWD,CB		{ $L }		"	movb	$CR,AL\n";
+=[cuc] AUTOID[cuc],Rbyte { $R }		"	movb	AR,(A(LLL))\n"
+					"Z+L";
+=[cuc] MEM[cuc], cRsi[cuc] { $N }	"	movb	ZB1ZA(RL),ALZb\n";
+=[cuc] MEM[cuc],Rbyte	{ $R }		"	movb	AR,AL\n";
+=[cuc] Rbyte,AUTOID[cuc] { $L }		"	movb	(A(RLL)),AL\n"
+					"Z+R";
+=[cuc] Rbyte,BAWD	{ $L }		"RL!R	movb	AR,AL\n";
+
+=[sus] Rsreg[sus],C0	{ $L $C }	"	xorw	AL,AL\n";
+=[sus] AUTOID[sus],CW	{ $R }		"	movw	$CR,(A(LLL))\n"
+					"Z+L";
+=[sus] WAWD,CW		{ $L }		"	movw	$CR,AL\n";
+=[sus] AUTOID[sus],Rsreg { $R }		"	movw	AR,(A(LLL))\n"
+					"Z+L";
+=[sus] MEM[sus],Rsreg	{ $R }		"	movw	AR,AL\n";
+=[sus] Rsreg,AUTOID[sus] { $R }		"	movw	(A(RLL)),AL\n"
+					"Z+R";
+=[sus] Rsreg,WAWD	{ $L }		"RL!R	movw	AR,AL\n";
+
+=[iuip] Rsreg[iuip],C0	{ $L $C }	"	xorl	AL,AL\n";
+=[iuip] AUTOID[iuip],CW	{ $R }		"	movl	$CR,(A(LLL))\n"
+					"Z+L";
+=[iuip] LAWD,NCL	{ $L }		"	movl	$CR,AL\n";
+=[iuip] AUTOID[iuip],Rsreg { $R }	"	movl	AR,(A(LLL))\n"
+					"Z+L";
+=[iuip] MEM[iuip],Rsreg	{ $R }		"	movl	AR,AL\n";
+=[iuip] Rsreg,AUTOID[iuip] { $L }	"	movl	(A(RLL)),AL\n"
+					"Z+R";
+=[iuip] Rsreg,LAWD	{ $L }		"RL!R	movl	AR,AL\n";
+=[LuL]	Rsreg[LuL],C0	{ $L }		"	xorl	AL,AL\n"
+					"	xorl	UL,UL\n";
+=[LuL]	LLMEM,CLu	{ $L }		"	movl	AR,AL\n"
+					"	movl	$0,UL\n";
+=[LuL]	Rsreg[LuL],CLu	{ $L }		"	movl	AR,AL\n"
+					"	xorl	UL,UL\n";
+=[LuL]	LLMEM,C		{ $L }		"	movl	AR,AL\n"
+					"	movl	UR,UL\n";
+=[LuL]	Rsreg[LuL],C	{ $L }		"	movl	AR,AL\n"
+					"	movl	UR,UL\n";
+=[LuL]	LLMEM,Rsreg[LuL] { $R }		"	movl	AR,AL\n"
+					"	movl	UR,UL\n";
+=[LuL]	Rsreg[LuL],LLAWD { $L }		"RL!RZ=LR";
+=[LuL]	LLMEM,LLMEM	{$L 1:Rsscr}	"	movl	UR,A1\n"
+					"	movl	A1,UL\n"
+					"	movl	AR,A1\n"
+					"	movl	A1,AL\n";
+
+
+#	Field Assignments
+# BEWARE:  ZH masks an ICON constant to the size that will fit into
+# the selected field.
+
+=[cuc] FLD,C0		{ $1:Rsbyt  }	"	andb	$M~L,A(LL)\n"
+					"FZB1	xorb	ZA1,ZA1Zb\n";
+=[cuc] FLD,CB		{ $1:Rsbyt  }	"ZFLR	andb	$M~L,A(LL)\n"
+					"	orb	$ZHLR,A(LL)\n"
+					"FZB1	movb	AR,ZA1\n"
+					"FZZ-(LL)	shlb	$8-SL,ZA1\n"
+					"FZZ-(LL)	sarb	$8-SL,ZA1\n"
+					"Zb";
+=[cuc] FLD,Rbyte	{ $1:Rsbyt $> }	"ZB1"
+					"RR!1	movb	AR,A1\n"
+					"	andb	$NL,ZA1\n"
+					"	andb	$M~L,A(LL)\n"
+					"H?L	shlb	$HL,ZA1\n"
+					"	orb	ZA1,A(LL)\n"
+					"FH?LZZ+(LL)	shrb	$HL,ZA1\n"
+					"FZZ-(LL)	shlb	$8-HL-SL,ZA1\n"
+					"FZZ-(LL)	sarb	$8-SL,ZA1\n"
+					"Zb";
+=[cuc] ('FLD' CSE),Rbyte { $1:Rsbyt $> }	"ZB1"
+					"RR!1	movb	AR,A1\n"
+					"	andb	$NL,ZA1\n"
+					"	andb	$M~L,A(LL)\n"
+					"H?L	shlb	$HL,ZA1\n"
+					"	orb	ZA1,A(LL)\n"
+					"FH?LZZ+(LL)	shrb	$HL,ZA1\n"
+					"FZZ-(LL)	shlb	$8-HL-SL,ZA1\n"
+					"FZZ-(LL)	sarb	$8-SL,ZA1\n"
+					"Zb";
+=[sus] FLD,C0		{ $1:Rsscr  }	"	andw	$M~L,A(LL)\n"
+					"FZB2	xorw	ZA1,ZA1Zb\n";
+=[sus] FLD,CW		{ $1:Rsscr  }	"ZFLR	andw	$M~L,A(LL)\n"
+					"	orw	$ZHLR,A(LL)\n"
+					"FZB2	movw	AR,ZA1\n"
+					"FZZ-(LL)	shlw	$16-SL,ZA1\n"
+					"FZZ-(LL)	sarw	$16-SL,ZA1\n"
+					"Zb";
+=[sus] FLD,Rsreg	{ $1:Rsscr $> }	"ZB2"
+					"RR!1	movw	AR,A1\n"
+					"	andw	$NL,ZA1\n"
+					"	andw	$M~L,A(LL)\n"
+					"H?L	shlw	$HL,ZA1\n"
+					"	orw	ZA1,A(LL)\n"
+					"FH?LZZ+(LL)	shrw	$HL,ZA1\n"
+					"FZZ-(LL)	shlw	$16-HL-SL,ZA1\n"
+					"FZZ-(LL)	sarl	$16-SL,ZA1\n"
+					"Zb";
+=[iuilulp] FLD,C0	{ $1:Rsscr  }	"	andl	$M~L,A(LL)\n"
+					"FZB4	xorl	ZA1,ZA1Zb\n";
+=[iuilulp] FLD,NON	{ $1:Rsscr  }	"ZFLR	andl	$M~L,A(LL)\n"
+					"	orl	$ZHLR,A(LL)\n"
+					"FZB4	movl	AR,ZA1Zb\n"
+					"FZZ-(LL)	shll	$32-SL,ZA1\n"
+					"FZZ-(LL)	sarl	$32-SL,ZA1\nZb";
+=[iuilulp] FLD,Rsreg	{ $1:Rsscr $> }	"ZB4"
+					"RR!1	movl	AR,A1\n"
+					"	andl	$NL,ZA1\n"
+					"	andl	$M~L,A(LL)\n"
+					"H?L	shll	$HL,ZA1\n"
+					"	orl	ZA1,A(LL)\n"
+					"FH?LZZ+(LL)	shrl	$HL,ZA1\n"
+					"FZZ-(LL)	shll	$32-HL-SL,ZA1\n"
+					"FZZ-(LL)	sarl	$32-SL,ZA1\n"
+					"Zb";
+	#too many special cases...do it in zzzcode().
+=[LuL] LLFLD,('CONV' MEM[iuip])	{$P $1:Rsscr $>}	"FZFML(RL)EZFmL(RL)";
+=[LuL] LLFLD,('CONV' Rsreg[iuip]) {$P $1:Rsscr $>}	"FZFRL(RL)EZFrL(RL)";
+=[LuL] LLFLD,NON		{$P $1:Rsscr}		"FZFPLREZFpLR";
+=[LuL] LLFLD,LLAWD		{$P $1:Rsscr}		"FZFPLREZFpLR";
+
+#	structure assignment, arguments
+
+# complicated. do it in zzzcode()
+
+'STASG' STADR,STADR	{$L 1:ECX}		"ZS";
+'STASG' STMEM,STMEM	{$L 1:ECX 2:Rsscr $]}	"ZS";
+
+'STARG' STADR		{$N 1:ECX }		"Zs";
+'STARG' STMEM		{$N 1:ECX 2:Rsscr }	"Zs";
+
+#	goto (for fortran)
+
+'GOTO'	C[p]		{$N}		"	jmp	$CL\n";
+'GOTO'	STK		{$N}		"	jmp	*AL\n";
+
+#	comma (list separator)
+
+'CM'	FR,FR		{$N}		"";
+
+#	comma op (eval left, eval right, return right value)
+
+'COMOP'	FR,FR		{$N}		"";
+'COMOP'	FR,R		{$R}		"";
+
+#	CALL	
+
+'CALL'[fdx]	C[p],FR	{$A $1:FP0 $<}	"ZGZI.N	call0	ZFFeCL\nZcZFFi";
+'CALL'[fdx]	FARG,FR	{$A $1:FP0 $<}	"ZGZI.N	call0	*AL\nZcZFFi";
+
+'CALL'[fdx]	C[p],FR	{$A $N $<}	"ZGZI.N	call0	ZFFeCL\nZcZFFi"
+					"	fstp	%st(0)\nZi";
+'CALL'[fdx]	FARG,FR	{$A $N $<}	"ZGZI.N	call0	*AL\nZcZFFi"
+					"	fstp	%st(0)\nZi";
+
+'CALL'[LuL]	C[p],FR	{3:Rsscr $1 $<}	"ZG	call2	ZFFeCL\nZcZFFi";
+'CALL'[LuL]	FARG,FR	{3:Rsscr $1 $<}	"ZG	call2	*AL\nZcZFFi";
+'CALL'[LuL]	C[p],FR	{3:Rsscr $N $<}	"ZG	call0	ZFFeCL\nZcZFFi";
+'CALL'[LuL]	FARG,FR	{3:Rsscr $N $<}	"ZG	call0	*AL\nZcZFFi";
+
+'CALL'	C[p],FR	{$A $1:EAX $<}		"ZG	call1	ZFFeCL\nZcZFFi";
+'CALL'	FARG,FR	{$A $1:EAX $<}		"ZG	call1	*AL\nZcZFFi";
+'CALL'	C[p],FR	{$A $N $<}		"ZG	call0	ZFFeCL\nZcZFFi";
+'CALL'	FARG,FR	{$A $N $<}		"ZG	call0	*AL\nZcZFFi";
+
+'UCALL'[fdx]	C[p]	{$A $1:FP0 $<}	"ZGZI.N	call0	CL\n";
+'UCALL'[fdx]	FARG	{$A $1:FP0 $<}	"ZGZI.N	call0	*AL\n";
+
+'UCALL'[fdx]	C[p]	{$A $N $<}	"ZGZI.N	call0	CL\n"
+					"	fstp	%st(0)\nZi";
+'UCALL'[fdx]	FARG	{$A $N $<}	"ZGZI.N	call0	*AL\n"
+					"	fstp	%st(0)\nZi";
+
+'UCALL'[LuL]	C[p]	{3:Rsscr $1 $<}	"ZG	call2	CL\n";
+'UCALL'[LuL]	FARG	{3:Rsscr $1 $<}	"ZG	call2	*AL\n";
+'UCALL'[LuL]	C[p]	{3:Rsscr $N $<}	"ZG	call0	CL\n";
+'UCALL'[LuL]	FARG	{3:Rsscr $N $<}	"ZG	call0	*AL\n";
+
+'UCALL'	C[p]	{$A $1:EAX $<}		"ZG	call1	CL\n";
+'UCALL'	FARG	{$A $1:EAX $<}		"ZG	call1	*AL\n";
+'UCALL'	C[p]	{$A $N $<}		"ZG	call0	CL\n";
+'UCALL'	FARG	{$A $N $<}		"ZG	call0	*AL\n";
+
+# Structure functions must push the pointer to the return address.
+# Since an intermediate register is needed for the stack push,
+# break out the STCALL/USTCALL templates.
+
+'STCALL' C[p],FR	{$A $1:EAX}	"	leal	ZP,A1\n"
+					"	pushl	A1\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call1	CL\nZcZFFi" ;
+'STCALL' C[p],FR	{$A $N}		"	leal	ZP,A1\n"
+					"	pushl	A1\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call0	CL\nZcZFFi" ;
+# This generates an extra \n in the 1st and 2nd cases, due
+# to the E.  Sorry about that.
+'STCALL' FARG,FR	{$A $1:EAX 2:Rsscr $[}	"D1!L	leal	ZP,A1\n"
+					"D1!L	pushl	A1ZFF+\n"
+					"D1!L/\T\M\P\S\R\E\T\n"
+					"D1!LZG call1	*AL\nZFFi"
+					"D1!LZcZFF-"
+					"ED2!L	leal	ZP,A2\n"
+					"D2!L	pushl	A2ZFF+\n"
+					"D2!L/\T\M\P\S\R\E\T\n"
+					"D2!LZG	call1	*AL\n"
+					"D2!LZcZFF-"
+					"E	leal	ZP,A3\n"
+					"	pushl	A3ZFF+\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call1	*AL\nZcZFFiZFF-" ;
+# This generates an extra \n in the 1st and 2nd cases, due
+# to the E.  Sorry about that.
+'STCALL' FARG,FR	{$A $N 2:Rsscr $[}	"D1!L	leal	ZP,A1\n"
+					"D1!L	pushl	A1ZFF+\n"
+					"D1!L/\T\M\P\S\R\E\T\n"
+					"D1!LZG call0	*AL\nZFFi"
+					"D1!LZcZFF-"
+					"ED2!L	leal	ZP,A2\n"
+					"D2!L	pushl	A2ZFF+\n"
+					"D2!L/\T\M\P\S\R\E\T\n"
+					"D2!LZG	call0	*AL\n"
+					"D2!LZcZFF-"
+					"E	leal	ZP,A3\n"
+					"	pushl	A3ZFF+\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call0	*AL\nZcZFFiZFF-" ;
+
+'USTCALL' C[p]	{$A $1:EAX}		"	leal	ZP,A1\n"
+					"	pushl	A1\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZGZFFi	call1	CL\n" ;
+'USTCALL' C[p]	{$A $N}			"	leal	ZP,A1\n"
+					"	pushl	A1\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZGZFFi	call0	CL\n" ;
+'USTCALL' FARG	{$A $1:EAX 2:Rsscr $[}	"D1!L	leal	ZP,A1\n"
+					"D1!L	pushl	A1ZFF+\n"
+					"D1!L/\T\M\P\S\R\E\T\n"
+					"D1!LZG	call1	*ALZFF-"
+					"ED2!L	leal	ZP,A2\n"
+					"D2!L	pushl	A2ZFF+\n"
+					"D2!L/\T\M\P\S\R\E\T\n"
+					"D2!LZG	call1	*ALZFF-"
+					"E	leal	ZP,A3\n"
+					"	pushl	A3ZFF+\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call1	*ALZFF-\n" ;
+'USTCALL' FARG	{$A $N 2:Rsscr $[}	"D1!L	leal	ZP,A1\n"
+					"D1!L	pushl	A1ZFF+\n"
+					"D1!L/\T\M\P\S\R\E\T\n"
+					"D1!LZG	call0	*ALZFF-"
+					"ED2!L	leal	ZP,A2\n"
+					"D2!L	pushl	A2ZFF+\n"
+					"D2!L/\T\M\P\S\R\E\T\n"
+					"D2!LZG	call0	*ALZFF-"
+					"E	leal	ZP,A3\n"
+					"	pushl	A3ZFF+\n"
+					"/\T\M\P\S\R\E\T\n"
+					"ZG	call0	*ALZFF-\n" ;
+
+#############################
+#       NAIL nodes          #
+#############################
+
+#
+# copy the name field verbatim
+#
+COPY			{$N}		"C.";
+COPYASM			{$A $1:EAX $<}	"C.";
+NOP			{$N}		"";
+
+#uninitialized storage
+
+UNINIT [cuc]		{$N}		"Zz";
+UNINIT [sus]		{$N}		"	.align	2\n"
+					"Zz";
+UNINIT [iuilulLuLpf]	{$N}		"	.align	4\n"
+					"Zz";
+UNINIT [Fdx]		{$N}		"	.align	4\n"
+					"Zz";
+
+#
+# Jump and return both jump to the label field.
+# In RETURN, this has been set to the common return point
+#
+JUMP			{$N}		"	jmp	.\\LL\n";
+RETURN			{$N}		"	jmp	.\\LL\n";
+
+#       semicolon - as comma op, but can't be rewritten
+
+'SEMI'		FR,FR	{$N}		"";
+'SEMI'		FR,CC	{$C}		"";
+'SEMI'		FR,R	{$R}		"Y";
+
+#       let - handled by special code in bprt()
+'LET'                   R,R        {$R}            "";
+'LET'                   NOP,R      {$R}            "";
+
+
+# block moves
+# from/to must be in scratch regs
+
+'BMOVE' SRC, BB		{1:Rsscr $< $N }	"ZW";
+'BMOVEO' SRC, BB	{1:Rsscr $< $N }	"ZW";
+
+# block compares- no special instruction, just do a loop
+# from/to must be in scratch regs
+
+'BCMP'  Rsscr, BB	{ $C }			"Zw";
+
+# All floating point stuff should be here.  An attempt is
+# made to keep everything highly factored.
+
+INREGF		{ $1:FP0 }		"Z0.";
+CSE[fdx]	{ $1:FP0 }		"Z0R";
+
+# Do not ever overwrite a temp -- it may not yet be in memory.
+# zzzcode() is allowed to decide to spill and reload the temp.
+
+'CONV'[fdx]	Rsreg[i]	{ $1:FP0 }
+					"	movl	AL,ZEs\n"
+					"	fildl	ZEsZeZILN\n";
+'CONV'[fdx]	Rsreg[ui]	{ $1:FP0 }
+					"	movl	AL,ZEs\n"
+					"	fildl	ZEsZeZILN\n"
+					"	testl	$0x80000000,AL\n"
+					"ZL.1Zd.u"
+					"	je	ZL1\n"
+					"	faddl	Zdu\n"
+					"ZL1:\n";
+'CONV'[fdx]	Rsreg[L] { $1:FP0 }	"	movl	AL,ZEd\n"
+					"	movl	UL,ZED\n"
+					"	fildll	ZEdZeZILN\n";
+'CONV'[fdx]	Rsreg[uL] { $1:FP0 }	"	movl	AL,ZEd\n"
+					"	movl	UL,ZED\n"
+					"	fildll	ZEdZeZILN\n"
+					"	testl	$0x80000000,UL\n"
+					"ZL.1Zd.lu"
+					"	je	ZL1\n"
+					"	faddl	Zdlu\n"
+					"ZL1:\n";
+'CONV'[fdx]	MEM[i]	{ $1:FP0 }	"	fildl	ALZILN\n";
+'CONV'[fdx]	MEM[ui]	{ $1:FP0 }	"	fildl	ALZILN\n"
+					"	testl	$0x80000000,AL\n"
+					"ZL.1Zd.u"
+					"	je	ZL1\n"
+					"	faddl	Zdu\n"
+					"ZL1:\n";
+'CONV'[fdx]	MEM[L] { $1:FP0 }	"	fildll	ALZILN\n";
+'CONV'[fdx]	MEM[uL] { $1:FP0 }	"	fildll	ALZILN\n"
+					"	testl	$0x80000000,UL\n"
+					"ZL.1Zd.lu"
+					"	je	ZL1\n"
+					"	faddl	Zdlu\n"
+					"ZL1:\n";
+	
+'CONV'[fdx]	WAWD	{ 1:Rsscr 1:FP0 $2 $< }
+					"	movZtL	AL,A1\n"
+					"	movl	A1,ZEs\n"
+					"	fildl	ZEsZeZILN\n";
+'CONV'[fdx]	BAWD	{ 1:Rsscr 1:FP0 $2 $< }
+					"	movZtL	AL,A1\n"
+					"	movl	A1,ZEs\n"
+					"	fildl	ZEsZeZILN\n";
+'CONV'[x]	fp0[fdx]  { $L }	"";
+'CONV'[dx]	MEM[f]	{ $N 1:FP0 }	"Z3LZ0L";
+'CONV'[x]	MEM[d]	{ $N 1:FP0 }	"Z3LZ0L";
+'CONV'[d]	fp0[fdx] { $1:FP0 $< }	"	fstpl   ZEd\n"
+					"	fldl    ZEdZe\n";
+'CONV'[d]	MEM[d]	{ $L }		"";
+'CONV'[f]	MEM[f]	{ $L }		"";
+'CONV'[f]	FP0[fdx] { $1:FP0 $< }	"	fstps	ZEs\n"
+					"	flds	ZEsZe\n";
+'CONV'[isc]	FP0[fdx] { 1:FP0 1:Rsscr $2 $[ }
+					"ZR	fistpl	ZEsZi\nZr"
+					"	movl	ZEsZe,ZB4ZA2Zb\n";
+'CONV'[L]	FP0[fdx] { 1:FP0 2:Rsscr $2 $[ }
+					"ZR	fistpll	ZEdZi\nZr"
+					"	movl	ZEd,A2\n"
+					"	movl	ZEDZe,A3\n";
+'CONV'[uiusucp]	FP0[fdx] { 1:FP0 1:Rsscr $2 $[ }
+					"ZL.1Zd.iu"
+					"ZR	fcoml	Zdi\nZa"
+					"	jc	ZL1\n"
+					"	fcoml	Zdu\nZa"
+					"	jnc	ZL1\n"
+					"	fsubl	Zdu\n"
+					"Zu"
+					"ZL1:\n"
+					"	fistpl	ZEsZi\nZr"
+					"	movl	ZEsZe,ZB4ZA2Zb\n";
+'CONV'[uL]	FP0[fdx] { 1:FP0 2:Rsscr $2 $[ }
+					"ZL.1Zd.liu"
+					"ZR	fcoml	Zdli\nZa"
+					"	jc	ZL1\n"
+					"	fcoml	Zdlu\nZa"
+					"	jnc	ZL1\n"
+					"	fsubl	Zdlu\n"
+					"Zu"
+					"ZL1:\n"
+					"	fistpll	ZEdZi\nZr"
+					"	movl	ZEd,A2\n"
+					"	movl	ZEDZe,A3\n";
+AUTOID[fdx]	{ $1:FP0 }		"	fldZT.	(A(LL))\n"
+					"Z+.ZI.N";
+
+FP0[fdx]	{1:FP0 1:EAX $< $> $C}	"	ftst\n"
+					"	fstsw	%ax\n"
+					"	sahf\n"
+					"	fstp	%st(0)Zi\n";
+MEM[fdx]	{ 1:FP0 1:EAX $< $C }	"	fldZIRT\n"
+					"	ftst\n"
+					"	fstsw	%ax\n"
+					"	sahf\n"
+					"	fstp	%st(0)Zi\n";
+
+'FUNARG'[f]   FP0[f] 	{ $N } 		"ZFFFZiZG";
+'FUNARG'[d]   FP0[d] 	{ $N } 		"ZFFDZiZG";		
+'FUNARG'[x]   FP0[x] 	{ $N } 		"ZFFXZiZG";
+'FUNARG'[f]   MEM[f] 	{1:Rsscr $N $<}	"ZGZFFf";
+	# In the next two templates can't assume we can share
+	# the scratch because in fixed frame we have to do two(d)
+	# or three(x) moves to the scratch
+	# It is sorta irritating that we know that NO scratch is
+	# needed in the non fixed frame case.
+'FUNARG'[d]    MEM[d]	{ 1:Rsscr $N }	"ZGZFFd";
+'FUNARG'[x]    MEM[x]	{ 1:Rsscr $N }	"ZGZFFx";
+
+'UMINUS'[fdx] FP0[fdx]	{ $1:FP0 $[ }	"	fchs\nZ7";
+'UMINUS'[fdx] T[fdx]	{ $1:FP0 }	"Z0L	fchs\nZ7";
+
++[fdx]	FP0,cNTMEM[fdx]		{ $1:FP0 $[ }	"Z4.";
++[fdx]  FP0,T[fdx]		{ $1:FP0 $[ }	"Z4.";
++[fdx]	cNTMEM[fdx],FP0		{ $1:FP0 $] }	"Z4.";
++[fdx]	cNTMEM[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
++[fdx]	cNTMEM[fdx],T[fdx]	{ $1:FP0 }	"Z4.";
++[fdx]	T[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
++[fdx]	T[fdx],T[fdx]		{ $1:FP0 }	"Z4.";
+-[fdx]	FP0,cNTMEM[fdx]		{ $1:FP0 $[ }	"Z4.";
+-[fdx]  FP0,T[fdx]		{ $1:FP0 $[ }	"Z4.";
+-[fdx]	cNTMEM[fdx],FP0		{ $1:FP0 $] }	"Z4.";
+-[fdx]	cNTMEM[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+-[fdx]	cNTMEM[fdx],T[fdx]	{ $1:FP0 }	"Z4.";
+-[fdx]	T[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+-[fdx]	T[fdx],T[fdx]		{ $1:FP0 }	"Z4.";
+*[fdx]	FP0,cNTMEM[fdx]		{ $1:FP0 $[ }	"Z4.";
+*[fdx]  FP0,T[fdx]		{ $1:FP0 $[ }	"Z4.";
+*[fdx]	cNTMEM[fdx],FP0		{ $1:FP0 $] }	"Z4.";
+*[fdx]	cNTMEM[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+*[fdx]	cNTMEM[fdx],T[fdx]	{ $1:FP0 }	"Z4.";
+*[fdx]	T[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+*[fdx]	T[fdx],T[fdx]		{ $1:FP0 }	"Z4.";
+/[fdx]	FP0,cNTMEM[fdx]		{ $1:FP0 $[ }	"Z4.";
+/[fdx]  FP0,T[fdx]		{ $1:FP0 $[ }	"Z4.";
+/[fdx]	cNTMEM[fdx],FP0		{ $1:FP0 $] }	"Z4.";
+/[fdx]	cNTMEM[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+/[fdx]	cNTMEM[fdx],T[fdx]	{ $1:FP0 }	"Z4.";
+/[fdx]	T[fdx],cNTMEM[fdx]	{ $1:FP0 }	"Z4.";
+/[fdx]	T[fdx],T[fdx]		{ $1:FP0 }	"Z4.";
+
+CDAWD_FP0[d]		{ $R }		"Z2.irZfL\n";
+FP0_CDAWD[d]		{ $L }		"Z2.iZfR\n";
+
+# Dummy templates:  because FP0 can't be occupied simultaneously
+# by both operands, one of them gets spilled to TEMP.  The TEMP
+# management code keeps track of what's in the FP stack.  Other
+# templates then combine the T and FP0 operands.
+*=[fdx]	FP0,FP0		{ $L }		"fp0*fp0\n";
+/=[fdx] FP0,FP0		{ $L }		"fp0/fp0\n";
++=[fdx] FP0,FP0		{ $L }		"fp0+fp0\n";
+-=[fdx] FP0,FP0		{ $L }		"fp0-fp0\n";
+'CMPE'	FP0,FP0		{ $C }		"fp0><fp0\n";
+'CMP'	FP0,FP0		{ $C }		"fp0==fp0\n";
+
+# For IEEE fp standard compatibility:
+# to properly handle non-trapping NaNs, which can be equal or non-equal, 
+# but are unordered, two types of floating point compares are needed.
+
+# Comparisons that raise exceptions for all NaN operands
+
+'CMPE'	FP0,NTMEM[fd]	{ 1:EAX $> $C }	"Z8	fstsw	%ax\nZDF";
+'CMPE'	FP0,CDAWD[d]	{ 1:EAX $> $C }	"	ficompl	ARZi\n"
+					"	fstsw	%ax\nZDF";
+'CMPE'	FP0,T[fdx]	{ 1:EAX $> $C }	"Z8	fstsw	%ax\nZDF";
+'CMPE'	T[fdx],FP0	{ 1:EAX $< $C }	"Z9	fstsw	%ax\nZDF";
+
+# Comparisons that are not to raise exceptions for NaNs.
+
+'CMP'	FP0,NTMEM[fd]	{ $C }		"Z8	fnstsw	%ax\nZDF";
+'CMP'	FP0,T[fdx]	{ $C }		"Z8	fnstsw	%ax\nZDF";
+'CMP'	T[fdx],FP0	{ $C }		"Z9	fnstsw	%ax\nZDF";
+
+=[fdx]	RNODE[fdx],FPAWD { $1:FP0 $> }	"ZpR";
+=[fdx]	QNODE[fdx],FPAWD { $1:FP0 $> }  "RR!1	fldZIRT\nZQ";
+
+=[f]	T[f],NTMEM[f]	{ $L }	"Z5.";
+=[d]	T[d],NTMEM[d]	{ $L }	"Z5.";
+=[x]	T[x],NTMEM[x]	{ $L }	"Z5.";
+
+=[f]	T[f],FP0	{ $L }		"Z1L";
+=[f]	NTMEM[f],FAWD1	{ $N 1:Rsscr }	"Zn.	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+=[f]	FAWD1,NTMEM[f]	{ $N 1:Rsscr $] }
+					"Zn.	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+
+=[f]	FAWD,('CONV' FP0[dx]) { $N }	"	fstps	ALZi\n";
+=[f]	FAWD,('CONV' CSE[dx]) { $N }	"	fstZ6RRs	AL\n";
+=[f]	AUTOID[f],FP0	{ $N }		"	fstps	(A(LLL))\n"
+					"ZiZ+L";
+=[f]	AUTOID[f],FP0	{ $R }		"	fsts	(A(LLL))\n"
+					"Z+L";
+=[f]	NTMEM[f],FP0	{ $N }		"	fstps	ALZi\n";
+=[f]	NTMEM[f],CSE	{ $N }		"	fstZ6Rs	AL\n";
+=[f]	NTMEM[f],fp0	{ $R }		"	fsts	AL\n";
+
+=[d]	T[d],FP0	{ $L }	"Z1L";
+
+=[d]	DAWD,('CONV' FP0[x]) { $N }	"	fstpl	ALZi\n";
+=[d]	DAWD,('CONV' CSE[x]) { $N }	"	fstZ6Rl	AL\n";
+
+=[d]	DAWD1,NTMEM[d]		{ $N 2:Rsscr 1:FP0 }
+						"P=6	fldl	ARZIRN\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	NTMEMnB[d],NTMEM[d]	{ $N 2:Rsscr 1:FP0 }
+						"P=6	fldl	ARZIRN\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	NTMEM[d],DAWD1		{ $N 2:Rsscr 1:FP0 }
+						"P=6	fldZIRl\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	NTMEM[d],NTMEMnB[d]	{ $N 2:Rsscr 1:FP0 }
+						"P=6	fldl	ARZIRN\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	NTMEM[d],DSTAR		{ $N 2:Rsscr 1:FP0 }	
+						"P=6	fldl	ARZIRN\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	DSTAR,NTMEM[d]		{ $N 2:Rsscr 1:FP0 }	
+						"P=6	fldl	ARZIRN\n"
+						"P=6	fstpl	ALZi\n"
+						"P!6Zn.	movl	UR,A1\n"
+						"P!6Zn+	movl	AR,A2\n"
+						"P!6Zn+	movl	A1,UL\n"
+						"P!6Zn+	movl	A2,AL\n"
+						"P!6Zn-";
+=[d]	AUTOID[d],FP0	{ $N }		"	fstpl	(A(LLL))\n"
+					"ZiZ+L";
+=[d]	AUTOID[d],FP0	{ $R }		"	fstl	(A(LLL))\n"
+					"Z+L";
+=[d]	NTMEM[d],FP0	{ $N }		"	fstpl	ALZi\n";
+=[d]	NTMEM[d],CSE	{ $N }		"	fstZ6Rl	AL\n";
+=[d]	NTMEM[d],fp0	{ $R }		"	fstl	AL\n";
+
+=[x]	T[x],FP0	{ $L }		"Z1L";
+
+=[x]	XAWD1,NTMEM[x]		{ $N 1:Rsscr }
+					"Zn.	movl	UUR,A1\n"
+					"Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+					"Zn+	movl	A1,UL\n"
+					"Zn+	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+=[x]	NTMEMnB[x],NTMEM[x]	{ $N 1:Rsscr }
+					"Zn.	movl	UUR,A1\n"
+					"Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+					"Zn+	movl	A1,UL\n"
+					"Zn+	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+=[x]	NTMEM[x],XAWD1		{ $N 1:Rsscr }
+					"Zn.	movl	UUR,A1\n"
+                                        "Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+                                        "Zn+	movl	A1,UL\n"
+                                        "Zn+	movl	AR,A1\n"
+                                        "Zn+	movl	A1,AL\n"
+					"Zn-";
+
+=[x]	NTMEM[x],NTMEMnB[x]	{ $N 1:Rsscr }
+					"Zn.	movl	UUR,A1\n"
+					"Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+					"Zn+	movl	A1,UL\n"
+					"Zn+	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+
+=[x]	NTMEM[x],XSTAR	{ $N 1:Rsscr }	
+					"Zn.	movl	UUR,A1\n"
+					"Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+					"Zn+	movl	A1,UL\n"
+					"Zn+	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+=[x]	XSTAR,NTMEM[x]	{ $N 1:Rsscr }	
+					"Zn.	movl	UUR,A1\n"
+					"Zn+	movl	A1,UUL\n"
+					"Zn+	movl	UR,A1\n"
+					"Zn+	movl	A1,UL\n"
+					"Zn+	movl	AR,A1\n"
+					"Zn+	movl	A1,AL\n"
+					"Zn-";
+
+=[x]	AUTOID[x],FP0	{ $N }		"	fstpt	(A(LLL))\n"
+					"ZiZ+L";
+# Must pop and re-load because there is store without pop
+=[x]	AUTOID[x],FP0	{ $R }		"	fstpt	(A-(LLL))\n"
+					"	fldt	(A(LLL))\n"
+					"Z+L";
+=[x]	NTMEM[x],FP0	{ $N }		"	fstpt	ALZi\n";
+# must pop and re-load because there is no store without pop
+=[x]	NTMEM[x],CSE	{ $N }		"	fstpt	AL\n"
+					"	fldt	AL\n";
+=[x]	NTMEM[x],fp0	{ $R }		"	fstpt	AL\n"
+					"	fldt	AL\n";
+# Support for C++ exception handling
+
+'EH_CATCH_VALS'	LAWD,LAWD	{ $A }	"	movl	%eax,AL\n"
+					"	movl	%edx,AR\n";
+EH_LABEL			{$N}		"..\E\RZEHl:\n";
+'EH_COMMA'	FR,FR		{$N}		"";
+'EH_COMMA'	FR,R		{$R}		"";
+'EH_A_SAVE_REGS' LAWD,LAWD	{$N}	"	movl	%esi,AL\n"
+					"	movl	%edi,AR\n";
+'EH_A_RESTORE_REGS' LAWD,LAWD	{$N}	"	movl	AL,%esi\n"
+					"	movl	AR,%edi\n";
+'EH_B_SAVE_REGS' LAWD,LAWD	{$N}	"	movl	%ebx,AL\n"
+					"	movl	%esp,AR\n";
+'EH_B_RESTORE_REGS' LAWD,LAWD	{$N}	"	movl	AL,%ebx\n"
+					"	movl	AR,%esp\n";

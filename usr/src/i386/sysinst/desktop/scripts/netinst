@@ -1,0 +1,119 @@
+#ident	"@(#)netinst	15.1"
+exec 2>> /tmp/ii_look
+
+#
+#  netinst.sh - this file contains the interface function, netinst,
+#		to perform Network Install of UnixWare.  This is
+#		the actual function called from the boot floppy
+#		but it calls ii_do_netinst to do the bulk of the work.
+#
+
+function netinst
+{
+	echo "========== In netinst ==========" >> /tmp/ii_look
+
+	typeset IIROOT=/.extra.d
+	typeset MNTROOT=/flpy2		# Mount point of Netinstall Floppy
+
+	# Get parameters, i.e. SEC_MEDIUM_TYPE
+	if [ -f /tmp/ii.parms ]
+	then
+		. /tmp/ii.parms
+	fi
+
+	# Load in the s5 fs module and remove so that it does
+	# get loaded again.
+	[ -s /etc/conf/fsmod.d/s5 ] && {
+		modreg 4 s5
+		sh_modadmin -l /etc/conf/fsmod.d/s5 >/dev/null 2>&1
+		rm -f /etc/conf/fsmod.d/s5
+	}
+
+	# Net Install needs extra memfs.
+	sh_umount $IIROOT
+	sh_mount -F memfs -o swapmax=5000000,rootmode=01777,sfp=5000000 \
+		/memfs $IIROOT > /dev/null 2>&1
+
+	# In case we were in magic mode before, cleanup a little.
+	sh_umount $MNTROOT >/dev/null 2>&1
+	rm -f /usr/lib/libcrypt.so* >/dev/null 2>&1
+
+	cd ${IIROOT}
+	cpio -icd -DZ < /etc/inst/locale/${LANG}/menus/help/config.z 
+	cd /etc/inst/locale/${LANG}/menus/help
+	cpio -icd -DZ < nicshlp.z && rm nicshlp.z
+
+	typeset DONE=0
+	typeset II_FLOP_ERR=0
+	typeset MESSAGE=${INETINST_INSERT_FLOPPY}
+
+	while [ ${DONE} -eq 0 ]
+	do
+		wclose $CURWIN
+		if [ ${II_FLOP_ERR} != 0 ]
+		then
+			display -w "${MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+		else
+			display -w "${MESSAGE}"
+		fi
+		footer "$WELCOME_FOOTER"
+		input_handler
+
+		wclose $CURWIN
+		footer "${GENERIC_WAIT_FOOTER}"
+
+		#
+		#  To make sure we have the right diskette
+		#  in the drive for net install, read the ID
+		#  string.  If it's set right, go on.
+		#
+		sh_mount -r -F s5 /dev/dsk/f0t $MNTROOT || \
+		sh_mount -r -F s5 /dev/dsk/f1t $MNTROOT && {
+			read IDSTRING < $MNTROOT/id_1
+			if [ "${IDSTRING}" = "${REL_FULLNAME} 1" ]
+			then
+				DONE=1
+			else
+				sh_umount $MNTROOT
+			fi
+		}
+		MESSAGE=${INETINST_INSERT_AGAIN}${INETINST_INSERT_FLOPPY}
+		II_FLOP_ERR=1
+	done
+
+	wclose ${CURWIN}
+	display "$INETINST_COPY_WAIT"
+	msg ""
+	footer "$LONG_WAIT_FOOTER"
+
+	# Copy over the net install specific scripts
+	cd /
+	cp $MNTROOT/floppy_map /tmp/floppy_map
+	cpio -icd -DZ < $MNTROOT/scripts.z
+
+	ii_do_netinst
+	II_RET=$?
+	#  If the ii_do_netinst script fails, then we bail.
+	[ ${II_RET} != 0 ] && {
+		echo "II_FAILED=\"YES\"" >> /tmp/ii.parms
+		umountall > /dev/null 2>&1
+		sh_umount $MNTROOT > /dev/null 2>&1
+		[ -s /tmp/swap.rem ] && /tmp/swap.rem
+		halt
+	}
+
+	#
+	#  Now that we're done with the Network Installation Utilities
+	#  floppy, have the user remove it.
+	#
+	if [ "${SEC_MEDIUM_TYPE}" = "tcp" -o "${SEC_MEDIUM_TYPE}" = "spx" ]
+	then
+		umount $MNTROOT
+		display -w "${INETINST_REMOVE_FLOPPY}"
+		msg ""
+		footer "${REMOVE_FLOPPY_FOOTER}"
+		input_handler
+		wclose $CURWIN
+		footer ""
+	fi
+} #end of netinst()

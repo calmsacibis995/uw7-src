@@ -1,0 +1,57 @@
+#ident	"@(#)ihvkit:display/lfb256/devices/jaws/Imakefile	1.1"
+
+/**/#	Copyright (c) 1990, 1991, 1992 UNIX System Laboratories, Inc.
+/**/#	Copyright (c) 1988, 1989, 1990 AT&T
+/**/#	  All Rights Reserved
+
+/**/#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+/**/#	UNIX System Laboratories, Inc.
+/**/#	The copyright notice above does not evidence any
+/**/#	actual or intended publication of such source code.
+
+#include <Server.tmpl>
+#include <sv4Lib.rules>
+
+SRCS =	jawsCmap.c \
+	jawsCurs.c \
+	jawsInit.c \
+	jawsVis.c \
+	jaws_i.c
+
+OBJS =	jawsCmap.o \
+	jawsCurs.o \
+	jawsInit.o \
+	jawsVis.o \
+	jaws_i.o
+
+#if UseInstalled
+   CLASSLIB = /usr/X/lib/liblfb.so.$(DISPLIBREV)
+   INCLUDES = -I. -I../.. -I/usr/X/include/X11
+#else
+   CLASSLIB = ../../liblfb.so.$(DISPLIBREV)
+   INCLUDES = -I. -I../.. -I ../../../include -I/usr/X/include/X11
+#endif
+
+     LFLAGS = -buxz
+
+BPP_DEFINE=-DBPP=8
+
+EXTRA_DEFINES = $(BPP_DEFINE)
+
+#if XWINSharedDisplayLibrary
+
+SharedLibraryObjectRule()
+SharedLibraryTarget_a(jaws,$(DISPLIBREV),$(OBJS),$(CLASSLIB),.,.)
+InstallSharedLibrary(jaws,$(DISPLIBREV),$(DISPLIBDIR))
+
+#else /* XWINSharedDisplayLibrary */
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(jaws,$(OBJS))
+
+#endif /* XWINSharedDisplayLibrary */
+
+DependTarget()
+
+lint: ${CFILES} ${LIBCFILES}
+	$(LINT) $(LFLAGS) -Clibsmart $(INCLUDES) $(SRCS) >lint.out 2>&1

@@ -1,0 +1,21 @@
+#ident	"@(#)S01mbc	1.2"
+#
+# Start Multibyte console driver for locales that need it
+# First time only after postreboot: this will only work
+# for Japanese installation.  something else need to happen
+# for other Multibyte installations.
+#
+case "$1" in
+'start')
+	[ ! -s /tmp/unixware.dat ] || . /tmp/unixware.dat
+	. /etc/default/locale
+	if [ -z "$LANG" -a "$LANG" = "ja" ]
+	then
+		/usr/bin/pcfont -l $LANG
+	fi
+	;;
+'stop')
+	# reset console
+	/usr/bin/stty VGA_C80x25
+	;;
+esac

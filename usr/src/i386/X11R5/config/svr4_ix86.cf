@@ -1,0 +1,130 @@
+XCOMM
+XCOMM THIS FILE IS SPECIFIC to USL's Intel ix86 ports ONLY
+XCOMM THIS FILE IS SPECIFIC to USL's Intel ix86 ports ONLY
+XCOMM THIS FILE IS SPECIFIC to USL's Intel ix86 ports ONLY
+XCOMM THIS FILE IS SPECIFIC to USL's Intel ix86 ports ONLY
+XCOMM
+
+#define HasShm				YES
+#define NeedConstPrototypes 		YES
+#define NeedVarargsPrototypes 		YES
+#define NeedNestedPrototypes 		YES
+#define StripInstalledPrograms		YES
+#define HasScalableFonts		YES
+#define HasSockets			YES	
+#define StripInstalledPrograms		YES
+#define XWINServer			YES
+#define XWINSharedDisplayLibrary	YES	
+
+#define BuildXInputLib			NO
+#define InstallXtermSetUID  		NO
+#define StandardIncludes		-I.
+#if Not_Esmp
+#define ExtraLibraries 			-lnsl $(MEMUTILLIB) -ldl
+#else
+#define ExtraLibraries 			-lnsl $(MEMUTILLIB)
+#endif
+
+#define	I18NDefines			YES
+#ifdef I18NDefines
+#define StandardDefines			-DSVR4 -DSYSV386 -DI18N $(MEMUTILDEF)
+#else
+#define StandardDefines			-DSVR4 -DSYSV386 $(MEMUTILDEF)
+#endif
+
+/*****************************************************************************
+ *                        System dependent commands                          *
+ *****************************************************************************/
+#define NeedWidePrototypes		NO	/* experimental */
+
+/* The following flags are true if you are using USL's C compiler, else
+ * change them accordingly.
+ * According to Languages, by removing -W2,-A, we should get better performance
+ * on 486 architectures. Since most of the current breed (April 1993) are
+ * 486 based, it is time to remove -W2,-A
+ */
+#ifdef Not_Esmp
+#define DefaultCCOptions		-Xa
+#else
+#define DefaultCCOptions		-Xa -W2,-A -Kno_lu -Ki486
+#endif
+#define DefaultHCCOptions		-Xa
+#define OSRelease			-DSVR4 -DSYSV386
+#define ix86Architecture		YES
+#define ConnectionFlags -DTCPCONN -DSERVER_LOCALCONN -DSVR4_ACP -DCLIENTS_LOCALCONN -DNOVELL 
+#ifdef CI5
+	CCS_USED = -DCI5
+#endif
+
+/* BUILTIN extension is defined here (rather than in site.def) because
+ * it is usl/ix86 specific.
+ */
+/* build BUILTIN extension ? */
+#ifndef BuildBuiltinExt
+#define BuildBuiltinExt		!Not_Esmp
+#endif
+#ifndef HasBuiltinExtension
+#define HasBuiltinExtension	!Not_Esmp
+#endif
+
+#if UslLocalityTuning
+#define FurCmd			$(PFX)fur
+#define FurCCOptions		DefaultCCOptions -Wa,-r
+
+    FURCCOPTIONS = FurCCOptions	/* to distinguish from param flags */
+             FUR = FurCmd
+
+# ifndef FurComplexProgramTarget
+#define	FurComplexProgramTarget(program)	@@\
+        PROGRAM = program.F					@@\
+											@@\
+AllTarget(program.F)						@@\
+											@@\
+program.F: $(OBJS) $(DEPLIBS)				@@\
+	RemoveTargetProgram($@)					@@\
+	$(LD) -r -o program.r $(OBJS) $(FUR_ARCHIVES)	@@\
+	$(FUR) -l program.funcs program.r		@@\
+	$(CC) -o $@ program.r $(LDOPTIONS) $(LOCAL_LIBRARIES) $(LDLIBS) $(EXTRA_LOAD_FLAGS) @@\
+									@@\
+InstallProgram(program.F,$(BINDIR))			@@\
+InstallManPage(program,$(MANDIR))			@@\
+DependTarget()								@@\
+LintTarget()								@@\
+									@@\
+clean::								@@\
+	$(RM) $(PROGRAM)
+# endif /* FurComplexProgramTarget */
+#endif /* UslLocalityTuning */
+
+
+
+#if HasNdbm
+# if HasSdbm
+#  define NdbmDefines		-DNDBM -DSDBM
+# else
+#  define NdbmDefines		-DNDBM
+# endif
+#endif
+
+#define AssembleObject(flags) $(RM) $@                 @@\
+	$(CPP) AsmDefines $(INCLUDES) flags $*.s > $*.i    @@\
+	$(AS) -o $*.o $*.i                                 @@\
+	$(RM) $*.i
+
+#define NormalAsmObjectRule() 						@@\
+.s.o:                                               @@\
+	AssembleObject($(_NOOP_))
+
+#define ObjectFromSpecialAsmSource(dst,src,flags)  @@\
+dst.s:  src.s                                      @@\
+	$(RM) $@                                       @@\
+	$(LN) $? $@                                    @@\
+                                                   @@\
+dst.o:  dst.s                                      @@\
+	AssembleObject(flags)                          @@\
+                                                   @@\
+depend:: dst.s                                     @@\
+                                                   @@\
+clean::                                            @@\
+	$(RM) dst.s
+

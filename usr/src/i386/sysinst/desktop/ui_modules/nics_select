@@ -1,0 +1,656 @@
+#!/sbin/sh
+#ident "@(#)nics_select	15.3	98/01/18"
+
+# nics_select -- ISL UI module: select from list of NICS
+
+RESMGR=/sbin/resmgr
+SORT=/usr/bin/sort
+
+# used to determine if this script should be run at all
+function skip_test
+{
+	[ -n "${debug}" ] && set -x
+	[[ "$direction" == "NEXT" ]] || ii_exit $direction
+	[[ "${module}" == "ii_select" ]] || {
+		UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+		[[ " $UnixWare_PKGS " == *" nics "* ]] || ii_exit ${direction:-NEXT}
+
+		# don't offer the hardware config screens if install from
+		# network. This has already been done.
+		SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+		[ "$SEC_MEDIUM_TYPE" = "tcp"  -o \
+		  "$SEC_MEDIUM_TYPE" = "spx" ] && \
+			ii_exit $direction
+
+		# if we've been asked to defer configuration, skip on by.
+		NICS_CHOICE=$(svar get NICS_CHOICE)
+		[ "$NICS_CHOICE" = "DEFER_CONFIG" ] && ii_exit $direction
+	}
+}
+
+# used to peform anything important this script has to
+# accomplish in a non-interactive manner. Only called
+# if skip_$this_module_name is set in the ifile.
+function skip_func
+{
+	[ -n "${debug}" ] && set -x
+	# do what ever is necessary to accomplish the silent config.
+	# perhaps we should check $direction (set in common.rc) to
+	# see if we should do something.
+
+	# no need to ii_exit, this is done in common.rc after return
+	# from this function
+}
+
+. /isl/ui_modules/common.rc
+. /etc/inst/locale/${LANG}/menus/net_wrapper.txtstrings > /dev/null 2>&1
+
+# process the request to backup in the interview screens
+function go_prev
+{
+	[ -n "${debug}" ] && set -x
+	verify_nic_parms
+	ii_exit PREV
+}
+
+function save_previous_key
+{
+	[ -n "${debug}" ] && set -x
+
+	# make it look like the already configured card is available
+	Previous_key=$(ivar get NICS_KEY)
+	Previous_drivername=$(ivar get NICS_DRIVER_NAME)
+	[[ -n "${Previous_key}" ]] &&
+		${RESMGR} -k ${Previous_key} -p MODNAME -v "-"
+	svar set nics_previous_key ${Previous_key}
+	svar set nics_previous_drivername ${Previous_drivername}
+}
+
+function restore_previous_key
+{
+	[ -n "${debug}" ] && set -x
+
+	Previous_key=$(svar get nics_previous_key)
+	if [ -n "${Previous_key}" ]
+	then
+		Modname=$(svar get nics_previous_drivername)
+		${RESMGR} -k $Previous_key -p MODNAME -v "${Modname}"
+	fi
+	svar set nics_previous_key ""
+	svar set nics_previous_drivername ""
+}
+
+function use_detected_card
+{
+	[ -n "$debug" ] && set -x
+
+	[ "$direction" != "NEXT" ] && return 0
+
+	NICS_IIINDEX=$(svar get NICS_IIINDEX)
+	iiindex=${NICS_IIINDEX:-0}
+
+	svar set NICS_SLOT "${D_SLOT[iiindex]}"
+	svar set NICS_KEY "${D_KEY[iiindex]}"
+	svar set NICS_BUS "${D_BUS[iiindex]}"
+	svar set NICS_NAME "${D_NAME[iiindex]}"
+	svar set NICS_CONFIG_FILE "${D_FILE[iiindex]}"
+
+	NICS_SLOT="${D_SLOT[iiindex]}"
+	NICS_KEY="${D_KEY[iiindex]}"
+	NICS_BUS="${D_BUS[iiindex]}"
+	NICS_NAME="${D_NAME[iiindex]}"
+	NICS_CONFIG_FILE="${D_FILE[iiindex]}"
+
+	verify_nic_parms validate
+
+} #end of use_detected_card()
+
+function select_detected_card
+{
+	[ -n "${debug}" ] && set -x
+
+	open_radio -entry 'footer "${INETINST_HW_SEL_FOOTER}"' -fg $COMBO2_FG \
+		   -bg $COMBO2_BG
+
+	typeset IIRID=$RID
+
+	ii_card_choice=0
+	iinum=0
+	iiindex=0
+	typeset pbus pbusnum pslot
+	typeset -L32 pname
+
+	NUM_NICS_DETECT=$(svar get NUM_NICS_DETECT)
+	CURR_CARD=$(svar get NICS_NAME)
+
+	while (( iinum < NUM_NICS_DETECT ))
+	do
+		pbus=${D_BUS[iinum]}
+		pbusnum=${D_BUSNUM[iinum]}
+		pslot=${D_SLOT[iinum]}
+		OIFS=${IFS}
+		IFS="_"
+		echo ${D_NAME[iinum]} | read pname
+		IFS=${OIFS}
+		TXT="$pname (${pbus} ${II_BUS} ${pbusnum}, ${II_SLOT} ${pslot})"
+		add_radio "${TXT}" -entry "iiindex=${iinum}"
+		[ "${pname}" = "${CURR_CARD}" ] && ii_card_choice=$iinum
+		let iinum+=1
+	done
+	[ "${iinum}" -gt "17" ] && let iinum=17
+	radio_runparms $IIRID ${iinum}
+
+	typeset title_len
+	let title_len=${#INETINST_HW_SEL_TITLE}+4
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && let RADIO_WIN_WIDTH=title_len
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+	     -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_HW_SEL_TITLE}"
+
+	set_hotkey 9 go_prev
+
+	run_radio $IIRID ${ii_card_choice} ${iinum}
+	input_handler
+
+	svar set NICS_IIINDEX $iiindex
+
+	use_detected_card
+} #end of select_detected_card()
+
+#
+#  This function reduces a set of possible I/O address, RAM address,
+#  or IRQs by those values already in the resmgr that would conflict.
+#  Usage:
+#	reduce_nic_parm PARM  (where PARM is one of IRQ, MEMADDR, or IOADDR)
+#
+function reduce_nic_parm
+{
+	[ -n "$debug" ] && set -x
+
+	typeset PARM=${1}
+	typeset INRANGE=0
+	typeset PSTART PEND TSTART TEND START END Modname Parm Parm2
+
+	save_previous_key
+	${RESMGR} -p "MODNAME ${PARM}" > /tmp/${PARM}.raw
+	restore_previous_key
+
+	#
+	#  Get rid of all entries with no modname or PARM value; they're
+	#  not relevant here.
+	#
+	while read Modname Parm Parm2
+	do
+		[ "${Modname}" = "-" -o "${Modname}" = "$unused" ] && {
+			echo "${Modname} ${Parm} ${Parm2}" >> /tmp/${PARM}.trash
+			continue
+		}
+		case "${Parm}" in
+		[a-fA-F0-9]*)
+			echo "${Parm} ${Parm2}" >> /tmp/${PARM}.taken
+			continue
+			;;
+		esac
+		echo "${Modname} ${Parm} ${Parm2}" >> /tmp/${PARM}.trash
+	done < /tmp/${PARM}.raw
+
+	OIFS=${IFS}
+	IFS="-"
+	> /tmp/${PARM}.ok
+	while read PSTART PEND
+	do
+		[ -z "${PEND}" ] && PEND="${PSTART}"
+		let START=16'#'${PSTART}
+		let END=16'#'${PEND}
+		INRANGE=0
+		IFS=${OIFS}
+		[ -s /tmp/${PARM}.taken ] && {
+			while read TSTART TEND
+			do
+				[ -z "${TEND}" ] && TEND="${TSTART}"
+				let TSTART=16'#'${TSTART}
+				let TEND=16'#'${TEND}
+				(( ${START} <= ${TSTART} && ${END} >= ${TSTART} )) && {
+					INRANGE=1
+					break
+				}
+				(( ${START} <= ${TEND} && ${END} >= ${TEND} )) && {
+					INRANGE=1
+					break
+				}
+				(( ${START} >= ${TSTART} && ${END} <= ${TEND} )) && {
+					INRANGE=1
+					break
+				}
+				if [ "${PARM}" = "IRQ" ]
+				then
+				    if [ "$START" == "2" -a "$TSTART" == "9" ]
+				    then
+				    	INRANGE=1
+				    	break
+				    fi
+				    if [ "$START" == "9" -a "$TSTART" == "2" ]
+				    then
+				    	INRANGE=1
+				    	break
+				    fi
+				fi
+			done < /tmp/${PARM}.taken
+		}
+		IFS="-"
+		[ "${INRANGE}" = "0" ] && {
+			if [ "${PARM}" = "IRQ" -o "${PARM}" = "DMAC" ]
+			then
+				echo "${PSTART}" >> /tmp/${PARM}.ok
+			else
+				echo "${PSTART}-${PEND}" >> /tmp/${PARM}.ok
+			fi
+		}
+	done < /tmp/${PARM}.poss
+	rm -f /tmp/${PARM}.raw /tmp/${PARM}.poss /tmp/${PARM}.taken \
+		> /dev/null 2>&1
+	IFS=${OIFS}
+
+} #end of reduce_nic_parm()
+
+toponame[0]=ETHER
+toponame[1]=TOKEN
+toponame[2]=FDDI
+toponame[3]=ATM
+toponame[4]=FRAMERELAY
+toponame[5]=OTHER
+toponame[6]=BARRY
+toponame[7]=NATHAN
+
+topodesc[0]="${II_TOPO_ETHER}"
+topodesc[1]="${II_TOPO_TOKEN}"
+topodesc[2]="${II_TOPO_FDDI}"
+topodesc[3]="${II_TOPO_ATM}"
+topodesc[4]="${II_TOPO_FRAME}"
+topodesc[5]="${II_TOPO_OTHER}"
+topodesc[6]="${II_TOPO_BARRY}"
+topodesc[7]="${II_TOPO_NATHAN}"
+
+TOPO_MAX=8
+
+function choose_topology
+{
+	[ -n "${debug}" ] && set -x
+
+	# for this release, topologies other than ethernet
+	# are not supported for netinstall. This means, that
+	# if the card is tokenring only, or FDDI only, we
+	# can't use it.
+	#
+	# When other topologies are supported, remove the
+	# next 4 lines
+
+	[[ "${module}" == "ii_select" ]] && {
+		svar set NICS_TOPOLOGY "ETHER"
+		return 0
+	}
+
+	[[ $# -gt 1 ]] && {
+		#wclose
+		display "${II_CHOOSE_TOPOLOGY}" -above 0
+		msg ""
+		footer "$GENERIC_FOOTER"
+		DIS_WIN=${CURWIN}
+
+		topo_choice=""
+		open_radio -entry 'footer "$GENERIC_FOOTER"' -fg $COMBO2_FG \
+			-bg $COMBO2_BG
+
+		integer IIRID=$RID
+
+		(( TOPOWIDTH = ${#II_TOPOSELECT} + 4 ))
+
+		tcnt=0
+		selected_topo=0
+		curr_topo=$(svar get NICS_TOPOLOGY)
+
+		for topo in $*
+		do
+			tidx=0
+			while [ $tidx -lt $TOPO_MAX ]
+			do
+				[ "${toponame[tidx]}" == "$topo" ] && {
+					add_radio "${topodesc[tidx]}" -entry \
+						"topo_choice=$topo"
+					[ "${curr_topo}" == "${topo}" ] && \
+						selected_topo=$tcnt
+					(( tcnt += 1 ))
+					break
+				}
+				(( tidx += 1 ))
+			done
+		done
+		IIROW=$tcnt
+		radio_runparms $IIRID $IIROW
+		[[ ${RADIO_WIN_WIDTH} -gt $TOPOWIDTH ]] && \
+			TOPOWIDTH=${RADIO_WIN_WIDTH}
+
+		place_window $TOPOWIDTH $RADIO_WIN_HEIGHT -above 2 \
+			     -fg $COMBO2_FG -bg $COMBO2_BG -title "${II_TOPOSELECT}"
+
+		set_hotkey 9 "wclose $DIS_WIN; go_prev"
+
+		run_radio $IIRID $selected_topo $IIROW
+		input_handler
+		svar set NICS_TOPOLOGY "${topo_choice}"
+		wclose $DIS_WIN
+		return 1
+	}
+	svar set NICS_TOPOLOGY ${TOPOLOGY}
+	return 0
+}
+
+function verify_nic_parms
+{
+	[ -n "${debug}" ] && set -x
+
+	unset CONFIG_FILE SLOT KEY
+
+	unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY TYPE
+	unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+	unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+	# Get CONFIG_FILE variable
+	NICS_CONFIG_FILE=$(svar get NICS_CONFIG_FILE)
+	[ -z ${NICS_CONFIG_FILE} ] && {
+		display -w "${INETINST_NET_FAILURE} NICS_CONFIG_FILE" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		return 1
+	}
+
+	CONFIG_DIR=${IIROOT}/config
+	. ${CONFIG_DIR}/${NICS_CONFIG_FILE} > /dev/null 2>&1
+
+	ETH_HW=${DRIVER_NAME}
+
+	typeset iiparm 
+	typeset mustconfig=0
+
+	[[ "$1" == "validate" ]] && {
+		[ ! -z "${INT}" ] && {
+			> /tmp/IRQ.poss
+			for iiparm in ${INT}
+			do
+				echo "${iiparm}" >> /tmp/IRQ.poss
+			done
+			reduce_nic_parm IRQ
+			cp /tmp/IRQ.ok /tmp/${ETH_HW}.irq
+			#
+			#  If all choices are exhausted, it's an error.
+			#
+			[ ! -s /tmp/${ETH_HW}.irq ] && {
+				display -w "${INETINST_NET_FAILURE} ${INETINST_NO_IRQ}" \
+					-bg $ERROR_BG -fg $ERROR_FG
+				input_handler
+				return 1
+			}
+			mustconfig=1
+		}
+
+		[ ! -z "${PORT}" ] && {
+			> /tmp/IOADDR.poss
+			for iiparm in ${PORT}
+			do
+				echo "${iiparm}" >> /tmp/IOADDR.poss
+			done
+			reduce_nic_parm IOADDR
+			cp /tmp/IOADDR.ok /tmp/${ETH_HW}.ioaddr
+			#
+			#  If all choices are exhausted, it's an error.
+			#
+			[ ! -s /tmp/${ETH_HW}.ioaddr ] && {
+				display -w "${INETINST_NET_FAILURE} ${INETINST_NO_IO}" \
+					-bg $ERROR_BG -fg $ERROR_FG
+				input_handler
+				return 1
+			}
+			mustconfig=1
+		}
+
+		[ ! -z "${MEM}" ] && {
+			> /tmp/MEMADDR.poss
+			for iiparm in ${MEM}
+			do
+				echo "${iiparm}" >> /tmp/MEMADDR.poss
+			done
+			reduce_nic_parm MEMADDR
+			cp /tmp/MEMADDR.ok /tmp/${ETH_HW}.ramaddr
+			#
+			#  If all choices are exhausted, it's an error.
+			#
+			[ ! -s /tmp/${ETH_HW}.ramaddr ] && {
+				display -w "${INETINST_NET_FAILURE} ${INETINST_NO_RAM}" \
+					-bg $ERROR_BG -fg $ERROR_FG
+				input_handler
+				return 1
+			}
+			mustconfig=1
+		}
+
+		[ ! -z "${DMA}" ] && {
+			> /tmp/DMAC.poss
+			for iiparm in ${DMA}
+			do
+				echo "${iiparm}" >> /tmp/DMAC.poss
+			done
+			reduce_nic_parm DMAC
+			cp /tmp/DMAC.ok /tmp/${ETH_HW}.dma
+			#
+			#  If all choices are exhausted, it's an error.
+			#
+			[ ! -s /tmp/${ETH_HW}.dma ] && {
+				display -w "${INETINST_NET_FAILURE} ${INETINST_NO_DMA}" \
+					-bg $ERROR_BG -fg $ERROR_FG
+				input_handler
+				return 1
+			}
+			mustconfig=1
+		}
+
+		[ -n "${TOPOLOGY}" ] && {
+			choose_topology ${TOPOLOGY}
+		}
+
+		[ -n "${CUSTOM_NUM}" -a "${CUSTOM_NUM}" != 0 ] && mustconfig=1
+		svar set NICS_MUSTCONFIG $mustconfig
+	}
+
+	#
+	# Overwrite svar variables with the new information
+	#
+	svar set NICS_NAME "$NAME"
+	svar set NICS_DRIVER_NAME "$DRIVER_NAME"
+
+	unset TYPE
+	CONFIG_DIR=${IIROOT}/config
+	. ${CONFIG_DIR}/${NICS_CONFIG_FILE} > /dev/null 2>&1
+
+	# determine driver type based on info from bcfg file
+	# TYPE in the bcfg file is new to Gemini bcfgs.  UW2.1 set DLPI to true 
+	# to distinguish this driver as a DLPI driver.  We still support this.
+
+	NICS_TYPE=
+	[ "$TYPE" = "MDI" ] && {
+		NICS_TYPE="MDI"
+	}
+
+	[ "$TYPE" = "DLPI" ] && {
+		NICS_TYPE="DLPI"
+	}
+
+	[ "$DLPI" = "true" ] && {
+		NICS_TYPE="DLPI"
+	}
+
+	[ "$TYPE" = "ODI" ] && {
+		NICS_TYPE="ODI"
+	}
+
+	# if we get to this point and we still don't know what type we are
+	# then assume ODI.  This also implies that we have a UW2.1 bcfg file,
+	# since we mandate for Gemini bcfg files that TYPE be set.
+	[ -z "${NICS_TYPE}" ] && {
+		NICS_TYPE="ODI"
+	}
+
+	[ "${NICS_TYPE}" == "ODI" ] && {
+		display -w "${INETINST_UNSUPPORTED_NICS_TYPE} ${NAME}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		return 1
+	}
+
+	svar set NICS_TYPE $NICS_TYPE
+	[ "${BUS}" == "ISA" ] && svar set NIC_IS_ISA 1 || svar set NIC_IS_ISA ""
+	svar set NICS_BUS "${BUS}"
+	return 0
+
+} #end of verify_nic_parms()
+
+function supported_nics_list
+{
+	[ -n "$debug" ] && set -x
+
+	footer "${GENERIC_WAIT_FOOTER}"
+	> /tmp/cards
+	cd ${CONFIG_DIR}
+	for config_file in *
+	do
+		unset NAME BUS ADDRM AUTOCONF TOPOLOGY
+		. ./${config_file} > /dev/null 2>&1
+
+		# For this release, DDI8 NICS aren't supported for
+		# netinstall. At this point in time, we don't know if
+		# a card is DDI8. We can only tell that from the DSP 
+		# files, which don't exist yet.
+		#
+		# We'll hard code this for now because there is only
+		# one DDI8 NIC, and that's the e3D.
+		#
+		# for this release, topologies other than ethernet
+		# are not supported for netinstall. This means, that
+		# if the card is tokenring only, or FDDI only, we
+		# can't use it.
+		[ "${module}" == "ii_select" ] && {
+			[ "${DRIVER_NAME}" == "e3D" ] && continue
+			[[ " ${TOPOLOGY} " == *"ETHER"* ]] || continue
+		}
+	
+		show_this_nic=0
+		if [ "${BUS}" == "ISA" -o \
+		     "${ADDRM}" == "true" -o \
+		     "${AUTOCONF}" == "false" ] 
+		then
+			show_this_nic=1
+		fi
+		(( ${show_this_nic} )) && \
+			echo "${config_file} ${NAME}" >> /tmp/cards
+	done
+
+	${SORT} +1 /tmp/cards > /tmp/ii_cards_supported
+	rm /tmp/cards
+
+	iinum=0
+	while read IIFILE[iinum] IINAME[iinum]
+	do
+		let iinum+=1
+	done < /tmp/ii_cards_supported
+	typeset iicards=$iinum
+
+	unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY TYPE
+	unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+	unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+	open_radio -entry 'footer "${INETINST_HW_SEL_FOOTER}"' \
+		-fg $COMBO2_FG -bg $COMBO2_BG 
+
+	typeset IIRID=$RID
+
+	# get previous selection if there was one
+	CURR_CARD=$(svar get NICS_NAME)
+
+	ii_card_choice=0
+	iinum=0
+	iiindex=0
+	myIFS=${IFS}
+	while [ $iinum -lt $iicards ]
+	do
+		IFS="_"
+		echo ${IINAME[$iinum]} | read iiname
+		IFS=$myIFS'"'
+		echo $iiname | read iiname
+
+		add_radio "${iiname}" \
+		 -entry "iiindex=${iinum}; footer \"${INETINST_HW_SEL_FOOTER}\""
+		[ "${IINAME[$iinum]}" = "${CURR_CARD}" ] && \
+			ii_card_choice=$iinum
+		let iinum+=1
+	done
+	IFS=$myIFS
+	[ "${iinum}" -gt "17" ] && let iinum=17
+	radio_runparms $IIRID ${iinum}
+
+	typeset title_len
+	let title_len=${#INETINST_HW_SEL_TITLE}+4
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && \
+		let RADIO_WIN_WIDTH=title_len
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 -below 1 \
+		 -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_HW_SEL_TITLE}"
+
+	set_hotkey 9 go_prev
+
+	run_radio $IIRID ${ii_card_choice} ${iinum}
+	input_handler
+
+	svar set NICS_CONFIG_FILE "${IIFILE[iiindex]}"
+	svar set NICS_SLOT ""
+	svar set NICS_KEY ""
+
+	verify_nic_parms validate
+
+} #end of supported_nics_list()
+
+#
+# Main
+#
+
+IIROOT=/.extra.d
+CONFIG_DIR=${IIROOT}/config
+
+# read in the previously detected list of cards. Sets up the D_*
+# arrays used below
+[ -f /tmp/ii_detect ] && . /tmp/ii_detect
+rm -f /tmp/*.taken /tmp/*.ok /tmp/*.poss /tmp/*.trash /tmp/*.raw
+rm -f /tmp/*.dma /tmp/*.irq /tmp/*.ram /tmp/*.irq
+
+NICS_BUSTYPES=$(svar get NICS_BUSTYPES)
+NICS_CHOICE=$(svar get NICS_CHOICE)
+
+if [ "${NICS_CHOICE}" = "SELECT_DETECTED" ] 
+then
+	select_detected_card
+	direction=NEXT
+elif [ "${NICS_CHOICE}" = "USE_DETECTED" ]
+then
+	use_detected_card
+elif [ "${NICS_CHOICE}" = "CHOOSE_FROM_LIST" ]
+then
+	supported_nics_list
+	direction=NEXT
+else
+	[ "$direction" == "NEXT" ] && {
+		svar set tcp_defer true
+		ivar set IPX_DEFER "TRUE"
+		ivar set NIS_TYPE DEFER
+	}
+fi
+
+#
+# Done
+#
+ii_exit ${direction:-NEXT}

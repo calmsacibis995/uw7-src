@@ -1,0 +1,42 @@
+#ident	"@(#)get_fsmods	15.1"
+
+function get_fsmods
+{
+	typeset root_dir i MOD_LIST
+
+	case $SEC_MEDIUM_TYPE in
+	cdrom)
+		root_dir=/cd-rom/.extra.d
+		;;
+	tape|diskette|tcp|spx)
+		if (( $# == 0 ))
+		then
+			get_tools '*extra.d/etc/conf/mod.d*'
+		else
+			get_tools '*extra.d/etc/conf/mod.d* *extra.d/diskset*'
+		fi
+		root_dir=/.extra.d
+		;;
+	esac
+	call symlink $root_dir/diskset /diskset
+	cd $root_dir/etc/conf/mod.d
+	rm -f fd
+	if (( $# == 0 ))
+	then
+		MOD_LIST="*"
+	else
+		MOD_LIST="$*"
+	fi
+	for i in $MOD_LIST
+	do
+		call symlink $root_dir/etc/conf/mod.d/$i /etc/conf/mod.d/$i
+		modreg 4 $i
+		sh_modadmin -l $i || {
+			faultvt "$FS_LOAD_FAILED"
+			halt
+		}
+		call unlink /etc/conf/mod.d/$i
+	done
+	[ "$root_dir" = "/.extra.d" ] && sh_rm -rf $root_dir/etc/conf/mod.d
+	cd /
+}

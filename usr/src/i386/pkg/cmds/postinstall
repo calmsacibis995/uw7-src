@@ -1,0 +1,435 @@
+#ident	"@(#)pkg.cmds:i386/pkg/cmds/postinstall	1.19.6.1"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+do_install(){
+	ERR=/tmp/${1}.err
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Space.c Stubs.c Mtune Dtune Node"
+
+	${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+	RET=$?
+
+	if [ "$RET" != 0 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		RET=$?
+	fi
+
+	rm -rf ${IDCOMPS}
+	if [ ${RET} != 0 ]
+	then
+		message -d `pfmt -s nostd -g ${PKGMSG}:1 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR}" 2>&1`
+		exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+FAILURE=1		#exit code if anything goes wrong
+
+### Install drivers
+###  Any modules installed in /tmp should be added to
+###  the removef loop below.
+
+for MODULE in fp lockstat prf fc mirrorcon
+do
+	cd /tmp/${MODULE}
+	do_install ${MODULE}
+done
+
+# rebuild for changes to take effect
+
+TMP=/tmp/cmds.$$
+/etc/conf/bin/idbuild
+
+##########
+# moved from pkg.lp/postinstall
+if [ ! -z "`echo ${CLASSES} | grep post`" ]
+then
+	ETCLP=/etc/lp
+	USRSBIN=/usr/sbin
+	USRLIB=/usr/lib
+	LPADMIN=${USRSBIN}/lpadmin
+	LPFILTER=${USRSBIN}/lpfilter
+	LPSCHED=${USRLIB}/lp/lpsched
+	LPSHUT=${USRSBIN}/lpshut
+	ACCEPT=${USRSBIN}/accept
+	REJECT=${USRSBIN}/reject
+	LPSTAT=${USRBIN}/lpstat
+	DUMPOLP=${USRSBIN}/dumpolp
+	ENABLE=${USRBIN}/enable
+	DISABLE=${USRBIN}/disable
+	TMP=/tmp/cmds.err
+
+	##########
+	#
+	# ``Compile'' the filter table entries. This is a tad
+	# complicated, because we want to preserve the original
+	# filter.table and filter.table.i entries.
+	#
+	# Note: We do this whether or not we are installing any particular
+	# sub-package (e.g. PostScript), so that it gets done in one place.
+	# The OAM installation process won't install a class not listed
+	# in the $CLASSES variable, so we won't be compiling anything
+	# we shouldn't.
+	##########
+
+	FILTERTABLE=${ETCLP}/filter.table
+	FILTERTABLE_I=${ETCLP}/filter.table.i  #Factory-installed
+	FDTMP=${ETCLP}/fd
+	FILTERTABLE_TMP=${FDTMP}/filter.table
+	
+	if ls ${FDTMP}/*.fd > /tmp/FDLIST 2>/dev/null
+	then
+		#####
+		#
+		# The regular filter table:
+		#####
+		while read fd
+		do
+			filter=`expr "${fd}" : '.*/\([^/]*\)\.fd$'`
+			${LPFILTER} -f ${filter} -F ${fd} 2>>${TMP}
+		done < /tmp/FDLIST
+
+		#####
+		#
+		# The ``factory installed'' filter table:
+		#####
+		mv ${FILTERTABLE} ${FILTERTABLE_TMP}
+		mv ${FILTERTABLE_I} ${FILTERTABLE} 2>/dev/null
+	
+		while read fd
+		do
+			filter=`expr "${fd}" : '.*/\([^/]*\)\.fd$'`
+			${LPFILTER} -f ${filter} -F ${fd} 2>>${TMP}
+		done < /tmp/FDLIST
+	
+		mv ${FILTERTABLE} ${FILTERTABLE_I}
+		mv ${FILTERTABLE_TMP} ${FILTERTABLE}
+	
+		removef ${PKGINST} - < /tmp/FDLIST > /dev/null 2>&1
+		rm -f ${FDTMP}/*.fd
+	fi
+	removef ${PKGINST} ${FDTMP} >/dev/null
+	rm -rf ${FDTMP} /tmp/FDLIST
+
+	# If we are installing the PostScript filters, et al, then we need
+	# to compile the troff font-width tables.
+	##########
+	FONTDIR=/usr/lib/font
+	DEVPOST=${FONTDIR}/devpost
+	CHARLIB=${DEVPOST}/charlib
+	MAKEDEV=${FONTDIR}/makedev
+	LINKFILE=${DEVPOST}/LINKFILE
+	ASCII="DESC ? ??"
+	FULLASCII="${DEVPOST}/DESC ${DEVPOST}/? ${DEVPOST}/??"
+	
+	cd ${DEVPOST}
+	
+	#
+	# Upgrade/Overlay support requires we remove the links that were made
+	# the first time through here.  Otherwise, we get warnings from the
+	# installf and the contents file gets updated incorrectly.
+	#
+
+	`grep "^rm" ${LINKFILE}`
+	
+	${MAKEDEV} ${ASCII} >/dev/null 2>&1
+	
+	(
+		for file in *.out
+        	do
+        		echo "${DEVPOST}/${file} f 444 lp lp"
+        	done
+        	sed -n -e "s;^ln \(.*\) \(.*\);${DEVPOST}/\2=${DEVPOST}/\1 l;p" <${LINKFILE}
+	) | installf ${PKGINST} -
+
+	#####
+	#
+	# Remove the font-width-table source, add in the compiled.
+	#####
+	removef ${PKGINST} ${FULLASCII} >/dev/null
+	rm -f ${FULLASCII}
+
+	#####
+	#
+	# Remove tools no longer needed.
+	#####
+	removef ${PKGINST} ${MAKEDEV} ${LINKFILE} 2>/dev/null
+	rm -f ${MAKEDEV} ${LINKFILE}
+
+fi  # End of post class script
+
+### Remove temporary modules installed in /tmp
+
+rm -f ${TMP}  > /dev/null 2>&1
+
+rm -f /tmp/MOD_FILES
+for MODULE in fp lockstat prf fc mirrorcon
+do
+	echo "/tmp/${MODULE}/Driver_atup.o\n\
+/tmp/${MODULE}/Driver_mp.o\n\
+/tmp/${MODULE}/Driver.o\n\
+/tmp/${MODULE}/Space.c\n\
+/tmp/${MODULE}/Stubs.c\n\
+/tmp/${MODULE}/Master\n\
+/tmp/${MODULE}/System\n\
+/tmp/${MODULE}/Mtune\n\
+/tmp/${MODULE}/Dtune\n\
+/tmp/${MODULE}/Node\n\
+/tmp/${MODULE}" >> /tmp/MOD_FILES
+done
+######################################################
+#
+# taken from pkg.perf postinstall
+#
+######################################################
+#
+#
+#The following defines the roles for the TFM database.
+#
+#
+
+#
+#The following while-loop reads the commands and the roles
+#to which these commands are to be assigned.  If privileges,
+#separated by a colon, appear next to the role in the script that
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the role.
+#
+while read cmd roles
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |            # delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+	echo $cmd $roles >> /tmp/rolelist
+	continue
+
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						pfmt -s warn -g ${PKGMSG}:3 " %s privilege specified to be shut off for %s,\n         but it is NOT in its set of privileges.\n" $i $cmd 2>&1
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role
+        else
+            adminrole -a $base:$cmd:$privs $role
+        fi
+        shift
+    done
+done <<!
+/usr/bin/at			SOP	SSO
+/usr/bin/logins	SSO
+/usr/bin/nice				SSO
+/usr/bin/strchg	SSO
+/usr/sbin/chroot			SSO
+/usr/sbin/ncheck			SSO
+/usr/sbin/sar		OP	SOP	SSO
+/usr/sbin/hwmetric	OP	SOP	SSO
+/usr/sbin/sttydefs	SOP	SSO
+/usr/sbin/sysdef	OP	SOP	SSO
+/usr/sbin/volcopy		SOP	SSO
+!
+#
+############################################
+#
+#The following defines the users for the TFM database.
+#
+#
+for user in root bin sys adm lp
+do
+    adminuser $user >/dev/null 2>&1 || adminuser -n $user
+done
+#
+#The following while-loop reads the commands and the users
+#to which these commands are to be assigned.  If privileges,
+#separated by a colon, appear next to the user in the script that
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the user.
+#
+#
+while read cmd users
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |       # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |         # delete the fixed privs
+    sed 's/,/:/gp'                           # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+	echo $cmd $users >> /tmp/userlist
+	continue
+    else
+        prvd="yes"
+    fi
+    set $users
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        user=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            user=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/[a-z]*:\(.*\)$/\1/p'`
+                shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+                fullset=`echo "$save"|sed 's/:/ /gp'`
+                for i in $shutoff    #check if privileges to be shut off
+                do                   #are in full set of privilges
+                    found="false"
+                    for j in $fullset
+                    do
+                        if [ "$i" = "$j" ]
+                        then
+                            found="true"
+                            break
+                        fi
+                    done
+                    privs=""
+                    if [ "$found" = "false" ]
+                    then
+			pfmt -s warn -g ${PKGMSG}:3 " %s privilege specified to be shut off for %s,\n         but it is NOT in its set of privileges.\n" $i $cmd 2>&1
+                        break
+                    fi
+                done
+                if [ -z "$shutoff" ]
+                then
+                    privs="$save"
+                else
+                    for i in $fullset
+                    do
+                        found="false"
+                        for j in $shutoff
+                        do
+                            if [ "$i" = "$j" ]
+                            then
+                                found="true"
+                                break
+                            fi
+                        done
+                        if [ "$found" = "false" ]
+                        then
+                            if [ -z "$privs" ]
+                            then
+                                privs=$i
+                            else
+                                privs=$privs:$i
+                            fi
+                        fi
+                    done
+                fi
+            fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminuser -a $base:$cmd $user
+        else
+            adminuser -a $base:$cmd:$privs $user
+        fi
+        shift
+    done
+done <<!
+/usr/sbin/sar	sys
+/usr/sbin/rtpm	sys
+/usr/lib/sa/sadc	sys
+/usr/lib/sa/sa1	sys
+/usr/lib/sa/sa2	sys
+!
+
+removef ${PKGINST} - < /tmp/MOD_FILES 2>/dev/null
+removef -f ${PKGINST} 2>/dev/null
+rm -f /tmp/MOD_FILES
+installf -f ${PKGINST}
+
+# Save volatile files during upgrade or overlay
+SCRIPTS=/usr/sbin/pkginst
+${SCRIPTS}/pkgmrgconf "${PKGINST}" "${AUTOMERGE}" "${NAME}"
+
+errflag=`expr ${errflag:=0} + 10`
+exit ${errflag}

@@ -1,0 +1,55 @@
+#! /sbin/sh
+
+#ident	"@(#)dtadmin:floppy/fumount	1.7"
+#copyright	"%c%"
+
+# /usr/X/adm/fumount:  This is an intermediate script to be used by the 
+# Media Manager to unmount peripheral devices under specific mount points
+# reserved by the MediaMgr.  It is not intended to be used from the 
+# command line.  The fumount command is accessible to all desktop users by 
+# default to allow users to unmount peripheral devices through
+# the Media Manager.  
+
+SCRIPT=$0
+DESKTOP=/usr/X/desktop
+if [ ! -d ${DESKTOP} ]
+then
+	echo "${SCRIPT}:  Cannot locate desktop information" >&2
+        exit 1
+fi
+
+ARG_LIST="$@"
+
+ARGS_PASSED=0
+if [ "$#" -gt 0 ]
+then
+	ARGS_PASSED=1
+	while [ "$#" -gt 1 ]
+	do
+		shift
+	done
+	LAST_ARG=${1}
+fi
+
+set `LC_ALL=C /usr/bin/id | /usr/bin/sed 's/[()=]/ /g'`
+UNAME=${3}	# user name
+/usr/bin/grep '^owner$' ${DESKTOP}/LoginMgr/Users/${UNAME} > /dev/null 2>&1
+
+if [ $? != 0 -a ${ARGS_PASSED} -gt 0 ]  # mount point validation is only for non-owners	
+then
+	# A regular user executing fumount with privilege should only be 
+	# unmounting from the mount points used by MediaMgr,
+	# or under /installr (for dynatext support).
+
+	case "$LAST_ARG" in
+
+	/Disk_* | /CD-ROM_* | /installr)	
+		;;
+
+	*)	echo "${SCRIPT}:  ${UNAME} is not allowed to unmount from ${LAST_ARG}"
+		exit 11
+		;;
+	esac
+fi
+
+/sbin/umount ${ARG_LIST}

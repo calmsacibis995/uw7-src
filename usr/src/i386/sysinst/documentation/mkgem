@@ -1,0 +1,642 @@
+#!/bin/sh
+
+echo
+echo
+echo "Andy's i-need-to-build-in-my-home-account script"
+echo
+echo
+
+# 
+# Check NFS mounts
+#
+if [ ! -d /v/gembase/usr/src/work/sysinst ] 
+then
+	echo "Error: /v/gembase/usr/src not mounted."
+	exit 1
+fi
+
+#
+# Remove old tree if it exists
+#
+if [ -d gemini ]
+then
+	echo -n "Remove `pwd`/gemini? ->"
+	read x
+	case $x in
+		[Yy] | [Yy][Ee][Ss])	echo "	rm -rf gemini"
+					sleep 3
+					rm -rf gemini;;
+		*)			exit 0;;
+	esac
+fi
+
+#
+# Create gemini/usr/src
+#
+echo
+echo "Creating gemini/usr/src..."
+cwd=`pwd`
+mkdir gemini
+cd gemini
+mkdir usr
+cd usr
+mkdir src
+cd src
+
+#
+# Create top of tree directories
+#
+echo "Creating top of tree directories..."
+while read dir
+do
+	if [ "$dir" != "." ]
+	then
+		echo "	mkdir $dir"
+		mkdir $dir
+	fi
+	echo -n "	cp /v/gembase/usr/src/$dir/"
+	echo -n '* '
+	echo -n "$dir"
+	echo ' 2>/dev/null'
+	cp /v/gembase/usr/src/$dir/* $dir 2>/dev/null
+done <<-EOF
+.
+./i386
+./i386/cmd
+./common
+./common/cmd
+./work
+./work/cmd
+EOF
+rm -rf *.out
+
+
+#
+# Create sym-linked dirs
+#
+echo
+echo -n "Sym-linking directories..."
+while read dir
+do
+	echo -n "."
+	ln -s /v/gembase/usr/src/$dir $dir
+done <<-EOF
+./common
+./i386/X11R5
+./i386/X11R6
+./i386/cmd/acct
+./i386/cmd/acp
+./i386/cmd/autopush
+./i386/cmd/bkrs
+./i386/cmd/bnu.admin
+./i386/cmd/cb
+./i386/cmd/cflow
+./i386/cmd/checkeq
+./i386/cmd/cmd-inet
+./i386/cmd/cmd-nd
+./i386/cmd/cmd-nm
+./i386/cmd/cmd-nw
+./i386/cmd/cpio
+./i386/cmd/cpiopc
+./i386/cmd/cpset
+./i386/cmd/crash
+./i386/cmd/cron
+./i386/cmd/cscope
+./i386/cmd/csh
+./i386/cmd/ctrace
+./i386/cmd/cvtomf
+./i386/cmd/cxref
+./i386/cmd/date
+./i386/cmd/debug
+./i386/cmd/deroff
+./i386/cmd/drf
+./i386/cmd/dstime
+./i386/cmd/file
+./i386/cmd/format
+./i386/cmd/fpemul
+./i386/cmd/fprof
+./i386/cmd/fs.d
+./i386/cmd/fsba
+./i386/cmd/fsinfo
+./i386/cmd/fstyp
+./i386/cmd/fur
+./i386/cmd/gcore
+./i386/cmd/getclk
+./i386/cmd/i286emul
+./i386/cmd/init
+./i386/cmd/initpkg
+./i386/cmd/kdb
+./i386/cmd/ldd
+./i386/cmd/lnttys
+./i386/cmd/login
+./i386/cmd/machid
+./i386/cmd/messages
+./i386/cmd/nullptr
+./i386/cmd/oamintf
+./i386/cmd/pkging
+./i386/cmd/portmgmt
+./i386/cmd/prof
+./i386/cmd/rconsole
+./i386/cmd/rsk
+./i386/cmd/sa
+./i386/cmd/setclk
+./i386/cmd/setuname
+./i386/cmd/sgs
+./i386/cmd/sh
+./i386/cmd/strings
+./i386/cmd/sysdef
+./i386/cmd/terminfo
+./i386/cmd/test
+./i386/cmd/truss
+./i386/cmd/ttymon
+./i386/cmd/uname
+./i386/cmd/unixtsa
+./i386/cmd/upgrade
+./i386/cmd/wall
+./i386/cmd/who
+./i386/eaccmd
+./i386/head
+./i386/ktool
+./i386/le
+./i386/lib
+./i386/ls
+./i386/pkg
+./i386/set
+./i386/shared
+./i386/ucbcmd
+./i386/ucbhead
+./i386/ucblib
+./i386/uts
+./i386/xcpcmd
+./i386/xcplib
+./i386at
+./i386atmp
+./uktest
+./common/X11R5
+./common/cmd
+./common/lib
+./common/ucbcmd
+./common/cmd/inetinst
+./common/cmd/install
+./common/cmd/menu
+./common/cmd/oamintf
+./common/cmd/skey
+./work
+./work/X11R5
+./work/X11R6
+./work/build
+./work/cmd
+./work/cmd/.adm
+./work/cmd/acct
+./work/cmd/acp
+./work/cmd/admalloc
+./work/cmd/ahcomp
+./work/cmd/alpq
+./work/cmd/asa
+./work/cmd/auditcnv
+./work/cmd/auditlog
+./work/cmd/auditmap
+./work/cmd/auditoff
+./work/cmd/auditon
+./work/cmd/auditrpt
+./work/cmd/auditset
+./work/cmd/autodetect
+./work/cmd/autopush
+./work/cmd/awk
+./work/cmd/banner
+./work/cmd/basename
+./work/cmd/bc
+./work/cmd/bdiff
+./work/cmd/bfs
+./work/cmd/bkrs
+./work/cmd/bnu
+./work/cmd/bnu.admin
+./work/cmd/bustype
+./work/cmd/ca
+./work/cmd/cal
+./work/cmd/calendar
+./work/cmd/cat
+./work/cmd/cb
+./work/cmd/cfgintf
+./work/cmd/cfgmgmt
+./work/cmd/cflow
+./work/cmd/checkeq
+./work/cmd/chgrp
+./work/cmd/chlvl
+./work/cmd/chmod
+./work/cmd/chown
+./work/cmd/chroot
+./work/cmd/cksum
+./work/cmd/clear
+./work/cmd/cmd-inet
+./work/cmd/cmd-nd
+./work/cmd/cmd-nm
+./work/cmd/cmd-nw
+./work/cmd/cmp
+./work/cmd/col
+./work/cmd/comm
+./work/cmd/compress
+./work/cmd/conv-cmd
+./work/cmd/cpio
+./work/cmd/cpiopc
+./work/cmd/cpq.cmds
+./work/cmd/cpset
+./work/cmd/cr1
+./work/cmd/crash
+./work/cmd/create_locale
+./work/cmd/creatiadb
+./work/cmd/cron
+./work/cmd/crypt
+./work/cmd/cs
+./work/cmd/cscope
+./work/cmd/csh
+./work/cmd/csplit
+./work/cmd/ctrace
+./work/cmd/cut
+./work/cmd/cvtomf
+./work/cmd/cxref
+./work/cmd/date
+./work/cmd/dbfconv
+./work/cmd/dc
+./work/cmd/dd
+./work/cmd/debug
+./work/cmd/decomp
+./work/cmd/defadm
+./work/cmd/deroff
+./work/cmd/devintf
+./work/cmd/devio
+./work/cmd/devmgmt
+./work/cmd/devstat
+./work/cmd/dfs.cmds
+./work/cmd/dfsck
+./work/cmd/diff
+./work/cmd/diff3
+./work/cmd/dircmp
+./work/cmd/dirname
+./work/cmd/dispadmin
+./work/cmd/drf
+./work/cmd/dstime
+./work/cmd/du
+./work/cmd/echo
+./work/cmd/ed
+./work/cmd/env
+./work/cmd/eucset
+./work/cmd/evgainit
+./work/cmd/expr
+./work/cmd/exstr
+./work/cmd/factor
+./work/cmd/false
+./work/cmd/fdetach
+./work/cmd/fdisk
+./work/cmd/fgrep
+./work/cmd/file
+./work/cmd/find
+./work/cmd/fmli
+./work/cmd/fmt
+./work/cmd/fmtmsg
+./work/cmd/fold
+./work/cmd/format
+./work/cmd/fpemul
+./work/cmd/fprof
+./work/cmd/fs.d
+./work/cmd/fsba
+./work/cmd/fsinfo
+./work/cmd/fstyp
+./work/cmd/fur
+./work/cmd/fuser
+./work/cmd/gcore
+./work/cmd/gencat
+./work/cmd/getacl
+./work/cmd/getclk
+./work/cmd/getconf
+./work/cmd/getopt
+./work/cmd/gettxt
+./work/cmd/gnu
+./work/cmd/grep
+./work/cmd/groups
+./work/cmd/grpck
+./work/cmd/gzip
+./work/cmd/head
+./work/cmd/i286emul
+./work/cmd/iconv
+./work/cmd/id
+./work/cmd/idmap
+./work/cmd/inetinst
+./work/cmd/init
+./work/cmd/initpkg
+./work/cmd/install
+./work/cmd/ipc
+./work/cmd/join
+./work/cmd/kbdload
+./work/cmd/kbdpipe
+./work/cmd/kbdset
+./work/cmd/kdb
+./work/cmd/keyserv
+./work/cmd/kill
+./work/cmd/killall
+./work/cmd/ksh
+./work/cmd/ksh93
+./work/cmd/last
+./work/cmd/ldd
+./work/cmd/line
+./work/cmd/link
+./work/cmd/listen
+./work/cmd/lnttys
+./work/cmd/locale
+./work/cmd/localedef
+./work/cmd/lockstat
+./work/cmd/logger
+./work/cmd/login
+./work/cmd/logins
+./work/cmd/logname
+./work/cmd/lp
+./work/cmd/lp.admin
+./work/cmd/ls
+./work/cmd/lvlname
+./work/cmd/maccnv
+./work/cmd/machid
+./work/cmd/macinit
+./work/cmd/mail
+./work/cmd/mailx
+./work/cmd/make
+./work/cmd/makekey
+./work/cmd/maplang
+./work/cmd/mapmsgs
+./work/cmd/menu
+./work/cmd/merge_ipx
+./work/cmd/mesg
+./work/cmd/messages
+./work/cmd/metreg
+./work/cmd/mkdir
+./work/cmd/mkfifo
+./work/cmd/mkmsgs
+./work/cmd/mknod
+./work/cmd/mldmode
+./work/cmd/modadmin
+./work/cmd/more
+./work/cmd/mouse
+./work/cmd/mt
+./work/cmd/mv
+./work/cmd/mvdir
+./work/cmd/nadmin.dfs
+./work/cmd/nadmin.nfs
+./work/cmd/netsel.adm
+./work/cmd/newform
+./work/cmd/newgrp
+./work/cmd/news
+./work/cmd/niccfg
+./work/cmd/nice
+./work/cmd/nl
+./work/cmd/nlms
+./work/cmd/nlsadmin
+./work/cmd/nohup
+./work/cmd/nuc.d
+./work/cmd/nullptr
+./work/cmd/oamintf
+./work/cmd/oamuser
+./work/cmd/oawk
+./work/cmd/od
+./work/cmd/online
+./work/cmd/pack
+./work/cmd/panel
+./work/cmd/passwd
+./work/cmd/paste
+./work/cmd/patch
+./work/cmd/pathchk
+./work/cmd/pax
+./work/cmd/pbind
+./work/cmd/pcintf
+./work/cmd/pdi.cmds
+./work/cmd/pexbind
+./work/cmd/pfmt
+./work/cmd/pg
+./work/cmd/pkging
+./work/cmd/pm_cmds
+./work/cmd/portmgmt
+./work/cmd/pos_localedef
+./work/cmd/postcheckfdb
+./work/cmd/pr
+./work/cmd/printf
+./work/cmd/priocntl
+./work/cmd/prof
+./work/cmd/profiler
+./work/cmd/proto-cmd
+./work/cmd/prtconf
+./work/cmd/ps
+./work/cmd/pseudo
+./work/cmd/psradm
+./work/cmd/psrinfo
+./work/cmd/pt_chmod
+./work/cmd/pwck
+./work/cmd/pwconv
+./work/cmd/pwd
+./work/cmd/qt
+./work/cmd/rconsole
+./work/cmd/regcmp
+./work/cmd/renice
+./work/cmd/resmgr
+./work/cmd/rexec
+./work/cmd/rm
+./work/cmd/rmdir
+./work/cmd/rpcbind
+./work/cmd/rpcgen
+./work/cmd/rpcinfo
+./work/cmd/rpcsvc
+./work/cmd/rsk
+./work/cmd/rtpm
+./work/cmd/sa
+./work/cmd/saf
+./work/cmd/sccs
+./work/cmd/sco
+./work/cmd/script
+./work/cmd/sdiff
+./work/cmd/sed
+./work/cmd/setacl
+./work/cmd/setclk
+./work/cmd/setmnt
+./work/cmd/setpgrp
+./work/cmd/setuname
+./work/cmd/sgs
+./work/cmd/sh
+./work/cmd/shserv
+./work/cmd/skey
+./work/cmd/sleep
+./work/cmd/sort
+./work/cmd/spell
+./work/cmd/split
+./work/cmd/srchtxt
+./work/cmd/stdmore
+./work/cmd/stdtr
+./work/cmd/streams
+./work/cmd/strings
+./work/cmd/su
+./work/cmd/sulogin
+./work/cmd/sum
+./work/cmd/swap
+./work/cmd/sync
+./work/cmd/sysdef
+./work/cmd/syslogd
+./work/cmd/tabs
+./work/cmd/tail
+./work/cmd/tar
+./work/cmd/tcpio
+./work/cmd/tee
+./work/cmd/terminfo
+./work/cmd/test
+./work/cmd/tfm
+./work/cmd/time
+./work/cmd/touch
+./work/cmd/tr
+./work/cmd/tricord.cmds
+./work/cmd/true
+./work/cmd/truss
+./work/cmd/tty
+./work/cmd/ttymap
+./work/cmd/ttymon
+./work/cmd/uadmin
+./work/cmd/uname
+./work/cmd/uniq
+./work/cmd/units
+./work/cmd/unixtsa
+./work/cmd/unlink
+./work/cmd/unpack
+./work/cmd/upgrade
+./work/cmd/users
+./work/cmd/valtools
+./work/cmd/vi
+./work/cmd/vtlmgr
+./work/cmd/wall
+./work/cmd/wc
+./work/cmd/wchrtbl
+./work/cmd/who
+./work/cmd/whodo
+./work/cmd/winxksh
+./work/cmd/write
+./work/cmd/wsinit
+./work/cmd/x286emul
+./work/cmd/xargs
+./work/cmd/xdcu
+./work/cmd/ypcmd
+./work/cmd/zdump
+./work/cmd/zic
+./work/eaccmd
+./work/head
+./work/ihvkit
+./work/ktool
+./work/le
+./work/lib
+./work/ls
+./work/mkmerge
+./work/mp
+./work/noncore
+./work/nws
+./work/pkg
+./work/pkg-desc
+./work/set
+./work/shared
+./work/standalone
+./work/tools
+./work/ucbcmd
+./work/ucblib
+./work/uts
+./work/volbin
+./work/xcpcmd
+./work/xcplib
+EOF
+echo
+
+
+#
+# Copy non-symlinked dirs
+#
+echo
+echo "Copying whole directory hierarchies..."
+while read dir
+do
+	echo "	cp -r /v/gembase/usr/src/$dir $dir"
+	cp -r /v/gembase/usr/src/$dir $dir
+done <<-EOF
+./i386/sysinst
+./i386/cmd/pkgtools
+./i386/cmd/oampkg
+./common/cmd/oampkg
+./work/sysinst
+./work/cmd/oampkg
+./work/cmd/pkgtools
+EOF
+
+
+#
+# Copy over $ROOT/i386at and $ROOT/.i386at
+#
+echo "Linking i386at..."
+echo "	cd $cwd/gemini"
+cd $cwd/gemini
+echo "	ln -s /v/gembase/i386at ."
+ln -s /v/gembase/i386at .
+
+#
+# Get the pkg dir too
+#
+echo "Linking pkg..."
+echo "  ln -s /v/gembase/pkg ."
+ln -s /v/gembase/pkg .
+
+#
+# Keep a fresh copy of work/sysinst around
+#
+echo
+echo "Making a backup copy of work/sysinst..."
+cd $cwd/gemini/usr/src/work
+echo "  cp -r sysinst sysinst.BACKUP"
+cp -r sysinst sysinst.BACKUP
+
+
+#
+# Create buildvars
+#
+echo
+echo "Creating gemini/buildvars..."
+
+cd $cwd/gemini
+echo "ROOT=$cwd/gemini; export ROOT" > buildvars
+cat >> buildvars <<-EOF\\
+REL=UW2.1; export REL
+LOAD=gem6; export LOAD
+TOOLS=/gem/xenv/$LOAD; export TOOLS
+CROSS=$TOOLS; export CROSS
+MACH=i386at; export MACH
+WORK=work; export WORK
+PARALLEL=6; export PARALLEL
+KTOOL=$TOOLS/etc/conf/bin; export KTOOL
+REL_FULLNAME=UnixWare2.1; export REL_FULLNAME
+CPU=i386; export CPU
+PFX=$CPU; export PFX
+SPOOL=pkg; export SPOOL
+CH=#; export CH
+PATH=/usr/bin:/usr/ccs/bin:$HOME:/usr/sbin:/etc:.; export PATH
+PATH=$PATH:$KTOOL:$ROOT/$MACH/etc/conf/bin; export PATH
+PSM_MACH=.i386at; export PSM_MACH
+PROTO=$ROOT/usr/src/work/sysinst; export PROTO
+LOCALE=C; export LOCALE
+EOF\
+
+
+#
+# done
+# 
+echo
+echo "Done. To play:"
+echo "--------------"
+echo 
+echo "   cd gemini"
+echo "   ksh"
+echo "   . ./buildvars"
+echo "   cd \$PROTO"
+echo "   \$TOOLS/usr/ccs/bin/i386osenv ksh -o vi"
+echo "   ./prep.flop -ck"
+echo "   ./cut.flop -l C"
+echo
+
+
+

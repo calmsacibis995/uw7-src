@@ -1,0 +1,503 @@
+#!/sbin/sh
+#ident "@(#)nics_detect	15.2	98/01/18"
+
+# nics_detect -- ISL UI module: system detects available NICs
+
+RESMGR=/sbin/resmgr
+SORT=/usr/bin/sort
+
+# used to determine if this script should be run at all
+function skip_test
+{
+	[ -n "$debug" ] && set -x
+	[[ "${module}" == "ii_detect" ]] || {
+		UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+		[[ " $UnixWare_PKGS " == *" nics "* ]] || ii_exit $direction
+
+		# don't offer the hardware config screens if install from
+		# network. This has already been done.
+		SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+		[ "$SEC_MEDIUM_TYPE" = "tcp"  -o \
+		  "$SEC_MEDIUM_TYPE" = "spx" ] && \
+			ii_exit $direction
+	}
+}
+
+# used to peform anything important this script has to
+# accomplish in a non-interactive manner. Only called
+# if skip_$this_module_name is set in the ifile.
+function skip_func
+{
+	[ -n "$debug" ] && set -x
+	# do what ever is necessary to accomplish the silent config.
+	# perhaps we should check $direction (set in common.rc) to
+	# see if we should do something.
+
+	# no need to ii_exit, this is done in common.rc after return
+	# from this function
+}
+
+. /isl/ui_modules/common.rc
+
+function noop
+{
+       beep
+}
+
+function module_save_ivars
+{
+	[ -n "$debug" ] && set -x
+	typeset ret=0
+
+	msg ""
+	footer ""
+	if [ "$1" = "validate" ]
+	then
+		case $nics_choice in
+		DEFER_CONFIG)
+			svar set NICS_TYPE ""
+			svar set NICS_CONFIG_FILE ""
+			svar set NICS_DRIVER_NAME ""
+			ivar set NICS_TYPE ""
+			ivar set NICS_CONFIG_FILE ""
+			ivar set NICS_DRIVER_NAME ""
+			svar set tcp_defer true
+			ivar set IPX_DEFER "TRUE"
+			ivar set NIS_TYPE DEFER
+			ret=0
+			;;
+		USE_DETECTED|SELECT_DETECTED|CHOOSE_FROM_LIST)
+			svar set tcp_defer false
+			ivar set IPX_DEFER "FALSE"
+			ivar set NIS_TYPE ""
+			ret=0
+			;;
+		*)
+			ret=1
+			;;
+		esac
+		# do or call validation code
+		# if validate fails, set ret non-zero
+	fi
+	svar set NICS_CHOICE ${nics_choice}
+	return $ret
+}
+
+# process the request to backup in the interview screens
+function go_prev
+{
+	[ -n "$debug" ] && set -x
+	module_save_ivars
+	ii_exit PREV
+}
+
+# process the request to show help for this interview screen
+function go_help
+{
+	[ -n "$debug" ] && set -x
+	module_save_ivars
+	ii_exit HELP
+}
+
+#
+# The function to detect what is on the system already.
+#
+function autodetect_nics
+{
+	[ -n "$debug" ] && set -x
+
+	integer iires NUM_RES_BRDIDS
+
+	iinum=0
+	${RESMGR} | while read rkey[iinum] junk
+	do
+		let iinum+=1
+	done
+
+	save_previous_key
+	${RESMGR} -p "MODNAME BRDBUSTYPE BRDID SLOT BUSNUM,n" > /tmp/resmgr.out
+	restore_previous_key
+
+	> /tmp/resmgr.brdid
+	iires=0
+	iinum=0
+	while read modname[iires] brdbustype brdid[iires] slot[iires] busnum[iires]
+	do
+		[ "${modname[iires]}" = "-" ] &&
+		[ "${brdid[iires]}" != "-" ] && {
+			[ ${slot[iires]} = "-" ] && slot[iires]=0
+			[ ${busnum[iires]} = "-" ] && busnum[iires]=0
+			key[iires]=${rkey[iinum]}
+			case $brdbustype in
+			1)
+				bustype[iires]=ISA;;
+			2)
+				bustype[iires]=EISA;;
+			4)
+				bustype[iires]=PCI;;
+			8)
+				bustype[iires]=PCCARD;;
+			16)
+				bustype[iires]=PNPISA;;
+			32)
+				bustype[iires]=MCA;;
+			esac
+
+			echo "${key[iires]} ${modname[iires]} ${bustype[iires]} ${busnum[iires]} ${brdid[iires]} ${slot[iires]}" >> /tmp/resmgr.brdid
+
+			nicfile[iires]="-"
+			nicname[iires]="-"
+
+			let iires+=1
+		}
+		let iinum+=1
+	done < /tmp/resmgr.out
+	NUM_RES_BRDIDS=$iires
+
+    from_help=$(svar get help_topic)
+    if [ "$direction" == "NEXT" -o "$from_help" == "nics_detect" ]
+    then
+	cd ${IIROOT}/config
+	iinum=0
+	rm -f /tmp/ii_conflict*
+	for config_file in *
+	do
+		unset NAME BOARD_IDS BUS TOPOLOGY DRIVER_NAME
+
+		. ./${config_file} > /dev/null 2>&1
+
+		# For this release, DDI8 NICS aren't supported for
+		# netinstall. At this point in time, we don't know if
+		# a card is DDI8. We can only tell that from the DSP 
+		# files, which don't exist yet.
+		#
+		# We'll hard code this for now because there is only
+		# one DDI8 NIC, and that's the e3D.
+		#
+		# for this release, topologies other than ethernet
+		# are not supported. This means, that if the card
+		# is tokenring only, or FDDI only, we can't use it.
+		[ "${module}" == "ii_config" ] && {
+			[ "${DRIVER_NAME}" == "e3D" ] && continue
+			[[ " ${TOPOLOGY} " == *"ETHER"* ]] || continue
+		}
+		
+		[ -z "${BOARD_IDS}" ] && continue
+
+		iires=0
+		while (( iires < NUM_RES_BRDIDS ))
+		do
+			for id in ${BOARD_IDS}
+			do
+				[ "${id}" = "${brdid[iires]}" ] && {
+					OIFS="$IFS"
+					IFS="_"
+					echo $NAME | read NAME
+					IFS="$OIFS"
+					case ${nicname[iires]} in
+					"-")
+					  nicname[iires]=${NAME}
+					  nicfile[iires]=${config_file}
+					  ;;
+					"INVALID")
+					  echo "${config_file} ${NAME}" >> /tmp/ii_conflict.$iires
+					  ;;
+					*)
+					  echo "${nicfile[iires]} ${nicname[iires]}" > /tmp/ii_conflict.$iires
+					  echo "${config_file} ${NAME}" >> /tmp/ii_conflict.$iires
+					  nicname[iires]="INVALID"
+					  ;;
+					esac
+					break
+				}
+			done
+			let iires+=1
+		done
+	done
+
+	unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY
+	unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+	unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+	iinum=0
+	iires=0
+	while (( iires < NUM_RES_BRDIDS ))
+	do
+		[ "${nicname[iires]}" = "-" ] && {
+			let iires+=1
+			continue
+		}
+
+		D_KEY[iinum]=${key[iires]}
+		D_SLOT[iinum]=${slot[iires]}
+		D_BUS[iinum]=${bustype[iires]}
+		D_BUSNUM[iinum]=${busnum[iires]}
+
+		[ "${nicname[iires]}" != "INVALID" ] && {
+			D_NAME[iinum]=${nicname[iires]}
+			D_FILE[iinum]=${nicfile[iires]}
+			let iinum+=1
+			let iires+=1
+			continue
+		}
+
+		[ -f /tmp/ii_conflict.$iires ] && {
+			${SORT} /tmp/ii_conflict.$iires > /tmp/ii_conflict
+			i=0
+			unset LIST
+			while read nf[i] nn[i]
+			do
+				LIST[$i]="${nn[i]}"
+				let i+=1
+			done < /tmp/ii_conflict
+			LIST[$i]="${II_IGNORE_CONFLICT}"
+
+			TXT="${II_SELECT_EXPLAIN2}
+                    ${D_BUS[iinum]} ${II_BUS} ${D_BUSNUM[iinum]}, ${II_SLOT} ${D_SLOT[iinum]}.
+
+${II_SELECT_EXPLAIN3}"
+			display "${TXT}" -below 6 -fg $COMBO1_FG -bg $COMBO1_BG
+			DISWIN=${CURWIN}
+
+			CHOOSE_FOOTER="${NICS_CONFLICT_FOOTER}"
+
+			ivar set help_topic nics_detect
+			svar set help_topic nics_detect
+		        choose -f -e -help go_help -winparms "-above 4 -below 1 -fg $COMBO2_FG -bg $COMBO2_BG" "" "${LIST[@]}"
+		        input_handler
+			wclose $DISWIN
+
+			i=0
+			for name in ${nn[@]}
+			do
+				[ "${CHOICE}" = "${II_IGNORE_CONFLICT}" ] && \
+					break
+				[ "${CHOICE}" = "${nn[i]}" ] && {
+					D_NAME[iinum]=${nn[i]}
+					D_FILE[iinum]=${nf[i]}
+					echo "${brdid[iires]} ${D_BUS[iinum]} ${D_BUSNUM[iinum]} ${D_SLOT[iinum]} ${D_FILE[iinum]}" >> /tmp/ii.conflicts
+					let iinum+=1
+					break
+				}
+				let i+=1
+			done
+		}
+
+		let iires+=1
+	done
+	NUM_NICS_DETECT=$iinum
+	svar set NUM_NICS_DETECT ${NUM_NICS_DETECT}
+    else
+	[ -f /tmp/ii_detect ] && . /tmp/ii_detect
+	NUM_NICS_DETECT=${#D_FILE[@]}
+    fi
+
+	if (( NUM_NICS_DETECT > 0 ))
+	then
+		typeset -L6 pbus
+		typeset -R4 pbusnum
+		typeset -R2 pslot
+		typeset -L63 pname # 63 is max system name length
+
+		> /tmp/cards
+		> /tmp/ii_detect
+		iinum=0
+		while (( iinum < NUM_NICS_DETECT ))
+		do
+			pbus=${D_BUS[iinum]}
+			pbusnum=${D_BUSNUM[iinum]}
+			pslot=${D_SLOT[iinum]}
+			OIFS=${IFS}
+			IFS="_"
+			echo ${D_NAME[iinum]} | read pname
+			IFS=${OIFS}
+
+			echo "D_BUS[$iinum]=${D_BUS[iinum]}" >> /tmp/ii_detect
+			echo "D_BUSNUM[$iinum]=${D_BUSNUM[iinum]}" >> /tmp/ii_detect
+			echo "D_SLOT[$iinum]=${D_SLOT[iinum]}" >> /tmp/ii_detect
+			echo "D_KEY[$iinum]=${D_KEY[iinum]}" >> /tmp/ii_detect
+			echo "D_FILE[$iinum]=${D_FILE[iinum]}" >> /tmp/ii_detect
+			echo "D_NAME[$iinum]=\"${D_NAME[iinum]}\"" >> /tmp/ii_detect
+			echo " $pbus  $pbusnum     $pslot   $pname" >> /tmp/cards
+			let iinum+=1
+		done 
+		${SORT} /tmp/cards > /tmp/ii_cards_detected
+		rm /tmp/cards
+		CARDS=$(cat /tmp/ii_cards_detected)
+		CHOICE_DISPLAY="${II_DETECT_SOME}${CARDS}"
+	fi
+
+} #end of autodetect_nics()
+
+function save_previous_key
+{
+	[ -n "${debug}" ] && set -x
+
+	# make it look like the already configured card is available
+	Previous_key=$(ivar get NICS_KEY)
+	Previous_drivername=$(ivar get NICS_DRIVER_NAME)
+	[[ -n "${Previous_key}" ]] &&
+		${RESMGR} -k ${Previous_key} -p MODNAME -v "-"
+	svar set nics_previous_key ${Previous_key}
+	svar set nics_previous_drivername ${Previous_drivername}
+}
+
+function restore_previous_key
+{
+	[ -n "${debug}" ] && set -x
+
+	Previous_key=$(svar get nics_previous_key)
+	if [ -n "${Previous_key}" ]
+	then
+		Modname=$(svar get nics_previous_drivername)
+		${RESMGR} -k $Previous_key -p MODNAME -v "${Modname}"
+	fi
+	svar set nics_previous_key ""
+	svar set nics_previous_drivername ""
+}
+
+function choose_nic
+{
+	[ -n "$debug" ] && set -x
+
+	typeset CONFIG_DIR=${IIROOT}/config
+
+	if (( NUM_NICS_DETECT > 5 ))
+	then
+		display "$CHOICE_DISPLAY" -above 0 -fg $COMBO1_FG -bg $COMBO1_BG
+	else
+		display "$CHOICE_DISPLAY" -below 3 -fg $COMBO1_FG -bg $COMBO1_BG
+	fi
+	msg ""
+	footer "$GENERIC_FOOTER"
+	DIS_WIN=${CURWIN}
+
+	NICS_CHOICE=$(svar get NICS_CHOICE)
+	ivar set help_topic nics_select
+	svar set help_topic nics_select
+	nics_choice="${NICS_CHOICE:-NICS_NOTHING_CHOSEN}"
+	open_radio -fg $COMBO2_FG -bg $COMBO2_BG
+
+	integer IIRID=$RID
+
+	iiindex=0
+	IIROW=0
+	if (( NUM_NICS_DETECT > 0 ))
+	then
+		if (( NUM_NICS_DETECT == 1 ))
+		then
+			iiindex=0
+			add_radio "$II_SELECT_DETECT_ONE" \
+				-entry 'nics_choice="USE_DETECTED"'
+			[[ "$nics_choice" == "USE_DETECTED" ]] && \
+				iiindex=$IIROW
+		else
+			add_radio "$II_SELECT_DETECT_MORE" \
+				-entry 'nics_choice="SELECT_DETECTED"'
+			[[ "$nics_choice" == "SELECT_DETECTED" ]] && \
+				iiindex=$IIROW
+		fi
+		(( IIROW += 1 ))
+	fi
+		
+	add_radio "$II_SELECT_LIST" -entry 'nics_choice="CHOOSE_FROM_LIST"'
+	[[ "$nics_choice" == "CHOOSE_FROM_LIST" ]] && \
+		iiindex=$IIROW
+	(( IIROW += 1 ))
+	[[ "${module}" == "nics_detect" ]] && {
+	    add_radio "$II_DEFER" -entry 'nics_choice="DEFER_CONFIG"'
+	    [[ "$nics_choice" == "DEFER_CONFIG" ]] && \
+		iiindex=$IIROW
+	    (( IIROW += 1 ))
+	}
+
+	radio_runparms $IIRID $IIROW
+
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -above 6 -below 1 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG -title "$II_SELECT_TITLE"
+
+	#set_hotkey 1 "wclose $DIS_WIN; restore_previous_key; go_help"
+	set_hotkey 1 "wclose $DIS_WIN; go_help"
+	set_hotkey 2 noop
+	set_hotkey 3 noop
+	set_hotkey 4 noop
+	set_hotkey 5 noop
+	set_hotkey 6 noop
+	set_hotkey 7 noop
+	set_hotkey 8 noop
+	#set_hotkey 9 "wclose $DIS_WIN; restore_previous_key; go_prev"
+	set_hotkey 9 "wclose $DIS_WIN; go_prev"
+
+	run_radio $IIRID $iiindex $IIROW
+	input_handler
+
+	wclose $DIS_WIN
+	module_save_ivars validate
+
+} #end of choose_nic()
+
+function detect_installed_nics
+{
+    [ -n "$debug" ] && set -x
+    
+    # net configuration needs extra memfs.
+    IIROOT_MOUNTED=$(svar get IIROOT_MOUNTED)
+    [[ "${IIROOT_MOUNTED}" != "true" ]] && {
+	    sh_umount $IIROOT
+	    sh_mount -F memfs -o swapmax=0,rootmode=01777,sfp=5000000 \
+		 /memfs $IIROOT > /dev/null 2>&1
+	    (( $? )) || svar set IIROOT_MOUNTED true
+    }
+
+    # make sure the help files and text strings are extracted.
+    cd ${IIROOT}
+    [ ! -d ${IIROOT}/config ] && {
+	cpio -icdu -DZ < /etc/inst/locale/${LANG}/menus/help/config.z 
+    }
+    
+    NICS_BUSTYPES=$(svar get NICS_BUSTYPES)
+    [ -z "$NICS_BUSTYPES" ] && {
+    
+    	typeset iibus
+    
+    	NICS_BUSTYPES="$(svar get BUSTYPES) PCCARD"
+    	svar set NICS_BUSTYPES "${NICS_BUSTYPES}"
+    }
+   
+    footer "${GENERIC_WAIT_FOOTER}"
+
+    # If machine supports an autoconfigurable bustype, autodetect.
+    for iibus in $NICS_BUSTYPES
+    do
+   	case $iibus in
+   	EISA|MCA|PCI)
+   		autodetect_nics
+   		break
+   		;;
+   	esac
+    done
+    
+    choose_nic
+    
+    cd ${IIROOT}
+    
+} # end of detect_installed_nics
+
+#
+# Main
+#
+
+. /etc/inst/locale/${LANG}/menus/net_wrapper.txtstrings > /dev/null 2>&1
+
+CHOICE_DISPLAY="${II_DETECT_NONE}"
+integer NUM_NICS_DETECT=0
+IIROOT=/.extra.d
+BUSTYPES=$(svar get BUSTYPES)
+[ -z "$BUSTYPES" ] && ii_exit DIE
+
+detect_installed_nics
+
+#
+# Done
+#
+ii_exit NEXT

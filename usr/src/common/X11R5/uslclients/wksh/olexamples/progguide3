@@ -1,0 +1,31 @@
+#!/usr/bin/wksh -openlook
+
+quitCB() {
+	exit 0
+}
+
+selectCB() { 	# $1 = button number to print
+	echo "Button $1 selected"
+}
+
+unselectCB() {	# $1 = button number to print
+	echo "Button $1 unselected"
+}
+
+OlInitialize TOPLEVEL menu Menu -openlook "$@"
+
+XtCreateManagedWidget MENU menu menuButton $TOPLEVEL
+
+XtCreateManagedWidget EXCLUSIVES exclusives exclusives $MENU_MP \
+	layoutType:fixedcols measure:1 recomputeSize:true
+
+BUTTONTYPE=rectButton addbuttons -w $EXCLUSIVES \
+	ONE    "ONE"  "selectCB 1" \
+	TWO    "TWO"  "selectCB 2" \
+	THREE  "EXIT" "quitCB"
+
+XtAddCallback "$ONE" unselect "unselectCB 1"
+XtAddCallback "$TWO" unselect "unselectCB 2"
+
+XtRealizeWidget $TOPLEVEL
+XtMainLoop

@@ -1,0 +1,448 @@
+:
+tet_startup=""
+tet_cleanup=""
+iclist="ic1 ic2 ic3"
+ic1="start"
+ic2="stresstest"
+ic3="finish"
+
+. $TET_ROOT/inc/libant.sh
+
+logout()
+{
+	while read x
+	do
+		tet_infoline "$x"
+	done
+}
+
+recvfile()
+{
+	. /tmp/ant$$
+
+	dlpiut recvfile fd=0 framing=$gframing sap=$gsap ourdstaddr=$OTHERADDR loop=n file=$1
+	checkfail $?
+}
+
+sendfile()
+{
+	. /tmp/ant$$
+
+	dlpiut sendfile fd=0 framing=$gframing sap=$gsap ourdstaddr=$OTHERADDR loop=n file=$1
+	checkfail $?
+}
+
+framecheck()
+{
+awk ' {
+	if ($1 == "ok_acks")
+		ok_acks = $2;
+	if ($1 == "ack_timeouts")
+		ack_timeouts = $2;
+	if ($1 == "bad_acks")
+		bad_acks = $2;
+	if ($1 == "bad_saps")
+		bad_saps = $2;
+	if ($1 == "bad_seq_hi")
+		bad_seq_hi = $2;
+	if ($1 == "bad_seq_lo")
+		bad_seq_lo = $2;
+	if ($1 == "frames_received")
+		frames_received = $2;
+	if ($1 == "bad_saps_received")
+		bad_saps_received = $2;
+	if ($1 == "bad_len_received")
+		bad_len_received = $2;
+	if ($1 == "bad_type_received")
+		bad_type_received = $2;
+	if ($1 == "bad_seq_hi_received")
+		bad_seq_hi_received = $2;
+	if ($1 == "bad_seq_lo_received")
+		bad_seq_lo_received = $2;
+	if ($1 == "dup_frames_received")
+		dup_frames_received = $2;
+	if ($1 == "bad_data_received")
+		bad_data_received = $2;
+	}
+	END {
+	errs = bad_acks + bad_saps + bad_saps_received + \
+		bad_len_received + bad_type_received + dup_frames_received + \
+		bad_data_received;
+	printf "Framing %s sap %s: ", framing, sap
+	if (errs != 0 || frames_received == 0) {
+		print "FAIL";
+		exit 1;
+	}
+	else {
+		print "PASS";
+		exit 0;
+	}
+
+	}' framing=$1 sap=$2
+	return $?
+}
+
+total()
+{
+	. /tmp/ant$$
+
+awk '{
+	if ($1 == "ok_acks")
+		ok_acks += $2;
+	if ($1 == "ack_timeouts")
+		ack_timeouts += $2;
+	if ($1 == "bad_acks")
+		bad_acks += $2;
+	if ($1 == "bad_saps")
+		bad_saps += $2;
+	if ($1 == "bad_seq_hi")
+		bad_seq_hi += $2;
+	if ($1 == "bad_seq_lo")
+		bad_seq_lo += $2;
+	if ($1 == "frames_received")
+		frames_received += $2;
+	if ($1 == "bad_saps_received")
+		bad_saps_received += $2;
+	if ($1 == "bad_len_received")
+		bad_len_received += $2;
+	if ($1 == "bad_type_received")
+		bad_type_received += $2;
+	if ($1 == "bad_seq_hi_received")
+		bad_seq_hi_received += $2;
+	if ($1 == "bad_seq_lo_received")
+		bad_seq_lo_received += $2;
+	if ($1 == "dup_frames_received")
+		dup_frames_received += $2;
+	if ($1 == "bad_data_received")
+		bad_data_received += $2;
+	}
+	END {
+		printf "ok_acks              %d\n", ok_acks;
+		printf "ack_timeouts         %d\n", ack_timeouts;
+		printf "bad_acks             %d\n", bad_acks;
+		printf "bad_saps             %d\n", bad_saps;
+		printf "bad_seq_hi           %d\n", bad_seq_hi;
+		printf "bad_seq_lo           %d\n", bad_seq_lo;
+		printf "frames_received      %d\n", frames_received;
+		printf "bad_saps_received    %d\n", bad_saps_received;
+		printf "bad_len_received     %d\n", bad_len_received;
+		printf "bad_type_received    %d\n", bad_type_received;
+		printf "bad_seq_hi_received  %d\n", bad_seq_hi_received;
+		printf "bad_seq_lo_received  %d\n", bad_seq_lo_received;
+		printf "dup_frames_received  %d\n", dup_frames_received;
+		printf "bad_data_received    %d\n", bad_data_received;
+
+		seconds = substr(duration, 5, 2);
+		seconds += substr(duration, 3, 2) * 60;
+		seconds += substr(duration, 1, 2) * 60 * 60;
+		printf "duration = %d\n", seconds;
+		fps = frames_received / seconds;
+		printf "frames per second average is %d\n", fps;
+		kps = (fps * len) / 1024;
+		printf "k/sec is %d\n", kps;
+	}' duration=$duration len=1500
+	return $?
+}
+
+start()
+{
+	dlpiut stop
+
+ 	# restart the dlpi daemon
+	ndsu "nd stop"
+        sleep 4
+	ndsu "nd start"
+
+	echoboth "start: start of Driver Stress test, looking for other machine"
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo ABORT
+		tet_result ABORT
+		rm -f /tmp/tmp$$
+		dlpiut stop
+		return
+	}
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	NETTYPE=$media
+	echoboth "NETTYPE=$media"
+	echo "NETTYPE=$media" > /tmp/ant$$
+	framing
+
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo ABORT
+		tet_result ABORT
+		dlpiut stop
+		return
+	}
+
+	dlpiut getaddr fd=0 > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo ABORT
+		tet_result ABORT
+		dlpiut stop
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OURADDR=$addr
+	OURMCHN=`uname -n`
+
+	echoboth "$OURMCHN=$OURADDR"
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=180 loop=y match=n \
+			> /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=180 loop=y match=n \
+			> /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDR=$msg
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=30 loop=y match=n \
+			> /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+			omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+			odstaddr=ffffffffffff timeout=30 loop=y match=n \
+			> /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERMCHN=$msg
+
+	echoboth "$OTHERMCHN=$OTHERADDR"
+
+	echo OURMCHN=$OURMCHN >> /tmp/ant$$
+	echo OTHERMCHN=$OTHERMCHN >> /tmp/ant$$
+	echo OURADDR=$OURADDR >> /tmp/ant$$
+	echo OTHERADDR=$OTHERADDR >> /tmp/ant$$
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			echo 'txframelist="ethernet 802.3 llc802.3 snap802.3"' >> /tmp/ant$$
+			echo 'rxframelist="ethernet 802.3 llc802.3 snap802.3 xns"' >> /tmp/ant$$
+			echo 'txsaplist="1234 f0 e0 800"' >> /tmp/ant$$
+			echo 'rxsaplist="1236 f2 e2 802 ff"' >> /tmp/ant$$
+		else
+			echo 'txframelist="ethernet 802.3 llc802.3 snap802.3 xns"' >> /tmp/ant$$
+			echo 'rxframelist="ethernet 802.3 llc802.3 snap802.3"' >> /tmp/ant$$
+			echo 'txsaplist="1236 f2 e2 802 ff"' >> /tmp/ant$$
+			echo 'rxsaplist="1234 f0 e0 800"' >> /tmp/ant$$
+		fi
+	else
+		echo 'txframelist="802.5 llc802.5 snap802.5"' >> /tmp/ant$$
+		echo 'rxframelist="802.5 llc802.5 snap802.5"' >> /tmp/ant$$
+		if [ "$MASTERSLAVE" = "master" ]
+		then
+			echo 'txsaplist="b0 e0 800"' >> /tmp/ant$$
+			echo 'rxsaplist="b2 e2 802"' >> /tmp/ant$$
+		else
+			echo 'rxsaplist="b0 e0 800"' >> /tmp/ant$$
+			echo 'txsaplist="b2 e2 802"' >> /tmp/ant$$
+		fi
+	fi
+	if [ "$LOADLEVEL" = "high" ]
+	then
+		windowsz=7
+		delay=0
+	else
+		windowsz=1
+		delay=20
+	fi
+	echo "windowsz=$windowsz" >> /tmp/ant$$
+	echo "delay=$delay" >> /tmp/ant$$
+
+	case "$LOADTIME" in
+	short)	duration=000500
+		;;
+	medium)	duration=010000
+		;;
+	long)	duration=240000
+		;;
+	esac
+	echo "duration=$duration" >> /tmp/ant$$
+
+	chmod 775 /tmp/ant$$
+
+	echoboth "loadlevel=$LOADLEVEL"
+	echoboth "loadtime=$LOADTIME"
+
+	echo PASS
+	tet_result PASS
+}
+
+finish()
+{
+	. /tmp/ant$$
+
+	rm -f /tmp/ant$$
+	rm -f /tmp/tmp*
+
+	for sap in $txsaplist
+	do
+		dlpiut -n tx$sap stop
+	done
+
+	for sap in $rxsaplist
+	do
+		dlpiut -n rx$sap stop
+	done
+
+	dlpiut stop
+	ndsu "nd stop"
+	tet_result PASS
+}
+
+stresstest()
+{
+	echoboth "stresstest: test all frame types"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup stresstest 180 || return
+
+	set -- $txsaplist
+	for framing in $txframelist
+	do
+		sap=$1
+		shift
+
+		dlpiut -n tx$sap open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+		if [ "$framing" = "snap802.5" -o "$framing" = "snap802.3" ]
+		then
+			dlpiut -n tx$sap bind fd=0 sap=aa framing=$framing error=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut -n tx$sap sbind fd=0 sap=$sap error=n > /tmp/tmp$$
+		else
+			dlpiut -n tx$sap bind fd=0 sap=$sap framing=$framing error=n > /tmp/tmp$$
+		fi
+		checkfail $?
+		dlpiut -n tx$sap sendload fd=0 framing=$framing sap=$sap \
+			ourdstaddr=$OTHERADDR len=1490 \
+			windowsz=$windowsz duration=$duration verify=0 \
+			delay=$delay timeout=3 loop=n \
+			multisync=y > /tmp/tmptx$sap &
+	done
+
+	set -- $rxsaplist
+	for framing in $rxframelist
+	do
+		sap=$1
+		shift
+
+		dlpiut -n rx$sap open device=$DEVICE interface=dlpi > /tmp/tmp$$
+		checkfail $?
+		if [ "$framing" = "snap802.5" -o "$framing" = "snap802.3" ]
+		then
+			dlpiut -n rx$sap bind fd=0 sap=aa framing=$framing error=n > /tmp/tmp$$
+			checkfail $?
+			dlpiut -n rx$sap sbind fd=0 sap=$sap error=n > /tmp/tmp$$
+		else
+			dlpiut -n rx$sap bind fd=0 sap=$sap framing=$framing error=n > /tmp/tmp$$
+		fi
+		checkfail $?
+		dlpiut -n rx$sap recvload fd=0 framing=$framing sap=$sap \
+			ourdstaddr=$OTHERADDR len=1490 \
+			windowsz=$windowsz duration=$duration verify=0 \
+			delay=$delay timeout=20 loop=n \
+			multisync=y > /tmp/tmprx$sap &
+	done
+
+	wait
+
+	syncup loadend 60 || return
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		for sap in $txsaplist
+		do
+			recvfile /tmp/tmprx$sap
+			cat /tmp/tmptx$sap /tmp/tmprx$sap > /tmp/tmp$sap
+		done
+		for sap in $rxsaplist
+		do
+			recvfile /tmp/tmptx$sap
+			cat /tmp/tmptx$sap /tmp/tmprx$sap > /tmp/tmp$sap
+		done
+	else
+		for sap in $rxsaplist
+		do
+			sendfile /tmp/tmprx$sap
+		done
+		for sap in $txsaplist
+		do
+			sendfile /tmp/tmptx$sap
+		done
+	fi
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		saplist="$txsaplist $rxsaplist"
+		framelist="$txframelist $rxframelist"
+	
+		rm -f /tmp/tmp$$
+		set -- $saplist
+		for framing in $framelist
+		do
+			sap=$1
+			shift
+			tet_infoline "Framing $framing $sap"
+			logout < /tmp/tmp$sap
+			framecheck $framing $sap < /tmp/tmp$sap | errout
+			[ "$?" != "0" ] && ret=FAIL
+			cat /tmp/tmp$sap >> /tmp/tmp$$
+		done
+
+		total < /tmp/tmp$$ | errout
+	fi
+
+	echo "stresstest: all $ret"
+	tet_result $ret
+}
+
+. $TET_ROOT/inc/xpg3sh/mytet.h
+echo done

@@ -1,0 +1,39 @@
+:
+
+# TRACE is the tcltrace program
+# -- if not set in your env, will assume as follows
+if [ "$TRACE" == "" ]
+then
+	TRACE=../tcl/tcltrace
+fi
+
+# remove old results
+rm -f merge.*
+rm -f aliasFile.tclt.a
+rm -f aliases.tclt.a
+
+# merge trace files
+$TRACE -m trace.aliasFile* > merge.aliasFile
+$TRACE -m trace.aliases* > merge.aliases
+rm -f trace.aliasFile*
+rm -f trace.aliases*
+
+# create annotated instrumented files
+$TRACE -a merge.aliasFile aliasFile.tclt >aliasFile.tclt.a
+$TRACE -a merge.aliases aliases.tclt >aliases.tclt.a
+
+# output current branch coverage info
+
+covered=`egrep '^_branch' aliasFile.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' aliasFile.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "aliasFile.tcl :"
+echo "$covered out of $total branches covered"
+
+covered=`egrep '^_branch' aliases.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' aliases.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "aliases.tcl :"
+echo "$covered out of $total branches covered"

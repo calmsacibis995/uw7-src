@@ -1,0 +1,2471 @@
+#ident	"@(#)debugger:catalog.d/common/cli.help	1.24"
+
+# This file contains the help messages used by the Command Line interface.
+# Each help message is bracketed by lines starting with ++.
+# The debugger does not depend on the size (number of lines) of any message,
+# but it does depend on the order of the messages.  New messages MUST be
+# added to the end of the file, and a corresponding name added to the
+# enum HELP in libcmd/common/Help.C
+
+##PRINT_AS_IS##
+#if !defined(DEBUG_THREADS) && !defined(PTRACE)
+const char *Help_msgs[] = 
+{
+0,
+##END_AS_IS##
+
+++ !
+NAME
+! - execute a shell command.
+
+SYNOPSIS
+! cmd_line 
+!!
+
+DESCRIPTION
+Execute a shell command.
+The rest of the line is passed to the shell for
+interpretation.  In particular, redirection is NOT
+done by the debugger, but by the shell.
+The $SHELL variable, if set, contains the full path name of
+the shell to be used.  If $SHELL is not set, /usr/bin/sh is used.
+The debugger waits for the command to finish, but does not take
+control of the resulting processes.
+
+!! specifies that the last shell command should be re-executed.
+
+SEE ALSO
+create, redirection
+++
+
+++ alias
+NAME
+alias - add, list, or remove aliases.
+
+SYNOPSIS
+alias name tokens ...
+alias [name]
+alias -r name
+
+DESCRIPTION
+The first form makes "name" an alias for the "tokens".
+All characters up to the carriage return or comment are taken to be part
+of the definition.  Existing aliases or debugger commands may be
+redefined to an alias name.  Once defined, using an alias is
+equivalent to typing the sequence of tokens it replaces.
+Aliases may be defined in terms of other aliases, but not
+recursively.
+
+Alias definitions may contain the special identifiers $1, $2, ...
+Each such special identifier $n in an alias definition
+is replaced by the nth argument in the alias invocation, where
+the arguments are numbered beginning at 1.  Each argument must
+be preceded by whitespace and is terminated by whitespace, a newline,
+the comment character (#) or the beginning of a block ({).
+The special identifiers $1, $2, ... will not be replaced within a
+quoted string.
+
+If an alias definition contains the special identifier $#, it will
+be replaced during invocation of the alias with the number of
+arguments actually used during the current alias invocation.
+If an alias definition contains the special identifier $*, it will
+be replaced during invocation of the alias with a list of all
+arguments passed during the current alias invocation, each separated
+from the next by a single space.
+
+With no arguments, alias lists all of the current aliases.
+With a single name, it shows the alias for that name.
+
+With the -r option, alias removes any existing alias for the name.
+
+EXAMPLES
+alias
+alias i
+alias i step -i
+alias edit list $1@1
+alias print_list while($1) { print *$1; set $1 = $1->next }
+alias b if ($# > 0) { stop $* } else { stop %list_file@%list_line }
+alias -r i
+++
+
+++ stop
+NAME
+stop - set or list stop events.
+
+SYNOPSIS
+stop [-p proclist] [[-q] [-c count] stop_expr [command]]
+stop [-p proclist]
+
+DESCRIPTION
+A stop event specifies some condition in the address space
+of a program that will cause the debugger to stop the program's
+execution.   A "stop_expr" is one or more expressions linked with the special
+&& (and) or || (or) operators.  Each expression can be either:
+
+1) location
+	A location in the program's text - these are like
+	traditional breakpoints;
+
+2) (expr)
+	An expression in the current language - this type of stop
+	expression becomes true when the expression becomes true;
+
+3) *lvalue
+	A location in the program's data that can be modified -
+	this type of expression becomes true when the value changes.
+
+stop_expr's are evaluated continuously by the debugger when the subject
+process is running.  When the entire expression becomes true,
+the debugger announces the occurrence of the event and executes
+the optional associated "command".
+
+See stop_expr for more details.
+
+The -q option specifies that the debugger will not announce the event.
+
+The -c option specifies that the event will not trigger for the first
+"count" times the stop_expr becomes true.  The event triggers
+each subsequent time the stop_expr becomes true.
+
+The second form of the stop command lists all stop events for
+the indicated processes.
+
+Unlike most other commands, if no -p option is given to the stop
+command, its actions apply to all processes derived from the current
+program (%program).
+
+EXAMPLES
+stop myfile.c@230
+stop *bar
+stop (x == 5)
+stop foo && (a > 7)
+stop (a == 4) || (b == 7)
+
+SEE ALSO
+%program, %verbose, assoccmd, delete, disable, enable, events,
+expr, location, proclist, scope, stop_expr
+++
+
+
+++ break
+NAME
+break - break out of while loop.
+
+SYNOPSIS
+break
+
+DESCRIPTION
+The break command causes the debugger to exit from the innermost
+enclosing while loop.
+
+EXAMPLES
+while($i < 10) { if (x[$i] == $myvar) break; set $i = $i + 1 }
+
+SEE ALSO
+continue, while
+++
+
+
+++ continue
+NAME
+continue - continue next iteration of while loop.
+
+SYNOPSIS
+continue
+
+DESCRIPTION
+The continue command causes the debugger to begin execution of the
+next iteration of the innermost enclosing while loop.
+Execution begins with re-evaluation of the loop expression.
+
+EXAMPLES
+while (i < 20) { step; if (i % 2) continue; p i, x[i] }
+
+SEE ALSO
+break, while
+++
+
+
+++ cancel
+NAME
+cancel - cancel pending signals.
+
+SYNOPSIS
+cancel [-p proclist] [signal ...]
+
+DESCRIPTION
+The specified "signals" are cancelled in the named processes (%proc by
+default).  If any of the signals have been intercepted by the
+debugger in any of the named processes, then those signals will not be
+received by those processes when they resume execution.
+If no signals are given, all pending signals for the named processes
+will be cancelled.
+
+EXAMPLES
+cancel
+cancel segv
+cancel -p all sigfpe sigemt
+
+SEE ALSO
+kill, proclist, signal, signames
+++
+
+
+++ create
+NAME
+create - create and control one or more new processes.
+
+SYNOPSIS
+create [-dr] [-f all|none|procs] [-l start_loc] [cmd_line]
+
+DESCRIPTION
+Create takes a shell-style command line and creates one or
+more processes.  The command line may include input and/or output
+redirection and may include a shell pipe.  All resulting processes
+are stopped at the location specified by "start_loc".
+If no starting location is specified, or the location given
+cannot be found in a process' address space, the process
+is stopped at the function "main".  If no function named
+"main" exists, the process is stopped at the address specified
+in the header of the object file.
+To create and run a process, type "create ..." and then "run". 
+
+If no "cmd_line" is given, the previous cmd_line is reused.  Any
+processes created from previous invocations of that cmd_line are killed.
+
+Each process created is given a debugger process identifier.
+The process may be referenced by that identifier, or by its system
+process id in commands that take a -p option.  The first process
+created in a pipeline becomes the current process (%proc).
+All processes created from a single executable (via fork(2)) may
+also be referenced by the name of that executable (program name).
+
+If -r is given, the input and output of the process
+are redirected to a pseudo-terminal.  All output is labeled with the
+name of that pseudo-terminal.  If it is necessary to give that process
+input, the "input" command must be used.  The -d option specifies
+no redirection.  If neither option is given, the mode specified by
+%redir is used (by default, no redirection).
+
+If -f is given with an argument of "none", the debugger will not
+follow the child processes of any created processes that
+fork.  If -f is given with arguments of either "all" or "procs"
+all child processes will be controlled by the debugger (these
+processes can be released from debugger control using "release").
+If no -f is given, the debugger behavior is governed by %follow
+(default is follow all children).
+
+EXAMPLES
+create
+create -f none myprog 1 2 3
+create myprog 1 2 3 | myfilter1 | myfilter2
+
+SEE ALSO
+!, %follow, %program, %redir, grab, input, proclist,
+rename, release
+++
+
+
+++ delete
+NAME
+delete - delete events.
+
+SYNOPSIS
+delete event_num ...
+delete -a [-p proclist] [event_type]
+
+DESCRIPTION
+The first form deletes the events corresponding to the given event numbers.
+
+The second form deletes all events of the
+specified event_type (all types, if none is specified) 
+in the specified processes (the current process if
+none is specified).  "event_type" may be one of "onstop",
+"signal", "stop", "syscall", or "exception".
+
+
+EXAMPLES
+delete 1 3 5
+delete -a -p p1
+delete -a stop
+delete -a syscall
+
+SEE ALSO
+change, disable, enable, events, exception, onstop, proclist,
+signal, stop, syscall
+++
+
+
+++ dis
+NAME
+dis - disassemble machine instructions.
+
+SYNOPSIS
+dis [-p proclist] [-c instr_count] [-ns] [location]
+
+DESCRIPTION
+Disassembles "instr_count" instructions
+in each specified process (default %proc).
+If no instr_count is given, the count defaults to %num_lines.
+%num_lines starts out at 10 and may be changed.
+
+If a "location" is given,
+disassembly begins at the given location in each specified process.
+If no location is given, the first dis after an event triggers
+or after %frame is reset will start at %loc.
+Subsequent dis commands will continue from the address
+just beyond the last instruction displayed by the previous dis.
+
+The output of dis normally contains only the disassembled machine
+instructions.  (This is also the behavior asserted by the -n
+option).  If the -s option is specified, the debugger
+will also attempt to display the source line corresponding to the
+disassembled instructions.  The source line will be displayed
+only if there is debugging information for the range of addresses
+being disassembled and if the debugger can find the corresponding
+source file.   If neither the -n nor the -s options are specified,
+the output mode is governed by the value of the %dis_mode variable.
+
+EXAMPLES
+dis
+dis 0xbff00f00
+dis -c 20 main
+dis -s file.c@10
+
+SEE ALSO
+%dis_mode, %frame, %loc, %num_lines, dump, location, print, proclist
+++
+
+
+++ disable
+NAME
+disable - disable events.
+
+SYNOPSIS
+disable event_num ...
+disable -a [-p proclist] [event_type]
+
+DESCRIPTION
+The first form disables the events corresponding to the given event numbers.
+
+The second form disables all events of the
+specified event_type (all types, if none is specified) in the
+specified processes (the current process, if none is specified).
+"event_type" may be one of "onstop", "signal", "stop",
+"syscall", or "exception".
+
+Disabled events have no affect on the processes they apply to,
+but are not deleted.  They may be reinstated with "enable".
+
+EXAMPLES
+disable 3 5
+disable -a -p p1
+disable -a onstop
+disable -a signal
+
+SEE ALSO
+change, delete, enable, events, exception, onstop, proclist, signal,
+stop, syscall
+++
+
+++ dump
+NAME
+dump - display contents of memory.
+
+SYNOPSIS
+dump [-p proclist] [-c byte_count] [-b] expression
+
+DESCRIPTION
+Dump displays the contents of memory for each specified process
+(default %proc).
+It evaluates the expression and uses the result as an address.
+Any valid expression that evaluates to an address in the process may
+be entered.  Dump displays "byte_count" bytes, 16 bytes per
+line, in hexadecimal and ASCII, starting at the address it
+has calculated.
+
+%num_bytes starts out at 256 and may be changed.
+
+Dump normally tries to organize its output into words,
+of a size appropriate for the target architecture.
+For little-endian architectures, this means that the
+hexadecimal values for each byte will appear in a different
+order than the values actually appear in memory.  To
+suppress this word organization, use the -b option to dump.
+When -b is specified, dump will output each byte individually,
+as it is laid out in memory.
+
+EXAMPLES
+dump -c 16 myptr
+dump %esp
+dump -b 0x80001248
+dump &foo + 12
+
+SEE ALSO
+%num_bytes, dis, expr, print, proclist
+++
+
+
+++ enable
+NAME
+enable - enable events.
+
+SYNOPSIS
+enable event_num ...
+enable -a [-p proclist] [event_type]
+
+DESCRIPTION
+The first form enables the events corresponding to the given event numbers.
+
+The second form enables all events of the
+specified type (all types, if none is specified) in
+the specified processes (the current process, if none is specified).
+"event_type" may be one of "onstop", "signal", "stop",
+"syscall", or "exception".
+
+Only disabled events may be enabled.  Once enabled, an event
+will once again affect the process it is defined in.
+
+EXAMPLES
+enable 3 5
+enable -a -p p1
+enable -a stop
+enable -a signal
+
+SEE ALSO
+change, delete, disable, events, exception, onstop, proclist,
+signal, stop, syscall
+++
+
+
+++ events
+NAME
+events - list events.
+
+SYNOPSIS
+events [-p proclist] [event_num ...]
+
+DESCRIPTION
+With no arguments, events lists all stop events, signal actions, system call
+actions, and onstop actions for the current process.
+With the -p option, it lists
+the events associated with the given processes.
+
+If one or more event numbers are given,
+events gives a full listing of the specified events.  The full
+listing includes all processes for which the event is set and
+the complete associated command block, if any.
+
+EXAMPLES
+events
+events -p p1,p2
+events 3
+
+SEE ALSO
+change, delete, disable, enable, exception, onstop, proclist,
+signal, stop, syscall
+++
+
+
+++ grab
+NAME
+grab - take control of live process or core image.
+
+SYNOPSIS
+grab  [-f all|none|procs] [-l load_file] live_object ...
+grab -c corefile objectfile
+
+DESCRIPTION
+The first form takes one or more process specifiers; debug
+will attempt to take control of each process specified (control
+is granted only if you have the right permissions).
+Each process may be specified as either a
+/proc pathname or a process id.
+
+The -l option specifies an alternate object file to use for loading
+symbols for the process.  If the -l option is used, only one
+process may be specified.
+
+If -f is given with an argument of "none", the debugger will not
+follow the child processes of any grabbed process that
+forks.  If -f is given with arguments of either "all" or "procs"
+all child processes will be controlled by the debugger (these
+processes can be released from debugger control using "release").
+If no -f is given, the debugger behavior is governed by %follow
+(default is follow all children).
+
+The second form opens a core file and its corresponding
+object file for examination.
+Grabbed core images may be examined using all of the commands
+available for examining live processes, but may not be altered
+or run.
+
+Grabbed processes, like created ones,
+are assigned a debugger process identifier and may be referenced
+by either this identifier, by their system process id
+or by the name of the program from which they derive.  The first
+process grabbed is made the current process (%proc).
+
+EXAMPLES
+grab 123
+grab -f procs /proc/123 3455
+grab -l myobject /proc/3455
+grab -c core.save myobject
+
+SEE ALSO
+%follow, %proc, %program, create, proclist, release, rename
+++
+
+
+++ help
+NAME
+help - ask for help.
+
+SYNOPSIS
+help [topic]
+
+DESCRIPTION
+"topic" may be any alias, command name, or help topic.
+If no topic is specified, the list of available
+commands and topics is displayed.
+
+EXAMPLES
+help
+help stop
+help b
+help location
+++
+
+
+++ if
+NAME
+if - conditional branch.
+
+SYNOPSIS
+if (expr) cmd
+if (expr) cmd else cmd
+
+DESCRIPTION
+The "expr" is evaluated in the current language (%db_lang or %lang)
+in the context of the current process (%proc).
+If it evaluates to true, the "then-part" is
+executed.  Otherwise, the "else-part," if present, is executed.  "cmd" may
+be either a simple command or a block.
+
+EXAMPLES
+stop  file.c@myfunc { if (x < 10) run; else print x }
+
+SEE ALSO
+%db_lang, %lang, block, expr, scope, while
+++
+
+
+++ input
+NAME
+input - send input to a process.
+
+SYNOPSIS
+input [-p proc_name|-r pseudo-tty] [-n] string
+
+DESCRIPTION
+If a process was created using "create -r", its input and output,
+along with the I/O of any other processes derived from the same program,
+has been redirected to a pseudo-terminal.  To send input to such a
+process, the input command must be used.
+
+"pseudo-tty" is the name of the pseudo-terminal to which the input
+should be directed.  The debugger labels all redirected process output
+with the pseudo-terminal name.  Alternatively, a process or
+program name may be given.
+If no process or pseudo-tty is given, the pseudo-tty associated with
+the current program is assumed.
+
+The input "string" is sent to the specified
+pseudo-terminal, or to the pseudo-terminal associated with the 
+specified process or program.
+A new-line is appended to the string, unless the -n option is given.
+
+EXAMPLES
+input -r pts1 "here is a string"
+input -p myprog "here is another one"
+
+SEE ALSO
+%redir, create
+++
+
+
+++ jump
+NAME
+jump - change the process program counter.
+
+SYNOPSIS
+jump [-p proclist] location
+
+DESCRIPTION
+A process must be suspended before this command may be successfully applied
+to it.  jump sets the program counter for the named processes (%proc by
+default) to the address specified by the "location".
+When the process resumes execution, it will start from this address.
+
+The location may be any address within the text of the specified process,
+but extreme care should be taken.  jump does not attempt to adjust
+the process stack if the address is outside of the current function.
+Care must also be taken in jumping around code that might have
+important side effects.
+
+SYNOPSIS
+jump 10
+jump -p p2 main+8
+
+SEE ALSO
+location, proclist
+++
+
+
+++ kill
+NAME
+kill - send a signal to a process.
+
+SYNOPSIS
+kill [-p proclist] [signal]
+
+DESCRIPTION
+The named processes (default is %proc) are sent "signal".
+Signals may be given by number or by name.  A signal name
+may be given with or without the initial "SIG" prefix.  Case
+is not significant.  If no signal is given, kill uses SIGKILL.
+
+EXAMPLES
+kill -p all
+kill sigfpe
+kill -p p3 8
+
+SEE ALSO
+cancel, proclist, signal, signames
+++
+
+
+++ list
+NAME
+list - display source lines.
+
+SYNOPSIS
+list [-p proclist] [-c count] [proc_id@][file_name@]func_name
+list [-p proclist] [-c count] [proc_id@][file_name@]line_num
+list [-p proclist] [-c count] /regexp/
+list [-p proclist] [-c count] ?regexp?
+list [-p proclist] [-c count]
+
+DESCRIPTION
+List displays source lines for the specified process or processes
+or for the current process, if no proclist is specified.
+
+The first four forms specify starting points for the display.
+The first two allow the specification of process, file, function
+and line number.  If a process is specified, it overrides
+any process given in the -p option.
+The third form finds the next line which matches the
+ed(1)-style regular expression.  The fourth form searches backwards from
+the current line.  The closing slash or question mark may be omitted,
+unless another command follows on the same line.
+The last form continues the display from the file and line where
+the previous list left off, or from %file@%line after
+an event triggers or %frame is reset.
+
+If a count is given, that many lines are displayed,
+otherwise, %num_lines lines are displayed.
+%num_lines starts out at 10 and may be changed.
+
+After a block of lines is displayed, %list_file is set to the name
+of the file displayed and %list_line is set to the number of the last
+source line displayed.
+
+EXAMPLES
+list -c 20
+list myfile@1
+list myfunc
+list /x/
+list ?foobar
+list /
+
+SEE ALSO
+%file, %frame, %line, %list_file, %list_line, location,
+print, proclist, regexp
+++
+
+++ map
+NAME
+map - display virtual address map.
+
+SYNOPSIS
+map [-p proclist]
+
+DESCRIPTION
+Display the virtual address map for one or more processes.
+With no argument, displays the map for the current process (%proc).
+With the -p option, displays the map for each process represented by
+the given set of processes.
+
+SEE ALSO
+create, grab, proclist
+++
+
+
+++ symbols
+NAME
+symbols - display symbol names, values and types.
+
+SYNOPSIS
+symbols [-p proclist] [-o object] [-n filename] [-dfgltuv] [pattern]
+
+DESCRIPTION
+Display list of variable names visible from the current frame (%frame)
+in the specified processes (default %proc).
+With no options (or the -l option), displays the local names defined
+in the current function (%func).
+The -f option displays only the visible names which are local to
+the current file (%file).  If a "filename" is given with the -n
+option, that file's symbols are displayed instead.
+The -g option displays only the visible global names defined in
+the current object (executable file or shared library).
+When used with the -o option, the -g option
+displays the global names defined in a specified object.
+The -d option display debugger built-in variables.
+The -u option displays the debugger-maintained, user variables.
+
+If an sh(1)-style pattern is given, it further restricts the
+display to consist of only those names which match the pattern.
+
+The -t option displays symbol types in addition to names.
+The -v option displays symbol values.  Note that when the current
+language is C++, symbols -v does not display static class members.
+Static class members may be displayed by printing the symbol.
+
+EXAMPLES
+symbols -ftv
+symbols -g -o libc.so.1 exec*
+
+SEE ALSO
+%file, %frame, %func, functions, pattern, print, proclist
+++
+
+
+++ print
+NAME
+print - print value of an expression.
+
+SYNOPSIS
+print [-p proclist] [-f format] [-v] expr, ...
+
+DESCRIPTION
+Display results of evaluating a comma-separated list of expressions.
+The expressions are evaluated in the context of the given processes (default
+is %proc).  The -f option requires a format (which see).
+The expressions may contain program variables, built-in debugger variables
+(%line, for example), and user-defined variables ($myvar, $HOME).
+Evaluating a function call results in the debugger creating a stack
+frame for that function and executing it.  Debugger events are disabled
+during the function's execution.
+Expressions are evaluated in the current
+language (%lang or %db_lang).  A space is printed after each expression, and a
+newline is added at the end, unless a format is specified.
+
+The -v option provides more verbose information.  The additional
+information includes function prototypes of all functions called
+by the debugger while evaluating the expression.  This is useful in
+C++ to see how overloaded functions are resolved.  The -v option
+will also display compiler-generated structure and class members,
+such as pointers to virtual function tables.
+
+The "set" command may also be used to evaluate language expressions.
+"set" does not print out the result of an expression, however.
+It is used mainly to evaluate an expression for side effects, such
+as assignment.
+
+EXAMPLES
+print %line, %file, %func
+print "a[i] == ", a[i]
+print *ptr->next
+print -f "0x%x\n" main
+print -v myfunc(1, 2, 3)
+
+SEE ALSO
+%db_lang, %lang, C++, expr, format, proclist, scope, set
+++
+
+++ ps
+NAME
+ps - process status.
+
+SYNOPSIS
+ps [-p proclist]
+
+DESCRIPTION
+List status of controlled processes.
+If no -p option is given, lists status of all controlled processes.
+The current process (%proc) is marked with an asterisk (*).
+
+SEE ALSO
+proclist
+++
+
+++ pwd
+NAME
+pwd - print current working directory.
+
+SYNOPSIS
+pwd
+
+DESCRIPTION
+pwd prints the debugger's current working directory.
+
+SEE ALSO
+cd
+++
+
+++ quit
+NAME
+quit - exit from the debugger.
+
+SYNOPSIS
+quit
+
+DESCRIPTION
+Exit from the debugger.
+All controlled processes are killed (if they were created)
+or released and run (if they were grabbed).
+
+SEE ALSO
+release
+++
+
+++ release
+NAME
+release - release one or more controlled processes.
+
+SYNOPSIS
+release [-s] [-p proclist]
+
+DESCRIPTION
+The named processes (%proc by default) are no longer controlled
+or monitored by the debugger.  With the -s option, each process
+is released in a stopped state; otherwise each process is released
+and allowed to run.  A process may be released even if it was not
+grabbed by the debugger; i.e., created processes may also be released.
+
+EXAMPLES
+release -p p1
+release -s
+
+SEE ALSO
+proclist, quit
+++
+
+++ run
+NAME
+run - set process running.
+
+SYNOPSIS
+run [-p proclist] [-bfr] [-u location]
+
+DESCRIPTION
+Set the specified list of processes (%proc by default) running.
+The -f option specifies that the debugger will
+execute the process in the foreground, i.e. it will
+wait until the processes stops before returning control to the user.
+The -b option specifies background execution (no waiting).
+Control returns immediately to the user, and the process is started.
+If neither -f nor -b is specified, the default is determined
+by the value of the debugger variable %wait.
+
+The -r option causes the process to run until the current function returns.
+The -u option specifies a "location" to run to.
+
+EXAMPLES
+run -p all -b
+run -r
+run -u 108
+
+SEE ALSO
+%wait, location, proclist, step
+++
+
+++ script
+NAME
+script - execute a debugger command script.
+
+SYNOPSIS
+script [-q] fname
+
+DESCRIPTION
+Read and execute debugger commands from a file.
+Commands are echoed before execution, unless the -q option is given.
+Scripts may nest.
+++
+
+++ set
+NAME
+set - modify a debugger or program variable.
+
+SYNOPSIS
+set [-p proclist] [-v] debug_or_user_var [=] expr [,expr...]
+set [-p proclist] [-v] language_expression
+
+DESCRIPTION
+The set command has two forms.  The first is used to assign a new
+value to a debugger-built-in variable or debugger-maintained user
+variable (e.g. %lang, or $foo).  The legal values of expr
+depend on the variable.  Some, like %lang, take a specially defined
+series of names.  Others can take any debugger or language
+expression that can be converted to a string value.
+In the case of a (comma-separated) list of strings and user
+variables, the string values of these expressions are concatenated.
+See "help" on each debugger variable for specific legal values.
+
+In the second form, set may be used to evaluate any language expression, 
+although its typical use would be to evaluate an assignment expression.
+If more than one process is specified, the command is evaluated
+in the context of each process, in turn.
+
+The -v option lists the function prototypes of all functions called
+by the debugger while evaluating the expression. This is useful in
+C++ to see how overloaded functions are resolved.
+
+EXAMPLES
+set %global_path = %global_path, ":src/new/mydir"
+set -p all %path = "mydir"
+set %frame 2
+set %eax = 0x3421
+set x = 3
+set -v myfunc(a, b)
+
+SEE ALSO
+%db_lang, %lang, C++, expr, proclist, scope, uservars
+++
+
+
+++ signal
+NAME
+NAME
+signal - set or list signal actions for a process.
+
+SYNOPSIS
+signal -d [-i] [signal ...]
+signal [-p proclist] [-iq] [signal ... [command]]
+
+DESCRIPTION
+When a signal is posted to one of its controlled processes,
+the debugger, by default, intercepts the signal and announces
+its occurrence.  The user then has the chance to cancel the
+signal before the process receives it.  The signal command
+allows you to tell the debugger not to intercept a given
+signal or set of signals.  It also allows you to specify
+a set of commands that will get executed when a given signal
+is intercepted.
+
+The signal command has two forms.  When the -d option is
+given, the command sets up the default signal behavior for
+the entire debugger.  Each process created or grabbed by
+the debugger inherits this default signal behavior.  When
+the debugger starts up, the default action for all 
+signals is set so that the debugger intercepts each signal
+as described above.  The -i option with one or more signal 
+names or numbers (see "kill") specifies that the debugger 
+will ignore those signals (not intercept them).  
+A signal name may be given with or without the initial "SIG" 
+prefix.  Case is not significant. 
+Specifying the signal again without the -i option re-establishes
+the default action for that signal.  If no signal names
+are given, signal -d displays the current default signal
+settings for the debugger.
+
+Without the -d option, the signal command applies to the
+current program, or to the list of processes
+given by the proclist.  Using signal in this way allows
+you to change the signal action for a given process
+without changing the default actions inherited by other processes.
+
+Note that signal -d does not affect the signal state of any
+process already under the debugger's control.
+
+The signal command without the -d option may also be
+used to specify a list of commands to be executed
+when a signal is posted to a given process.  The signal
+will be intercepted, even if the current setting for
+that signal is to ignore it.
+
+If a command is given with a set of signals, the debugger
+establishes an event for that set.  This event may be deleted,
+or enabled, as can "stop", "onstop", "syscall" and "exception" events. 
+Multiple events may be assigned for the same signal.  
+Deleting all events for a given signal re-establishes the
+current debugger action for that signal.  That is, if a
+signal was being ingored for a given process, it will again
+be ignored once all events for that signal are deleted.
+If a signal was being intercepted, it will continue to
+be intercepted, even though all events relating to that
+signal have been deleted.
+
+The -q option says that the signal event will not be announced.
+
+With no arguments, the signal command lists the signal actions for the
+list of processes given by proclist, or for the current program.
+
+EXAMPLES
+signal -d -i fpe emt	# applies to entire debugger
+signal -i fpe emt 	# applies to current program
+signal -d 8		# applies to entire debugger
+signal -p p1 -i SIGUSR1	# applies only to p1
+signal SIGFPE	
+signal 8 { if (x == 0) cancel 8; run }
+signal			# display signal state for current program
+signal -d		# display default signal state for debugger
+
+EXAMPLES
+signal -d -i fpe emt	# applies to entire debugger
+signal -i fpe emt 	# applies to current program
+signal -d 8		# applies to entire debugger
+signal -p p1 -i SIGUSR1	# applies only to p1
+signal SIGFPE	
+signal 8 { if (x == 0) cancel 8; run }
+signal			# display signal state for current program
+signal -d		# display default signal state for debugger
+
+SEE ALSO
+assoccmd, cancel, delete, disable, enable, kill, proclist, signames
+++
+
+++ step
+NAME
+step - single step a process.
+
+SYNOPSIS
+step [-p proclist] [-ibfoq] [-c count]
+
+DESCRIPTION
+The named processes (default %proc) will be stepped "count" times (default 1).
+An explicit count of 0 indicates step repeatedly, until interrupted or
+stopped by an event.
+
+With the -i option, instruction step; otherwise statement step.
+With the -o option, step over function calls (treat a subroutine as a single
+instruction); otherwise step into function calls.
+
+The -f option specifies that the debugger will
+wait until the process stops before returning control to the user;
+i.e., it will run the process in the foreground.
+The -b option specifies background execution (no wait).
+The process is started, but control returns immediately to the user.
+If neither -f nor -b is specified, the default is determined
+by the value of the debugger variable %wait.
+
+The -q option specifies quiet stepping; the debugger does not announce
+the process id of the process stepped, or print the next source line.
+
+EXAMPLES
+step -io
+step -b
+step -p all -c 10
+
+SEE ALSO
+%verbose, %wait, process, proclist, run
+++
+
+
+++ halt
+NAME
+halt - stop a process running in the background.
+
+SYNOPSIS
+halt [-p proclist]
+
+DESCRIPTION
+The debugger directs each named process (%proc by default) to
+immediately suspend execution.  The request may not take effect
+instantaneously, due to system latency and scheduling variations.
+
+"halt" is not useful on processes running in the foreground, since
+the debugger does not return control to the user until such processes
+stop.  To stop a process or set of processes running in the foreground
+hit the interrupt key (usually "delete").
+
+SEE ALSO
+%wait, proclist, run, step
+++
+
+++ syscall
+NAME
+syscall - set tracing of system calls.
+
+SYNOPSIS
+syscall [-p proclist] [[-eqx] [-c count] call ... [command]]
+
+DESCRIPTION
+Specify actions to take when a process enters or exits a system call.
+With no arguments, lists current system call actions for the named processes.
+
+If one or more system call names or numbers are given,
+the debugger will suspend the process on entry to (-e, default) and/or
+exit from (-x) those system calls.  The system call event will be
+announced and any associated "commands" executed.
+
+The -q option specifies quiet behavior - the event will not be announced.
+The -c option specifies that the event will trigger "count" times
+before the debugger suspends the process.  The process will be suspended
+on each subsequent occurrence.
+
+Use "help sysnames" to get the list of valid system call names.
+Case is not significant.
+
+Unlike most other commands, if no -p option is given to the syscall
+command, its actions apply to all processes derived from the current
+program (%program).
+
+EXAMPLES
+syscall -c 10 write { if (fd == 5) run }
+syscall -qx read
+
+SEE ALSO
+%program, assoccmd, delete, disable, enable, events, proclist
+++
+
+
+++ regs
+NAME
+regs - display contents of processor registers.
+
+SYNOPSIS
+regs [-p proc_list]
+
+DESCRIPTION
+Displays in hexadecimal the contents of the processor
+registers for the specified processes (default %proc).
+
+SEE ALSO
+dis, dump, proclist
+++
+
+
+++ stack
+NAME
+stack - display function call backtrace.
+
+SYNOPSIS
+stack [-p proclist] [-f frame] [-c count] [-a address ] [ -s stack ]
+
+DESCRIPTION
+Displays active functions for the named processes (%proc by default).
+The functions are shown with their names, argument names and values
+and the active line number or address within the function.
+Function names, argument names and line numbers may not be available
+if there is insufficient symbolic information.
+The current stack frame (%frame) is marked with an asterisk (*).
+
+"count" is the number of frames to show.  If not given, shows entire stack.
+The -f option specifies the frame number to begin the display with.
+
+By default, frames are numbered from 0 for the top of the 
+stack (most recent frame).  Setting the debugger variable
+%frame_numbers to "down" causes the most recent frame to be
+the highest numbered, and the remaining frames to be numbered
+down to 0, for the initial frame.  Setting %frame_numbers to
+"up" restores the default behavior.
+
+The -a and -s options allow you to specify a starting address (program
+counter) and/or a starting value for the stack pointer.  This
+is sometimes useful when attempting to get a stack trace for
+a process that has jumped to some illegal address or whose
+stack pointer has been corrupted.  Both options expect an address
+in hexadecimal.
+
+EXAMPLES
+stack -p p2
+stack -f 2 -c 3
+stack -a 0x80494958 -s 0xbfff8004
+
+SEE ALSO
+%frame, %frame_numbers, proclist
+++
+
+++ while
+NAME
+while - conditional loop.
+
+SYNOPSIS
+while (expr) cmd
+
+DESCRIPTION
+The "expr" is evaluated in the current language (%lang or %db_lang)
+in the context of the current process (%proc).
+If it evaluates to true, the "cmd" is executed.
+The sequence is then repeated.  "cmd" may be a simple command or a block.
+
+EXAMPLES
+while ($foo < 10) { print $foo, a[$foo]; set $foo = $foo + 1 }
+
+SEE ALSO
+%db_lang, %lang, block, break, continue, expr, if, scope
+++
+
+
+++ cd
+NAME
+cd - change current working directory.
+
+SYNOPSIS
+cd [pathname]
+
+DESCRIPTION
+cd changes the debugger's current working directory to the directory
+given by "pathname".  If no pathname is given, cd uses the
+directory specified by the environment variable HOME.
+
+SEE ALSO
+pwd
+++
+
+++ change
+NAME
+change - modify an existing event.
+
+SYNOPSIS
+change event_num [-p proclist] [-evqx] [-c count]
+	[stop_expr|call...|signal...] [{commands}]
+
+DESCRIPTION
+event_num must come first and is the event number of an existing, valid event.
+The other options allow you to modify the various attributes of that event:
+1) the list of processes to which it applies (-p),
+2) the verbosity (-q makes an event quiet, -v verbose),
+3) for system calls, whether the event occurs on entry, exit or both (-ex),
+4) for stop and system call events, the number of times the event
+	occurs before it is announced (-c),
+5) and the expression, system call list or signal list associated with an event.
+6) the associated commands (must be surrounded by curly braces {}),
+
+EXAMPLES
+change 3 -q
+change 5 -p p2 -c 10
+change 7 { print "x == ", x }
+change 9 -x write
+
+SEE ALSO
+assoccmd, delete, disable, enable, events, onstop,
+proclist, signal, stop, syscall
+++
+
+++ export
+NAME
+export - add a name-value pair to the environment.
+
+SYNOPSIS
+export $username
+
+DESCRIPTION
+Export a debugger-maintained, user defined variable to the environment.
+username (and its current value) become part of the environment that is
+received by debugger-created processes.  If the value of $username changes,
+it must be re-exported for the new value to become part of the environment.
+Note that "username" is exported without the "$" prefix.
+
+SEE ALSO
+uservars
+++
+
+++ fc
+NAME
+fc - find, edit and re-execute commands
+
+SYNOPSIS
+fc [-e ename] [-nlr] [first [last]]
+fc -e - [old=new] [command]
+
+DESCRIPTION
+"fc" provides ksh(1) style command editing and recall.
+In the first form, a range of commands from "first" to "last"
+is selected from the last HISTSIZE commands that were entered.
+The arguments first and last may be specified as numbers or as strings.
+A string is used to locate the most recent command starting with
+the given string.  A negative number is used as an offset to the
+current command number.
+
+If the -l option is given, the commands are listed on standard output.
+Otherwise, the editor program "ename" is invoked on a temporary file
+containing the commands.  If ename is not supplied, the value of the
+environment variable FCEDIT (default /usr/bin/ed) is used as the
+editor.  When editing is completed, the edited commands are executed.
+
+If first is not specified, the default is the previous command for
+editing and -16 for listing.  The -r option reverses the order
+of the commands; the -n option suppresses command numbers when listing.
+
+In the second form, the "command" is re-executed after the
+substitution "old=new" is performed.  If command is not supplied,
+the default is the previous command.
+
+SEE ALSO
+%mode
+++
+
+++ logoff
+NAME
+logoff - stop session logging.
+
+SYNOPSIS
+logoff
+
+DESCRIPTION
+Turns off session logging.
+
+SEE ALSO
+logon
+++
+
+
+++ logon
+NAME
+logon - start session logging.
+
+SYNOPSIS
+logon [log_file]
+
+DESCRIPTION
+Start session logging.  All debugger output is sent to "log_file".
+Each output line is preceded with a # (comment) sign.  Debugger
+commands are also sent to log_file, but with no preceding #.
+If no log_file is specified, the last log_file used in the current
+debugging session is assumed.  New commands and outputs are appended
+to this file.  Log files created by the debugger may be used as
+debugger command scripts.
+
+SEE ALSO
+logoff, script
+++
+
+
+++ onstop
+NAME
+onstop - set action to perform when process stops.
+
+SYNOPSIS
+onstop [-p proclist] [command]
+
+DESCRIPTION
+Without a "command" argument, lists current onstop actions for the
+list of processes specified in "proclist".
+
+"command" may be a single command or a command block.
+If a command or block is given, each time a specified process stops,
+the commands are executed (in the context of that process).  Stopping
+includes single steps and stopping for another debugger event
+(signal, syscall, stop, or exception).
+
+Unlike most other commands, if no -p option is given to the onstop
+command, its actions apply to all processes derived from the current
+program (%program).
+
+EXAMPLES
+onstop -p p2
+onstop { print i, x[i] }
+
+SEE ALSO
+%program, delete, disable, enable, events, exception, signal,
+stop, syscall
+++
+
+++ rename
+NAME
+rename - change name by which a program is known.
+
+SYNOPSIS
+rename prog_name name
+
+DESCRIPTION
+When a process is grabbed or created, the name of the executable
+from which the process was derived can be used to refer to all
+processes derived from that executable, and can be used
+in any proclist.  rename specifies a new name to use for that program.
+
+SEE ALSO
+create, grab, proclist
+++
+
+++ %file
+NAME
+%file - the current source file.
+
+DESCRIPTION
+%file is set to the name of the source file associated with the
+current frame, if known, whenever a process stops or %frame is changed.
+Each process has its own %file.  The first "list" command after %frame
+is set will display source from %file if no file name is specified.
+You may not explicitly change %file.
+
+SEE ALSO
+%frame, %line, %list_file, %list_line, list
+++
+
+++ %follow
+NAME
+%follow - should the debugger follow child processes?
+
+DESCRIPTION
+The debugger controls processes for the user that were either created
+by the debugger as the result of a "create" command, or taken over
+while already executing as a result of the "grab" command.
+If %follow is set to either "all" or "procs", the debugger will
+also take over control of the child processes of any controlled
+processes that fork.  If %follow is set to "none", no child
+processes will be controlled.  The global mode set by %follow
+may be overridden on individual "create" or "grab" commands.
+Any controlled process may be released from control with the
+"release" command.
+
+The default for %follow is "all".
+
+SEE ALSO
+create, grab, release, set
+++
+
+++ %frame
+NAME
+%frame - the current frame number in the callstack.
+
+SYNOPSIS
+The default scope for source listings, symbol lookup, disassembly, and
+expression evaluation.  %frame is set to the number
+of the topmost frame (counting from 0 for the initial frame) 
+whenever process stops, or to the number of the frame
+containing the throw point when an exception is thrown.
+Each process has its own %frame.  You may set %frame explicitly
+via the "set" command.  Setting %frame will also reset the related
+variables %db_lang, %file, %func, %line, and %loc to maintain a
+consistent view of the current context.
+
+SEE ALSO
+%db_lang, %file, %func, %line, %loc
+++
+
+
+++ %func
+NAME
+%func - the current function.
+
+DESCRIPTION
+%func is set to the name of the function corresponding to the current frame
+(%frame) whenever a process stops or %frame is changed.  Each process has
+its own %func.  You may set %func explicitly via the "set" command,
+but only to a function with an active frame in the stack;
+%frame (and the related variables %db_lang, %file, %func, %line, and %loc)
+will also be updated to reflect the new context.
+
+SEE ALSO
+%frame
+++
+
+
+++ %lang
+NAME
+%lang - the current language.
+
+DESCRIPTION
+The current language.  If set, overrides the value of %db_lang.
+Valid strings to assign to %lang are:
+	C	ANSI C
+	C++	C++ Release 2 or 3
+If %lang is not set, or is set to the null string ("") the debugger uses
+%db_lang as the current language.
+Commands that use %lang in evaluating expressions include if,
+print, set, stop, while, and whatis.
+
+SEE ALSO
+%db_lang, expr
+++
+
+++ %loc
+NAME
+%loc - the current location.  
+
+DESCRIPTION
+The current point of execution, %loc is set to the contents of the
+"program counter" for the current frame whenever a process stops
+or %frame is changed.  Each process has its own %loc.  You may
+not explicitly change %loc.  The first "dis" command after
+%frame is set will disassemble instructions starting at %loc
+if no location is given explicitly.
+
+SEE ALSO
+%frame, dis
+++
+
+++ %list_file
+NAME
+%list_file - the name of the file last listed.
+
+DESCRIPTION
+%list_file keeps track of the last file displayed by the list command.
+%list_file changes whenever the list command is executed and is also
+reset to the file name of the file containing
+the current location (%loc) in the current frame (%frame) whenever
+a process stops or %frame is changed.  Each process has its own %list_file.
+
+SEE ALSO
+%file, %frame, %line, %list_line, list
+++
+
+++ %list_line
+NAME
+%list_line - the line number last listed.
+
+DESCRIPTION
+%list_line keeps track of the last line displayed by the list command.
+%list_line changes whenever the list command is executed and is also
+reset to the line number containing
+the current location (%loc) in the current frame (%frame) whenever
+a process stops or %frame is changed.  Each process has its own %list_line.
+
+SEE ALSO
+%file, %frame, %line, %list_file, list
+++
+
+++ %line
+NAME
+%line - the current line number.
+
+DESCRIPTION
+%line is set to the line number containing
+the current location (%loc) in the current frame (%frame) whenever
+a process stops or %frame is changed.  Each process has its own %line.
+The first "list" command after %frame is set will display
+source starting at %line if no location is specified.
+You may set not set %line explicitly.
+
+SEE ALSO
+%frame, %file, %list_file, %list_line, list
+++
+
+++ %mode
+NAME
+%mode - the current line editing mode.
+
+DESCRIPTION
+Debug supports ksh(1) style command history and editing.  %mode
+is the editing mode used for command line editing.  %mode is
+set on startup to the value of the environment variable VISUAL,
+or, if it does not exist, to the value of the environment
+variable EDITOR.  It may be reset at any time using the "set"
+command.  Valid values are "vi" and "emacs".
+Setting %mode to any other value will turn off command editing.
+
+SEE ALSO
+fc
+++
+
+++ %path
+NAME
+%path - the local search path for source files.
+
+DESCRIPTION
+Each program has its own %path.
+The value of %path must be a colon-separated list of directory names.
+When the debugger attempts to display source lines from a file, it will
+search the directories listed in %path for a file of the proper name.
+After searching the local path list for the given program, the debugger
+will search its global path list (%global_path).
+
+SEE ALSO
+%global_path
+++
+
+++ %proc
+NAME
+%proc - the current process.
+
+DESCRIPTION
+This variable contains the process name of the current process.
+It may be set explicitly via the "set" command, or
+implicitly via "create", "grab", or "release".
+Setting %proc also implicitly sets %program and %frame.
+
+SEE ALSO
+%frame, %program, proclist
+++
+
+++ %program
+NAME
+%program - the current program.
+
+DESCRIPTION
+This variable contains the program name of the program which
+contains the current process (%proc).  You may set it explicitly via
+the "set" command, or implicitly via "create", "grab", or "release".
+Programs are named by the executable file from which they derive
+and may be renamed using the "rename" command.
+Setting %program also implicitly sets %proc, and vice versa.
+
+SEE ALSO
+%proc, proclist
+++
+
+++ %prompt
+NAME
+%prompt - the debugger's prompt string.
+
+DESCRIPTION
+The debugger prompts for user input by printing the value of %prompt.
+The default value is "debug> ".  You may change %prompt with
+the "set" command.
+++
+
+++ %thisevent
+NAME
+%thisevent - the number of the event currently being handled.
+
+DESCRIPTION
+Within an associated command, %thisevent will evaluate to the
+event number of the event with which the commands are associated.
+You may not explicitly modify the value of %thisevent.
+
+SEE ALSO
+%lastevent, assoccmd
+++
+
+
+++ %lastevent
+NAME
+%lastevent - the number of the most recently created event.
+
+DESCRIPTION
+After a command which assigns an event number (stop, signal, syscall, or
+onstop), %lastevent will evaluate to the event number just assigned.
+You may not explicitly modify the value of %lastevent.
+
+SEE ALSO
+%thisevent
+++
+
+
+++ assoccmd
+NAME
+assoccmd - a debugger command or block.
+
+DESCRIPTION
+Several commands take an optional associated command or command
+block. This must appear last in the argument list and may
+include commands with their own associated commands -- that is,
+associated commands may be nested.  The command(s) will be 
+executed whenever the relevant event (stop, signal, etc.) occurs.
+Within an associated command, %thisevent contains the event
+number of the event being handled.
+The process that encountered the event is temporarily made current
+while the commands are executed.
+
+SEE ALSO
+%thisevent, block, exception, onstop, signal, stop, syscall
+++
+
+++ block
+NAME
+block - a list of commands.
+
+DESCRIPTION
+A command or semicolon-separated list of commands enclosed
+in curly braces.  Blocks may be used as assoccmds (which see)
+or may appear independently of other commands.
+Blocks may be used to group commands in order to redirect
+their output with a single redirection (which see).
+
+EXAMPLES
+{ if (i) print *ptr; else print *mptr } > myfile
+
+SEE ALSO
+assoccmd, redirection
+++
+
+++ format
+NAME
+format - the form of the output for the "print" command.
+
+DESCRIPTION
+The format is a character string similar to that accepted by the
+C language printf routine.
+Each format specification may have the following form:
+	%[flags][width][.[precision]][conversion_character]format_character
+All fields have the same meaning they have in the printf routine.
+Width and precision are limitied to 1024.
+Printf positional parameters and the printf 'n' format character
+are not accepted.
+Each format specification corresponds to one of the expressions
+given in the print command, in the order in which they appear.
+Characters that are not part of format specifications are printed as given.
+Format characters have the following meanings:
+	c	unsigned character
+	d,i	signed decimal integer
+	e,E	floating point in style [-]d.ddde+/-dd
+	f	floating point in style [-]ddd.dddd
+	g,G	floating point in either of above styles
+	o	unsigned octal integer
+	p	void * (generic pointer; hexadecimal address)
+	s	string
+	u	unsigned decimal integer
+	x,X	unsigned hexadecimal integer
+	z	debugger default style for the expression
+	%	%
+
+SEE ALSO
+print
+++
+
+++ location
+NAME
+location - an address in a process.
+
+DESCRIPTION
+The syntax for a location specifier is:
+	[procname@][object@]address[+-constant]
+	[procname@][object@][filename@]line
+	[procname@][object@][filename@]function[+-constant]
+where "address" is an octal or hexadecimal program address,
+and "constant" is a decimal integer.  "object"
+is the name of a shared object or executable; it specifies
+the symbol table in which to search for the given location.
+If a shared object is given in the address form
+of a location specifier, the base address at which the
+shared object was loaded is added to the specified
+address.
+
+For C++ programs, a function may be the full function
+signature as displayed by the functions command, or the
+function name without the trailing parameter information.
+If that does not fully specify the function (that is,
+the function is overloaded), the debugger will display
+the list of overloaded functions and ask you to choose one.
+
+EXAMPLES
+17		a line number in the current file (%file)
+foo.c@17	a line number in some other file
+0x80801234	an address
+main		a function name or label
+main+3		three bytes after the label
+p1@main		a function name in a specified process
+libfoo.so@bar	a function name in a specified object
+libfoo.so@0x304 an address within a specified object
+%loc		the current location
+%line		the current file and line number
+%r0		a register
+%r0+80		a register plus offset
+%pc-4		a register minus offset
+$myvar		a user-defined variable
+nmsp::foo<T1>	a C++ namespace-qualified template function name
+
+SEE ALSO
+%file, %line, %loc, proclist, scope, uservars
+++
+
+++ proclist
+NAME
+proclist - list of process names.
+
+DESCRIPTION
+A comma-separated list of "procnames."
+Most commands accept a "proclist" using the -p option.
+A proclist must not contain any blanks.
+
+A procname may consist of:
+1) the keyword "all", denoting all controlled processes,
+2) a user or debugger generated program name, denoting all processes
+	derived from that program,
+3) a debugger generated process id of the form pn (e.g. p1, p2),
+4) the debugger variable %program, denoting all processes derived from
+	the current program,
+5) the debugger variable %proc, denoting the current process,
+6) a decimal integer, corresponding to the system process id of a
+	controlled process,
+7) any user defined variable (e.g. $foo) that has an integer value,
+	interpreted as a system process id,
+8) any user defined variable that has a string value that can be
+	interpreted as one of the above forms, or as a list of them.
+
+SEE ALSO
+proclist, %proc, %program, rename, uservars
+++
+
+++ redirection
+NAME
+redirection - changing the destination of debugger output.
+
+DESCRIPTION
+Any command or block may be suffixed with a '>' and a filename, or a '|'
+and a UNIX(r) System shell command line.  This has the effect of redirecting
+the output of the command into the file, or piping it into the shell
+command.  You may also use ">> filename", which appends the output
+to the file, rather than replacing its current contents, if any.
+
+EXAMPLES
+stack > save.stack
+symbols -gtv | grep int | pg
+
+SEE ALSO
+block
+++
+
+++ pattern
+NAME
+pattern - a sh(1) style regular expression.
+
+DESCRIPTION
+A pattern used to filter the output of the "symbols" or "functions"
+commands.
+	*	Matches any string, including the null string
+	?	Matches any single character
+	[...]	Matches any one of the enclosed characters,
+			ranges are allowed, and ! as the first
+			character indicates negation
+
+SEE ALSO
+functions, symbols
+++
+
+++ regexp
+NAME
+regexp - an ed(1) style regular expression.
+
+DESCRIPTION
+A regular expression used to search for a pattern in a source file
+by the "list" command.
+	.	Matches any character except a newline
+	[...]	Matches any one of the enclosed characters,
+			ranges are allowed, and ^ indicates negation
+	*	Indicates zero or more of the preceding RE
+	^	Matches the null string at the beginning of a line
+	$	Matches the null string at the end of a line
+	\{m\}	Indicates exactly m occurrences of the preceding RE
+	\{m,\}	Indicates at least m occurrences of the preceding RE
+	\{m,n\}	Indicates m to n, inclusive, occurrences
+	\(...\)	Matches the same thing as ... matches
+	\digit	Matches the nth parenthesized RE in the same expression
+	\<	Matches the null string at the beginning of a word
+	\>	Matches the null string at the end of a word
+
+SEE ALSO
+list
+++
+
+++ uservars
+NAME
+uservars - user defined, debugger maintained variables.
+
+DESCRIPTION
+Names which begin with a dollar sign ($) are reserved for the debugger user.
+At startup, the debugger imports the shell environment as the initial set
+of user-defined variables.  You may create a new variable via the "set"
+command.  User-defined variables are of type "string"; they are converted
+to numeric whenever necessary via strtol(3).
+
+SEE ALSO
+export, set
+++
+
+++ %db_lang
+NAME
+%db_lang - the debugger's internal notion of the current language.
+
+DESCRIPTION
+%db_lang is the language of the current object and is used by the
+debugger in evaluating language expressions.  It is set by the debugger
+based on information contained in the object file itself.
+If the debugger cannot determine the language of the current object,
+%db_lang defaults to C.
+Explicitly setting %lang overrides the language of the current object.
+Commands that use %db_lang in evaluating expressions include if,
+print, set, stop, whatis, and while
+
+SEE ALSO
+%lang, C++, expr
+++
+
+++ %global_path
+NAME
+%global_path - debugger's global search path.
+
+DESCRIPTION
+The value of %global_path must be a colon-separated list of directory names.
+When the debugger attempts to display source lines from a file, it will
+search the directories listed in the local %path for the given program
+for a file of the proper name.
+After searching the local path list for the given program, the debugger
+will search its global path list (%global_path).
+%global_path may also be set from the debugger command line with the -s option.
+
+SEE ALSO
+%path
+++
+
+++ %num_bytes
+NAME
+%num_bytes - default number of bytes to dump.
+
+DESCRIPTION
+If the "dump" command is not given a -c option, it dumps
+%num_bytes bytes.
+The initial value of %num_bytes is 256 and may be changed using
+the "set" command.
+
+SEE ALSO
+dump
+++
+
+++ %num_lines
+NAME
+%num_lines -- number of lines to display.
+
+DESCRIPTION
+If the "dis" or "list" commands are not given the -c option,
+each displays %num_lines lines.
+The initial value of %num_lines is 10 and may be changed using
+the "set" command.
+
+SEE ALSO
+dis, list
+++
+
+++ %result
+NAME
+%result - execution status of debugger commands.
+
+DESCRIPTION
+After each debugger command is executed, its result status is
+stored in %result.  0 indicates successful execution.  Non-zero
+indicates an execution failure.
+++
+
+++ %verbose
+NAME
+%verbose - verbosity level for debugger events.
+
+DESCRIPTION
+When a debugger-controlled process stops, the debugger normally prints
+out a message indicating the reason for the stop, the process id
+and the next source line, if available, or the next line of 
+disassembled text.
+%verbose can be used to control this output.
+Valid values are:
+	quiet	no output is generated when a process stops
+	source	only the next source or disassembly line is displayed
+	events	if an event caused the stop, the event is also displayed
+		(does not include requested stops (halts or single steps)
+	reason	reason for the stop, including events and requested stops
+	all	highest verbosity level (currently same as reason)
+
+The default mode is "reason".
+The quiet mode can also be specified as the -q option to certain
+debugger commands.  These individual -q options override the %verbose mode.
+
+SEE ALSO
+change, exception, signal, step, stop, syscall
+++
+
+++ %wait
+NAME
+%wait - synchronous or asynchronous command execution.
+
+DESCRIPTION
+When the debugger starts a process in motion, it normally
+waits for the process to stop before returning control to the user.
+Setting %wait to "background", 0 or "no" causes the debugger 
+to enter asynchronous mode.  In asynchronous mode,
+commands that set a process in motion return immediately to user
+control, without waiting for the process to stop.  Setting %wait to
+"foreground", 1 or "yes" restores the default mode.
+The global %wait can be overridden by using the -f or -b options
+to the run and step commands.
+
+SEE ALSO
+run, step
+++
+
+++ stop_expr
+NAME
+stop_expr - process address space event expressions.
+
+DESCRIPTION
+stop_exprs are special expressions accepted by the stop command.
+A stop_expr consists of one or more stop_events, joined by the special
+&& (and) or || (or) operators.  These operators are left-associative,
+but the debugger does not guarantee the order in which their operands
+are evaluated.  Each stop_event can be:
+	location
+	( expr )
+	*lvalue
+
+Each type of stop event has some action that will cause the event to
+be noticed by the debugger.  When such an action occurs, the entire
+stop expression is evaluated for "truth".  If true, the event triggers
+in the normal way (the debugger informs the user of the event and
+executes any associated commands).
+
+A "location" is an address in the process's text where the debugger
+can set a breakpoint.  When the process reaches the specified location
+the debugger notices the event.  For location stop_events that refer to
+function names, the expression is true as long as that function is active.
+For location stop_events that apply to a particular address or line
+number, the expression is true only when the process is at that
+address or line.  Type "help location" for the complete location syntax.
+When the current language is C++, location stop-events may also use
+C++-specific features.  Type "help C++"  for details.
+
+"expr" can be any valid expression in the current language (%lang or %db_lang).
+The debugger notices the stop_event when any of the identifiers involved
+in the expression changes value.  The entire expression is then evaluated
+in the context of the current language.
+
+"lvalue" may be any expression in the current language that would be
+valid on the left-hand side of an assignment statement in that language.
+The debugger notices this event when the contents of the location change.
+The change itself makes this kind of stop_event true.
+
+More powerful stop_exprs can be created by combining stop_events
+using the special && (and) operator.  For example, to stop in function
+a only when function b is also active, type "stop a && b".
+To stop when the value of some expression x becomes true within
+function y, type "stop y && (x)".
+
+EXAMPLES
+stop myfile.c@230
+stop *bar
+stop (x == 5)
+stop foo && (a > 7)
+stop (a == 4) || (b == 7)
+
+SEE ALSO
+%db_lang, %lang, C++, expr, location, scope, stop
+++
+
+++ %redir
+NAME
+%redir - should process I/O be redirected?
+
+DESCRIPTION
+%redir governs the behavior of the create command.
+By default, create does not redirect the I/O of the processes it creates,
+unless given the -r option.
+If %redir is set to 1 or "yes", create will redirect process I/O,
+unless given the -n option.
+The default behavior may be restored by setting %redir to 0 or "no".
+
+SEE ALSO
+create, grab, input
+++
+
+
+++ expr
+NAME
+expr - debugger expression
+
+DESCRIPTION
+Debugger expressions follow the syntax and semantics of the
+current language (%lang or %db_lang).  The debugger accepts
+expressions containing any combination of program variables or
+functions, qualified names, built-in debugger variables and
+user-defined debugger variables.  A qualified name specifies a
+program identifier that may not be visible in the current context.
+The syntax is:
+	[[process_id]@][[source_file]@][[function]@][[line_number]@]identifier
+     or [[process_id]@]frame_number@identifier
+     or [[process_id]@]object_name@[source file@]identifier
+
+The qualified name is evaluated left to right, and may be
+disambiguated by supplying @'s as needed.  "frame number" and
+"function" must refer to functions that are currently active.
+"object_name" refers to any object (executable file or shared library)
+making up the process.
+
+When the current language is C, debug supports evaluation of all
+legal ANSI C expressions, except those involving macro expansion.
+
+When the current language is C++, debug accepts a subset of C++
+expressions.  See C++ for details.
+
+Expressions beginning with a dash (-) or containing character
+sequences with special meanings to the debugger must be enclosed
+in parens, square brackets or curly braces.  The special character
+sequences are: >, >>, |, ||, &&, #, comma, semi-colon, newline.
+
+SEE ALSO
+%db_lang, %lang, C++, if, print, scope, set, stop, stop_expr,
+uservars, while
+++
+
+++ scope
+NAME
+scope - the visibility of a program identifier
+
+DESCRIPTION
+Debugger commands that accept locations or expressions may
+reference identifiers in controlled programs: functions,
+parameters, variables, labels, types, structure and union tags
+and member names and enumeration literals.   Locations may also
+reference source line numbers.  Whether a name is visible
+to the debugger at any given time depends on the state of the
+program at that time (context) and the amount of debugging
+information provided to the debugger by that program.
+
+Source line numbers, names of variables local to a particular
+function, parameter names, type names, structure and union tag
+and member names and enumeration literals are available only if
+the file in which they are referenced was compiled with the -g option
+to the compiler.  Names of global and file static functions and
+variables are available if the file defining them was compiled with -g
+or the program's symbol table has not been stripped.
+
+Source line numbers and file static functions and variables
+are visible only when the current context is within that file,
+that is, when the program is stopped somewhere within code generated
+from that file.  Function parameters are visible only when
+the current context is within that function.  Local variables are
+visible only when the current context is within the block that
+defines them.
+
+Identifiers that are not visible in the current context may often
+still be accessed in locations or expressions by using qualified
+names.  See "expr" and "location" for the complete syntax.
+
+Symbols defined in shared libraries are not visible until those
+libraries are loaded by the dynamic linker.  Typically, when
+a program first starts up, only the symbols defined in the program
+itself and those defined in libc.so are visible.  After stepping
+the program to _start or beyond, other shared libraries are available.
+Symbols from shared libraries loaded by calls to dlopen(3X) are
+only available after the dlopen call.
+
+SEE ALSO
+%frame, %func, %line, expr, location
+++
+
+++ whatis
+NAME
+whatis - display the type of an expression.
+
+SYNOPSIS
+whatis [-p proclist] expr
+
+DESCRIPTION
+whatis displays the type of the expression in 
+the current context (%frame).  If a proclist is given,
+the type of the expression is evaluated in the context of
+each process in the list.
+Expr may be any expression in the current language.
+
+If a variable is a structure or class type, "whatis variable"
+will display the name of the structure or class. 
+"whatis structure_tag_name" or "whatis type_name" will display
+all known information about that type, including structure
+members or enumeration constants.
+
+If given an unadorned identifier, whatis will print all objects,
+functions, or types with that name that are visible from the
+current scope, along with information about where they are
+defined.
+
+If given a pointer to a base class object with virtual functions,
+and if the debugger can determine that the type of the object
+pointed to is a class derived from the base class, whatis
+will display both the base class and the derived class.
+
+EXAMPLES
+whatis i
+whatis main
+whatis (i + 1) * 2.0
+whatis struct foobar
+
+SEE ALSO
+%db_lang, C++, expr
+++
+
+++ C++
+NAME
+C++ - C++-specific behavior
+
+DESCRIPTION
+The debugger will recognize when an object file was compiled
+with the C++ Compilation System 2.0 or the C++ translator,
+cfront (Release 2.1 or 3.0), and will set the current language
+(%db_lang) to C++.  Names appear as in the C++ source, not as
+they appear in the object file.
+
+When the current language is C++, debug accepts a subset of
+C++ expressions, including:
+
+     o  All expressions accepted when the current language is C,
+     o  Calls to member functions, including virtual member functions
+	and static member functions,
+     o  Calls to overloaded functions,
+     o  Expressions using type names as typedefs,
+     o  Expressions using overloaded operator functions, and
+     o  Expressions accessing class members with an implied "this"
+	pointer, when the process is stopped in a class
+	member function.
+
+The print and set commands have a verbose option (-v) that prints
+additional information including the function prototypes of all
+functions called by the debugger while evaluating the expression.
+This is useful for understanding what's happening in expressions
+using overloaded functions or operators.  The -v option to print
+will also display compiler-generated structure and class members,
+such as pointers to virtual function tables.
+
+If given a pointer to a base class object with virtual functions,
+and if the debugger can determine that the type of the object
+pointed to is a class derived from the base class, the whatis
+command will display both the base class and the derived class.
+The print command will also display the object in terms of the
+derived type.
+
+When printing the contents of a structure or class, the print command will
+display static class members, with the notation that they are static.
+Note that symbols -v does not display static members.  Note also that
+compiler-generated class members are displayed only with print -v.
+
+Breakpoints (stop events) may be set on:
+
+     o  Class member functions, including constructors, destructors,
+	and conversion functions,
+     o  Overloaded operator functions, and
+     o  Overloaded functions, using the full prototype, or
+     o  Overloaded functions, without the prototype information.
+	In that case, the debugger will display a list of the functions,
+	and ask you to pick one or all of the choices.
+
+A stop event may also be created on a specific object and member
+function combination, using the syntax "stop pointer->function" or
+"stop object.function".  debug will stop the process upon
+entering the function only if the "this" pointer matches the
+specified object.  If the function is a virtual function, debug
+will set the breakpoint on the appropriate overriding function.
+
+Events may also be created to take action when an exception
+of a specific type is thrown or caught.  Type "help exception"
+for details.  If an exception is thrown while an expression is
+being evaluated, the debugger will abort the expression evaluation.
+Any side effects of the expression, such as objects created on
+the stack, will be left in an indeterminate state.
+
+EXAMPLES
+print *this
+print -v ptr->overloaded_f(1, 2)
+whatis ptr_to_base
+stop C::f(int)
+stop C::C
+stop C::~C
+stop C::operator int()
+stop C::operator+
+stop ptr->f(char *)
+
+SEE ALSO
+%db_lang, exception, expr, print, set, stop, whatis
+++
+
+++ %dis_mode
+NAME
+%dis_mode - control output of disassembly
+
+DESCRIPTION
+The output of the "dis" command can take one of two forms.
+If %dis_mode is set to "nosource" (the default) the output
+contains only the disassembled machine instructions.  
+If %dis_mode is set to "source", the debugger
+will also attempt to display the source line corresponding to the
+disassembled instructions.  The source line will be displayed
+only if there is debugging information for the range of addresses
+being disassembled and if the debugger can find the corresponding
+source file.   
+
+The mode set by %dis_mode can be overridden for individual
+dis commands using the -n (no source) and -s (source)
+options to dis.
+
+SEE ALSO
+dis
+++
+
+++ %frame_numbers
+NAME
+%frame_numbers - direction of stack frame numbering
+
+DESCRIPTION
+When %frame_numbers is set to "up", the "stack" command 
+numbers stack frames from 0 for the top of the stack
+(most recent frame).   The initial frame is the highest numbered.
+If %frame_numbers is set to "down", the stack command makes
+the most recent frame the highest numbered;  the initial
+frame is numbered 0.
+
+When %frame_numbers is set to "down", the stack command must
+determine the highest numbered frame before displaying any
+stack frames (since the most recent frame will have the highest
+number).  This can cause the stack command to fail 
+for lack of memory without producing any output for processes 
+that have huge stacks.
+
+SEE ALSO
+stack
+++
+
+++ exception
+NAME
+exception - set or list exception event actions for a process.
+
+SYNOPSIS
+exception -d [-i] {throw|catch}
+exception [-p proclist] [-iq] {throw|catch} [type] [command]]
+
+DESCRIPTION
+Specify actions to take when an exception is thrown or
+caught in one of the debugger's subject processes.
+By default, when an exception is thrown or caught, the
+debugger announces its occurrence and stops the process.
+The exception command allows you to tell the
+debugger not to stop for exception events.  It also allows
+you to specify a set of commands that will get executed
+when a given exception is thrown or caught.
+
+The exception command has two forms.  When the -d option is
+given, the command sets up the default exception event
+behavior for the entire debugger.  Each process created or
+grabbed by the debugger inherits this default exception event
+behavior.  When the debugger starts up, the default action
+for all exceptions is set so that the debugger
+stops on each throw-point or exception handler
+as described above.  The -i option with either "throw" or
+"catch" (or both) specifies that the debugger will ignore
+(not stop for or announce) exceptions that are thrown or
+caught, respectively.
+Issuing the command again without the -i option re-establishes
+the default action.  If neither "throw" nor "catch" is given,
+exception -d displays the current default behavior.
+
+Without the -d option, the exception command applies to the
+current program, or to the list of processes
+given by the proclist.  Using exception in this way allows
+you to change the exception action for a given process
+without changing the default actions inherited by other processes.
+
+Note that exception -d does not affect the default exception
+event behavior of any process already under the debugger's control.
+
+The exception command without the -d option may also be
+used to specify debugger behavior when an exception of
+a particular type is thrown or caught.  This form of the exception
+command establishes an event, that may be deleted or
+enabled, as can "stop", "onstop", "syscall", and
+"signal" events. The event action overrides the default
+behavior and stops the process.
+Multiple events may be assigned for the same type.  
+Deleting all events for a given exception type re-establishes the
+default debugger action for that exception type.
+
+The actions for an event will apply to any thrown or caught
+assignment-compatible object, as specified by the C++
+language definition.  This includes derived classes
+and const-or-volatile qualified objects.
+The type given may be any valid C++ type,
+or an ellipsis ("...") which matches any type.
+
+The -q option says that the exception event will not be announced.
+
+With no arguments, the exception command lists the
+exception event actions for the list of processes
+given by proclist, or for the current program.
+
+EXAMPLES
+exception -d -i throw		# applies to entire debugger
+exception -i catch throw 	# applies to current program
+exception -p p1 -i throw char *	# applies only to p1
+exception throw bad_exception { print %eh_object }
+exception			# display exception events for current program
+exception -d			# display default exception state for debugger
+exception throw ... { whatis %eh_object } # print type of all thrown objects
+
+SEE ALSO
+C++, assoccmd, cancel, delete, disable, enable, proclist, %eh_object
+++
+
+++ %eh_object
+NAME
+%eh_object - object thrown or caught during exception handling
+
+DESCRIPTION
+%eh_object is the object that is thrown and/or caught during
+exception handling.  The value of %eh_object may be displayed
+with the print command and its type displayed with the whatis command.
+Each process that uses exception handling has its own %eh_object.
+You may not explicitly change %eh_object.
+
+SEE ALSO
+C++, exception
+++
+
+++ %stack_bounds
+NAME
+%stack_bounds - verify stack boundaries
+
+DESCRIPTION
+By default, the "stack" command verifies that the stack
+pointer lies within the stack segment created by the kernel;
+some types of program errors occur when the stack pointer
+gets corrupted and no longer points within the stack segment.
+There are applications, however, that do their own stack
+management and create stacks outside of the stack segment
+created by the kernel.  For those applications, debug provides
+a way of turning off stack bounds checking.
+
+If %stack_bounds is set to 1 or "yes", stack will check that
+the stack pointer lies within the kernel-created stack segment.
+Setting %stack_bounds to 0 or "no" will turn off bounds checking.
+
+SEE ALSO
+map, stack
+++
+
+++ functions
+NAME
+functions - display function names
+
+SYNOPSIS
+functions [-s] [-p proclist] [-o object] [-f filename]
+
+DESCRIPTION
+Display a list of function names available in the specified
+processes (default %proc).  With no options, displays all
+non-inlined functions defined in the current object (executable
+file or shared library).
+
+The -o option displays the functions defined in the specified object.
+The -s option displays only those functions for which source is
+available (that is, that were compiled with debugging information.)
+The -f options displays only those functions defined in the given
+primary source file.
+
+If an sh(1)-style pattern is given, it further restricts the
+display to consist of only those names which match the pattern.
+
+For C++ programs, the function name displayed includes the full
+signature, which for template functions will include information
+about the template parameters and return type as well as function
+parameters.  Where the debugger expects a location (the dis or
+stop commands, for example) the full name may be used, or just
+the portion of the name up to the beginning of the parameter
+list (the first top-level open parenthesis.)
+
+EXAMPLES
+functions -f main.c
+functions *::List*
+
+SEE ALSO
+location, pattern, proclist, symbols
+++
+
+##PRINT_AS_IS##
+};
+#endif
+##END_AS_IS##

@@ -1,0 +1,215 @@
+Standing on date's shoulders
+
+Modifications to date.c:
+1)  added option (-n) that will set internal, but not system, date.
+2)  modified show_date to use strftime just like the comment suggested.
+
+Comments: i wanted to use the get_date routine to do some format
+conversion but didn't feel like a new command was worthwhile when date
+already does most of this stuff so i hacked date instead.  the -n
+option keeps my application from changing the system clock all the
+time.  (there's probably a pun in there somewhere.)  a comment in
+show_date complained about not being able to use strftime exclusively
+but it looked to me like it could (at least the ../lib/strftime.c
+version could) so i changed it.  check the output yourself but i think
+it worked.
+
+*** src/date.c.orig	Thu Aug  8 16:57:51 1991
+--- src/date.c	Thu Feb 13 09:07:31 1992
+***************
+*** 81,87 ****
+  char *program_name;
+  
+  /* If nonzero, work in universal (Greenwich mean) time instead of local. */
+! int universal_time;
+  
+  void
+  main (argc, argv)
+--- 81,89 ----
+  char *program_name;
+  
+  /* If nonzero, work in universal (Greenwich mean) time instead of local. */
+! int universal_time = 0;
+! /* The time to display, -1 means system time. */
+! time_t when = -1;
+  
+  void
+  main (argc, argv)
+***************
+*** 89,100 ****
+       char **argv;
+  {
+    int c;
+    char *new_date = 0;
+  
+    program_name = argv[0];
+-   universal_time = 0;
+  
+!   while ((c = getopt (argc, argv, "s:u")) != EOF)
+      switch (c)
+        {
+        case 's':
+--- 91,103 ----
+       char **argv;
+  {
+    int c;
++   int install_date = 1;
+    char *new_date = 0;
++   char* format = 0;
+  
+    program_name = argv[0];
+  
+!   while ((c = getopt (argc, argv, "s:un")) != EOF)
+      switch (c)
+        {
+        case 's':
+***************
+*** 103,108 ****
+--- 106,114 ----
+        case 'u':
+  	universal_time = 1;
+  	break;
++       case 'n':
++ 	install_date = 0;
++ 	break;
+        default:
+  	usage ();
+        }
+***************
+*** 112,153 ****
+  
+    if (new_date)
+      {
+!       time_t when = get_date (new_date, NULL);
+        if (when == -1)
+  	error (1, 0, "invalid new date");
+-       if (stime (&when) == -1)
+- 	error (0, errno, "cannot set date");
+      }
+  
+    switch (argc - optind)
+      {
+      case 0:
+-       show_date ((char *) NULL);
+        break;
+      case 1:
+        if (*argv[optind] == '+')
+! 	show_date (argv[optind] + 1);
+!       else
+! 	set_date (argv[optind]);
+        break;
+      default:
+        usage ();
+      }
+-   exit (0);
+- }
+- 
+- void
+- set_date (string)
+-      char *string;
+- {
+-   time_t when;
+  
+!   when = posixtime (string);
+!   if (when == -1)
+!     error (1, 0, "invalid new date");
+!   if (stime (&when) == -1)
+      error (0, errno, "cannot set date");
+!   show_date ((char *) NULL);
+  }
+  
+  /* Display the current date and/or time according to the format specified
+--- 118,152 ----
+  
+    if (new_date)
+      {
+!       when = get_date (new_date, NULL);
+        if (when == -1)
+  	error (1, 0, "invalid new date");
+      }
+  
+    switch (argc - optind)
+      {
+      case 0:
+        break;
+      case 1:
+        if (*argv[optind] == '+')
+! 	format = argv[optind] + 1;
+!       else {
+! 	when = posixtime (argv[optind]);
+! 	if (when == -1)
+! 	  error (1, 0, "invalid new date");
+!       }
+        break;
+      default:
+        usage ();
+      }
+  
+!   if (when != -1 && install_date && stime (&when) == -1) {
+      error (0, errno, "cannot set date");
+!     when = -1;
+!   }
+! 
+!   show_date(format);
+!   exit (0);
+  }
+  
+  /* Display the current date and/or time according to the format specified
+***************
+*** 158,179 ****
+  show_date (format)
+       char *format;
+  {
+-   time_t now;
+    struct tm *tm;
+    char *out = NULL;
+    size_t out_length = 0;
+  
+!   time (&now);
+!   tm = localtime (&now);
+  
+    if (format == NULL)
+!     {
+!       /* Print the date in the default format.  If strftime were able to
+! 	 optionally pad with spaces instead of zeros, we could use it for
+! 	 the whole job. */
+!       printf ("%20.20s", asctime (tm));
+!       format = "%Z %Y";
+!     }
+    do
+      {
+        out_length += 200;
+--- 157,172 ----
+  show_date (format)
+       char *format;
+  {
+    struct tm *tm;
+    char *out = NULL;
+    size_t out_length = 0;
+  
+!   if (when == -1)
+!     time (&when);
+!   tm = localtime (&when);
+  
+    if (format == NULL)
+!     format = "%a %b %e %H:%M:%S %Z %Y";
+    do
+      {
+        out_length += 200;
+***************
+*** 188,194 ****
+  usage ()
+  {
+    fprintf (stderr, "\
+! Usage: %s [-u] [-s new-date] [+FORMAT] [MMDDhhmm[[CC]YY][.ss]]\n",
+  	   program_name);
+    exit (1);
+  }
+--- 181,187 ----
+  usage ()
+  {
+    fprintf (stderr, "\
+! Usage: %s [-n] [-u] [-s new-date] [+FORMAT] [MMDDhhmm[[CC]YY][.ss]]\n",
+  	   program_name);
+    exit (1);
+  }

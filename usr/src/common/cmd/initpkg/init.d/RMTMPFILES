@@ -1,0 +1,82 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/RMTMPFILES	1.1.16.2"
+#	Clean up temporary files.
+
+if [ -z "$_AUTOBOOT" ]
+then
+	exit
+fi
+
+#
+# check for Security installed
+#
+mldmode >/dev/null 2>&1
+
+if [ "$?" = "0" ]
+then
+	SEC=1
+else
+	SEC=0
+fi
+
+# The most likely mount points under tmp directores are those the
+# automounter creates.
+
+#  clean up /tmp 
+#  if subdirectories under /tmp are mount points do not remove /tmp
+M=`/sbin/mount | /usr/bin/egrep '^/tmp/.*'`
+if [ -z "$M" ]
+then
+	if [ $SEC -eq 1 ]
+	then
+		mldmode -r >/dev/null 2>&1
+		/usr/bin/rm -rf /tmp
+		/usr/bin/mkdir -M /tmp >/dev/null 2>&1
+		if [ $? -ne 0 ]
+		then
+			/usr/bin/mkdir /tmp
+		else
+			/sbin/chlvl SYS_PUBLIC /tmp
+		fi
+		/usr/bin/chmod 1777 /tmp
+		/usr/bin/chgrp bin /tmp
+		/usr/bin/chown bin /tmp
+		mldmode -v >/dev/null 2>&1
+	else
+		cd /tmp
+		# Was rm -rf *, but would fail on MAXARGS
+		[ $? -eq 0 ] && /sbin/rm -Crf /tmp 2>/dev/null &
+	fi
+fi
+#  clean up /var/tmp
+if [ -d /var/tmp  -o  -d /usr/bin ]
+then	#	Conditional, so we won't make /var/tmp if /usr file system
+	#	did not mount successfully.  We check for /usr/bin in case
+	#	/var/tmp disappeared unexpectedly.
+	# 	if any of the subdirectories under /var/tmp are
+	# 	mount points do not remove it.
+	M=`/sbin/mount | /usr/bin/egrep '^/var/tmp/.*'`
+	if [ -z "$M" ]
+	then
+		if [ $SEC -eq 1 ]
+		then
+			mldmode -r >/dev/null 2>&1
+			/usr/bin/rm -rf /var/tmp
+			/usr/bin/mkdir -M /var/tmp >/dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				/usr/bin/mkdir /var/tmp
+			else
+				/sbin/chlvl SYS_PUBLIC /var/tmp
+			fi
+			/usr/bin/chmod 1777 /var/tmp
+			/usr/bin/chgrp sys /var/tmp
+			/usr/bin/chown sys /var/tmp
+			mldmode -v >/dev/null 2>&1
+		else
+			cd /var/tmp
+			# Was rm -rf *, but would fail on MAXARGS
+			[ $? -eq 0 ] && /sbin/rm -Crf /var/tmp 2>/dev/null&
+		fi
+	fi
+fi
+wait

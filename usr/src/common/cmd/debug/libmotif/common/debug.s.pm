@@ -1,0 +1,41 @@
+/* XPM */
+static char * debug2_s_pm[] = {
+/* width height ncolors cpp [x_hot y_hot] */
+"24 24 10 1 0 0",
+/* colors */
+" 	s none	m none	c none",
+".	s iconColor1	m black	c black",
+"X	s iconColor7	m white	c cyan",
+"o	s iconColor2	m white	c white",
+"O	c #596551445555",
+"+	s iconGray8	m black	c #212121212121",
+"@	s iconColor4	m white	c green",
+"#	c #30C230C230C2",
+"$	s iconColor3	m black	c red",
+"%	s iconColor6	m white	c yellow",
+/* pixels */
+"         .......        ",
+"       ..XXX.XXX..      ",
+"   .. XXXXXX.XooXXX ..  ",
+"     ...XXXX.XooX...    ",
+"    XXXX..XXXXX..ooXX   ",
+"   .XXXXXX..XX.XXoooX.  ",
+"  .XXXXXXXX.O+XXXXooXX. ",
+"  .XXXXXX..O@....XXXXX. ",
+" .XXXXXX.X...o.XX.XoooX.",
+" .XXXXXXXX.@.o.XXXXoooX.",
+" .XXXXXX...@.@...XXXXXX.",
+" .....XX.X.O.@.X.XX.....",
+" .XXXXX.XX..#..XX.XXXXX.",
+" .XXXX.XX..$%$..X.XXooX.",
+" .XXXX.XX.X.$$..XX.XoXX.",
+" .XXXXXXX.X.##X.XXXXoXX.",
+"  .XXXXXX.XX.XX.XXXXXX. ",
+"  .XXXXXX.XXXXX.XXXXXX. ",
+"   .XXXXX.XX.XX.XXXXX.  ",
+"    .XXX.XXX.XXX.XXX.   ",
+"     .XX.XXX.XXX.XX.    ",
+"      .XXXXX.XXXXX.     ",
+"       ..XXX.XXX..      ",
+"         .......        "};
+/* ident	"@(#)debugger:libmotif/common/debug.s.pm	1.1" */

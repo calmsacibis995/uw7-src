@@ -1,0 +1,118 @@
+#ident "@(#)helpwin	15.1"
+
+function clean_helps
+{
+	typeset i
+
+	[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+		cd $LANGDEP_SCRIPTS/help
+		for i
+		do
+			call unlink  "$i"
+		done
+		cd ~-
+	}
+}
+
+function putfoot
+{
+	cdecl longp 'page=&pg'
+	cprint -v PAGE page
+
+	if (( HELP_PAGES == 1 ))
+	then
+		footer "$ONLY_PAGE_FOOTER"
+	elif (( PAGE == 1 ))
+	then
+		footer "$FIRST_PAGE_FOOTER"
+	elif (( PAGE == HELP_PAGES ))
+	then
+		footer "$LAST_PAGE_FOOTER"
+	else
+		footer "$MIDDLE_PAGE_FOOTER"
+	fi
+}
+
+function helpwin
+{
+	typeset basefil=$1 fil=$LANGDEP_SCRIPTS/help/$1.hcf 
+	typeset line a OIFS="$IFS" IFS="$IFS" page
+
+	[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+		cd $LANGDEP_SCRIPTS/help
+		cpio -icDZ < $LANGDEP_SCRIPTS/help/locale_hcf.z $1.hcf >/dev/null 2>&1
+		cd ~-
+	}
+
+	if [ ! -f "$fil" ]
+	then
+		print -u2 Cannot open $fil
+		return 1
+	fi
+	typeset IFS=
+	{
+		read title
+		read related
+		read line
+	} <$fil
+	typeset IFS="$OIFS"
+	set -- $line
+	HELP_PAGES=$1
+	set -- $related ${RELATED_HELPS}
+	open_help -help "wclose \$WCURRENT; helphelp $basefil $*" -page "putfoot" "$fil"
+	cdecl longp 'height=&Help_height' 'width=&Help_width'
+	cprint -v HELP_HEIGHT height
+	cprint -v HELP_WIDTH width
+	place_window -below 0 $HELP_WIDTH $HELP_HEIGHT -fg $HELP_FG -bg $HELP_BG -title "$title" -border_fg $HELP_FG -current 'msg; putfoot'
+	run_help "$fil"
+	[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && call unlink  "$fil"
+}
+
+function helphelp
+{
+	typeset i titles
+	typeset basefil=$1 fil
+	shift
+	integer max=${#MOREHELP_TITLE} j=0
+	typeset args=
+	for i
+	do
+		case " $args " in
+		*" $i "*)
+			;;
+		*)
+			args="$args $i"
+		esac
+	done
+	set -- $args
+	for i
+	do
+		[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+			cd $LANGDEP_SCRIPTS/help
+			cpio -icDZ < $LANGDEP_SCRIPTS/help/locale_hcf.z $i.hcf >/dev/null 2>&1 
+			cd ~-
+		}
+		fil="$fil $i.hcf"
+		{
+			read titles[j] 
+		} <$LANGDEP_SCRIPTS/help/$i.hcf
+		if (( max < ${#titles[j]} ))
+		then
+			max=${#titles[j]}
+		fi
+		j=j+1
+	done
+	place_window -left 0 $max+2 $# -fg $HELP_FG -bg $HELP_BG -border_fg $HELP_FG -title "$MOREHELP_TITLE" -current 'footer "$MOREHELP_FOOTER"'
+	typeset wid=$CURWIN
+	open_menu -exit "wclose $wid; clean_helps $fil; destroy_menu $mid"
+	typeset mid=$MID
+	typeset open=1
+	typeset use
+	j=0
+	for i
+	do
+		add_menu_item -select "wclose $wid; clean_helps $fil; destroy_menu $mid; helpwin $i $basefil" "${titles[j]}"
+		j=j+1
+	done
+	run_menu $mid 0
+}

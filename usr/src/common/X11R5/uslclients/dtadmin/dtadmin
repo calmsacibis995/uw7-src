@@ -1,0 +1,400 @@
+CLASS 'System Status' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:561System Status';
+	_LPATTERN	dashboard;
+	_ICONFILE	dash.icon;
+	_FILETYPE	EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	_SYSTEM		Y;
+        MENU _Open 	'(if /sbin/tfadmin -t dashboard 2>/dev/null;\
+			then /sbin/tfadmin dashboard -t;else exec "%F";fi)&';
+END
+
+CLASS 'Dialup Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:553Dialup Setup';
+        _LPATTERN	DialupMgr;
+	_FILETYPE	EXEC;
+	_SYSTEM		Y;
+        _ICONFILE	modem.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open	'(if /sbin/tfadmin -t dialup 2>/dev/null;\
+			then\
+				/sbin/tfadmin dialup;\
+			else if /sbin/tfadmin -t rdialup 2>/dev/null;\
+				then\
+					/sbin/tfadmin rdialup;\
+				else "%F";\
+				fi;\
+			fi)&';
+END
+
+CLASS 'Remote Login' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1483Remote Login';
+	_SYSTEM		Y;
+	_LFILEPATH	$HOME/.node;
+	_FILETYPE	EXEC;
+	_ICONFILE	netnode.icon;
+	_PROG_TYPE	'UNIX Graphical';
+	_DROP		'exec $XWINHOME/desktop/rac/rac_copy.sh -r "%l" %{"S*"}&';
+	MENU _Open	'exec $XWINHOME/desktop/rac/rac_acc.sh -r "%l"&';
+	MENU _Properties...	'exec $XWINHOME/desktop/rac/rac_prop.sh -r "%l"&';
+END
+
+CLASS 'Quick Dial' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1200Quick Dial';
+	_LFILEPATH	$HOME/.port;
+	_FILETYPE	EXEC;
+	_ICONFILE	acu.glyph;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open	'exec $XWINHOME/desktop/rft/dtcall "%f"&';
+END
+
+CLASS 'User Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:559User Setup';
+	_LPATTERN	LoginMgr;
+	_FILETYPE	EXEC;
+	_SYSTEM		Y;
+	_ICONFILE	user.glyph;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open 	'(if /sbin/tfadmin -t LoginMgr 2>/dev/null;\
+			then /sbin/tfadmin LoginMgr -p;else exec "%F";fi)&';
+END
+
+CLASS Password LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1184Password';
+	_SYSTEM		Y;
+	_PATTERN	Password;
+	_FILETYPE	EXEC;
+	_ICONFILE	passwd.32;
+	_PROG_TYPE	'UNIX Character';
+	MENU _Open	'exec xterm -xrm "*procIcon: passwd.48" -geometry 40x6 -T "`gettxt dtmgr:1184 \"PassWord\"`" -e /usr/bin/passwd $LOGNAME &';
+END
+
+CLASS 'App Installer' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1185App Installer';
+	_LPATTERN	PackageMgr;
+	_SYSTEM		Y;
+	_FILETYPE	EXEC;
+	_ICONFILE	pkgmgr.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open 	'(if /sbin/tfadmin -t PackageMgr 2>/dev/null;\
+			then /sbin/tfadmin PackageMgr; else exec "%F";fi)&';
+END
+
+CLASS Printer LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:558Printer';
+	_LFILEPATH	$HOME/.printer;
+	_ICONFILE	ptr.stp32;
+	_FILETYPE	EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open	'##DROP(PrtMgr) || exec $XWINHOME/bin/PrtMgr -o -p %f &';
+	_DROP		"%{s._Print}";
+	_DEFAULT_PRINTER	%f;
+END
+
+CLASS 'Printer Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:557Printer Setup';
+	_SYSTEM		Y;
+	_LPATTERN       prtsetup;
+	_ICONFILE       prtsetup.icon;
+        _FILETYPE       EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'(if /sbin/tfadmin -t prtsetup 2>/dev/null;then /sbin/tfadmin prtsetup -o;else prtsetup; fi)&';
+END
+
+CLASS 'Backup-Restore' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:566Backup-Restore';
+	_SYSTEM		Y;
+	_LPATTERN	MediaMgr;
+	_ICONFILE	backup.glyph;
+	_FILETYPE	EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'(if /sbin/tfadmin -t MediaMgr 2>/dev/null;\
+			then /sbin/tfadmin MediaMgr -B;\
+			else exec MediaMgr -B ; fi) &';
+	MENU 'dtmgr:551Backup' '(if /sbin/tfadmin -t MediaMgr 2>/dev/null;\
+			then /sbin/tfadmin MediaMgr -B;\
+			else exec MediaMgr -B ; fi) &';
+	MENU 'dtmgr:1397Restore' '(if /sbin/tfadmin -t MediaMgr 2>/dev/null;\
+			then /sbin/tfadmin MediaMgr -R;\
+			else exec MediaMgr -R ; fi) &';
+	_DROP		'(if /sbin/tfadmin -t MediaMgr 2>/dev/null;\
+			then /sbin/tfadmin MediaMgr -B -C %{"S*"} ;\
+			else exec MediaMgr -B -C %{"S*"} ; fi) &';
+END
+
+CLASS 'Backup Script' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1186Backup Script';
+	_FILETYPE	EXEC;
+	_PATTERN	*.bkup;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'(if /sbin/tfadmin -t MediaMgr 2>/dev/null;\
+			then /sbin/tfadmin MediaMgr -B -O "%F" ;\
+			else exec MediaMgr -B -O "%F" ; fi) &';
+	MENU 'dtmgr:1398Schedule' 'exec dtsched "%F #!@ Do not edit this line !@" &';
+	MENU _Print	'$XWINHOME/bin/PrtMgr -p %_DEFAULT_PRINTER "%F" &';
+END
+
+CLASS 'Display Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1453Display Setup';
+	_SYSTEM		Y;
+	_LPATTERN       gsetvideo;
+	_ICONFILE       display.stp32;
+	_FILETYPE       EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open      '(if /sbin/tfadmin -t gsetvideo 2>/dev/null;\
+                        then\
+                             	/sbin/tfadmin gsetvideo -p;\
+                        else\
+                             	exec "%F";\
+                        fi)&';
+END
+
+CLASS 'Task Scheduler' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:563Task Scheduler';
+	_SYSTEM		Y;
+	_LPATTERN	dtsched;
+	_FILETYPE	EXEC;
+	_ICONFILE	dtsched.32;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'exec "%F" &';
+	_DROP		'exec "%F" "%S" &';
+END
+
+CLASS 'Text Editor' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:555Text Editor';
+	_SYSTEM		Y;
+	_LPATTERN	dtedit;
+	_FILETYPE	EXEC;
+	_ICONFILE	editor.glyph;
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'exec "%F" &';
+	_DROP		'exec "%F" %{"S*"} &';
+END
+
+CLASS Clock LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:581Clock';
+	_SYSTEM		Y;
+	_LPATTERN	dtclock;
+	_FILETYPE	EXEC;
+	_ICONFILE	"dtclock.32";
+	_PROG_TYPE	'UNIX Graphical';
+	MENU _Open	'exec "%F" &';
+END
+
+CLASS Mail LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:582Mail';
+	_SYSTEM		Y;
+	_LPATTERN	dtmail;
+	_FILETYPE	EXEC;
+	_ICONFILE	mail32.icon;
+	_PROG_TYPE	'UNIX Graphical';
+      	MENU _Open      'exec "%F"        &';
+      	_DROP        	'exec "%F" "%S"     &';
+END
+
+CLASS 'Mail File' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1187Mail File';
+      	_PROG_TO_RUN    dtmail;
+      	_FILETYPE       DATA;
+      	_PATTERN        *.ml;
+      	_ICONFILE       mailfile;
+	_PROG_TYPE	'UNIX Graphical';
+      	MENU _Open      '##DROP(dtmail) || exec dtmail "%F"       &';
+	MENU _Print	'$XWINHOME/bin/PrtMgr -T longline -p %_DEFAULT_PRINTER "%F" &';
+END
+
+CLASS Fonts LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1188Fonts';
+	_SYSTEM		Y;
+	_LPATTERN	fontmgr;
+	_FILETYPE	EXEC;
+	_ICONFILE	font.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open 	'(if /sbin/tfadmin -t fontmgr 2>/dev/null;\
+			then /sbin/tfadmin fontmgr -p;else exec "%F";fi)&';
+	_DROP  		'(if /sbin/tfadmin -t fontmgr 2>/dev/null;\
+			then /sbin/tfadmin fontmgr -pf "%S";else exec "%F";fi)&';
+END
+
+CLASS 'Extra_Administration' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1448Extra_Administration';
+	_SYSTEM		Y;
+	_LPATTERN	sysadm;
+	_FILETYPE	EXEC;
+	_ICONFILE	oam.icon;
+	_PROG_TYPE	'UNIX Character';
+	MENU _Open	'exec xterm -xrm "*procIcon: oam48.icon" -fn fixed -T "`gettxt dtmgr:1448 \"Extra_Administration\"`" -e $XWINHOME/adm/dtexec -P sysadm /usr/sbin/sysadm&';
+END
+
+CLASS Puzzle LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1190Puzzle';
+	_SYSTEM		Y;
+        _LPATTERN       puzzle;
+        _FILETYPE       EXEC;
+        _ICONFILE       puzzle.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open      'exec "%F" &';
+END
+
+CLASS Terminal LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:583Terminal';
+	_SYSTEM		Y;
+        _LPATTERN       xterm;
+        _FILETYPE       EXEC;
+        _ICONFILE       term.icon;
+	_PROG_TYPE	'UNIX Character';
+        MENU _Open      'exec "%F" -T "%f" &';
+END
+
+CLASS 'X Calculator' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1192X Calculator';
+	_SYSTEM		Y;
+        _LPATTERN       xcalc;
+        _FILETYPE       EXEC;
+        _ICONFILE       xcalc.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open      'exec "%F" &';
+END
+
+CLASS 'Dt Calculator' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1193Dt Calculator';
+	_SYSTEM		Y;
+        _LPATTERN       dtcalc;
+        _FILETYPE       EXEC;
+        _ICONFILE       xcalc.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open      'exec "%F" &';
+END
+
+CLASS 'Icon Editor' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1194Icon Editor';
+	_SYSTEM		Y;
+        _LPATTERN       olpixmap;
+        _FILETYPE       EXEC;
+        _ICONFILE       olpix.icon;
+	_PROG_TYPE	'UNIX Graphical';
+        MENU _Open      'exec "%F" &';
+      	_DROP        	'exec "%F" "%S"     &';
+END
+
+CLASS 'Dt Admin' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1195Dt Admin';
+        _FILEPATH       $XWINHOME/adm;
+        _FILETYPE       EXEC;
+        _ICONFILE       %f.icon;
+        _DFLTICONFILE   exec.icon;
+        _SYSTEM         Y;
+	_PROG_TYPE	'UNIX Character';
+        MENU _Open      '/usr/bin/gettxt dtpkg:130 "You are not allowed to run %f." | $XWINHOME/desktop/rft/dtmsg &';
+END
+
+CLASS 'UUCP_Inbox' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1007UUCP_Inbox';
+	_FILETYPE DIR;
+	_ICONFILE "uucp.in32";
+	_LFILEPATH  "/var/spool/uucppublic/receive";
+	_LPATTERN $LOGNAME;
+	_MINIMIZED_ICONFILE "uucp.in48";
+	_SYSTEM		Y;
+END
+ 
+CLASS 'Message Monitor' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1196Message Monitor';
+	_LPATTERN       Msg_Monitor;
+	_ICONFILE       messmon32.icon;
+	_FILETYPE       EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	_SYSTEM		Y;
+	MENU _Open	'exec "%F"';
+END
+ 
+CLASS 'System Tuner' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1197System Tuner';
+	_LPATTERN       systuner;
+	_ICONFILE       systuner32;
+	_FILETYPE       EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	_SYSTEM		Y;
+	MENU _Open      '(if /sbin/tfadmin -t systuner 2>/dev/null;\
+			then\
+				/sbin/tfadmin systuner;\
+			else\
+				exec "%F";\
+			fi)&';
+END
+ 
+CLASS 'System Monitor' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1198System Monitor';
+	_LPATTERN       System_Monitor;
+	_ICONFILE       sysmon32.icon;
+	_FILETYPE       EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	_SYSTEM		Y;
+	MENU _Open      '(if /sbin/tfadmin -t System_Monitor 2>/dev/null;\
+                        then\
+                             	/sbin/tfadmin System_Monitor -p;\
+                        else\
+                             	exec "%F";\
+                        fi)&';
+END
+
+CLASS 'Mail Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1199Mail Setup';
+	_LPATTERN	Mail_Setup;
+	_ICONFILE	umail32.icon;
+	_DFLTICONFILE   exec.icon;
+	_FILETYPE	EXEC;
+	_PROG_TYPE	'UNIX Graphical';
+	_SYSTEM		Y;
+	MENU _Open	'(if /sbin/tfadmin -t Mail_Setup 2>/dev/null;\
+			then\
+				/sbin/tfadmin Mail_Setup;\
+			else\
+				exec  "%F";\
+			fi)&';
+END
+
+CLASS 'Hardware_Setup' LOCKED
+BEGIN
+	_CLASSNAME	'dtmgr:1449Hardware_Setup';
+	_PROG_TYPE	'UNIX Character';
+	_FILETYPE	EXEC;
+	_SYSTEM		Y;
+	_PATTERN	Hardware_Setup;
+	_ICONFILE	hw.stp32;
+	MENU _Open	'exec xterm -xrm "*procIcon: hw.stp48" -T "`gettxt dtmgr:1449 \"Hardware_Setup\"`" -e $XWINHOME/adm/dtexec -NP root su root -c  /sbin/dcu&';
+END
+
+INCLUDE merge.cdb;
+INCLUDE peripherals;
+INCLUDE development;

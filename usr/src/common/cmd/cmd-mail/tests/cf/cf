@@ -1,0 +1,4817 @@
+#!/bin/sh
+#
+#******************************************************************************
+#
+#	ident @(#) cf 11.2 97/12/04 
+#
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#******************************************************************************
+#
+# Test suite for sendmail.cf address parsing.
+#
+# Refer to cf.plan for test setup and instructions.
+# 
+#******************************************************************************
+
+NSLOOKUP=/usr/sbin/nslookup
+
+#
+# utility routines
+#
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo "$TEST: BEGIN"
+		${name}$i
+		echo "$TEST: END"
+		echo ""
+	done
+}
+
+passfail() \
+{
+	result=$1
+
+	if [ "$result" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleantmp() \
+{
+	rm -f ${TMPDIR}/*
+}
+
+backupfiles() \
+{
+BACKUPFILES="	/etc/mail/table/uucp /etc/mail/table/uucp.db \
+		/etc/mail/table/domain /etc/mail/table/domain.db \
+		/etc/mail/table/trusted /etc/mail/table/trusted.db \
+		/var/internet/ip/127.0.0.1/mail/virtdomains \
+		/var/internet/ip/127.0.0.1/mail/virtdomains.db"
+	
+for file in $BACKUPFILES
+do
+	if [ -f $file ]
+	then
+		cp $file ${file}.orig
+	fi
+done
+}
+
+restorefiles() \
+{
+RESTOREFILES="	/etc/mail/table/uucp /etc/mail/table/uucp.db \
+		/etc/mail/table/domain /etc/mail/table/domain.db \
+		/etc/mail/table/trusted /etc/mail/table/trusted.db \
+		/var/internet/ip/127.0.0.1/mail/virtdomains \
+		/var/internet/ip/127.0.0.1/mail/virtdomains.db"
+	
+for file in $RESTOREFILES
+do
+	if [ -f ${file}.orig ]
+	then
+		mv ${file}.orig $file 
+	fi
+done
+}
+
+mkdmn() \
+{
+	key=$1
+	shift
+	value=$*
+	echo "$key	$value" >> /etc/mail/table/domain
+	/etc/mail/makemap hash /etc/mail/table/domain < /etc/mail/table/domain \
+		>/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		echo "Failure to set up domain table database."
+		exit 1
+	fi
+}
+
+rmdmn() \
+{
+	rm -f /etc/mail/table/domain*
+}
+
+rmtrusted() \
+{
+	rm -f /etc/mail/table/trusted*
+}
+
+chkstderr() \
+{
+	[ ! -f $STDERR ] && return
+	if [ -s $STDERR ]
+	then
+		echo "stderr is not empty:"
+		cat $STDERR
+	fi
+}
+
+#
+# test cases
+#
+
+##########################################################################
+#
+# Test the address rewriting of domain table cf code.
+# Basically tests the output from ruleset 3.
+#
+##########################################################################
+
+#
+# test domain table with entry of type
+#	foobar.bar.com	spam.spaz.com
+#
+cf_dmntab_1() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+
+	#
+	# test address of type user@domain
+	#
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "testuser@foo.bar.com" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "foo.bar.com!testuser" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "foo.bar.com!final.hop.com!testuser" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="final . hop . com ! testuser < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with source route address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "<@foo.bar.com,@spoo,@boo:testuser@final>" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ spam . spaz . com . > : @ spoo : @ boo : testuser @ final"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with "%-hack" type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle%foo.bar.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser % fiffle % spiffle < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser % fiffle % spiffle < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with !@ hybrid type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fiffle!spiffle!testuser@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="fiffle ! spiffle ! testuser < @ spam . spaz . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+	
+	passfail $result
+}
+
+#
+# test domain table with entry of type
+#	.fo.fum.com  spam.com gw1.com gw2.com
+# *without* partial domain matching
+#
+cf_dmntab_2() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+	mkdmn .fo.fum.com spam.com gw1.com gw2.com
+
+	#
+	# test with address of type user@domain
+	#
+	$SENDMAIL -C$testcf "testuser@fo.fum.com" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fo.fum.com!testuser" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fo.fum.com!ho.hum.com!testuser" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : ho . hum . com ! testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with source route address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "<@fo.fum.com,@spoo,@boo:testuser@final>" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : @ spoo : @ boo : testuser @ final"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with "%-hack" type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle%fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : testuser % fiffle % spiffle @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle@fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : testuser % fiffle % spiffle @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with !@ hybrid type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fiffle!spiffle!testuser@fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : fiffle ! spiffle ! testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+
+#
+# test domain table with entry of type
+#	.fo.fum.com  spam.com gw1.com gw2.com
+# *with* partial domain matching
+#
+cf_dmntab_3() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+	mkdmn .fo.fum.com spam.com gw1.com gw2.com
+
+	#
+	# test with address of type user@domain
+	#
+	$SENDMAIL -C$testcf "testuser@fee.fi.fo.fum.com" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : testuser @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!testuser" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : testuser @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with address of type domain!domain!user
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!ho.hum.com!testuser" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : ho . hum . com ! testuser @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with source route address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final>" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : @ fee . fi . fo . fum . com : @ spoo : @ boo : testuser @ final"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with "%-hack" type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle%fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : testuser % fiffle % spiffle @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	cleantmp
+	$SENDMAIL -C$testcf "testuser%fiffle%spiffle@fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : testuser % fiffle % spiffle @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# test with !@ hybrid type address
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "fiffle!spiffle!testuser@fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : @ spam . com : fiffle ! spiffle ! testuser @ fee . fi . fo . fum . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+#
+# test domain table with entry of type
+#	.fo.fum.com  spam.com gw1.com gw2.com
+# with a local address (should remain unchanged), and with a remote address
+# where domain is not in the table (should remain unchanged)
+#
+cf_dmntab_4() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+	mkdmn .fo.fum.com spam.com gw1.com gw2.com
+
+	#
+	# local address
+	#
+	$SENDMAIL -C$testcf "testuser" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	#
+	# address of type user@domain
+	#
+	cleantmp
+	$SENDMAIL -C$testcf "testuser@foo.bar.com" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="testuser < @ foo . bar . com . >"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+
+#
+# domain table with map entry of type
+#	[123.456.789.10]	spam.com gw1.com gw2.com
+#
+cf_dmntab_5() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+
+	mkdmn  "[123.456.789.10]" spam.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "testuser@[123.456.789.10]" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+	expected="< @ gw1 . com . > : @ gw2 . com : testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+#
+# domain table with map entry of type
+#	[123.456.789.10]	spam.com [$UNKNOWNIP] gw2.com
+# ($UNKNOWNIP is an ip address unknown to DNS)
+#
+cf_dmntab_6()
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+	mkdmn "[123.456.789.10]" spam.com "[$UNKNOWNIP]" gw2.com
+	$SENDMAIL -C$testcf "testuser@[123.456.789.10]" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+
+	# the sendmail output has spaces between all the tokens
+	expanded=`echo $UNKNOWNIP | sed 's/[ 	]*//g' | sed 's/\./ \. /g'`
+	expected="< @ [ $expanded ] . > : @ gw2 . com : testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+#
+# domain table with map entry of type
+#	[123.456.789.10]	spam.com [$REALIP] gw2.com
+# ($REALIP is an ip address unknown to DNS)
+#
+cf_dmntab_7()
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_domain
+	
+	mkdmn "[123.456.789.10]" spam.com "[$REALIP]" gw2.com
+	$SENDMAIL -C$testcf "testuser@[123.456.789.10]" >$STDOUT 2>$STDERR
+	addr=`egrep "rewrite:[ \t]+ruleset[ \t]+3[ \t]+returns:" $STDOUT | \
+		tail -1 | sed 's/^rewrite:[ 	]*ruleset[ 	]*3[ 	]*returns:[ 	]*\(.*\)$/\1/'`
+
+	# the sendmail output puts spaces between all tokens,
+	# and when it does the dns lookup, the .com part is always as .COM
+	expanded=`echo $REALHOST | sed -e 's/[ 	]*//g' -e 's/com/COM/' | sed 's/\./ \. /g'`
+	expected="< @ $expanded . > : @ gw2 . com : testuser @ spam . com"
+	if [ "$addr" != "$expected" ]
+	then
+		echo "ruleset 3 returns: $addr"
+		echo "should be: $expected"
+		result=1
+	fi
+	chkstderr
+
+	passfail $result
+}
+
+##########################################################################
+#
+# Now, for same cases above, test that correct mailer was picked,
+# and that address was rewritten appropriately for that mailer.
+#
+# This tests resolution to SMTP, UUCP, badhost channels.
+#
+#########################################################################
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	testuser@foo.bar.com
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_1() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	#
+	# test with address of type user@domain
+	# where domain table maps to hostname *unknown* to DNS
+	#
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "testuser@foo.bar.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	testuser@foo.bar.com
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_2() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "testuser@foo.bar.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="testuser@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	testuser@foo.bar.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_3() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "testuser@foo.bar.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	foo.bar.com!testuser
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_4() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "foo.bar.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	foo.bar.com!testuser
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_5() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "foo.bar.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="testuser@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	foo.bar.com!testuser
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_6() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "foo.bar.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	foo.bar.com!ho.hum.com!testuser
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_7() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "foo.bar.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="ho.hum.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	foo.bar.com!ho.hum.com!testuser
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_8() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "foo.bar.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="ho.hum.com!testuser@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	foo.bar.com!ho.hum.com!testuser
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_9() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "foo.bar.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "foo.bar.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!ho.hum.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	<@foo.bar.com,@spoo,@boo:testuser@final.com>
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_10() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "<@foo.bar.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@foo.bar.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@spam.spaz.com,@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	<@foo.bar.com,@spoo,@boo:testuser@final.com>
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_11() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "<@foo.bar.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@foo.bar.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	<@foo.bar.com,@spoo,@boo:testuser@final.com>
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_12() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "<@foo.bar.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@foo.bar.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!spoo!boo!final.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%foo.bar.com
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_13() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="testuser%fiffle.com%spiffle.com@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%foo.bar.com
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_14() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="testuser%fiffle.com%spiffle.com@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%foo.bar.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_15() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!testuser%fiffle.com%spiffle.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	spam.spaz.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@foo.bar.com
+# New hostname (spam.spaz.com) is NOT known to DNS.
+#
+cf_chn_16() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com spam.spaz.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="fiffle.com!spiffle.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$REALHOST
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@foo.bar.com
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_17() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $REALHOST
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="fiffle.com!spiffle.com!testuser@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@foo.bar.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_18() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!fiffle.com!spiffle.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	foo.bar.com	$UUCPHOST
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@foo.bar.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_19() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn foo.bar.com $UUCPHOST
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@foo.bar.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@foo.bar.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!fiffle.com!spiffle.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	testuser@fo.fum.com
+# 	(which is NOT a partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_20() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	#
+	# test with address of type user@domain
+	# where domain table maps to hostname *unknown* to DNS
+	#
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "testuser@fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com:testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	testuser@fo.fum.com
+# 	(which is NOT a partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_21() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "testuser@fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com:testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	testuser@fo.fum.com
+# 	(which is NOT a partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_22() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "testuser@fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fo.fum.com!testuser
+#	(which is NOT a partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_23() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com:testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fo.fum.com!testuser
+#	(which is NOT a partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_24() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com:testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fo.fum.com!testuser
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_25() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fo.fum.com!ho.hum.com!testuser
+#	(which is NOT a partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_26() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com:ho.hum.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fo.fum.com!ho.hum.com!testuser
+#	(which is NOT a partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_27() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com:ho.hum.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fo.fum.com!ho.hum.com!testuser
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_28() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!ho.hum.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	<@fo.fum.com,@spoo,@boo:testuser@final.com>
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_29() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "<@fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com,@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	<@fo.fum.com,@spoo,@boo:testuser@final.com>
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_30() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "<@fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com,@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	<@fo.fum.com,@spoo,@boo:testuser@final.com>
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_31() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "<@fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!spoo!boo!final.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fo.fum.com
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_32() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com:testuser%fiffle.com%spiffle.com@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fo.fum.com
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_33() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com:testuser%fiffle.com%spiffle.com@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fo.fum.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_34() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!testuser%fiffle.com%spiffle.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fo.fum.com
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_35() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com:fiffle.com!spiffle.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fo.fum.com
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_36() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com:fiffle.com!spiffle.com!testuser@spam.spaz.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fo.fum.com
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_37() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fiffle.com!spiffle.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	testuser@fee.fi.fo.fum.com
+# 	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_38() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	#
+	# test with address of type user@domain
+	# where domain table maps to hostname *unknown* to DNS
+	#
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "testuser@fee.fi.fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	testuser@fee.fi.fo.fum.com
+# 	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_39() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "testuser@fee.fi.fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	testuser@fee.fi.fo.fum.com
+# 	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_40() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "testuser@fee.fi.fo.fum.com" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!testuser
+#	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_41() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!testuser
+#	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_42() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com:testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!testuser
+#	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_43() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fee.fi.fo.fum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!ho.hum.com!testuser
+#	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_44() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fee.fi.fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com:ho.hum.com!testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!ho.hum.com!testuser
+#	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_45() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fee.fi.fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com:ho.hum.com!testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fee.fi.fo.fum.com!ho.hum.com!testuser
+#	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_46() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fee.fi.fo.fum.com!ho.hum.com!testuser" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fee.fi.fo.fum.com!ho.hum.com!testuser was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!ho.hum.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry (no partial domain matching):
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+#	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_47() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com,@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+#	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_48() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com,@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>
+#	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_49() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com>" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "<@fee.fi.fo.fum.com,@spoo,@boo:testuser@final.com> was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!spoo!boo!final.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_50() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com:testuser%fiffle.com%spiffle.com@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_51() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com:testuser%fiffle.com%spiffle.com@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_52() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "testuser%fiffle.com%spiffle.com%fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "testuser%fiffle.com%spiffle.com%fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!testuser%fiffle.com%spiffle.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com gw1.com gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname (gw1.com) is NOT known to DNS.
+#
+cf_chn_53() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com gw1.com gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost=$BADHOST
+		expectedUser="@gw1.com,@gw2.com,@spam.spaz.com:fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $REALHOST gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname ($REALHOST) is known to DNS.
+#
+cf_chn_54() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $REALHOST gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="SMTP"
+		expectedHost="$REALHOST"
+		expectedUser="@${REALHOST},@gw2.com,@spam.spaz.com:fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# Map entry:
+#	.fo.fum.com	spam.spaz.com $UUCPHOST gw2.com
+# Address tested:
+#	fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com
+#	(partial domain match)
+# New hostname ($UUCPHOST) is in the uucp Systems file database.
+#
+cf_chn_55() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	mkdmn .fo.fum.com spam.spaz.com $UUCPHOST gw2.com
+	$SENDMAIL -C$testcf "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com" \
+		>$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "fiffle.com!spiffle.com!testuser@fee.fi.fo.fum.com was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="UUCP"
+		expectedHost="$UUCPHOST"
+		expectedUser="${UUCPHOST}!gw2.com!spam.spaz.com!fee.fi.fo.fum.com!fiffle.com!spiffle.com!testuser"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+# (No domain table used)
+# Address of user which does not exist tested:
+#	$UNKUSER
+# Should resolve to the baduser channel
+#
+cf_chn_56() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_chans
+
+	$SENDMAIL -C$testcf "$UNKUSER" >$STDOUT 2>$STDERR
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "$UNKUSER was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="baduser"
+		expectedHost="$BADUSER"
+		expectedUser="$UNKUSER"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# (No domain table used)
+# Using the default cf file, if nameservice is unavailable then
+# remote addr should resolve to the baduser name service delay
+# channel.
+#
+cf_chn_57() 
+{
+	cleantmp
+	rmdmn
+	result=0
+
+	testcf=$TESTFILEDIR/cf_default
+
+	# put a non-existent nameserver in /etc/resolv.conf
+	# to simulate the nameserver is unreachable
+	cp /etc/resolv.conf /etc/resolv.conf.orig
+	sed '/^nameserver .*$/d' /etc/resolv.conf >/tmp/resolv.new
+	echo "nameserver $UNKNOWNIP" >> /tmp/resolv.new
+	mv /tmp/resolv.new /etc/resolv.conf
+
+	echo "(this test case involves nameserver timeouts, so it may take a while)"
+
+	$SENDMAIL -C$testcf "user@${REALHOST}" >$STDOUT 2>$STDERR
+
+	mv /etc/resolv.conf.orig /etc/resolv.conf
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "deliverable" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "user@${REALHOST} was not deliverable"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	else
+
+		mailer=`echo $output | sed -e 's/^.*\.\.\. deliverable: mailer \(.*\), host .*$/\1/'`
+		host=`echo $output | sed -e 's/^.*, host \(.*\), user .*$/\1/'`
+		user=`echo $output | sed -e 's/^.*, user \(.*\)$/\1/'`
+
+		expectedMailer="badhost"
+		expectedHost="${REALHOST}"
+		expectedUser="user@${REALHOST}"
+
+		if [ "$mailer" != "$expectedMailer" ]
+		then
+			echo "mailer : $mailer"
+			echo "should be: $expectedMailer"
+			result=1
+		fi
+
+		if [ "$host" != "$expectedHost" ]
+		then
+			echo "host : $host"
+			echo "should be: $expectedHost"
+			result=1
+		fi
+
+		if [ "$user" != "$expectedUser" ]
+		then
+			echo "user : $user"
+			echo "should be: $expectedUser"
+			result=1
+		fi
+
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+##########################################################################
+#
+# Check the check_rcpt ruleset (which prevents the local host from
+# becoming a spam relay).
+#
+# Unfortunately, ruleset check_rcpt makes use of the client_name macro,
+# which of course isn't defined when just running sendmail in test mode.
+# So we'll have to manually set the client_name macro to some dummy
+# connecting hostname.
+#
+##########################################################################
+
+#
+# If check_rcpt disabled, ensure all addresses are ok.
+#
+cf_chkrcpt_1() 
+{
+	cleantmp
+	result=0
+
+	testcf=$TESTFILEDIR/cf_default
+
+	# test local address
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: local address not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test address with hostname which is the local host
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser@${LOCALHOST}
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: localuser@{LOCALHOST} not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test remote address, with connecting host also remote
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+.D{client_name}foo.bar.com
+check_rcpt user@remote.bar.com
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: user@remote.bar.com not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Test addresses with 
+#	- check_rcpt enabled
+#	- do not lookup host in virtual domains
+#	- no trusted table
+#
+cf_chkrcpt_2() 
+{
+	cleantmp
+	result=0
+
+	# create a test cf file with check_rcpt enabled
+	testcf=$TMPDIR/cf_check.2
+	sed 's/^DC$/DCCHECKRCPT/' $TESTFILEDIR/cf_default > $testcf
+
+	# remove trusted map files
+	rm -f /etc/mail/table/trusted
+	rm -f /etc/mail/table/trusted.db
+
+	# test local address
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: local address not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test address with hostname which is the local host
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser@${LOCALHOST}
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: localuser@{LOCALHOST} not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test remote address, with connecting host also remote
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+.D{client_name}foo.bar.com
+check_rcpt user@remote.bar.com
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: \$# error \$@ 5 . 7 . 2 \$: Relay mail from foo.bar.com to remote . bar . com denied" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: user@remote.bar.com did not produce error"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+
+#
+# Test addresses with 
+#	- check_rcpt enabled
+#	- lookup host in virtual domains
+#	- lookup host in trusted table
+#
+cf_chkrcpt_3() 
+{
+	cleantmp
+	result=0
+
+	# create a test cf file with check_rcpt enabled, using
+	# one which has multihome channel-- that way virtual domains
+	# map lookup is enabled
+	testcf=$TMPDIR/cf_check.3
+	sed 's/^DC$/DCCHECKRCPT/' $TESTFILEDIR/cf_virt > $testcf
+
+	# create new trusted map files
+	rm -f /etc/mail/table/trusted
+	rm -f /etc/mail/table/trusted.db
+	TRUSTED="trusted.machine.com"
+	echo "$TRUSTED	123.456.789.0" >/etc/mail/table/trusted
+	/etc/mail/makemap hash /etc/mail/table/trusted \
+		</etc/mail/table/trusted >/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		echo "Failed to create trusted map database."
+		result=1
+	fi
+
+	# create virtual domains map files
+	rm -f /var/internet/ip/127.0.0.1/mail/virtdomains
+	rm -f /var/internet/ip/127.0.0.1/mail/virtdomains.db
+	if [ ! -d /var/internet/ip/127.0.0.1/mail ]
+	then
+		mkdir -p /var/internet/ip/127.0.0.1/mail
+	fi
+	VIRT="virt.machine.name.com"
+	echo "$VIRT	321.654.987.0" \
+		>/var/internet/ip/127.0.0.1/mail/virtdomains
+	/etc/mail/makemap hash /var/internet/ip/127.0.0.1/mail/virtdomains < \
+		/var/internet/ip/127.0.0.1/mail/virtdomains >/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		echo "Failed to create virtual domains map database."
+		result=1
+	fi
+
+	# test local address
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: local address not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test address with hostname which is the local host
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+check_rcpt localuser@${LOCALHOST}
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: localuser@{LOCALHOST} not ok"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test remote address, with trusted remote connecting host
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+.D{client_name}$TRUSTED
+check_rcpt user@remote.bar.com
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: did not get expected result \"ok\""
+		echo "		- recipient: user@remote.bar.com"
+		echo "		- connecting host (trusted) : $TRUSTED"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test remote address which is a virtual domain for the local host,
+	# with remote connecting host (which is not trusted)
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+.D{client_name}foo.bar.com
+check_rcpt user@$VIRT
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: ok" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: did not get expected result \"ok\""
+		echo "		- recipient (virt domain): user@$VIRT"
+		echo "		- connecting host (not trusted): foo.bar.com"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	# test remote address, with connecting host also remote
+	$SENDMAIL_TEST -C$testcf >$STDOUT 2>$STDERR <<_EOF
+.D{client_name}foo.bar.com
+check_rcpt user@remote.bar.com
+_EOF
+
+	output=`tail -1 $STDOUT`
+	echo $output | grep "returns: \$# error \$@ 5 . 7 . 2 \$: Relay mail from foo.bar.com to remote . bar . com denied" >/dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo "check_rcpt: user@remote.bar.com did not produce error"
+		echo "sendmail output:"
+		cat $STDOUT
+		result=1
+	fi
+
+        chkstderr
+
+	passfail $result
+}
+
+#
+# main()
+#
+
+TEST=""
+
+if [ "$TESTDIR" = "" ]
+then
+	TESTDIR=`pwd`
+fi
+
+if [ "$PROGDIR" = "" ]
+then
+	PROGDIR=/usr/lib
+fi
+
+SENDMAIL="$PROGDIR/sendmail -bv -d21.1"
+SENDMAIL_TEST="$PROGDIR/sendmail -bt"
+TESTFILEDIR=$TESTDIR/testfiles
+TMPDIR=$TESTDIR/tmp
+STDOUT=$TMPDIR/out.stdout
+STDERR=$TMPDIR/out.stderr
+
+if [ ! -d $TMPDIR ]
+then
+	mkdir -p $TMPDIR
+fi
+
+# save original table files
+backupfiles
+
+#
+# need to setup
+#
+
+# the name of the local host
+LOCALHOST=`uname -n`
+
+# these are in the test cf files as forwarding hosts
+# for the badhost and baduser channels
+BADHOST="badhost.foo.com"
+BADUSER="baduser.foo.com"
+
+# the name of a user which does not exist on this machine
+UNKUSER="unknownuser"
+
+# a host that will allow a successful DNS lookup
+REALHOST=""
+while [ "$REALHOST" = "" ]
+do
+	echo "Please enter a fully qualified hostname *known* to DNS,"
+	echo -n "which has at least 2 dots (example: foo.sco.com): "
+	read REALHOST
+	echo ""
+	$NSLOOKUP $REALHOST >/tmp/nslookup.stdout 2>/tmp/nslookup.stderr
+	cat /tmp/nslookup.stderr | grep "Non-existent"
+	if [ $? -eq 0 ]
+	then
+		echo "$REALHOST cannot be resolved by DNS."
+		echo ""
+		REALHOST=""
+	fi
+done
+REALIP=`cat /tmp/nslookup.stdout | tail -2 | sed 's/^Address:[   ]*\(.*\)$/\1/'`
+
+# an ip address that cannot be resolved by DNS 
+UNKNOWNIP=""
+while [ "$UNKNOWNIP" = "" ]
+do
+	echo -n "Please enter an IP address that is NOT known to DNS: "
+	read UNKNOWNIP
+	echo ""
+	$NSLOOKUP $UNKNOWNIP >/tmp/nslookup.stdout 2>/tmp/nslookup.stderr
+	cat /tmp/nslookup.stderr | grep "Non-existent" 1>/dev/null
+	if [ $? -ne 0 ]
+	then
+		echo "$UNKNOWNIP can be resolved by DNS."
+		echo ""
+		UNKNOWNIP=""
+	fi
+done
+
+# a fake uucp host to address mail to
+UUCPHOST=uucpHost.foobar.com
+if [ ! -d /etc/mail/table ]
+then
+	mkdir -p /etc/mail/table
+fi
+echo "$UUCPHOST	dummy.co.com" > /etc/mail/table/uucp
+/etc/mail/makemap hash /etc/mail/table/uucp < /etc/mail/table/uucp \
+	>/dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo "Failure to set up uucp database."
+	exit 1
+fi
+
+modulePrefix="cf_"
+
+# just tests domain table parsing code
+dmntab="1 2 3 4 5 6 7"
+# also tests resolution to mailers
+chn="1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57"
+checkrcpt="1 2 3"
+cleantmp
+rmdmn
+
+testlist ${modulePrefix}dmntab_ $dmntab
+testlist ${modulePrefix}chn_ $chn
+testlist ${modulePrefix}chkrcpt_ $checkrcpt
+
+# restore orig table files
+restorefiles

@@ -1,0 +1,104 @@
+#!/bin/sh
+#
+#	@(#)MakeProduct	11.1	10/22/97	12:41:00
+#
+#	MakeProduct
+#
+#	run this in your ./Xserver/hw/sco/ports/<driver>
+#	work directory when you are ready to package your driver.
+#
+#	This script will insist on being in some ./ports/* directory
+#
+#	It will create a ./pkg directory here, with
+#	./pkg/destdir - for the destination of a
+#				'make install DESTDIR=./pkg/destdir'
+#	./pkg/spool - spool directory for the pkgmk to work with
+#
+PROGNAME=`basename $0`
+
+HERE=`pwd`
+driver=`basename $HERE`
+portspath=`dirname $HERE`
+ports=`basename $portspath`
+
+if [ "$ports" != "ports" ]; then {
+	echo "$PROGNAME: ERROR: Current directory is:"
+	pwd
+	echo "$PROGNAME must be run from some ./ports/<driver> directory"
+	exit 1
+} fi
+
+if [ -d pkg ]; then {
+	echo "cleaning ./pkg directory"
+	cd pkg
+	rm -fr *
+	cd ..
+} else {
+	mkdir pkg || { 
+		echo "$PROGNAME: ERROR: can not 'mkdir pkg'"
+		echo "\tIs there a file called pkg ?"
+		exit 1
+	}
+} fi
+
+mkdir pkg/destdir || exit 255
+mkdir pkg/spool || exit 255
+
+ls -lR pkg
+
+make install DESTDIR=$HERE/pkg/destdir
+
+#	Now, working in ./pkg, create the necessary files
+#	for the prototype make
+#
+cd ./pkg
+
+cat << _EOF_ > copyright
+(C) Copyright 1996 The Santa Cruz Operation, Inc.  All rights reserved.
+_EOF_
+
+cat << _EOF_ > depend
+P       base    Base System
+P       basex   GEMINI X11R6 Base X runtime
+P       xfonts  GEMINI X11R6 Fonts
+P       xserver  GEMINI X11R6 X Server
+_EOF_
+
+cat << _EOF_ > pkginfo
+PKG="$driver"
+NAME="GEMINI X11R6 X Driver: $driver"
+ARCH="i386"
+VERSION="0"
+VENDOR="SCO"
+HOTLINE="SCO"
+EMAIL="gemsdk@sco.COM"
+VSTOCK="0122c3f5566"
+CLASSES="enduser build"
+CATEGORY="graphics"
+ISTATES="S 2"
+RSTATES="S 2"
+_EOF_
+
+cat << _EOF_ > prototype
+# prototype file created by $PROGNAME `date`
+#
+i copyright
+i depend
+i pkginfo
+
+!default 0755 bin bin
+#
+_EOF_
+
+pkgproto $HERE/pkg/destdir=/ | sort | sed -e "1d" >> pkgproto
+
+sed -e "s/ none / enduser /" -e "s/ 0755.*//" \
+	-e "s/\=\/.*//" \
+	-e "s/^d enduser \/usr$/d enduser \/usr ? ? ?/" \
+	-e "s/libXDriver.so/libXDriver.so 0755 bin bin /" pkgproto >> prototype
+
+
+pkgmk -d `pwd`/spool -r `pwd`/destdir
+
+cd ..
+

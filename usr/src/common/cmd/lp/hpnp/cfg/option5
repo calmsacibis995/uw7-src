@@ -1,0 +1,133 @@
+#!/bin/ksh
+#ident	"@(#)option5	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+if [ -z "$HPNPDIR" ]
+then
+	HPNPDIR="/usr/lib/hpnp"
+fi
+FILE_PS="$HPNPDIR/testfiles/ps"
+FILE_TEXT="$HPNPDIR/testfiles/text"
+HPNPF="$HPNPDIR/hpnpf"
+
+if [ ! -f "$HPNPF" ]
+then
+  echo "\nThe spooler software must not have been installed since"
+  echo "$HPNPF does not exist.  This test can not be run"
+  echo "without the spooler software."
+  echo "\nPress the return key to return to the main menu ... $NL"
+  read -r RESP
+  exit 1
+fi
+
+GETCOMNAM=""
+if [ -n "$2" ]
+then
+  GETCOMNAM="-c $2"
+fi
+
+getname option5 $1
+if [ $? -ne 0 ]
+then
+  exit 1
+fi
+
+PERIPH=`cat -- $TMP/NAME`
+rm -- "$TMP/NAME"
+
+DASHN=""
+
+while [ 0 ]
+do
+    echo "\nThe following types of test files can be sent to the printer:"
+    echo ""
+    echo "                    1) text file"
+    echo "                    2) PostScript file"
+    echo "\nWhich type of file should be sent? (1/2 default=1) $NL"
+    read -r RESP
+    if [ -z "$RESP" ]
+    then
+      RESP=1
+    fi
+    case "$RESP" in
+      1) FILE=$FILE_TEXT 
+	 DASHN="-n"
+	 break ;;
+      2) FILE=$FILE_PS 
+	 break ;;
+      q) exit 1 ;;
+      \?)
+	 echo "\nThe test file sent depends upon the capabilities of the printer."
+	 echo "Sending the wrong type of file to a printer may result in no"
+	 echo "output or unexpected output.  Choose the right file type for your"
+	 echo "printer.\n"
+	 $QUITHELP
+	 ;;
+      *) echo "\nInvalid response"
+	 ;;
+    esac
+done
+
+if [ ! -f "$FILE" ]
+then
+	echo "\nUnable to run test because $FILE does not exist."
+	echo "Press the return key to continue ... $NL"
+	read -r RESP
+	exit 1
+fi
+
+trap "" 1 2 3 15
+echo ""
+echo "==============================================================="
+echo "Checking that $HOSTNAME is on the printer's access list ...$NL"
+echo ""
+echo "$HPNPDIR/cfg/canaccess $GETCOMNAM $PERIPH"
+"$HPNPDIR/cfg/canaccess" $GETCOMNAM "$PERIPH"
+RETCODE=$?
+if [ $RETCODE -eq 1 ]
+then
+  echo "\nPrinter access test failed.  Add $HOSTNAME to the"
+  echo "printer's access list before continuing."
+else
+  if [ $RETCODE -ne 0 ]
+  then
+    echo "\nThe access list test was inconclusive ... continuing"
+  fi
+
+  # trap signals if user decides to interrupt during hpnpf send
+
+  echo "\nSending a test file to $PERIPH ..."
+  echo ""
+  echo $HPNPF $DASHN -v -R -x $PERIPH $FILE
+  "$HPNPF" $DASHN -v -R -x "$PERIPH" "$FILE"
+
+  if [ $? -eq 0 ]
+  then
+    echo "\nThe file was successfully sent to $PERIPH."
+  else
+    echo "\nAn error occurred sending the file to $PERIPH.  If the"
+    echo "printer has already passed the tests in options 3 and 4,"
+    echo "and the access list check, verify that the printer is online."
+  fi
+fi
+
+echo "==============================================================="
+echo "\nThe network printer operation test is complete."
+echo "Press the return key to continue ... $NL"
+read -r RESP
+
+exit 0

@@ -1,0 +1,235 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.encap.sh	1.2 3/3/97 03:18:58 - cmd.vxvm:common/voladm/disk.encap.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.encap.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+. $VOLADM_BIN/disk.ckinit
+
+voladm_menu_push Encapsulate
+voladm_help_push disk.encap.help
+
+set_OS_variables
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:222 "Encapsulate one or more disks"
+
+	ewritemsg -M vxvmshm:554 \
+"Use this operation to convert one or more disks to use the Volume Manager.
+  This adds the disks to a disk group and replaces existing partitions
+  with volumes.  Disk encapsulation requires a reboot for the changes
+  to take effect.
+
+  More than one disk or pattern may be entered at the prompt.  Here are
+  some disk selection examples:
+
+  all:		all disks
+  c3 c4b0t2:    all disks on both controller 3 and controller 4, bus 0, target 2
+  c3b0t4d2:     a single disk"
+
+	# Make sure prompt is displayed on the next line.
+	voladm_disk_device_list -M vxvmshm:0 \
+"Select disk devices to encapsulate:                                  "
+
+	if [ -z "$device_list" ]
+	then
+		ewritemsg -M vxvmshm:293 "No matching disks found."
+		voladm_continue -n
+		continue
+	fi
+
+	disp_file=$tmpfile4
+
+	if [ `list_count $device_list` -eq 1 ]
+	then
+		single_disk=yes
+		ewritemsg -f $disp_file -M vxvmshm:241 \
+"Here is the disk selected.  Output format: [Device_Name]"
+	else
+		single_disk=no
+		ewritemsg -f $disp_file -M vxvmshm:240 \
+"Here are the disks selected.  Output format: [Device_Name]"
+	fi
+
+	voladm_list_display -a -f $disp_file $device_list
+
+	voladm_yorn -M vxvmshm:143 "Continue operation?" y
+	if [ $? -ne 0 ]
+	then
+		continue
+	fi
+
+	create_group="no"
+
+	if [ "$single_disk" = "yes" ]
+	then
+		ewritemsg -M vxvmshm:586 \
+"You can choose to add this disk to an existing disk group or to
+  a new disk group.  To create a new disk group, select a disk group
+  name that does not yet exist."
+	else
+		ewritemsg -M vxvmshm:584 \
+"You can choose to add the disks to an existing disk group or to
+  a new disk group.  To create a new disk group, select a disk group
+  name that does not yet exist."
+	fi
+
+	voladm_disk_group -n "" rootdg
+
+	[ $? -eq 10 ] && create_group=yes
+
+	voladm_help_push disk.nameadd.help
+	if [ "$single_disk" = "yes" ]
+	then
+		voladm_yorn -M vxvmshm:545 \
+		"Use a default disk name for the disk?" y
+	else
+		voladm_yorn -M vxvmshm:546 \
+		"Use default disk names for these disks?" y
+	fi
+	if [ $? -ne 0 ]
+	then
+		use_default_dmnames="no"
+	else
+		use_default_dmnames="yes"
+	fi
+	voladm_help_pop
+
+	if [ "$create_group" = "yes" ]
+	then
+		if [ "$use_default_dmnames" = "yes" ]
+		then
+			export dgname; \
+			ewritemsg -f $disp_file -M vxvmshm:96 \
+"A new disk group will be created named $dgname and the selected
+  disks will be encapsulated and added to this disk group with
+  default disk names."
+		else
+			export dgname; \
+			ewritemsg -f $disp_file -M vxvmshm:97 \
+"A new disk group will be created named $dgname and the selected
+  disks will be encapsulated and added to this disk group with
+  disk names that will be specified interactively."
+		fi
+	else
+		if [ "$use_default_dmnames" = "yes" ]
+		then
+			export dgname; \
+			ewritemsg -f $disp_file -M vxvmshm:455 \
+"The selected disks will be encapsulated and added to the $dgname 
+  disk group with default disk names."
+		else
+			export dgname; \
+			ewritemsg -f $disp_file -M vxvmshm:456 \
+"The selected disks will be encapsulated and added to the $dgname 
+  disk group with disk names that will be specified interactively."
+		fi
+	fi
+
+	voladm_list_display -a -f $disp_file $device_list
+
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn -M vxvmshm:108 \
+		"Add or initialize other disks?" y || break
+		continue
+	fi
+
+	disk_dgname=$dgname
+
+	#
+	# Create a device, daname list for disk_ckinit.
+	#
+
+        dev_da_num=2    # Number of elements in device, daname list
+	dev_index=1     # Index of the device name in the group list.
+	da_index=2      # Index of the daname in the group list.
+
+	ckinit_dev_list=
+	error=no
+	for device in $device_list
+	do
+		if not dogi_name_is_device $device
+		then
+			export device; \
+			ewritemsg -M vxvmshm:158 \
+			"Device $device is not in the form cNbNtNdN."
+			voladm_continue -n
+			error=yes
+		else
+			dogi_name_daname $device daname
+			append_list ckinit_dev_list $device $daname
+		fi
+	done
+
+	if [ "$error" = "yes" ]
+	then
+		voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+		if [ $? -ne 0 ]
+		then
+			quit 0
+		fi
+	fi
+
+	if [ -z "$ckinit_dev_list" ]
+	then
+		if [ "$single_disk" = "yes" ]
+		then
+			ewritemsg -M vxvmshm:363 \
+			"Selected disk found to be invalid."
+		else
+			ewritemsg -M vxvmshm:117 \
+			"All selected disks found to be invalid."
+		fi
+		voladm_continue
+		continue
+	fi
+
+	#
+	# disk_ckinit sets the following environment variables:
+	#
+	#     ckinit_init - disks to be initialized
+	#     ckinit_noreinit - disks not to be reinitialized
+	#     ckinit_reatt - disks to be re-attached
+	#     ckinit_encap - disks to be encapsulated
+	#
+	disk_ckinit $ckinit_dev_list encap
+
+	if [ -n "$ckinit_init" -o -n "$ckinit_noreinit" -o -n "$ckinit_reatt" ]
+	then
+		ewritemsg -M vxvmshm:639 \
+		"internal error: disk_ckinit list variables should be empty."
+		voladm_continue
+	fi
+
+	if [ -n "$ckinit_encap" ]
+	then
+		ask_more=yes
+		disk_encap $ckinit_encap encap
+	fi
+
+	voladm_yorn -M vxvmshm:223 \
+	"Encapsulate other disks?" n || break
+done
+
+quit 0

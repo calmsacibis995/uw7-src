@@ -1,0 +1,37 @@
+#ident	"@(#)initpkg:i386/cmd/initpkg/init.d/mkdtab	1.1.5.4"
+
+#
+# Update device.tab and dgroup.tab files to reflect new floppy configuration.
+#
+
+/usr/sadm/sysadm/bin/flpyconf 2>/dev/null
+if [ $? -ne 0 ]
+then
+	/usr/sadm/sysadm/bin/mkdtab
+	if [ -x /sbin/fdinit ]
+	then
+		rm -f /dev/fd0 /dev/fd1 /dev/rfd0 /dev/rfd1
+		type=`/sbin/fdinit -f 0`
+		if [ $type -eq "3" ]
+		then
+			ln /dev/dsk/f03ht /dev/fd0
+			ln /dev/rdsk/f03ht /dev/rfd0
+		elif [ $type -eq "5" ]
+		then
+			ln /dev/dsk/f05ht /dev/fd0
+			ln /dev/rdsk/f05ht /dev/rfd0
+		fi
+
+		type=`/sbin/fdinit -f 1`
+		if [ $type -eq "3" ]
+		then
+			ln /dev/dsk/f13ht /dev/fd1
+			ln /dev/rdsk/f13ht /dev/rfd1
+		elif [ $type -eq "5" ]
+		then
+			ln /dev/dsk/f15ht /dev/fd1
+			ln /dev/rdsk/f15ht /dev/rfd1
+		fi
+
+	fi
+fi

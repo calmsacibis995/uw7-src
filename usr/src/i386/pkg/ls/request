@@ -1,0 +1,287 @@
+#!/bin/sh
+#ident	"@(#)request	1.2"
+#
+#  Request script for the ls package
+#
+#
+#
+# set LSVAR for use later
+#
+LSVAR=/var/opt/ls
+MENU_RESP=$1
+PKGMSG=ls.pkg
+
+# There are three scenarious in which this script will run:
+#
+# $HOW_INSTALL=
+#
+# (a) ON_BFLOP:		it is called from the
+#			boot floppies. 
+#
+# (b) POSTREBOOT:	it is called upon reboot from set installation on the
+#			boot floppies.
+#
+# (c)NORMAL:		it is called from pkgadd'ing the individual package
+#			or from the network set installation.
+write_exit()
+{
+	echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+
+	echo KEYBOARD=\"$KEYBOARD\" >> ${MENU_RESP}
+	echo LOCALE=\"$LOCALE\" >> ${MENU_RESP}
+	echo DOALL=\"$DOALL\" >> ${MENU_RESP}
+	echo GRAPHICS=\"$GRAPHICS\" >> ${MENU_RESP}
+	echo LANGUAGE=\"$LANGUAGE\" >> ${MENU_RESP}
+	echo TERR=\"$TERR\" >> ${MENU_RESP}
+	if [ "$HOW_INSTALL" = "NORMAL" ]
+	then
+		menu -c
+	fi
+    	exit 0
+}
+
+HOW_INSTALL=NORMAL
+# The following HOW_INSTALL clauses are order dependent
+
+# We are rebooting after installation if the script
+# /etc/rc2.d/S02POSTINST exists
+[ -f /etc/rc2.d/S02POSTINST ] && {
+	HOW_INSTALL=POSTREBOOT
+}
+
+# We are on the boot floppies if:
+ 
+# the script /etc/inst/scripts/postreboot.sh exists 
+[ -f /etc/inst/scripts/postreboot.sh ] && {
+	HOW_INSTALL=ON_BFLOP
+}
+
+# Graphics support will always be installed
+# previously it had been optional depending on whether graphics was 
+# already installed
+GRAPHICS=YES
+
+if [ "$HOW_INSTALL" != "POSTREBOOT" ]
+then
+
+	if [ $GRAPHICS = "YES" ]
+	then
+		CLASSES="base xsup build"
+	else
+		CLASSES="base"
+	fi
+elif $SILENT_INSTALL
+then
+	if [ "$KEYBOARD" = "" ]
+	then
+		KEYBOARD=NONE
+	fi
+
+#   Write out the configuration.
+	write_exit
+fi
+
+
+if [ "$HOW_INSTALL" = "ON_BFLOP" ] 
+then
+# create magic file for postreboot.sh to know LS is installed
+> /tmp/ls
+	echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+	exit 0
+fi
+
+
+MLOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-C}}}
+MENU_DIR=/etc/inst/locale/${MLOCALE}/menus/${PKGINST}
+
+
+if [ ! -f ${MENU_DIR}/menu.up.err ] 
+then
+	if [ ! -d ${REQDIR}/${PKG}/${MLOCALE} ]
+	then
+		MLOCALE=C
+	fi
+	MENU_DIR=${REQDIR}/${PKG}/${MLOCALE}
+fi
+	
+#
+#  Set up to use menu_colors; default to C-locale if ${LANG}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${MLOCALE}/menus/menu_colors.sh ]
+then
+        . /etc/inst/locale/${MLOCALE}/menus/menu_colors.sh
+else
+        . /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+menu_colors regular
+
+
+# BEGIN UP'N'OVER SUPPORT
+
+SCRIPTS=/usr/sbin/pkginst
+PKGINSTALL_TYPE=NEWINSTALL
+
+# Call chkpkgrel to determine installation type.
+# As a side effect, /etc/inst/save.user/ls.env is created.
+${SCRIPTS}/chkpkgrel
+   PKGVERSION=$?
+
+
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	6)	PKGINSTALL_TYPE=UPGRADE2	;;
+	*)	;;
+esac
+export PKGINSTALL_TYPE
+
+
+if [ $HOW_INSTALL = "NORMAL" -a ! -f /etc/skel/.UpgradeVer* ] 
+then
+# /etc/skel/.UpgradeVer* files exist only on UW2.0+ systems.
+# This test is to ensure that the LS package does not get pkgadd'ed
+# on a pre-UW2.0 system, because underlying system dependencies
+# will not be in place.
+    	menu -f $MENU_DIR/menu.up.err -o /dev/null
+	exit 1
+fi
+
+#
+#  Check whether the boot floppies configured a keyboard.
+#
+
+
+eval `defadm keyboard KEYBOARD 2> /dev/null`
+if [ $? != 0 ]
+then
+
+	KEYBOARD=""
+	if [ "$HOW_INSTALL" = "NORMAL" ]
+	then
+    	menu -f $MENU_DIR/menu.ls00 -o /tmp/lSinfo -r
+	fi
+else
+	if [ -z "$KEYBOARD" ] 
+	then
+		KEYBOARD=NONE
+		export KEYBOARD
+	fi
+	
+
+KEYTMP1=`egrep "$KEYBOARD" $MENU_DIR/menu.ls1 |tr "/" ";"`
+KEYTMP2=`echo $KEYBOARD | tr "/" ";"`
+KEYBOARD_NAME=`echo $KEYTMP1 | sed -e "s/.*$KEYTMP2:://" | sed -e "s/\;\;.*//"`
+	export KEYBOARD_NAME
+	if [ "$PKGINSTALL_TYPE" = "OVERLAY" -o "$PKGINSTALL_TYPE" = "UPGRADE2" ]
+	then 
+		eval `grep -v KEYBOARD $UPGRADE_STORE/$LSVAR/config 2> /dev/null`
+		if [ $? = 0 ] && [ ! -z "$LOCALE" ] && [ ! -z "$DOALL" ] && 
+			[ ! -z "$LANGUAGE" ] && [  ! -z "$TERR" ]
+		then
+
+			if [ $HOW_INSTALL = "NORMAL" ]
+			then
+				
+
+				LOCALES_INST=`LC_MESSAGES=$MLOCALE gettxt "${PKGMSG}:3:All Locales"`
+				LOCALE_NAME=`egrep "!$LOCALE" $MENU_DIR/menu.ls2 | sed -e"s/.*!$LOCALE:://" | sed -e"s/\/\/.*//"`
+				export LOCALE_NAME LOCALES_INST
+				menu -r -f $MENU_DIR/menu.ls04 -o /tmp/lSinfo -r
+
+      				OPT=`cat /tmp/lSinfo`
+
+      				OPT=`expr "$OPT" : '.*"\(.*\)"'`
+
+	  			if [ $OPT -eq 1 ]
+	  			then
+					write_exit
+	  			else
+					KEYBOARD=""
+				fi
+			else
+
+				write_exit
+			fi
+		elif [ "$HOW_INSTALL" = "NORMAL"  ]
+		then
+      			menu -f $MENU_DIR/menu.ls01 -o /tmp/lSinfo -r
+      			menu -f $MENU_DIR/menu.ls02 -o /tmp/lSinfo -r
+      			OPT=`cat /tmp/lSinfo`
+      			OPT=`expr "$OPT" : '.*"\(.*\)"'`
+	  		if [ $OPT -eq 2 ]
+	  		then
+          			KEYBOARD=""
+	  		fi
+    		fi
+	elif [ "$PKGINSTALL_TYPE" = "UPGRADE" ]
+
+	then
+		unset LOCALE
+		eval `grep -v KEYBOARD $UPGRADE_STORE/var/opt/els/config 2> /dev/null`
+		if [ $? = 0 ] && [ ! -z "$LOCALE" ] && 
+			[ ! -z "$FULL_LOC_SET" ] && [  ! -z "$LOCALE_SET" ]
+		then
+
+			FL=`echo $FULL_LOC_SET`
+			LOCS=`echo $LOCALE_SET`
+			if [ "$FL" = "$LOCS" ]
+			then
+				DOALL=YES
+			else
+				DOALL=NO
+			fi
+			L=`egrep "!$LOCALE" $MENU_DIR/menu.ls2 | sed -e"s/!$LOCALE::.*//" | sed -e"s/.*\/\///"`
+			LANGUAGE=`echo $L | cut -f1 -d_`
+			TERR=`echo $L | cut -f2 -d_`
+			write_exit
+		fi
+	fi
+fi
+
+# Change defaults/input new values.
+#
+
+
+#if [ "$KEYBOARD" = ""  ] ; then  
+#   unset KEYBOARD
+   menu -f $MENU_DIR/menu.ls1 -o /tmp/lSkeyboard -r
+   . /tmp/lSkeyboard
+   rm /tmp/lSkeyboard
+   export KEYBOARD
+   if [ "$KEYBOARD" = "NONE" ]
+   then
+	defadm keyboard KEYBOARD="C/US"
+   else
+   	defadm keyboard KEYBOARD="$KEYBOARD"
+   fi
+#fi 
+
+CODESET=`echo $KEYBOARD | cut -f1 -d/`
+
+
+case $CODESET in
+
+ 	C)	MENU_TYPE=menu.ls2;;	
+	8859-1)	MENU_TYPE=menu.ls2;;
+	8859-2) MENU_TYPE=menu.ls3;;
+	8859-5) MENU_TYPE=menu.ls4;;
+	8859-7) MENU_TYPE=menu.ls5;;
+	8859-9) MENU_TYPE=menu.ls6;;
+	*)	;;
+
+esac
+
+
+menu -r -f $MENU_DIR/$MENU_TYPE -o /tmp/lScountry
+
+. /tmp/lScountry
+rm /tmp/lScountry
+LOCALE=`echo $L | cut -f2 -d!`
+LANGUAGE=`echo $L | cut -f1 -d! | cut -f1 -d_`
+TERR=`echo $L | cut -f1 -d! | cut -f2 -d_`
+# All input processed - leave.
+
+write_exit

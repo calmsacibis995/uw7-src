@@ -1,0 +1,69 @@
+#ident	"@(#)user_limit	15.1"
+
+function ask_users_exit
+{
+
+#The first choice was 'continue', so do nothing unless they chose 'cancel'
+
+	case $CHOICE in
+
+		${ASKUSERS_OPT[1]})
+		halt
+		;;
+	esac
+
+	return
+}
+
+function ask_users
+{
+	if [ -z "${ASKUSERS_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A ASKUSERS_OPT ${ASKUSERS_CHOOSE}
+		IFS="$OIFS"
+	fi
+	ASKUSERS=$ASKUSERS_OPT
+
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	choose -f -e -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" -help "helpwin user_limit" -exit 'ask_users_exit' "$ASKUSERS" "${ASKUSERS_OPT[@]}"
+	return
+}
+#
+# function to get user's attention to how many users the boot floppy
+# is licensed for, and allow them to quit if it's not the right number
+#
+function user_limit
+{
+
+# from /usr/include/sys/keyctl.h
+	typeset K_SETLIMIT=65536
+        typeset K_GETLIMIT=131072
+	typeset K_UNLIMITED=61439
+        struct k_skey sernum:'unchar [16]' serkey:'unchar [16]'
+
+# set environment variables SerialID and ActKey from file they were coped into
+	. /tmp/serial.save
+
+# set kernel limits.  If this fails, we could put up a screen telling the
+# installer that they'll need a good serialized floppy later, but right
+# now that's not a requirement.
+        call keyctl $K_SETLIMIT "@k_skey:{ !$SerialID!, !$ActKey! }" 1
+
+# gets the user limit
+        call keyctl $K_GETLIMIT "@k_skey:{ !$SerialID!, !$ActKey! }" 1
+
+	NUM_USERS=$_RETD
+
+	[ "$NUM_USERS" = "$K_UNLIMITED" ] && NUM_USERS="$unlimited"
+
+# put up screen showing number of licensed users
+	eval display   "\"$USER_SCREEN\"" -above 1 -below 2
+	_t=$CURWIN
+
+# get user's choice ('continue' or 'cancel')
+	ask_users
+	input_handler
+	wclose $_t
+}

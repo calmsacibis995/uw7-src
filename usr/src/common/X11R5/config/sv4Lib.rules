@@ -1,0 +1,504 @@
+XCOMM $XConsortium: sv4Lib.rules,v 1.8 91/07/19 15:38:53 rws Exp $
+
+/*
+ * SVR4 shared library rules
+ */
+
+#ifndef HasSharedLibraries
+#define HasSharedLibraries YES 
+#endif
+#ifndef SharedDataSeparation
+#define SharedDataSeparation NO
+#endif
+#ifndef SharedCodeDef
+#define SharedCodeDef /**/
+#endif
+#ifndef SharedLibraryDef
+#define SharedLibraryDef /**/
+#endif
+#ifndef ShLibIncludeFile
+#define ShLibIncludeFile <sv4Lib.tmpl>
+#endif
+#ifndef SharedLibraryLoadFlags
+#define SharedLibraryLoadFlags -G -z text
+#endif
+#ifndef PositionIndependentCFlags
+#define PositionIndependentCFlags -K PIC
+#endif
+
+/*
+ * InstallSharedLibrary - generate rules to install the shared library.
+ */
+#ifndef InstallSharedLibrary
+#define	InstallSharedLibrary(libname,rev,dest)				@@\
+install:: Concat(lib,libname.so.rev) 					@@\
+	MakeDir($(DESTDIR)dest)						@@\
+	$(INSTALL) $(INSTLIBFLAGS) Concat(lib,libname.so.rev) $(DESTDIR)dest; @@\
+	(cd $(DESTDIR)dest; $(RM) Concat(lib,libname.so); $(LN) Concat(lib,libname.so.rev) Concat(lib,libname.so))
+#endif /* InstallSharedLibrary */
+
+#ifndef InstallSharedLibrary1
+#define	InstallSharedLibrary1(libname,dest)		@@\
+install:: libname		 			@@\
+	MakeDir($(DESTDIR)dest)				@@\
+	$(INSTALL) $(INSTLIBFLAGS) libname $(DESTDIR)dest
+#endif /* InstallSharedLibrary1 */
+
+/*
+ * InstallSharedLibraryData - generate rules to install the shared library data
+ */
+#ifndef InstallSharedLibraryData
+#define	InstallSharedLibraryData(libname,rev,dest)
+#endif /* InstallSharedLibraryData */
+
+
+/*
+ * SharedLibraryTarget - generate rules to create a shared library;
+ * build it into a different name so that we do not hose people by having
+ * the library gone for long periods.
+ */
+#ifndef SharedLibraryTarget
+#define SharedLibraryTarget(libname,rev,solist,down,up)			@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h $@ solist)		@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@						@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* SharedLibraryTarget */
+
+#ifndef SharedLibraryTarget_a
+#define SharedLibraryTarget_a(libname,rev,solist,extlibs,down,up)			@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h $@ solist extlibs)	@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@						@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* SharedLibraryTarget_a */
+
+#ifndef SpecialSharedLibraryTarget
+#define SpecialSharedLibraryTarget(libname,rev,hname,solist,down,up)			@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h hname solist)		@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@							@@\
+	$(CP) $@ ../hname						@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev)
+
+#endif /* SpecialSharedLibraryTarget */
+
+#if UslLocalityTuning
+/*
+ * InstallFurLibrary - generate rules to install a Fur library.
+ */
+
+#ifndef FurSharedLibraryTarget3
+#define FurSharedLibraryTarget3(libname,rev,objs1,objs2,objs3,extlibs,down,up)	@@\
+AllTarget(Concat(lib,libname.so.F))					@@\
+									@@\
+Concat(lib,libname.so.F):  objs1 objs2 objs3				@@\
+	$(RM) libname.r* ~$@						@@\
+	(cd down; $(LD) -r -o up/r1.libname objs1) 			@@\
+	(cd down; $(LD) -r -o up/r2.libname objs2) 			@@\
+	(cd down; $(LD) -r -o up/r3.libname objs3) 			@@\
+	$(LD) -r -o r.libname r1.libname r2.libname r3.libname		@@\
+	$(FUR) -l libname.funcs r.libname				@@\
+	$(LD) -o ~$@ $(SHLIBLDFLAGS) -h Concat(lib,libname.so.rev) r.libname extlibs	@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@ 							@@\
+	$(RM) Concat(lib,libname.so) 					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+	$(RM) r1.libname r2.libname r3.libname				@@\
+									@@\
+clean::									@@\
+	$(RM) r.libname Concat(lib,libname.so.F)
+
+#endif /* FurSharedLibraryTarget3 */
+
+#ifndef FurSharedLibraryTarget
+#define FurSharedLibraryTarget(libname,rev,solist,down,up)		@@\
+AllTarget(Concat(lib,libname.so.F))					@@\
+									@@\
+Concat(lib,libname.so.F):  solist					@@\
+	$(RM) r.libname* ~$(@)					@@\
+	(cd down; $(LD) -r -o up/r.libname solist)			@@\
+	$(FUR) -l libname.funcs r.libname				@@\
+	$(LD) -o ~$@ $(SHLIBLDFLAGS) -h Concat(lib,libname.so.rev) r.libname	@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@							@@\
+	$(RM) Concat(lib,libname.so) 					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) r.libname Concat(lib,libname.so.F)
+
+#endif /* FurSharedLibraryTarget */
+
+#ifndef FurSharedLibraryTarget_a
+#define FurSharedLibraryTarget_a(libname,rev,solist,extlibs,down,up)		@@\
+AllTarget(Concat(lib,libname.so.F))					@@\
+									@@\
+Concat(lib,libname.so.F):  solist					@@\
+	$(RM) r.libname* ~$(@)						@@\
+	(cd down; $(LD) -r -o up/r.libname solist)			@@\
+	$(FUR) -l libname.funcs r.libname				@@\
+	$(LD) -o ~$@ $(SHLIBLDFLAGS) -h Concat(lib,libname.so.rev) r.libname extlibs	@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@							@@\
+	$(RM) Concat(lib,libname.so) 					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) r.libname Concat(lib,libname.so.F)
+
+#endif /* FurSharedLibraryTarget_a */
+
+#ifndef SpecialFurSharedLibraryTarget
+#define SpecialFurSharedLibraryTarget(libname,rev,hname,solist,down,up)	@@\
+AllTarget(Concat(lib,libname.so.F))					@@\
+									@@\
+Concat(lib,libname.so.F):  solist					@@\
+	$(RM) r.libname* ~$(@)						@@\
+	(cd down; $(LD) -r -o up/r.libname solist)			@@\
+	$(FUR) -l libname.funcs r.libname				@@\
+	$(LD) -o ~$@ $(SHLIBLDFLAGS) -h hname r.libname			@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@							@@\
+	$(RM) Concat(lib,libname.so) 					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) r.libname Concat(lib,libname.so.F)
+
+#endif /* SpecialFurSharedLibraryTarget */
+
+#ifndef InstallFurLibrary
+#define	InstallFurLibrary(libname,rev,dest)				@@\
+install:: Concat(lib,libname.so.F) 					@@\
+	MakeDir($(DESTDIR)dest/NOFUR)					@@\
+	$(MV) $(DESTDIR)dest/Concat(lib,libname.so.rev) $(DESTDIR)dest/NOFUR; @@\
+	$(INSTALL) $(INSTLIBFLAGS) Concat(lib,libname.so.F) $(DESTDIR)dest; @@\
+	$(MV) $(DESTDIR)dest/Concat(lib,libname.so.F) $(DESTDIR)dest/Concat(lib,libname.so.rev); @@\
+	$(RM) $(DESTDIR)dest/Concat(lib,libname.so)			@@\
+	(cd $(DESTDIR)dest; $(LN) Concat(lib,libname.so.rev) Concat(lib,libname.so))
+#endif /* InstallFurLibrary */
+
+#else /* UslLocalityTuning */
+
+#define FurSharedLibraryTarget3(libname,rev,objs1,objs2,objs3,extlibs,down,up)	@@\
+$(_NULLCMD_)
+
+#define FurSharedLibraryTarget(libname,rev,solist,down,up)		@@\
+$(_NULLCMD_)
+#define FurSharedLibraryTarget_a(libname,rev,solist,extlibs,down,up)	@@\
+$(_NULLCMD_)
+#define SpecialFurSharedLibraryTarget(libname,rev,hname,solist,down,up)	@@\
+$(_NULLCMD_)
+#define	InstallFurLibrary(libname,rev,dest)				@@\
+$(_NULLCMD_)
+
+#endif /* UslLocalityTuning */
+
+/*
+ * SharedLibraryDataTarget - generate rules to create shlib data file;
+ */
+#ifndef SharedLibraryDataTarget
+#define SharedLibraryDataTarget(libname,rev,salist)
+#endif /* SharedLibraryTarget */
+
+
+/*
+ * USL, SVR4 SPECIAL RULES: add new rules as needed.
+ */
+#ifndef SharedLibraryObjectRule
+#define SharedLibraryObjectRule()					@@\
+.c.o:									@@\
+	$(CC) -c -KPIC $(CFLAGS) $<
+#endif
+
+/*
+ * InstallMsgCatalog - generate rules to install the i18n message catalogs
+ */
+#ifndef InstallMsgCatalog
+#define       InstallMsgCatalog(catname)              @@\
+install:: catname.str                                 @@\
+      MakeDir($(MSGCATDIR))                           @@\
+      $(INSTALL) $(INSTALLFLAGS) catname.str $(MSGCATDIR)/catname.str
+#endif /* InstallMsgCatalog */
+
+#ifndef SharedLibraryTarget1
+#define SharedLibraryTarget1(libname,rev,solist,down,up)		@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	-@if [ -f $@ ]; then $(MV) $@ O$@; fi				@@\
+	(cd down; $(CC) -G -o up/$@ $(SHLIBLDFLAGS) -h $@ solist)	@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+#endif
+
+#ifndef SharedLibraryTarget2
+#define SharedLibraryTarget2(libname,solist,down,up)		@@\
+AllTarget(Concat(lib,libname.so))					@@\
+									@@\
+Concat(lib,libname.so):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(CC) -G -o up/~$@ $(SHLIBLDFLAGS) -h $@ solist)	@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@						@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so)
+#endif
+
+/*
+ * SharedLibraryTarget3 - generate rules to create a shared library;
+ * build it into a different name so that we do not hose people by having
+ * the library gone for long periods.
+ *
+ * This is similar to SharedLibraryTarget but if the argument list is too
+ * long, it fails on some machines; So, build the shared library incrementally
+ * with OBJS1, OBJS2 and OBJS3
+ */
+#ifndef SharedLibraryTarget3
+#define SharedLibraryTarget3(libname,rev,objs1,objs2,objs3,down,up)	@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  objs1 objs2 objs3				@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -r -o up/r1.$(@) objs1) 			@@\
+	(cd down; $(LD) -r -o up/r2.$(@) objs2) 			@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h $(@) up/r1.$(@) up/r2.$(@) objs3) @@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@ 							@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+	$(RM) r1.$(@) r2.$(@) 						@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* SharedLibraryTarget3 */
+
+#ifndef SharedLibraryTarget3a
+#define SharedLibraryTarget3a(libname,rev,objs1,objs2,objs3,extlibs,down,up)@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  objs1 objs2 objs3				@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -r -o up/r1.$(@) objs1) 			@@\
+	(cd down; $(LD) -r -o up/r2.$(@) objs2) 			@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h $(@) up/r1.$(@) up/r2.$(@) objs3 extlibs) @@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@ 							@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+	$(RM) r1.$(@) r2.$(@) 						@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* SharedLibraryTarget3a */
+
+/*
+ * SharedLibraryDepTarget - generate rules to create a shared library;
+ * build it into a different name so that we do not hose people by having
+ * the library gone for long periods.  This lib will be dependent on the
+ * deplib argument library.
+ */
+#ifndef SharedLibraryDepTarget
+#define SharedLibraryDepTarget(libname,rev,solist,down,up,deplib)			@@\
+AllTarget(Concat(lib,libname.so.rev))					@@\
+									@@\
+Concat(lib,libname.so.rev):  solist					@@\
+	$(RM) ~$@							@@\
+	(cd down; $(LD) -o up/~$@ $(SHLIBLDFLAGS) -h $@ solist deplib)		@@\
+	$(RM) $@ 							@@\
+	$(MV) ~$@ $@						@@\
+	$(RM) Concat(lib,libname.so)					@@\
+	$(LN) $@ Concat(lib,libname.so)					@@\
+									@@\
+clean::									@@\
+	$(RM) Concat(lib,libname.so.rev) Concat(lib,libname.so)
+
+#endif /* SharedLibraryDepTarget */
+
+/* The following needs to be outside of `#if BuildDtRuntimeLib'
+ * otherwise, lib/DtRuntime will fail when BuildDtRuntimeLib is NO
+ */
+#ifndef SharedDtRuntimeRev
+#define SharedDtRuntimeRev	1
+#endif
+#ifndef DtRuntimeLibLoc
+#define DtRuntimeLibLoc		$(LIBSRC)/DtRuntime
+#endif
+#ifndef DtRuntimeLibDest
+#define DtRuntimeLibDest	$(DESKTOPDIR)
+#endif
+#ifndef DtRuntimeLib
+#define DtRuntimeLib		dtruntime.so.$(SODTRUNTIMEREV)
+#endif
+#ifndef DtRuntimeLibName
+#define DtRuntimeLibName	dtruntime
+#endif
+
+   SODTRUNTIMEREV = SharedDtRuntimeRev
+  DTRUNTIMELIBLOC = DtRuntimeLibLoc
+ DTRUNTIMELIBDEST = DtRuntimeLibDest
+     DTRUNTIMELIB = DtRuntimeLib
+ DTRUNTIMELIBNAME = DtRuntimeLibName
+  LIBDTRUNTIMEPFX = M
+
+#if BuildDtRuntimeLib
+
+#define SPLIT_DTRUNTIME
+#ifdef SPLIT_DTRUNTIME
+
+#define SplitDtRuntime(name,prefix,dest)				@@\
+install::								@@\
+	chmod +x $(DTRUNTIMELIBLOC)/split_lib				@@\
+	$(RM) $(DESTDIR)dest/prefix.aa $(DESTDIR)dest/prefix.ab		@@\
+	if [ -f $(DESTDIR)dest/name ];\					@@\
+	then $(DTRUNTIMELIBLOC)/split_lib $(DTRUNTIMELIBLOC)/name prefix $(DESTDIR)dest; fi @@\
+									@@\
+PreciousObject($(DTRUNTIMELIBLOC)/split_lib)
+
+#else	/* SPLIT_DTRUNTIME */
+
+#define SplitDtRuntime(name,prefix,dest)
+
+#endif	/* SPLIT_DTRUNTIME */
+
+#if UslLocalityTuning
+
+/* NOFUR shall already exist if `if' block is invoked! */
+#define InstFurDtRuntime(libname,rev)					@@\
+install:: Concat(lib,libname.so.rev)					@@\
+	if [ -f $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) ];\			@@\
+	  then ($(MV) $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) $(DTRUNTIMELIBDEST)/NOFUR;\ @@\
+	       $(INSTALL) $(INSTLIBFLAGS) $(DTRUNTIMELIBLOC)/$(DTRUNTIMELIBNAME).so.F $(DTRUNTIMELIBDEST);\ @@\
+	       $(MV) $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIBNAME).so.F $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB)); fi
+
+#else /* UslLocalityTuning */
+
+#define InstFurDtRuntime(libname,rev)
+
+#endif /* UslLocalityTuning */
+
+#ifndef InstallSharedLibrary_m
+#define	InstallSharedLibrary_m(libname,rev,dest)			@@\
+install:: Concat(lib,libname.so.rev) 					@@\
+	MakeDir($(DESTDIR)dest)						@@\
+	(cd $(DESTDIR)dest; $(RM) Concat(lib,libname.so.rev))		@@\
+	(cd $(DESTDIR)dest; $(RM) Concat(lib,libname.so))		@@\
+	$(INSTALL) $(INSTLIBFLAGS) Concat(lib,libname.so.rev) $(DESTDIR)dest; @@\
+	(cd $(DESTDIR)dest; $(MV) Concat(lib,libname.so.rev) Concat(lib,libname.so)) @@\
+	(cd $(DESTDIR)dest;\						@@\
+	  if [ -f $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) ];\		@@\
+	  then $(LN) $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) Concat(lib,libname.so.rev);\	@@\
+	  else $(LN) Concat(lib,libname.so) Concat(lib,libname.so.rev);\@@\
+	fi)								@@\
+	if [ -f $(DTRUNTIMELIBDEST)/$(DTRUNTIMELIB) ];\			@@\
+	  then $(INSTALL) $(INSTLIBFLAGS) $(DTRUNTIMELIBLOC)/$(DTRUNTIMELIB) $(DTRUNTIMELIBDEST); fi @@\
+									@@\
+InstFurDtRuntime(libname,rev)						@@\
+SplitDtRuntime($(DTRUNTIMELIB),$(DTRUNTIMELIBNAME),$(DTRUNTIMELIBDEST))
+#endif /* InstallSharedLibrary_m */
+
+#ifndef CreateRelocatableObjs
+#define CreateRelocatableObjs(libname,solist,down,up)			@@\
+AllTarget(Concat($(LIBDTRUNTIMEPFX),.libname))				@@\
+									@@\
+Concat($(LIBDTRUNTIMEPFX),.libname):	solist				@@\
+	(cd down; $(LD) -r -o up/$@ solist)				@@\
+	(cd $(DTRUNTIMELIBLOC);\					@@\
+	 if [ -f $(DTRUNTIMELIB) ]; then $(MAKE) all; fi)		@@\
+									@@\
+install:: Concat($(LIBDTRUNTIMEPFX),.libname)				@@\
+									@@\
+clean::									@@\
+	$(RM) Concat($(LIBDTRUNTIMEPFX),.libname)
+
+#endif /* CreateRelocatableObjs */
+
+#ifndef CreateRelocatableObjs3
+#define CreateRelocatableObjs3(libname,objs1,objs2,objs3,down,up)	@@\
+AllTarget(Concat($(LIBDTRUNTIMEPFX),.libname))				@@\
+									@@\
+Concat($(LIBDTRUNTIMEPFX),.libname):	objs1 objs2 objs3		@@\
+	(cd down; $(LD) -r -o up/m1.$(@) objs1)				@@\
+	(cd down; $(LD) -r -o up/m2.$(@) objs2)				@@\
+	(cd down; $(LD) -r -o up/m3.$(@) objs3)				@@\
+	(cd down; $(LD) -r -o up/$@ up/m1.$(@) up/m2.$(@) up/m3.$(@))	@@\
+	$(RM) m1.$(@) m2.$(@) m3.$(@)					@@\
+	(cd $(DTRUNTIMELIBLOC);\					@@\
+	 if [ -f $(DTRUNTIMELIB) ]; then $(MAKE) all; fi)		@@\
+									@@\
+install:: Concat($(LIBDTRUNTIMEPFX),.libname)				@@\
+									@@\
+clean::									@@\
+	$(RM) Concat($(LIBDTRUNTIMEPFX),.libname)
+
+#endif /* CreateRelocatableObjs3 */
+
+#else /* BuildDtRuntimeLib */
+
+#define InstallSharedLibrary_m	InstallSharedLibrary
+#define CreateRelocatableObjs(libname,solist,down,up)
+#define CreateRelocatableObjs3(libname,objs1,objs2,objs3,down,up)
+#define SplitDtRuntime(name,prefix,dest)
+
+#endif /* BuildDtRuntimeLib */
+
+/*
+ *	CleanNameDefs - this rule will be used by libXm, libDtWidget,
+ *		libMGizmo, and libMDtI. At the build time,
+ *		NameDefs.h will be inserted into C files in
+ *		these directories. The clean target below
+ *		will remove those lines.
+ */
+#ifndef CleanNameDefs
+
+#define CleanNameDefs(start,end,srclist,key)			@@\
+clean::								@@\
+	@(set -x; for i in srclist; do \			@@\
+		(set +e; grep "^key" $$i >/dev/null 2>&1; \	@@\
+		 if [ $$? -eq 0 ]; then \			@@\
+			sed -e "start,end" $$i > tmp.c; \	@@\
+			$(MV) -f tmp.c $$i; \			@@\
+		 fi); \						@@\
+	done)							@@\
+								@@\
+clean_files:: $(FILES)						@@\
+	@(set -x; for i in $(FILES); do \			@@\
+		(set +e; grep "^key" $$i >/dev/null 2>&1; \	@@\
+		 if [ $$? -eq 0 ]; then \			@@\
+			sed -e "start,end" $$i > tmp.c; \	@@\
+			$(MV) -f tmp.c $$i; \			@@\
+		 fi); \						@@\
+	done)
+
+#endif /* CleanNameDefs */

@@ -1,0 +1,77 @@
+/*
+ *	@(#)Imakefile	6.4	4/5/96	10:54:20
+ *
+ * Copyright (C) 1992-1996 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+#include <Server.tmpl>
+
+SRCS =	ifbData.c ifbGC.c ifbInit.c ifbWin.c \
+	ifbImage1.c ifbImage8.c ifbImage16.c ifbImage32.c
+
+OBJS =	ifbData.o ifbGC.o ifbInit.o ifbWin.o \
+	ifbImage1.o ifbImage8.o ifbImage16.o ifbImage32.o
+
+STD_DEFINES = ServerDefines
+
+INCLUDES = -I. -I$(SERVERSRC)/include -I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+
+LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+GRAFDIR = $(USRLIBDIR)/grafinfo
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(ifb,$(OBJS))
+ProfiledLibraryTarget(ifb,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(ifb,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(ifb,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+.c.o:
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(ifb,$(OBJS))
+SharedXDriverTarget(ifb,6.0,$(OBJS),shared,..)
+LintLibraryTarget(ifb,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(ifb,libifb.a)
+
+InstallGrafFile(grafinfo/ifb,ifb.xgi,ifb)
+
+includes::
+	LibMkdir(shared)
+
+DependTarget()
+

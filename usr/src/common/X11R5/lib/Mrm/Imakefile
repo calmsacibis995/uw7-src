@@ -1,0 +1,101 @@
+/**/#pragma ident	"@(#)m1.2libs:Mrm/Imakefile	1.4"
+XCOMM 
+XCOMM (c) Copyright 1989, 1990, 1991, 1992, 1993 OPEN SOFTWARE FOUNDATION, INC. 
+XCOMM ALL RIGHTS RESERVED 
+XCOMM 
+XCOMM 
+XCOMM Motif Release 1.2.2
+XCOMM 
+XCOMM   $RCSfile$ $Revision$ $Date$
+#include	<Motif.tmpl>
+#include	<Motif.rules>
+EXTRA_LOAD_FLAGS = -z nodefs
+#define DoNormalLib NormalLibXt
+#define DoSharedLib SharedLibXt
+#define DoDebugLib DebugLibMrm
+#define DoProfileLib ProfileLibMrm
+#include <Library.tmpl>
+
+#ifdef RsArchitecture
+REQUIREDLIBS = $(MTOOLKITSRC)/libXm.a $(EXTENSIONSRC)/lib/libXext.a $(TOOLKITSRC)/libXt.a $(XLIBSRC)/libX11.a
+#endif
+
+INSTALLFLAGS = $(INSTINCFLAGS)
+#INCLUDES = -I. -I$(INCLUDESRC) -I$(MINCLUDESRC) -I$(MLIBSRC)
+INCLUDES = -I. -I..
+
+
+SRCS =	MrmIbuffer.c	MrmIentry.c	MrmIfile.c	MrmIheader.c \
+	MrmIindex.c	MrmIindexw.c	MrmIrid.c	MrmItop.c \
+	MrmItopw.c	Mrmappl.c \
+	Mrmcontext.c	Mrmerror.c	Mrmhier.c	Mrmicon.c \
+	Mrminit.c	Mrmlread.c	Mrmlwrite.c	Mrmmodule.c \
+	Mrmptrlist.c	Mrmtable.c	Mrmtime.c	Mrmvm.c \
+	Mrmwci.c	Mrmwcrw.c	Mrmwcrwr.c	Mrmwread.c \
+	Mrmwrefs.c	Mrmwvalues.c	Mrmwwrite.c
+
+OBJS =	MrmIbuffer.o	MrmIentry.o	MrmIfile.o	MrmIheader.o \
+	MrmIindex.o	MrmIindexw.o	MrmIrid.o	MrmItop.o \
+	MrmItopw.o	Mrmappl.o \
+	Mrmcontext.o	Mrmerror.o	Mrmhier.o	Mrmicon.o \
+	Mrminit.o	Mrmlread.o	Mrmlwrite.o	Mrmmodule.o \
+	Mrmptrlist.o	Mrmtable.o	Mrmtime.o	Mrmvm.o \
+	Mrmwci.o	Mrmwcrw.o	Mrmwcrwr.o	Mrmwread.o \
+	Mrmwrefs.o	Mrmwvalues.o	Mrmwwrite.o
+
+HEADERS = MrmDecls.h	MrmPublic.h	MrmAppl.h
+
+#if BuildMotif
+LibraryObjectRule()
+#else /* BuildMotif */
+all::
+lint::
+depend::
+#endif /* BuildMotif */
+
+#if DoSharedLib
+#if BuildMotif
+#if DoNormalLib
+SharedLibraryTarget(Mrm,$(SOMRMREV),$(OBJS),shared,..)
+#else
+SharedLibraryTarget(Mrm,$(SOMRMREV),$(OBJS),.,.)
+#endif
+#endif /* BuildMotif */
+InstallSharedLibrary(Mrm,$(SOMRMREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+#if BuildMotif
+NormalLibraryTarget(Mrm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Mrm,$(USRLIBDIR))
+#endif
+#if DoProfileLib
+#if BuildMotif
+ProfiledLibraryTarget(Mrm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Mrm_p,$(USRLIBDIR))
+#endif
+#if DoDebugLib
+#if BuildMotif
+DebuggedLibraryTarget(Mrm,$(OBJS))
+#endif /* BuildMotif */
+InstallLibrary(Mrm_d,$(USRLIBDIR))
+#endif
+
+#if BuildMotif
+LintLibraryTarget(Mrm,$(SRCS))
+InstallLintLibrary(Mrm,$(LINTLIBDIR))
+#endif /* BuildMotif */
+
+BuildIncludes($(HEADERS),Mrm,..)
+
+InstallMultiple($(HEADERS),$(INCROOT)/Mrm)
+#if BuildMotif
+DependTarget()
+
+NormalLintTarget($(SRCS))
+
+#ifdef UseVista
+VistaMapRule(libMrm.M,libMrm.a)
+#endif
+#endif /* BuildMotif */

@@ -1,0 +1,66 @@
+#! /bin/sh
+#ident	"@(#)pcintf:support/svr4/pcistart	1.2"
+
+cat <<EOF
+
+PC-Interface 4.0
+Copyright 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991  Locus Computing Corp.
+All Rights Reserved
+
+EOF
+
+# check if UDP/IP network is configured into system
+[ ! -c /dev/udp -a ! -c /dev/inet/udp ] && {
+	echo "(no IP network installed -- only RS232 service available)"
+	echo
+	exit 0
+}
+
+# Start up PC-Interface service
+
+# File names
+tmpPrefix=/tmp/PCI
+psOut=${tmpPrefix}psOut
+
+# enable server debug if we are passed the argument "debug"
+debugflag=0000
+
+case $# in
+	1 )	if [ "$1" = "debug" ] ; then debugflag=ffff ; fi ;;
+esac
+
+
+# Get list of executing PC-Interface processes to see if either server
+# is already running.  Set the PATH explicitly so we are certain to use 
+# ps from the /sbin directory which supports the "ps -ef" syntax.  This 
+# avoids a problem where the path was previously set to find the version of
+# ps with the BSD syntax (ps -alx) (in /usr/ucb), causing the following ps -e
+# to fail. 
+PATH=/sbin:/usr/sbin:/usr/bin:/etc
+export PATH
+ps -e >$psOut 2>/dev/null
+
+cd /usr/pci/bin
+
+. ./environ		# set server environment
+
+# NB:	The next two paragraphs are dependent on the output format of ps!
+if grep '[0-9] pcimapsv' $psOut > /dev/null 2>&1; then
+	echo "PC-Interface Map server (pcimapsvr.ip) is already running"
+else
+	./loadpci -PMAPSVR -D${debugflag} -B pcimapsvr.ip &
+fi
+
+if grep '[0-9] pciconsv' $psOut > /dev/null 2>&1; then
+	echo "PC-Interface Connection server (pciconsvr.ip) is already running"
+else
+	ulimit -f $pciFileLimit
+	./loadpci -PCONSVR -D${debugflag} -L${debugflag} -B -b pciconsvr.ip &
+fi
+
+# Keep servers from premature deaths by giving them a chance to execute
+# their setpgrp() calls.  Once they have, they will not get the SIGINT
+# generated when the shell interpreting this file dies.
+sleep 4
+
+rm -f ${tmpPrefix}*

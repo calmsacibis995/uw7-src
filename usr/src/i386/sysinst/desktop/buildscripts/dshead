@@ -1,0 +1,24 @@
+#!/usr/bin/ksh
+#ident	"@(#)dshead	15.1"
+pkgdir=$1
+shift
+tmp=/tmp/tmp$$
+{
+	echo '# PaCkAgE DaTaStReAm:zip'
+	# See lib/libpkg/dstream.c for reference.
+	for i
+	do
+		j=`head -1 $pkgdir/$i/pkgmap | cut -d" " -f2`
+		echo "$i $j 2000"
+	done
+	echo '# end of header'
+} > $tmp
+set -- $(ls -l $tmp)
+let siz="(($5-1)/512)+1"
+
+#The following were in one line, with a '|cat $tmp - |', but due to a 'dd'
+#bug (MR ul95-31736) it had to be changed to the following 2 lines:
+
+banner space space space space space >> $tmp 
+dd if=$tmp count=$siz bs=512
+rm -f $tmp

@@ -1,0 +1,1146 @@
+#	@(#)audioconfig.osa.procs	7.11	1/9/98	15:15:42
+#
+# 1997-Oct-15, georgec, add check_res, and call the PnP driver to init the card
+#                       always do DriverRemove when deleting a card, even when replacing
+#
+# Class: sco audiocard
+
+# Get procedure for the class sco audiocard
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to 
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "get" unless you use this procedure to handle multiple 
+#               operations, in which case you can use this parameter to 
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       If this procedure is being called per attribute, this parameter
+#               contains the attribute to be operated on.
+#               This can be ignored if the procedure is called per object.
+#   attr-
+#   ValueList:  This contains the whole list of attributes which should be
+#               operated on, which should only be used if the procedure is
+#               called per object.
+#   osaData:    Contains any extra data associated with the class in the 
+#               osaData section of the CDT (currently not supported by the 
+#               OSA builder).
+
+source /usr/lib/PnP.tlib
+
+proc audiocard_get {class object refObject op subOp data attr attrValueList osaData} {
+	set configfile /usr/lib/audio/audioconfig/audioconfig.cfg
+	set handle [StanzaOpen $configfile STZ_RDONLY]
+	foreach attr $attrValueList {
+		set val [StanzaGetVals $handle $object $attr]
+		lappend attrvals [list $attr $val]
+	}
+	StanzaClose $handle
+	return $attrvals
+}
+
+
+# Replace procedure for the class sco audiocard
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to 
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "replace" unless you use this procedure to handle multiple 
+#               operations, in which case you can use this parameter to 
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       If this procedure is being called per attribute, this parameter
+#               contains the attribute to be operated on. 
+#               This can be ignored if the procedure is called per object.
+#   attr-
+#   ValueList:  This contains an list of attribute-value pairs which are to be
+#               operated on. If this procedure is called per object, carry out
+#               the operation for each attribute-value pair. If it is called per
+#               attribute, you need to use the "attr" argument to find out 
+#               which attribute to operate on, and then use it to index into
+#               the attrValueList to obtain the value or values that are 
+#               associated with it.
+#   osaData:    Contains any extra data associated with the class in the 
+#               osaData section of the CDT (currently not supported by the 
+#               OSA builder).
+
+proc audiocard_replace {class object refObject op subOp data attr attrValueList osaData} {
+	audiocard_delete $class $object $refObject $op $subOp \
+		$data $attr $attrValueList $osaData
+
+	audiocard_create $class $object $refObject $op $subOp \
+		$data $attr $attrValueList $osaData
+}
+
+
+# List procedure for the class sco audiocard
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "list" unless you use this procedure to handle multiple
+#               operations, in which case you can use this parameter to
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       Ignored.
+#   attr-
+#   ValueList:  Ignored.
+#   osaData:    Contains any extra data associated with the class in the
+#               osaData section of the CDT (currently not supported by the
+#               OSA builder).
+
+proc audiocard_list {class object refObject op subOp data attr attrValueList osaData} {
+	set cardlist {}
+	set configfile /usr/lib/audio/audioconfig/audioconfig.cfg
+	set handle [StanzaOpen $configfile STZ_RDONLY]
+	set allsects [StanzaGetSects $handle]
+	set trash [lsearch -exact $allsects audioconfig]
+	if { $trash >= 0 } {
+		set cardlist [lreplace $allsects $trash $trash]
+	} else {
+		set cardlist $allsects
+	}
+        return $cardlist
+}
+
+
+# Create procedure for the class sco audiocard
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  If this parameter is specified, create the new object based
+#               on the attributes of the given object. Otherwise, use default
+#               attributes.
+#   op:         Name of the operation being performed, which will always be
+#               "create" unless you use this procedure to handle multiple
+#               operations, in which case you can use this parameter to
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       Ignored.
+#   attr-
+#   ValueList:  Ignored.
+#   osaData:    Contains any extra data associated with the class in the
+#               osaData section of the CDT (currently not supported by the
+#               OSA builder).
+
+proc audiocard_create {class object refObject op subOp data attr attrValueList osaData} {
+	set errorstack {}
+
+	set cardlist [audiocard_list $class $object $refObject \
+		$op $subOp $data $attr $attrValueList $osaData]
+
+        if {[catch "keylget attrValueList unit" unit]} {
+		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_MISSING_ATTR \
+			{unit audiocard_create}
+        }
+
+	foreach card $cardlist {
+		if {$unit == $card} {
+			ErrorPush errorstack 1 \
+				SCO_AUDIOCONFIGOSA_ERR_UNIT_EXISTS [list $unit]
+		}
+	}
+
+#				cmdtrace on [open /tmp/osadebug w]
+
+	SystemFileAdd $attrValueList
+	DriverInstall
+	ConfigFileAdd $attrValueList
+}
+
+
+# Delete procedure for the class sco audiocard
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "delete" unless you use this procedure to handle multiple
+#               operations, in which case you can use this parameter to
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       Ignored.
+#   attr-
+#   ValueList:  Ignored.
+#   osaData:    Contains any extra data associated with the class in the
+#               osaData section of the CDT (currently not supported by the
+#               OSA builder).
+
+proc audiocard_delete {class object refObject op subOp data attr attrValueList osaData} {
+	set errorstack {}
+
+	set cardlist [audiocard_list $class $object $refObject \
+		$op $subOp $data $attr $attrValueList $osaData]
+
+	foreach card $cardlist {
+		if {$object == $card} {
+			set attrlist [list \
+					unit \
+					manufacturer \
+					model \
+					audio_io \
+					midi_io \
+					synth_io \
+					primary_irq \
+					secondary_irq \
+					primary_dma \
+					secondary_dma \
+					enabled_drivers \
+					bustype \
+					]
+			set attrValueList [audiocard_get $class $object \
+				$refObject $op $subOp $data $attr $attrlist \
+				$osaData]
+			SystemFileRemove $attrValueList
+			# if we are doing a replace we will do the
+			# DriverInstall in audiocard_create
+		#	if {$op != "replace"} {
+				if {[llength $cardlist] == 1} {
+					DriverRemove
+				} else {
+					DriverInstall
+				}
+		#	}
+			ConfigFileRemove $attrValueList
+		}
+	}
+}
+
+
+# This will need modification when we have a more modular driver architecture
+# with distinct driver names.
+# Right now we don't do much error checking on the state of the file or
+# whether there are conflicts.  This will need to be addressed when we
+# fully handle multiple cards.
+
+proc SystemFileAdd {attrValueList} {
+	set systemfile /usr/lib/audio/drivers/System
+	set drivers [keylget attrValueList enabled_drivers]
+	set newheader "\$version 2\n"
+
+	if {[file isfile $systemfile]} {
+		# we don't want to end up with duplicates because somebody
+		# hand edited the file or the install failed previously
+		SystemFileRemove $attrValueList
+		set handle [open $systemfile a]
+	} else {
+		set handle [open $systemfile w]
+		puts $handle $newheader
+	}
+
+	set pirq [lindex [keylget attrValueList primary_irq] 0]
+	set sirq [lindex [keylget attrValueList secondary_irq] 0]
+	set pdma [lindex [keylget attrValueList primary_dma] 0]
+	set sdma [lindex [keylget attrValueList secondary_dma] 0]
+	set aio [lindex [keylget attrValueList audio_io] 0]
+	set mio [lindex [keylget attrValueList midi_io] 0]
+	set sio [lindex [keylget attrValueList synth_io] 0]
+
+	# The contents of the System file are actually not that important
+	# since the resmgr is what does most of the work.
+	# This is pretty simplistic.  Our main concern is to get all the
+	# resources we use to appear _somewhere_.
+	if { [clength $pirq] > 0 && $pirq != "-1" } {
+		puts $handle "oss\tY\t0\t6\t1\t$pirq\t$aio\t$aio\t0\t0\t$pdma"
+	} else {
+		puts $handle "oss\tY\t0\t0\t0\t0\t$aio\t$aio\t0\t0\t$pdma"
+	}
+	if { [clength $sirq] > 0 && $sirq != "-1" } {
+		puts $handle "oss\tY\t1\t6\t1\t$sirq\t$mio\t$mio\t0\t0\t$sdma"
+	} else {
+		if { [clength $mio] > 0 } {
+		    puts $handle "oss\tY\t1\t0\t0\t0\t$mio\t$mio\t0\t0\t$sdma"
+		}
+	}
+	if { [clength $sio] > 0 } {
+		puts $handle "oss\tY\t2\t0\t0\t0\t$sio\t$sio\t0\t0\t-1"
+	}
+
+	close $handle
+
+
+	# Now we need to write the devices.cfg file for the OSS driver
+	# For now, we just stomp on whatever might be there already.
+	set cfgfile /usr/lib/audio/drivers/devices.cfg
+
+	set handle [open $cfgfile w]
+
+	puts $handle "/SECUREAUDIO ON"
+	puts $handle "/DMAEXCLUDE 0"
+
+	set cardid [keylget attrValueList ossid]
+	puts $handle "-$cardid"
+
+	set ossdevs [keylget attrValueList ossdevs]
+	foreach ossdev [keylkeys ossdevs] {
+		set ress [keylget ossdevs $ossdev]
+		set reslist ""
+		foreach res [keylkeys ress] {
+			set value [keylget attrValueList [keylget ress $res]]
+			lappend reslist "$res$value"
+		}
+		puts $handle "$ossdev ON [join $reslist]"
+	}
+
+	close $handle
+
+
+	# The OSS driver also wants /etc/oss.conf to point to
+	# the directory containing the config file.
+	set handle [open "/etc/oss.conf" w]
+	puts $handle "OSSLIBDIR=/usr/lib/audio/drivers"
+	close $handle
+
+
+	# Now put the appropriate information in the resmgr
+	RMopen rw
+
+	if { [keylget attrValueList bustype] == "PNP" } {
+
+		# ISA Plug & Play bus
+
+		# Add responsibility for "oss #0" to PnP entry in resmgr.
+		PnPaddDevice oss 0
+
+		# We're using a serial number of -1.  This refers
+		# to "any card with the correct pnpvendor id".
+		# When we support multiple cards, we'll have to use
+		# the _real_ serial number, which isapnpslot gives us.
+		set pnpvendorid [PnPidVal $cardid]
+		set rmkey [PnPcreateDevice oss 0 $pnpvendorid -1 0]
+
+		if { [clength $pirq] > 0 } {
+			PnPaddIRQ $rmkey 0 $pirq 6 1
+		}
+		if { [clength $sirq] > 0 } {
+			PnPaddIRQ $rmkey 1 $sirq 6 1
+		}
+		if { [clength $pdma] > 0 } {
+			PnPaddDMA $rmkey 0 $pdma
+		}
+		if { [clength $sdma] > 0 } {
+			PnPaddDMA $rmkey 1 $sdma
+		}
+		# For IO addresses, we have to be careful because we
+		# may have (for example) a synth device but no audio
+		# device, but there can not be gaps in the second arg
+		# to PnPaddIO.
+		set n 0
+		if { [clength $aio] > 0 } {
+			PnPaddIO $rmkey $n $aio $aio
+			incr n
+		}
+		if { [clength $mio] > 0 } {
+			PnPaddIO $rmkey $n $mio $mio
+			incr n
+		}
+		if { [clength $sio] > 0 } {
+			PnPaddIO $rmkey $n $sio $sio
+			incr n
+		}
+
+	} else {
+
+		# Standard ISA bus
+
+		set rmkey [RMnewkey]
+
+		RMputvals_d $rmkey "MODNAME UNIT" "oss 0"
+		if { [clength $pirq] > 0 } {
+			RMputvals_d $rmkey "IRQ IPL ITYPE" "$pirq 6 1"
+		}
+		if { [clength $sirq] > 0 } {
+			RMputvals_d $rmkey "IRQ IPL ITYPE" "$sirq 6 1"
+		}
+		if { [clength $pdma] > 0 } {
+			RMputvals_d $rmkey "DMAC" "$pdma"
+		}
+		if { [clength $sdma] > 0 } {
+			RMputvals_d $rmkey "DMAC" "$sdma"
+		}
+		if { [clength $aio] > 0 } {
+			RMputvals_d $rmkey "IOADDR" "$aio $aio"
+		}
+		if { [clength $mio] > 0 } {
+			RMputvals_d $rmkey "IOADDR" "$mio $mio"
+		}
+		if { [clength $sio] > 0 } {
+			RMputvals_d $rmkey "IOADDR" "$sio $sio"
+		}
+
+		RMend_trans $rmkey
+	}
+
+	RMclose
+
+	# Make sure the resmgr database is in sync
+	if { [catch "exec echo quit | /usr/sbin/ndcfg" ret ]} {}	# For some reason, this
+						# is necessary.  (?)
+	exec /etc/conf/bin/idconfupdate
+
+	# At this point, we should tell the PnP driver to initialize
+	# the new card (if it's a PnP device).
+	
+	if { [keylget attrValueList bustype] == "PNP" } {
+		# cmdtrace on [open /tmp/add w]
+		PnPConfig $pnpvendorid [expr 0x$aio] [expr 0x$mio] [expr 0x$sio] $pirq $sirq $pdma $sdma
+	}
+}
+
+
+proc SystemFileRemove {attrValueList} {
+	set systemfile /usr/lib/audio/drivers/System
+	set newsystemfile /usr/lib/audio/drivers/System.new
+	set drivers [keylget attrValueList enabled_drivers]
+	set newheader "\$version 2\n"
+
+	#######
+	# The code below is meant to just remove the device described
+	# in $attrValueList.  Unfortunately, it doesn't always work
+	# right.  (Multiple adds and deletes of a device are producing
+	# duplicated entries in System.)  So since we're only supporting
+	# one card in this release anyway, removing a card will remove
+	# _all_ entries from the System file.
+	#######
+	#if {[file isfile $systemfile]} {
+	#	set newhandle [open $newsystemfile w]
+	#	for_file line $systemfile {
+	#		set match 0
+	#		# this check should just check the driver name
+	#		# once we have a more modular driver set
+	#		if {[lindex $line 0] == "oss"} {
+	#			foreach driver $drivers {
+	#				if {[cindex $driver end] == \
+	#				    [lindex $line 2]} {
+	#					set match 1
+	#					break
+	#				}
+	#			}
+	#		}
+	#		if {!$match} {
+	#			puts $newhandle $line
+	#		}
+	#	}
+	#	close $newhandle
+	#	# should catch these
+	#	exec rm -f $systemfile
+	#	exec mv $newsystemfile $systemfile
+	#} else {
+		set handle [open $systemfile w]
+		puts $handle $newheader
+		close $handle
+	#}
+
+	# Right now, we'll just remove the oss cfg file.
+	set cfgfile /usr/lib/audio/drivers/devices.cfg
+	exec rm -f $cfgfile
+
+	exec cat /dev/null > /etc/conf/sdevice.d/oss
+
+	# Remove ourselves from the res manager (if we're there)
+	# This will have to be modified when we add support for >1 card.
+	RMopen rw
+	if { ![catch { RMgetbrdkey oss 0 } rmkey] } {
+		RMdelkey $rmkey
+	}
+
+	# Remove responsibility for us from the PnP driver
+	if { [keylget attrValueList bustype] == "PNP" } {
+		PnPremoveDevice oss 0
+	}
+	RMclose
+
+	# Make sure the resmgr database is in sync
+	if { [catch "exec echo quit | /usr/sbin/ndcfg" ret] } {}	# For some reason, this
+						# is necessary.  Otherwise
+						# changes get stuck in a
+						# buffer somewhere (?).
+	exec /etc/conf/bin/idconfupdate
+}
+
+
+proc DriverInstall {} {
+	set errorstack {}
+	set driverdir /usr/lib/audio/drivers
+
+	cd $driverdir
+
+	if {[catch "exec /etc/conf/bin/idinstall -MkN oss" ret]} {
+		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_IDINSTALL \
+			[list "$ret"]
+	}
+	if {[catch "exec /etc/conf/bin/idbuild -M oss" ret]} {
+		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_IDBUILD \
+			[list "$ret"]
+	}
+	if {[catch "exec /etc/init.d/soundon" ret]} {
+		# We should put a more appropriate error message here.
+		#ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_IDBUILD \
+		#	[list "$ret"]
+	}
+	# Make link to run soundon on next boot
+	exec ln -f /etc/init.d/soundon /etc/rc2.d/S96soundon
+}
+
+
+proc DriverRemove {} {
+	set errorstack {}
+
+	if {![catch "exec /sbin/modadmin -Q oss" ret]} {
+		if {[catch "exec /sbin/modadmin -U oss" ret]} {
+			# modadmin seems to complain even when it succeeds,
+			# so let's never return an error.
+			# (This is not a super-critical part of the
+			# remove process anyway...)
+
+			# ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_MODADMIN \
+			#	[list "$ret"]
+		}
+		# Have to do this manually
+        	eval exec rm -f [glob /dev/mixer* /dev/audio* /dev/midi* /dev/dsp* /dev/sndstat /dev/music /dev/sequencer* /dev/dmdsp* /dev/dmmidi* /dev/dmfm*]
+	}
+#	if {[catch "exec /etc/conf/bin/idinstall -d oss" ret]} {
+#		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_IDINSTALL \
+#			[list "$ret"]
+#	}
+	# Remove link to soundon
+	exec rm -f /etc/rc2.d/S96soundon
+}
+
+
+proc ConfigFileAdd {attrValueList} {
+	set errorstack {}
+	set configfile /usr/lib/audio/audioconfig/audioconfig.cfg
+	set handle [StanzaOpen $configfile STZ_RDWR]
+
+        if {[catch "keylget attrValueList unit" unit]} {
+		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_MISSING_ATTR \
+			{unit ConfigFileAdd}
+        }
+
+	StanzaAddSect $handle $unit
+
+	set attrList [keylkeys attrValueList]
+
+	foreach attr $attrList {
+		StanzaAddAttr $handle $unit $attr
+		set val [keylget attrValueList $attr]
+		if {$attr == "enabled_drivers"} {
+			foreach driver $val {
+				StanzaAddValue $handle $unit $attr $driver
+			}
+		} else {
+			StanzaAddValue $handle $unit $attr $val
+		}
+	}
+
+	StanzaClose $handle
+}
+
+
+proc ConfigFileRemove {attrValueList} {
+	set errorstack {}
+	set configfile /usr/lib/audio/audioconfig/audioconfig.cfg
+	set handle [StanzaOpen $configfile STZ_RDWR]
+
+        if {[catch "keylget attrValueList unit" unit]} {
+		ErrorPush errorstack 1 SCO_AUDIOCONFIGOSA_ERR_MISSING_ATTR \
+			{unit ConfigFileRemove}
+        }
+
+	StanzaDelSect $handle $unit
+
+	StanzaClose $handle
+}
+
+# 	check_res $res - return a sorted list of {resval mod} from resmgr. 
+#			 Name of the operation being performed, argument can be 
+#			 IRQ, DMAC or IOADDR
+proc check_res {res} {
+	RMopen r
+	set key 0
+	set list {}
+	while {![catch {RMnextkey $key} key]} {
+		RMbegin_trans $key
+		set info [RMgetvals $key "MODNAME" 0]
+		set n 0
+		set resval [RMgetvals $key $res  $n]
+		while {![regexp {^-} $resval]} {
+			lappend list [list $resval $info]
+			incr n
+			set resval [RMgetvals $key $res  $n]
+		}	
+		RMend_trans $key
+	}
+	RMclose
+	return [lsort $list]
+}
+
+
+# Class: sco audioconfig
+
+
+# Get procedure for the class sco audioconfig
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to 
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "get" unless you use this procedure to handle multiple 
+#               operations, in which case you can use this parameter to 
+#               find out the operation currently requested.
+#   subOp:      Ignored.
+#   data:       Ignored.
+#   attr:       If this procedure is being called per attribute, this parameter
+#               contains the attribute to be operated on.
+#               This can be ignored if the procedure is called per object.
+#   attr-
+#   ValueList:  This contains the whole list of attributes which should be
+#               operated on, which should only be used if the procedure is
+#               called per object.
+#   osaData:    Contains any extra data associated with the class in the 
+#               osaData section of the CDT (currently not supported by the 
+#               OSA builder).
+
+proc audioconfig_get {class object refObject op subOp data attr attrValueList osaData} {
+	set configfile /usr/lib/audio/audioconfig/audioconfig.cfg
+	set handle [StanzaOpen $configfile STZ_RDONLY]
+	foreach attr $attrValueList {
+		set valtext [StanzaGetVals $handle audioconfig $attr]
+		lappend attrvals [list $attr $val]
+	}
+	StanzaClose $handle
+	return $attrvals
+}
+
+
+# Action procedure for the class sco audioconfig
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "action" unless you use this procedure to handle multiple
+#               operations, in which case you can use this parameter to
+#               find out the operation currently requested.
+#   subOp:      The specific action to be performed.
+#   data:       Data to be used in the performing of the action operation.
+#   attr:       Ignored.
+#   attr-
+#   ValueList:  Ignored.
+#   osaData:    Contains any extra data associated with the class in the
+#               osaData section of the CDT (currently not supported by the
+#               OSA builder).
+#
+# valid subOps are:
+#	query_auth - returns whether the user has authorization to modify
+#			the audio configuration
+#	list_new_cards {} - returns list of new PnP cards as
+#		{{$manufacturer $model} ... {$manufacturer $model}}
+#	list_manufacturers {} - returns list of supported manufacturers
+#	list_models $manufacturer - returns list of supported models for
+#			given manufacturer
+#	get_audinfo {$manufacturer $model} - returns the attribute/value pairs
+#			from the audinfo file for $manufacturer/$model
+#	test_audio_start $unit - begin a test of the digital audio config
+#	test_audio_stop $unit - stop a test of the digital audio config
+
+proc audioconfig_action {class object refObject op subOp data attr attrValueList osaData} {
+	global timeOutId
+	global audioDeviceId
+	set errorstack {}
+	set audinfodir /usr/lib/audio/audioconfig/audinfo
+	switch $subOp {
+	query_auth {
+		if {[id userid] == 0} {
+			return 1
+		} elseif {[catch "exec /sbin/tfadmin -t audioconfig" ret] == 0} {
+               		return 1
+		} else {
+			return 0
+		}
+	}
+	list_new_cards {
+		# Return a list of new cards
+		# in the format:  {manufacturer model}
+
+		cd $audinfodir
+
+		set isapnpslot /sbin/isapnpslot
+		set cfgfile /usr/lib/audio/drivers/devices.cfg
+
+		set newpnpcards ""
+
+		# Read info about installed cards from PnP driver
+		set pnpinfo [split [exec $isapnpslot] "\n"]
+
+		foreach pnpcard $pnpinfo {
+			# Look in the database of cards to make sure
+			# that this is an audio card.
+			set cardtext [exec ./ossres [lindex $pnpcard 2]]
+			eval "set cardinfo " $cardtext
+			if { ![keylget cardinfo "DESC" desc] } { continue }
+
+			# Check our cfgfile to see if the card is already
+			# configured.
+			if { [catch { exec /usr/bin/grep -i -- \
+					-[lindex $pnpcard 2] $cfgfile } ] } {
+
+				# Parse the desc. field into make/model
+				set desclist [split $desc " "]
+				set newcard ""
+				lappend newcard [lindex $desclist 0]
+				lappend newcard [lrange $desclist 1 end]
+				lappend newpnpcards $newcard
+			}
+		}
+		return $newpnpcards
+	}
+	list_manufacturers {
+	#	cd $audinfodir
+	#	set lsret [exec ls]
+	#	set manufacturerlist [split $lsret]
+	#	return $manufacturerlist
+
+		cd $audinfodir
+
+		if { [catch { exec ./lscards | /bin/sort } lscardsret] } {
+			return ""	# Shouldn't happen (!)
+		}
+		set allcards [split $lscardsret "\n"]
+
+		set manufacturerlist ""
+		set lastcard ""
+
+		foreach card $allcards {
+			set thiscard [lindex [split $card " "] 0]
+			if { ![cequal $thiscard $lastcard] } {
+				lappend manufacturerlist $thiscard
+			}
+			set lastcard $thiscard
+		}
+
+		return $manufacturerlist
+	}
+	list_models {
+		#cd $audinfodir
+		#if {[file isdirectory $data]} {
+		#	cd $data
+		#	set lsret [exec ls]
+		#	set modellist [split $lsret]
+		#	return $modellist
+		#} else {
+		#	ErrorPush errorstack 1 \
+		#		SCO_AUDIOCONFIGOSA_ERR_NO_MODEL_LIST \
+		#		$manufacturer
+		#}
+
+		cd $audinfodir
+
+		set allcards [split [exec ./lscards | /bin/sort] "\n"]
+
+		set modellist ""
+
+		foreach card $allcards {
+			set cardlist [split $card " "]
+			set thisman [lindex $cardlist 0]
+			if { [cequal $thisman $data] } {
+				lappend modellist [lrange $cardlist 1 end]
+			}
+		}
+
+		return $modellist
+	}
+	get_audinfo {
+		# set mf [translit { } {} [lindex $data 0]]
+		# set mo [translit { } {} [lindex $data 1]]
+		set cardname "[lindex $data 0] [lindex $data 1]"
+		cd $audinfodir
+		# set mf [lindex $data 0]
+		# set audinfofile $audinfodir/$mf/$mo
+		if { [catch { exec ./ossres $cardname } cardtext] } {
+			ErrorPush errorstack 1 \
+				SCO_AUDIOCONFIGOSA_ERR_NO_AUDINFO $audinfofile
+			return {};
+		}
+		eval "set cardinfo " $cardtext
+
+		#######
+		# We're going to do this the brute-force way.
+		# Later, the GUI should be modified so it can read
+		# the ossres format directly.
+		# Admittedly, this is hack-ish, but if we're going
+		# to make Gemini I, we don't have much choice.
+		#######
+
+		# If something went wrong, we'll get an empty list in cardinfo.
+		# We should catch this and throw an error.
+		if { [catch { keylget cardinfo "RESOURCES" res }] } {
+			ErrorPush errorstack 1 \
+				SCO_AUDIOCONFIGOSA_ERR_NO_AUDINFO $audinfofile
+			return {};
+		}
+		keylset attrvals manufacturer [lindex $data 0]
+		keylset attrvals bus [keylget cardinfo "BUSTYPE"]
+		keylset attrvals drivers oss
+
+		# Extra stuff for OSS drivers
+		keylset attrvals ossid [keylget cardinfo "ID"]
+		set ossdevs ""
+
+		# Set all attributes to defaults
+		keylset attrvals has_audio_io 0
+		keylset attrvals audio_io_options 0
+		keylset attrvals audio_io_default 0
+		keylset attrvals has_midi_io 0
+		keylset attrvals midi_io_options 0
+		keylset attrvals midi_io_default 0
+		keylset attrvals has_synth_io 0
+		keylset attrvals synth_io_options 0
+		keylset attrvals synth_io_default 0
+		keylset attrvals has_primary_irq 0
+		keylset attrvals primary_irq_options 0
+		keylset attrvals primary_irq_default 0
+		keylset attrvals has_secondary_irq 0
+		keylset attrvals secondary_irq_options 0
+		keylset attrvals secondary_irq_default 0
+		keylset attrvals has_primary_dma 0
+		keylset attrvals primary_dma_options -1
+		keylset attrvals primary_dma_default -1
+		keylset attrvals has_secondary_dma 0
+		keylset attrvals secondary_dma_options -1
+		keylset attrvals secondary_dma_default -1
+
+		# Now we have to disassemble the RESOURCES array
+		while { 1 } {
+			set ares [lvarpop res]
+			if { [catch { keylget ares TYPE } restype ] } {
+				break;
+			}
+
+			switch $restype {
+			    IO {
+				# We assume IO addresses come in a fixed
+				# order:  dsp, midi, synth
+				# This is not always the case, though --
+				# as with synth-only devices.  (!)
+				set takenIO [check_res {IOADDR}]
+				if { ![keylget attrvals has_audio_io] } {
+					keylset attrvals has_audio_io 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenIO {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals audio_io_options \
+						$optionList
+					keylset attrvals audio_io_default \
+						$optionDef
+					set ossval audio_io
+				} elseif { ![keylget attrvals has_midi_io] } {
+					keylset attrvals has_midi_io 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenIO {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals midi_io_options \
+						$optionList
+					keylset attrvals midi_io_default \
+						$optionDef
+					set ossval midi_io
+				} else {
+					keylset attrvals has_synth_io 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenIO {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals synth_io_options \
+						$optionList
+					keylset attrvals synth_io_default \
+						$optionDef
+					set ossval synth_io
+				}
+				set osstype P
+			    }
+			    IRQ {
+				set takenIRQ [check_res {IRQ}]
+				if { ![keylget attrvals has_primary_irq] } {
+					keylset attrvals has_primary_irq 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenIRQ {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals primary_irq_options \
+						$optionList
+					keylset attrvals primary_irq_default \
+						$optionDef
+					set ossval primary_irq
+				} else {
+					keylset attrvals has_secondary_irq 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenIRQ {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals secondary_irq_options \
+						$optionList
+					keylset attrvals secondary_irq_default \
+						$optionDef
+					set ossval secondary_irq
+				}
+				set osstype I
+			    }
+			    DMA {
+				set takenDMA [check_res {DMAC}]
+				if { ![keylget attrvals has_primary_dma] } {
+					keylset attrvals has_primary_dma 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenDMA {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals primary_dma_options \
+						$optionList
+					keylset attrvals primary_dma_default \
+						$optionDef
+					set ossval primary_dma
+					set osstype D
+				} else {
+					keylset attrvals has_secondary_dma 1
+					set optionList [keylget ares OPTIONS]
+					set optionDef [keylget ares DEFAULT]
+					for {set index 0} {$index < [llength $optionList]} {incr index} {
+						set op [lindex $optionList $index]
+						foreach taken $takenDMA {
+							if {$op==[lindex [lindex $taken 0] 0]} {
+								set newop [format "%s (%s)" $op [lindex $taken 1]]
+								set optionList [lreplace $optionList $index $index $newop]
+								if {$optionDef==$op} {
+									set optionDef $newop
+								}
+								break
+							}
+						}
+					}
+					keylset attrvals secondary_dma_options \
+						$optionList
+					keylset attrvals secondary_dma_default \
+						$optionDef
+					set ossval secondary_dma
+					set osstype d
+				}
+			    }
+			}
+
+			# We have to set up the strings for the OSS
+			# device config file because we'd have a heck
+			# of a time trying to build these any time later.
+
+			# First, get the OSS device name.
+			set ossdev [keylget ares DEV]
+
+			# Get whatever we have already assigned to this device.
+			if { [catch { keylget ossdevs $ossdev } ress] } {
+				set ress ""
+			}
+
+			# Add in the new OSS device resource assignment
+			keylset ress $osstype $ossval
+
+			# Put this back into ossdevs
+			keylset ossdevs $ossdev $ress
+
+			# Later, when we need to build devices.cfg, we'll
+			# unpack ossdevs.  We'll interpret ossval as a
+			# variable name in which we'll expect to find the
+			# value associated with the osstype.
+		}
+
+		keylset attrvals ossdevs $ossdevs
+
+		return $attrvals
+
+		# set section audioconfig
+		# set attrvals {}
+		# if {[file isfile $audinfofile]} {
+		#	set handle [StanzaOpen $audinfofile STZ_RDONLY]
+		#	set allattrs [StanzaGetAttrs $handle $section]
+		#	foreach attr $allattrs {
+		#		set val [StanzaGetVals $handle $section $attr]
+		#		keylset attrvals $attr $val
+		#	}
+		#	StanzaClose $handle
+		#	return $attrvals
+		#} else {
+		#	ErrorPush errorstack 1 \
+		#		SCO_AUDIOCONFIGOSA_ERR_NO_AUDINFO $audinfofile
+		#}
+	}
+	test_audio_start {
+		if {$timeOutId > 0} {
+			VtRemoveTimeOut $timeOutId
+			set timeOutId 0
+		}
+		if {$audioDeviceId < 1} {
+			set audioDeviceId [open /dev/audio {WRONLY NONBLOCK}]
+			if {$audioDeviceId < 1} {
+				set audioDeviceId 0
+				ErrorPush errorstack 1 \
+					SCO_AUDIOCONFIGOSA_ERR_OPEN_DEV_AUDIO
+			}
+		}
+		set timeOutId [VtAddTimeOut -callback testAudio -interval 250]
+	}
+	test_audio_stop {
+		if {$timeOutId > 0} {
+			VtRemoveTimeOut $timeOutId
+			set timeOutId 0
+		}
+		if {$audioDeviceId > 0} {
+			close $audioDeviceId
+			set audioDeviceId 0
+		}
+	}
+	}
+}
+
+
+proc testAudio {cbs} {
+	global timeOutId
+	global audioDeviceId
+	global soundBuffer
+	global soundBufIndex
+
+#	puts -nonewline $audioDeviceId $soundBuffer
+
+	set bufLen 80
+	if {$soundBufIndex < [string length $soundBuffer]} {
+		if {[expr $soundBufIndex+$bufLen] >= [string length $soundBuffer]} {
+   			puts -nonewline $audioDeviceId [string range $soundBuffer $soundBufIndex end]
+   			set soundBufIndex 0
+		} else {
+			puts -nonewline $audioDeviceId [string range $soundBuffer $soundBufIndex [expr $soundBufIndex+$bufLen]]
+		}
+		flush $audioDeviceId
+		incr soundBufIndex [expr $bufLen+1]
+		if {$soundBufIndex >= [string length $soundBuffer]} {
+			set soundBufIndex 0
+		}
+	set timeOutId [VtAddTimeOut -callback testAudio -interval 0]
+	}
+}
+
+
+
+set timeOutId 0
+set audioDeviceId 0
+set soundBufIndex 0
+
+#for {set i 128} {$i > 16} {incr i -1} {
+	#set a [format "%c" $i]
+	#append sb $a
+#}
+#for {set i 16} {$i < 241} {incr i} {
+	#set a [format "%c" $i]
+	#append sb $a
+#}
+#for {set i 241} {$i > 128} {incr i -1} {
+	#set a [format "%c" $i]
+	#append sb $a
+#}
+#set soundBuffer $sb$sb$sb$sb$sb
+
+set f [open /usr/lib/audio/audioconfig/spacemusic.au r]
+while {[gets $f sb] >= 0} {
+	append soundBuffer $sb
+}
+close $f
+
+OFBinding sco_audiocard_CDT
+OFBinding sco_audioconfig_CDT
+
+

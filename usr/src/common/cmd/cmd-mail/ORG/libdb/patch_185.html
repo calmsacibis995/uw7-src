@@ -1,0 +1,152 @@
+<! "@(#)patch.185.html	8.6 (Sleepycat) 4/12/97">
+<html>
+<head>
+<title>The Berkeley DB Package: DB 1.85 Release FAQ and Patches</title>
+</head>
+<body>  
+<p align=right>
+last updated 4/12/97
+</p>
+
+<center>
+<h1>DB 1.85 Release FAQ and Patches</h1>
+</center>
+
+<ol>
+<p><li><b>
+Problem: DB 1.85 compiles on IRIX, but fails to pass the tests.
+</b></li>
+<table>
+<td>
+<a href="packages/irix.mbox">
+A UNIX mailbox with the patches to make DB version 1.85 (or 1.86) run
+on current IRIX systems.</a>
+<td>
+<img src="/icons/text.gif">
+</table>
+
+
+<p><li><b>
+Problem: DB 1.85 core dumps on certain data sets when using the B+tree
+access method.
+</b></li>
+<table>
+<td>
+<a href="patch/patch.1.2">
+Apply the following patch to the db-1.85/btree/bt_split.c file.</a>
+<td>
+<img src="/icons/text.gif">
+</table>
+<pre>
+*** btree/bt_split.c	Tue Jul 26 14:22:02 1994
+--- btree/bt_split.c	Sat Jan  4 14:38:55 1997
+***************
+*** 673,679 ****
+  		 * where we decide to try and copy too much onto the left page.
+  		 * Make sure that doesn't happen.
+  		 */
+! 		if (skip <= off && used + nbytes >= full) {
+  			--off;
+  			break;
+  		}
+--- 673,679 ----
+  		 * where we decide to try and copy too much onto the left page.
+  		 * Make sure that doesn't happen.
+  		 */
+! 		if (skip <= off && used + nbytes >= full || nxt == top - 1) {
+  			--off;
+  			break;
+  		}
+</pre>
+
+
+<p><li><b>
+Problem: DB 1.85 compiles on Linux but fails to load,
+displaying an error message that there's no lorder command.
+<br>
+</b></li>
+<table>
+<td>
+<a href="patch/patch.1.1">
+Apply the following patch to the Linux Makefile.</a>
+<td>
+<img src="/icons/text.gif">
+</table>
+<pre>
+*** Makefile.orig	Wed Jul 13 21:43:16 1994
+--- Makefile	Wed Dec 31 19:00:00 1969
+***************
+*** 15,22 ****
+  
+  ${LIBDB}: ${OBJ1} ${OBJ2} ${OBJ3} ${OBJ4} ${OBJ5} ${MISC}
+  	rm -f $@
+! 	ar cq $@ \
+! 	    `lorder ${OBJ1} ${OBJ2} ${OBJ3} ${OBJ4} ${OBJ5} ${MISC} | tsort`
+  	ranlib $@
+  
+  clean:
+--- 15,21 ----
+  
+  ${LIBDB}: ${OBJ1} ${OBJ2} ${OBJ3} ${OBJ4} ${OBJ5} ${MISC}
+  	rm -f $@
+! 	ar cq $@ ${OBJ1} ${OBJ2} ${OBJ3} ${OBJ4} ${OBJ5} ${MISC}
+  	ranlib $@
+  
+  clean:
+</pre>
+
+
+<p><li><b>
+Problem: DB 1.85 core dumps on certain data sets when using the B+tree
+access method.
+(Patch #2 MUST be applied before this patch.)
+</b></li>
+<table>
+<td>
+<a href="patch/patch.1.3">
+Apply the following patch to the db-1.85/btree/bt_split.c file.</a>
+<td>
+<img src="/icons/text.gif">
+</table>
+<pre>
+*** btree/bt_split.c.orig	Sat Feb  8 10:14:10 1997
+--- btree/bt_split.c	Sat Feb  8 10:14:51 1997
+***************
+*** 673,679 ****
+  		 * where we decide to try and copy too much onto the left page.
+  		 * Make sure that doesn't happen.
+  		 */
+! 		if (skip <= off && used + nbytes >= full || nxt == top - 1) {
+  			--off;
+  			break;
+  		}
+--- 673,680 ----
+  		 * where we decide to try and copy too much onto the left page.
+  		 * Make sure that doesn't happen.
+  		 */
+! 		if (skip <= off &&
+! 		    used + nbytes + sizeof(indx_t) >= full || nxt == top - 1) {
+  			--off;
+  			break;
+  		}
+***************
+*** 686,692 ****
+  			memmove((char *)l + l->upper, src, nbytes);
+  		}
+  
+! 		used += nbytes;
+  		if (used >= half) {
+  			if (!isbigkey || bigkeycnt == 3)
+  				break;
+--- 687,693 ----
+  			memmove((char *)l + l->upper, src, nbytes);
+  		}
+  
+! 		used += nbytes + sizeof(indx_t);
+  		if (used >= half) {
+  			if (!isbigkey || bigkeycnt == 3)
+  				break;
+</pre>
+
+
+</ol>

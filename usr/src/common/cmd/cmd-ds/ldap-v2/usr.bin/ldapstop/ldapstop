@@ -1,0 +1,137 @@
+#!/usr/bin/ksh
+#==============================================================================
+# ldapstop
+# ~~~~~~~~
+#
+# EXIT STATES
+#
+#	100 - Cannot include ldaptabProcedures
+#	185 - Must be root to execute this command
+#	186 - Invalid arguments to ldapstop
+#
+#------------------------------------------------------------------------------
+
+LDAPTABPROCS=/usr/lib/ldap/ldaptabProcedures
+PIDDIR=/var/ldap/pid
+LDAPINFO=/usr/lib/ldap/ldapinfo
+SLAPD=/usr/lib/ldap/slapd
+
+#Check permissions to run this command
+UID=$(/usr/bin/id -u)
+if [ "$UID" != 0 ]
+then
+	pfmt  -s info -g ldapmisc:2 "You must be root to run this command\n"
+	exit 185
+fi
+
+if [ -f $LDAPTABPROCS ]
+then
+        . $LDAPTABPROCS
+else
+	pfmt -s halt -g ldapmisc:3 "Fatal error, cannot find file %s\n" "$LDAPTABPROCS"
+        exit 100
+fi
+
+usage() {
+	pfmt -s nostd -g ldapmisc:12 "Usage: %s: ldapstop [all] [-i id]\n" "$1";
+	pfmt -s nostd -g ldapmisc:13 "Usage: %s: ldapstop [all] [-d number]\n" "$1";
+}
+
+stopSlapd() {
+        typeset masterfile=$(getDaemonMasterFile "$1" )
+        typeset bname=$(echo $masterfile | sed -e's/\//_/g')
+        typeset FILE="/var/ldap/pids/$bname"
+
+	if [ -f "$FILE" ]
+	then
+		typeset PID=$(cat $FILE)
+		if [ "$PID" != "STARTING" ]
+		then
+			kill -TERM $PID > /dev/null 2>&1
+			pfmt -s nostd -g ldapmisc:14 "Stopping slapd [%s]\n" $PID
+		fi
+	fi
+	# Now check if slurpd needs to be stopped
+	replicas=`$LDAPINFO -v replicas -i "$1"`
+	if [ $? == 0 ] && [ ! -z "$replicas" ]
+	then
+		typeset PIDFILE="/var/ldap/pids/slurpd/$bname"
+		if [ -f "$PIDFILE" ]
+		then
+			typeset PID=$(cat $PIDFILE)
+			if [ "$PID" != "STARTING" ]
+			then
+				kill -TERM $PID > /dev/null 2>&1
+				pfmt -s nostd -g ldapmisc:15 "Stopping slurpd [%s]\n" $PID
+			fi
+		fi
+	fi
+}
+
+if [ $# -eq 0 ]
+then
+	usage $0
+	exit 186
+fi
+
+allflag=
+iflag=
+dflag=
+while [ $# != 0 ]
+do
+        name=$1
+        case $name in
+        all)
+                allflag=1;;
+        -\?)
+                usage $0
+                exit 0;;
+        -d)
+                shift
+                if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 186; fi
+                dflag=1
+                dval=$1;;
+	-i)
+		shift
+                if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 181; fi
+                iflag=1
+                ival=$1;;
+        *)
+		pfmt -s error -g ldapmisc:11 "Unrecognised argument: %s\n" $name
+                usage $0
+                exit 186;;
+        esac
+        shift
+done
+
+if [ ! -z "$allflag" ]
+then
+	dnum=$($LDAPINFO -v noofdaemons)
+	let i=1
+	canReadLDAPTAB
+	while [ $i -le $dnum ]
+	do
+		daemonNumberIsValid $i -e
+		ival=`commentFilter $LDAPTAB | printLine "$i" | \
+			awk -F ":" '{print $1; exit;}' `
+		daemonIdentifierIsValid "$ival" -e
+		stopSlapd "$ival"
+		let i=$i+1
+	done
+	exit 0
+fi
+
+if [ -z "$iflag" ] && [ ! -z "$dflag" ]
+then
+	canReadLDAPTAB
+	daemonNumberIsValid "$dval" -e
+	ival=`commentFilter $LDAPTAB | printLine "$dval" | \
+		awk -F ":" '{print $1; exit;}' `
+	iflag=1
+fi
+
+if [ ! -z "$iflag" ]
+then
+	daemonIdentifierIsValid "$ival" -e
+	stopSlapd "$ival"
+fi

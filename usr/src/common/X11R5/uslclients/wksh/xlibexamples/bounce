@@ -1,0 +1,82 @@
+#!/usr/bin/wksh -openlook
+
+integer XVEL YVEL X Y LX LY color
+
+set -A C plum yellow lightblue white navyblue red darkolivegreen orange
+
+random() {      # $1=low $2=high
+	typeset high="$1" low="$2"
+
+	echo "$((RANDOM*(high-low)/32768 + low))"
+}
+
+InitBounce() {
+	integer i=0
+
+	color=0
+	gv $1 height:H width:W
+	let XSCALE=10000/W
+	let YSCALE=10000/H
+
+	XDraw -fillrect -fg black $STUB 0 0 $W $H
+
+	X=`random 0 10000`
+	Y=`random 0 10000`
+	XVEL=0
+	while (( XVEL == 0 ))
+	do
+		XVEL=`random -1 1`
+	done
+	let XVEL=XVEL*XSCALE*`random 1 5`
+
+	YVEL=0
+	while (( YVEL == 0 ))
+	do
+		YVEL=`random -1 1`
+	done
+	let YVEL=YVEL*YSCALE*`random 1 5`
+
+	LX=0
+	LY=0
+}
+
+Change() {
+	LX=`random 0 W`
+	LY=`random 0 H`
+	ato $TOPLEVEL `random 5000 20000` Change
+}
+
+Blank() {
+	InitBounce $STUB
+	ato $TOPLEVEL `random 50000 150000` Blank
+}
+
+Move() { # $1=parent
+	integer x y
+
+	if (( X/XSCALE >= W || X <= 0 ))
+	then XVEL=-XVEL
+	fi
+	if (( Y/YSCALE >= H || Y <= 0 ))
+	then YVEL=-YVEL
+	fi
+	X=X+XVEL
+	Y=Y+YVEL
+	x=X/XSCALE
+	y=Y/YSCALE
+
+	XDraw -line -fg ${C[$((color/20))]} -lw 2 $1 $LX $LY $x $y
+	color="(color+1) % (${#C[@]}*20)"
+	ato $TOPLEVEL 1 "Move $1"
+}
+
+oi TOPLEVEL bounce Bounce "$@"
+cmw STUB stub stub $TOPLEVEL width:200 height:200
+
+sv $STUB userData:"InitBounce $STUB"
+
+rw $TOPLEVEL
+Blank $STUB
+Change
+Move $STUB
+ml

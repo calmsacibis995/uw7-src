@@ -1,0 +1,150 @@
+#	Copyright (c) 1990  Intel Corporation
+#	All Rights Reserved
+#
+#	INTEL CORPORATION PROPRIETARY INFORMATION
+#
+#	This software is supplied to AT & T under the terms of a license 
+#	agreement with Intel Corporation and may not be copied nor 
+#	disclosed except in accordance with the terms of that agreement.
+#
+
+#ident	"@(#)pkg.kdb:postinstall	1.7.3.3"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+TMP=/tmp/kdb.err
+
+rm -f $TMP > /dev/null 2>&1
+
+exitstat=0
+
+# modify tunables
+
+/etc/conf/bin/idtune -f KDBSECURITY ${KDBSECURITY:-1} > ${TMP} 2>&1
+
+# install the drivers
+
+for MODULE in kdb_util kdb scodb
+do
+	cd /tmp/${MODULE}
+
+	if [ "$MODULE" != "scodb" ]
+	then
+		# configure module as loadable or static
+		if
+			[ "$KDBLOADABLE" != "LOADABLE" ]
+		then
+			sed '/$version/a\
+$static' < System > System.new
+		else
+			sed '/^$static/d' < System > System.new
+		fi
+		mv System.new System
+	fi
+
+	${CONFBIN}/idinstall -P ${PKGINST} -a ${MODULE} 2> ${TMP}
+	if
+		[ "$?" != "0" ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${MODULE} 2> ${TMP}
+		if
+			[ "$?" != "0" ]
+		then
+			message `pfmt -s nostd -g ${PKGMSG}:2 "The installation of the %s cannot be completed due to an error in the driver installation. The file %s contains the errors." ${NAME} ${TMP} 2>&1`
+			exitstat=${FAILURE}
+		fi
+	fi
+done
+
+if [ ${exitstat} = 0 ]
+then
+	if [ "$KDBLOADABLE" = "LOADABLE" ]
+	then
+		MOPTS="-M kdb_util -M kdb -M scodb"
+	else
+		MOPTS="-M scodb"
+	fi
+
+	# configure the modules
+	${CONFBIN}/idbuild $MOPTS 2>> $TMP
+	if
+		[ "$?" -ne "0" ]
+	then
+		message `pfmt -s nostd -g ${PKGMSG}:3 "The installation cannot be completed due to an error in the kernel reconfiguration. %s	 Please try the installation again.  If the error occurs again, contact your Service Representative" $ERROR1 2>&1`
+		exitstat=${FAILURE}
+	else
+		exitstat=10
+	fi
+
+	if [ "$KDBLOADABLE" != "LOADABLE" ]
+	then
+		# Rebuild the kernel
+		${CONFBIN}/idbuild 2>> $TMP
+		if
+			[ "$?" -ne "0" ]
+		then
+			message `pfmt -s nostd -g ${PKGMSG}:3 "The installation cannot be completed due to an error in the kernel reconfiguration. %s	 Please try the installation again.  If the error occurs again, contact your Service Representative" $ERROR1 2>&1`
+			exitstat=${FAILURE}
+		else
+			exitstat=10
+		fi
+	fi
+fi
+
+#
+# Now clean up
+#
+for MODULE in kdb_util kdb
+do
+	rm -rf /tmp/${MODULE} >/dev/null 2>&1
+	removef	$PKGINST /tmp/${MODULE}/Driver_atup.o \
+			/tmp/${MODULE}/Driver_mp.o \
+			/tmp/${MODULE}/Master \
+			/tmp/${MODULE}/Modstub.o  \
+			/tmp/${MODULE}/Mtune \
+			/tmp/${MODULE}/Dtune \
+			/tmp/${MODULE}/Space.c \
+			/tmp/${MODULE}/Stubs.c \
+			/tmp/${MODULE}/System \
+			>/dev/null 2>&1
+	removef $PKGINST /tmp/${MODULE}  >/dev/null 2>&1
+done
+
+chmod -R +x ${CONFDIR}/pack.d/scodb/info
+
+#
+# remove scodb files
+#
+rm -rf /tmp/scodb >/dev/null 2>&1
+removef $PKGINST /tmp/scodb/Driver_atup.o \
+		/tmp/scodb/Driver_mp.o \
+		/tmp/scodb/Master \
+		/tmp/scodb/Space.c \
+		/tmp/scodb/System \
+		>/dev/null 2>&1
+removef $PKGINST /tmp/scodb/info  >/dev/null 2>&1
+removef $PKGINST /tmp/scodb/info  >/dev/null 2>&1
+
+		
+			
+removef -f $PKGINST >/dev/null 2>&1
+
+installf -f $PKGINST >/dev/null 2>&1
+
+exit ${exitstat}

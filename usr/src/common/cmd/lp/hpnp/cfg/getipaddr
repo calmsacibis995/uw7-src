@@ -1,0 +1,64 @@
+#!/bin/ksh
+#ident	"@(#)getipaddr	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  if [ "$1" = "" ]
+  then
+    echo "\nEnter IP address: $NL"  
+    read -r IPADDR
+  else
+    echo "\nEnter IP address (default=$1): $NL"  
+    read -r IPADDR
+    if [ -z "$IPADDR" ]
+    then
+      IPADDR=$1
+    fi
+  fi
+  if [ -z "$IPADDR" ]
+  then
+    continue
+  fi
+  if [ "$IPADDR" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$IPADDR" = "?" ]
+  then
+    echo "\nAn IP (internet protocol) address is a unique address used in"
+    echo "all communication with the network peripheral.  The IP address"
+    echo "is entered in the $BOOTPTABLE entry for this peripheral.  An"
+    echo "example of a valid IP address is 15.1.1.1"
+    echo ""
+    $QUITHELP
+    continue
+  fi
+  echo $IPADDR | egrep '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' > /dev/null
+  if [ $? -eq 0 ]
+  then
+    break
+  else
+    echo "\nFormat error in IP address.  An example of a valid address"
+    echo "is 15.1.1.1" 
+    echo ""
+    $QUITHELP
+  fi
+done
+
+echo $IPADDR	> "$TMP/IPADDR"
+exit 0

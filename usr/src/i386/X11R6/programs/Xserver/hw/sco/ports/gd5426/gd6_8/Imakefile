@@ -1,0 +1,141 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:02:23
+ *	@(#) Imakefile 12.1 95/05/09 
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ * Modification History
+ *
+ * S010, 06-May-93, staceyc
+ * 	source cleanup
+ * S009, 30-Apr-93, staceyc
+ * 	mods for 16 bit support
+ * S008, 16-Apr-93, staceyc
+ * 	font glyph drawing
+ * S007, 16-Apr-93, staceyc
+ * 	glyph drawing
+ * S006, 14-Apr-93, staceyc
+ * 	stipples and query best size
+ * S005, 02-Apr-93, staceyc
+ * 	diagonal line support
+ * S004, 31-Mar-93, staceyc
+ * 	rule to create pre-processed source files
+ * S003, 26-Mar-93, staceyc
+ * 	solid fill spans added
+ * S002, 16-Mar-93, staceyc
+ * 	tile support
+ * S001, 12-Mar-93, staceyc
+ * 	routine to move window added
+ * S000, 02-Mar-93, staceyc
+ * 	created
+ */
+
+#include <Server.tmpl>
+
+#ifndef GD6LIB
+#define GD6LIB gd6_8
+gd6_8= gd6_8
+GD6_PIXEL_SIZE= 8
+#endif
+
+.SUFFIXES: .i
+
+.c.i:
+	$(CC) -E $(CFLAGS) $*.c > $*.i
+
+SRCS =	gd6Cmap.c gd6Cursor.c gd6Data.c gd6GC.c gd6Image.c gd6Init.c \
+	gd6Screen.c gd6Win.c gd6Blit.c gd6RectOps.c \
+	gd6Tile.c gd6FillSp.c gd6Bres.c gd6Stip.c gd6Misc.c gd6Glyph.c \
+	gd6Font.c
+
+OBJS =	gd6Cmap.o gd6Cursor.o gd6Data.o gd6GC.o gd6Image.o gd6Init.o \
+	gd6Screen.o gd6Win.o gd6Blit.o gd6RectOps.o \
+	gd6Tile.o gd6FillSp.o gd6Bres.o gd6Stip.o gd6Misc.o gd6Glyph.o \
+	gd6Font.o
+
+STD_DEFINES = ServerDefines
+
+#if defined(USLArchitecture)
+   INCLUDES = -I. -I.. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+#else
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+#endif
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+       DDXLIBS = lib$(GD6LIB).a
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+
+DEFINES= -DGD6HEAD=$(GD6LIB) -DGD6_BITS_PER_PIXEL=$(GD6_PIXEL_SIZE)
+
+#if defined(USLArchitecture)
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o:
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget($(GD6LIB),$(OBJS))
+SharedXDriverTarget($(GD6LIB),6.0,$(OBJS),shared,..)
+#endif
+
+#else
+
+NormalLibraryObjectRule()
+NormalLibraryTarget($(GD6LIB),$(OBJS))
+
+$(GD6LIB)Data.o: gd6Data.o
+        cp gd6Data.o $(GD6LIB)Data.o
+
+#endif
+
+LintLibraryTarget($(GD6LIB),$(SRCS))
+
+DynamicObjectRuleSCP($(GD6LIB),$(DDXLIBS),gd6Init.c)
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(gd6Blit.c,LinkDirectory)
+LinkDepSourceFile(gd6Bres.c,LinkDirectory)
+LinkDepSourceFile(gd6Cmap.c,LinkDirectory)
+LinkDepSourceFile(gd6Consts.h,LinkDirectory)
+LinkDepSourceFile(gd6Cursor.c,LinkDirectory)
+LinkDepSourceFile(gd6Data.c,LinkDirectory)
+LinkDepSourceFile(gd6Defs.h,LinkDirectory)
+LinkDepSourceFile(gd6FillSp.c,LinkDirectory)
+LinkDepSourceFile(gd6Font.c,LinkDirectory)
+LinkDepSourceFile(gd6GC.c,LinkDirectory)
+LinkDepSourceFile(gd6Glyph.c,LinkDirectory)
+LinkDepSourceFile(gd6Image.c,LinkDirectory)
+LinkDepSourceFile(gd6Init.c,LinkDirectory)
+LinkDepSourceFile(gd6Macros.h,LinkDirectory)
+LinkDepSourceFile(gd6Misc.c,LinkDirectory)
+LinkDepSourceFile(gd6Procs.h,LinkDirectory)
+LinkDepSourceFile(gd6RectOps.c,LinkDirectory)
+LinkDepSourceFile(gd6Screen.c,LinkDirectory)
+LinkDepSourceFile(gd6Stip.c,LinkDirectory)
+LinkDepSourceFile(gd6Tile.c,LinkDirectory)
+LinkDepSourceFile(gd6Win.c,LinkDirectory)
+#endif
+
+DependTargetSCP(gd6Init.c)

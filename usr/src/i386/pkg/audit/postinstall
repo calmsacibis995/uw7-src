@@ -1,0 +1,238 @@
+#ident	"@(#)postinstall	1.2"
+#ident  "$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+	installf ${PKGINST} /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+FAILURE=1				# exit code if anything goes wrong
+CONFDIR=/etc/conf/
+CONFBIN=/etc/conf/bin
+DRIVERDIR=/etc/conf/pack.d/audit/		# home of driver object modules
+
+do_install() {
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if [ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+
+	if [ -f ${1}.St ]
+	then
+		mv ${1}.St Stubs.c
+	fi
+
+	if [ -f ${1}.Md ]
+	then
+		mv ${1}.Md Master
+	fi
+
+	if [ -f ${1}.Sd ]
+	then
+		sed "${SEDCMD1}" ${1}.Sd > System
+		rm -rf ${1}.Sd
+	fi
+
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	if [ "$?" = "0" ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+		RET=$?
+	elif
+                [ "$?" = 8 ]
+	then
+                [ ! -d /etc/conf/pack.d/${1} ] && mkdir /etc/conf/pack.d/${1}
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+                RET=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		RET=$?
+	fi
+	if [ "${RET}" != 0 ]
+	then
+		message -d `pfmt -s halt -g ${PKGMSG}:1 \
+"The installation cannot be completed due to an error in the\ninstallation of the driver for the %s module of %s.\nThe file %s contains the errors." \
+${1} ${NAME} ${ERR} 2>&1`
+			exit ${FAILURE}
+	fi
+	rm -rf ${ERR} >/dev/null 2>&1
+}
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+ERR=/tmp/audit.err
+rm -f ${ERR} > /dev/null 2>&1
+
+# install the module
+
+cd /tmp/audit
+for module in audit
+do
+	do_install ${module}
+done
+
+# Remove temporary files in /tmp/audit from the contents database
+removef ${PKGINST} /tmp/audit/audit_atup.Dr >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit/audit_mp.Dr >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit/audit.Md >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit/audit.Sd >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit/audit.Sp >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit/audit.St >/dev/null 2>&1
+removef ${PKGINST} /tmp/audit >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+$CONFBIN/idbuild 
+if [ $? != 0 ]
+then
+	pfmt -s halt -g ${PKGMSG}:2 "The attempt to rebuild the kernel has failed\n" 2>&1
+	exit $FAILURE
+fi
+
+# Change /etc/default/useradd
+/usr/bin/defadm useradd AUDIT_MASK=none
+
+/usr/sbin/auditcnv > ${ERR} 2>&1
+
+#
+#
+installf -f $PKGINST || exit $FAILURE
+#
+#
+
+#
+#The following defines the roles for the TFM database.
+#
+#
+
+#
+#The following while-loop reads the commands and the roles
+#to which these commands are to be assigned.  If privileges, 
+#separated by a colon, appear next to the role in the script that 
+#this while-loop reads in, it means that those privileges are to
+#be shutoff for that command when it is assigned to the role.
+#
+#For DESTiny 1 comment out following lines
+while read cmd roles
+do
+    base=`basename $cmd`
+    privs=`
+    egrep ":${cmd}$" /etc/security/tcb/privs|	# Find command in tcb database
+    sed 's/^.*%inher,\(.*\):.*/\1/p' |          # get the set of inher privs
+    sed 's/^.*%fixed,\(.*\):.*//p' |            # delete the fixed privs
+    sed 's/,/:/gp'                              # changed ,'s to :'s
+    `
+    if [ -z "$privs" ]
+    then
+        if [ -f $cmd ]
+		then
+        	prvd="no"
+        else
+            pfmt -s warn -g ${PKGMSG}:3 "%s not found on the system.  Not adding to TFM.\n" "$cmd"
+            continue
+        fi
+    else
+        prvd="yes"
+    fi
+    set $roles
+    save="$privs"
+    while [ $# -gt 0 ]
+    do
+        role=$1
+        if echo "$1" | grep ":" > /dev/null
+        then
+            role=`
+            echo "$1" | sed 's/:.*$//p'`
+            if [ "$prvd" = "yes" ]
+            then
+                shutoff=`
+                echo "$1" | sed 's/^[A-Z]*://p'`
+				shutoff=`echo "$shutoff"|sed 's/:/ /gp'`
+				fullset=`echo "$save"|sed 's/:/ /gp'`
+				for i in $shutoff	#check if privileges to be shut off
+				do					#are in full set of privilges
+					found="false"
+					for j in $fullset
+					do
+						if [ "$i" = "$j" ]
+						then
+							found="true"
+							break
+						fi
+					done
+					privs=""
+					if [ "$found" = "false" ]
+					then
+						pfmt -s warn -g ${PKGMSG}:4 "%s privilege specified to be shut off for %s, but it is NOT in its set of privileges.\n" "$i" "$cmd"
+						break
+					fi
+				done
+				if [ -z "$shutoff" ]
+				then
+					privs="$save"
+                else
+	                for i in $fullset
+	                do
+	                    found="false"
+		                for j in $shutoff
+		                do
+			                if [ "$i" = "$j" ]
+			                then
+				                found="true"
+				                break
+			                fi
+		                done
+		                if [ "$found" = "false" ]
+		                then
+		                    if [ -z "$privs" ]
+		                    then
+		    	                privs=$i
+		                    else
+		                        privs=$privs:$i
+                            fi
+		                fi
+	                done
+				fi
+			fi
+        else
+            privs="$save"
+        fi
+        if [ -z "$privs" ]
+        then
+            adminrole -a $base:$cmd $role
+        else
+            adminrole -a $base:$cmd:$privs $role
+        fi
+        shift
+    done
+done <<!
+/usr/sbin/auditlog	AUD:
+/usr/sbin/auditmap	AUD:
+/usr/sbin/auditoff	AUD:
+/usr/sbin/auditon	AUD:
+/usr/sbin/auditrpt	AUD:
+/usr/sbin/auditset	AUD:
+/usr/bin/cat		AUD:
+/usr/bin/find		AUD:
+!
+
+exit 10			# indicates that the system should be rebooted

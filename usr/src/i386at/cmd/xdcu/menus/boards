@@ -1,0 +1,711 @@
+#ident	"@(#)dcu:menus/boards	1.1.5.1"
+
+. ${DCUSCRIPTS}/dculib.sh
+
+
+function boardselect
+{
+# boardselect()
+# Called when the Choices key is selected for the Configure field
+# on the Hardware Device Configuration screen.
+# Calling/Exit State: 0.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+integer chse=BOARDFLD[$BDLINE]
+integer name=BOARDFLD[$BDLINE]+1
+integer irq=BOARDFLD[$BDLINE]+2
+integer portstart=BOARDFLD[$BDLINE]+3
+integer portend=BOARDFLD[$BDLINE]+4
+integer addrstart=BOARDFLD[$BDLINE]+5
+integer addrend=BOARDFLD[$BDLINE]+6
+integer dma=BOARDFLD[$BDLINE]+7
+integer bd=LINETOBD[$BDLINE]
+
+if [ "${BDTYPE[$bd]}" = $none ]
+then
+	return 0
+fi
+
+CHOOSE_TITLE="$CHOICES"
+CHOOSE_FOOTER="$DCU_CHOOSE_FOOTER"
+choose -e -exit boarddelete "${BDCNFG[$bd]}" $BDCNFGCHOICES
+}
+
+function boarddelete
+{
+# boarddelete()
+# Choices exit callback for the Configure field Choices key
+# on the Hardware Device Configuration screen.
+# It updates the field and corresponding "grayness" of the other fields
+# on that line.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	integer x
+	integer chse=BOARDFLD[$BDLINE] 
+	integer name=BOARDFLD[$BDLINE]+1
+	integer irq=BOARDFLD[$BDLINE]+2
+	integer portstart=BOARDFLD[$BDLINE]+3 
+	integer portend=BOARDFLD[$BDLINE]+4
+	integer addrstart=BOARDFLD[$BDLINE]+5
+	integer addrend=BOARDFLD[$BDLINE]+6
+	integer dma=BOARDFLD[$BDLINE]+7
+	integer bd=LINETOBD[$BDLINE]
+
+	if [ "$CHOICE" = "$Y" ]
+	then
+		x=0
+	else
+		x=1
+	fi
+	fld_change $BDFID $chse $CHOICE
+	if [ "${BDTYPE[bd]}" = $prompt ]
+	then
+		fld_gray $BDFID $irq $x
+		fld_gray $BDFID $portstart $x
+		fld_gray $BDFID $portend $x
+		fld_gray $BDFID $addrstart $x
+		fld_gray $BDFID $addrend $x
+		fld_gray $BDFID $dma $x
+	fi
+	return 0
+}
+
+function boardsdone
+{
+# boardsdone()
+# Form exit callback when the Hardware Device Configuration screen is exited
+# via F10=Return.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+# May remove if winxksh behaviour changed to detect the failure
+	if [ -n "$IRQCHKD" ] \
+	|| [ -n "$IOSCHKD" ] \
+	|| [ -n "$IOECHKD" ] \
+	|| [ -n "$MEMSCHKD" ] \
+	|| [ -n "$MEMECHKD" ] \
+	|| [ -n "$DMACHKD" ]
+	then
+		return 1
+	fi
+	dcumain
+	return 0
+}
+
+function boards
+{
+# boards(bd_array_index)
+# Called to display the Hardware Device Configuration screen when it
+# is selected from the main menu.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 2 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+
+typeset title="$BDSUMMARY"
+BDDISPLINES=19
+
+place_window  $HdcWaitCols $HdcWaitLines
+wprintf $CURWIN "$HdcWait"
+HDCFID=$CURWIN
+msgnoerr
+footer "$DCUGENERIC_WAIT_FOOTER"
+
+if [ -z "$BDFID" ]
+then
+	integer i=$1 line=1 
+	open_form -exit boardsdone
+	let BDFID=$FID
+	setup_table -page -rows $BDDISPLINES-$FOOTER_HEIGHT -cols 8 -titles BD_TITLE -widths BD_WIDTH -offset 0 
+	while :
+	do
+		case "${BDTYPE[i]}"
+		in
+		$none)
+			break
+			;;
+		$unused)
+			let i+=1
+			continue
+			;;
+		esac
+	
+		let BOARDFLD[line]=FIELDCNT
+		let LINETOBD[line]=$i
+	
+		case "${BDTYPE[i]}" in
+		$noprompt)
+			eval typeset -L${BD_WIDTH[3]} irq="${BDIRQ[i]}"
+			eval typeset -L${BD_WIDTH[4]} ports="${BDPORTSTART[i]}"
+			eval typeset -L${BD_WIDTH[5]} porte="${BDPORTEND[i]}"
+			eval typeset -L${BD_WIDTH[6]} addrs="${BDADDRSTART[i]}"
+			eval typeset -L${BD_WIDTH[7]} addre="${BDADDREND[i]}"
+			next_field -entry "footer \"$BDSFOOTER2\"; BDLINE=$line" -exit "boardset $i" -choice "boardselect"  -help 'helpwin dcu.brdsum' "BDCNFG[i]"
+			next_field -entry "msgnoerr;BDLINE=$line" -exit "check_name $i" -choice "choose_name $i" -help 'helpwin dcu.brdsum' "BDNAME[i]"
+			next_field_prompt "$irq"
+			next_field_prompt "$ports"
+			next_field_prompt "$porte"
+			if [ "${BDADDRSTART[i]}" = $unused ]
+			then
+				next_field_prompt ""
+				next_field_prompt ""
+			else
+				next_field_prompt "$addrs"
+				next_field_prompt "$addre"
+			fi
+			if [ "${BDDMA[i]}" = $unused ]
+			then
+				next_field_prompt ""
+			else
+				next_field_prompt "${BDDMA[i]}"
+			fi
+			;;
+		*)
+			next_field -entry "footer \"$BDSFOOTER2\"; BDLINE=$line" -exit "boardset $i" -choice "boardselect"  -help 'helpwin dcu.brdsum' "BDCNFG[i]"
+			next_field -entry "msgnoerr;BDLINE=$line" -exit "check_name $i" -choice "choose_name $i" -help 'helpwin dcu.brdsum' "BDNAME[i]"
+			next_field -entry "msgnoerr;BDLINE=$line" -exit "check_irq $i" -choice "choose_irq $i" -help 'helpwin dcu.brdsum' "BDIRQ[i]"
+			next_field -entry "msgnoerr;BDLINE=$line" -exit "check_ports $i" -choice "choose_ports $i" -help 'helpwin dcu.brdsum' "BDPORTSTART[i]"
+			next_field -entry "msgnoerr;BDLINE=$line" -exit "check_porte $i" -choice "choose_porte $i" -help 'helpwin dcu.brdsum' "BDPORTEND[i]"
+			if [ "${BDADDRSTART[i]}" = $unused ]
+			then
+				next_field_prompt ""
+				next_field_prompt ""
+			else
+				next_field -entry "msgnoerr;BDLINE=$line" -exit "check_addrs $i" -choice "choose_addrs $i" -help 'helpwin dcu.brdsum' "BDADDRSTART[i]"
+				next_field -entry "msgnoerr;BDLINE=$line" -exit "check_addre $i" -choice "choose_addre $i" -help 'helpwin dcu.brdsum' "BDADDREND[i]"
+			fi
+			if [ "${BDDMA[i]}" = $unused ]
+			then
+				next_field_prompt ""
+			else
+				next_field -entry "msgnoerr;BDLINE=$line" -exit "check_dma $i" -choice "choose_dma $i" -help 'helpwin dcu.brdsum' "BDDMA[i]"
+			fi
+			;;
+		esac
+		let line+=1
+		next_row
+		let i+=1
+	done
+	let BDTABLE_WIDTH=TABLE_WIDTH
+fi
+place_window -above 0 -left 0 $DCU_MAX_WIDTH $DCU_MAX_HEIGHT-$FOOTER_HEIGHT -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'msgnoerr $BDSFOOTER; footer "$BDSFOOTER2"'
+typeset wid=$CURWIN
+set_hotkey 4 verifyhdw 
+set_hotkey 6 boardxpnd 
+set_hotkey 7 advanced_screen
+BOARDXPND="$BDSFOOTER2"
+wclose $HDCFID
+run_form $BDFID
+}
+
+# The functions below this point in the file are for the advanced options
+# screen.  They probably should be put in a separate file.
+
+function advanced_screen
+{
+# advanced_screen()
+# Called when the F7=Adv key is selected from the Hardware Device Configuratio
+# screen to enter the Advanced Parameter Selection screen.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+integer bd=LINETOBD[BDLINE]
+typeset scntitle="$ADVCONFIG"
+typeset ADVFID
+
+open_form -exit "advdone"
+ADVFID=$FID
+
+
+place_window 78 20 -fg $COMBO2_FG -bg $COMBO2_BG -title "$scntitle" -current 'msgnoerr; footer "$ADVFOOTER"'
+typeset wid=$CURWIN
+#set_hotkey 5 adv_save
+advbd=$bd # export board for adv_save
+
+getspecial
+getbsp
+
+run_form $ADVFID
+}
+
+function lookupoldval
+{
+# lookupoldval(bd_array_index, custom_num)
+# Called to get the old or existing values of Board Specific parameters.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset bd=$1
+typeset cn=$2
+typeset desc
+
+integer j
+# First, see if we have a new value from this DCU seesion
+if [ -n "${BDBSPPARAMS[bd]}" -a -n "${BDBSPVALS[bd]}" ]
+then
+	set ${BDBSPVALS[bd]}
+	for i in ${BDBSPPARAMS[bd]}
+	do
+		if [ "${bspname[cn]}" = "$i" ]
+		then
+			bspxlatfromval $cn $1
+			bspvalue[cn]=$desc
+			return
+		fi
+		if (( $#>1 ))
+		then
+			shift
+		else
+			break
+		fi
+	done
+fi
+# Next, look it up in the rm database
+call RMbegin_trans "${BDKEY[bd]}" 100
+j=RMgetvals "${BDKEY[bd]}" "${bspname[cn]}",s 0
+call RMend_trans "${BDKEY[bd]}" 
+if (( j  ))
+then
+	bspxlatfromval $cn "${RMOUTVALS[1]}"
+	bspvalue[cn]=$desc
+fi
+}
+
+
+# These functions set up the "special" part of the advanced options form.
+# By special, we mean BINDCPU, IPL, and ITYPE.
+
+function x_check_cpu
+{
+# x_check_cpu()
+# Field exit callback when the BindCPU field
+# within the Advanced Parameters screen is exited.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+	typeset t ret
+
+	t=${BDCPU[$1]}
+	BDCPU[$1]=$advbindcpu
+	check_cpu $1
+	ret=$?
+	BDCPU[$1]=$t
+	return $ret
+}
+
+function x_check_unit
+{
+# x_check_unit()
+# Field exit callback when the UNIT field
+# within the Advanced Parameters screen is exited.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+	typeset t ret
+
+	t=${BDUNIT[$1]}
+	BDUNIT[$1]=$advunit
+	check_unit $1
+	ret=$?
+	BDUNIT[$1]=$t
+	return $ret
+}
+
+function x_check_ipl
+{
+# x_check_ipl()
+# Field exit callback when the IPL field
+# within the Advanced Parameters screen is exited.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+	typeset t ret
+
+	t=${BDIPL[$1]}
+	BDIPL[$1]=$advipl
+	check_ipl $1
+	ret=$?
+	BDIPL[$1]=$t
+	return $ret
+}
+
+function x_check_itype
+{
+# x_check_itype()
+# Field exit callback when the ITYPE field
+# within the Advanced Parameters screen is exited.
+# Calling/Exit State: 0 for success and 1 for failure.
+
+	typeset t ret
+
+	t=${BDITYPE[$1]}
+	BDITYPE[$1]=$advitype
+	check_itype $1
+	ret=$?
+	BDITYPE[$1]=$t
+	return $ret
+}
+
+function getspecial
+{
+# getspecial()
+# This function sets up the BindCPU, IPL and ITYPE Parameters part of the
+# advanced options form.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+typeset gray=
+
+#if [ "${BDTYPE[bd]}" = "$noprompt" ]
+#then
+#	gray="-gray -ibg ${CYAN} -ifg ${BLACK}"
+#fi
+
+xxbdmodname="${BDNAME[bd]}"
+add_field xxbdmodname -ix 30 -ilen 20 -gray -ibg ${CYAN} -ifg ${BLACK} \
+	-pbg ${CYAN} -pfg ${BLACK} \
+	-p "$boardname" 
+advbindcpu="${BDCPU[bd]}"
+add_field advbindcpu -ix 30 -ilen 2 $gray \
+	-pbg ${CYAN} -pfg ${BLACK} \
+	-help "helpwin dcu.bsp" \
+	-choice "choose_cpu $bd" -p "$boardcpu" \
+	-entry "msgnoerr" \
+	-exit "x_check_cpu $bd" 
+advunit="${BDUNIT[bd]}"
+add_field advunit -ix 30 -ilen 11 $gray \
+	-pbg ${CYAN} -pfg ${BLACK} \
+	-help "helpwin dcu.bsp" \
+	-choice "choose_unit $bd" -p "$boardunit" \
+	-entry "msgnoerr" \
+	-exit "x_check_unit $bd" 
+advipl="${BDIPL[bd]}"
+add_field advipl -ix 30 -ilen 1 $gray \
+	-pbg ${CYAN} -pfg ${BLACK} \
+	-help "helpwin dcu.bsp" \
+	-choice "choose_ipl $bd" -p "$boardipl" \
+	-entry "msgnoerr" \
+	-exit "x_check_ipl $bd" 
+advitype="${BDITYPE[bd]}"
+add_field advitype -ix 30 -ilen 1 $gray \
+	-pbg ${CYAN} -pfg ${BLACK} \
+	-help "helpwin dcu.bsp" \
+	-choice "choose_itype $bd" -p "$boarditype" \
+	-entry "msgnoerr" \
+	-exit "x_check_itype $bd" 
+}
+
+function getbsp
+{
+# getbsp()
+# This function sets up the Boards Specific Parameters part of the
+# advanced options form.
+# It does so by "dotting in" the appropriate bcfg.d file.
+# 1. look in /etc/inst/locale/$LOCALE/stuff_from_drvmap.d
+# 2. look in /etc/ist/locale/C/stuff_from_drvmap.d
+# 3. look in /etc/conf/bcfg.d
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+integer drv
+typeset bsphelpfile
+# Parameter Name
+set -A bspname
+# Parameter Value
+set -A bspvalue
+# Parameter choices list
+set -A bspcl
+# Parameter choices Descriptors
+set -A bspcd
+# Parameter descriptor
+set -A bspd
+# Paramerter help file
+set -A bsphf
+# paramter choices title
+set -A bspct
+
+unset CUSTOM_NUM
+set -A CUSTOM
+if [ "${BDID[$bd]}" = "$dash" ]
+then
+	lookupisa $bd
+	drv=$?
+else
+	lookupdrv $bd
+	drv=$?
+fi
+if (( drv ))
+then
+	if [ -n "${DRVBCFGFILE[drv]}" ]
+	then
+		if [ -r "${ROOT}/etc/inst/locale/$LOCALE/${DRVBCFGFILE[drv]}" ]
+		then
+			bcfgfile="${ROOT}/etc/inst/locale/$LOCALE/${DRVBCFGFILE[drv]}"
+		else
+			if [ "$LOCALE" != "C" ] && \
+				[ -r "${ROOT}/etc/inst/locale/C/${DRVBCFGFILE[drv]}" ]
+			then
+				bcfgfile="${ROOT}/etc/inst/locale/C/${DRVBCFGFILE[drv]}"
+			else
+				y="${DRVBCFGFILE[drv]##*/}" # basename
+				if [ -r "${ROOT}/etc/conf/bcfg.d/$y/$y.bcfg" ]
+				then
+					bcfgfile="${ROOT}/etc/conf/bcfg.d/$y/$y.bcfg"
+				else
+					return
+				fi
+			fi
+		fi
+
+		. "$bcfgfile"
+		[ "$CUSTOM_NUM" -lt 1 ] && return
+	else
+		return
+	fi
+else
+	return
+fi
+
+let LASTPY+=2
+let LASTIY+=2
+wgotoxy $CURWIN 0 $LASTPY
+wprintf $CURWIN "$BSPLNMSG"
+
+
+cnt=1
+while [ "$cnt" -le "$CUSTOM_NUM" ]
+do
+	[ -z "${CUSTOM[$cnt]}" ] && continue
+OIFS=$IFS
+IFS='
+'
+	set ${CUSTOM[$cnt]}
+	bspname[$cnt]=$1
+	bspcl[$cnt]=$2
+	bspcd[$cnt]=$3
+	bspd[$cnt]=$4
+	eval bsphf[$cnt]=$5
+	bspct[$cnt]=$6
+IFS=${OIFS}
+	let cnt+=1
+done
+
+tmp=1
+while [ "$tmp" -le "$CUSTOM_NUM" ]
+do
+	if [ -n "${bsphf[tmp]}" -a -r "${bsphf[tmp]}" ]
+	then
+		bsphelpfile="${bsphf[tmp]}"
+	else
+		bsphelpfile="${bsphf[tmp]##*/}" # basename
+		if [ -n "$LANGDEP_SCRIPTS/help/$bsphelpfile.hcf" -a \
+			 -r "$LANGDEP_SCRIPTS/help/$bsphelpfile.hcf" ]
+		then
+			:
+		else
+			bsphelpfile="dcu.bsp"
+		fi
+	fi
+	lookupoldval $bd $tmp
+	add_field bspvalue[$tmp] -ix 30 -ilen 15 \
+		-pbg ${CYAN} -pfg ${BLACK} \
+		-help "helpwin $bsphelpfile" \
+		-choice "do_bspchoice $tmp" -p "${bspd[$tmp]}" \
+		-entry "msgnoerr"
+	let tmp+=1
+done
+
+}
+
+function advdone
+{
+# advdone()
+# Form exit callback when the Advanced Parameter Selection screen is exited
+# via F10=Return.
+# Calling/Exit State: 0.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+adv_save
+return 0
+}
+
+function do_bspchoice
+{
+# do_bspchoice(custom_num)
+# Called when the Board Specific Parameter Choice key is invoked
+# to supply the customized parameter choices.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+CHOOSE_TITLE="${bspct[$1]}"
+CHOOSE_FOOTER="$DCU_CHOOSE_FOOTER"
+choose -f "" ${bspcd[$1]}
+}
+
+function bspxlattoval
+{
+# bspxlattoval(custom_param_num, bspvalue[custom_param_num])
+# Called when the Advanced Parameter Selection screen is being exited
+# to translate and save the bspvalues.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset num=$1
+typeset cd=$2
+typeset cdn=0
+typeset cl
+set -A cl ${bspcl[num]}
+
+val=$cd
+for i in ${bspcd[num]}
+do
+	if [ "$i" = "$cd" ]
+	then
+		val=${cl[cdn]}
+		if [ "$val" = '""' ]
+		then
+			val="-"
+		fi
+		break
+	fi
+	let cdn+=1
+done
+}
+
+function bspxlatfromval
+{
+# bspxlatfromval(custom_param_num, val_list)
+# Called when Board Specific Parameters are detected in during
+# the display of the Advanced Parameter Selection screen.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset num=$1
+typeset cl=$2
+typeset cvn=0
+typeset cd 
+set -A cd ${bspcd[num]}
+
+desc=$cl
+for i in ${bspcl[num]}
+do
+	if [ "$i" = "$cl" -o $i = '""' -a "$cl" = "-" ]
+	then
+		desc=${cd[cvn]}
+		break
+	fi
+	let cvn+=1
+done
+}
+
+function adv_save
+{
+# adv_save()
+# Called when the Advanced Parameter Selection screen is exited.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+typeset params=""
+typeset vals=""
+typeset val
+
+if [ -z "$advbd" ]
+then
+	return
+fi
+
+footer "$ADVSAVED"
+
+if [ "${BDCPU[advbd]}" != "$advbindcpu" -o \
+	 "${BDUNIT[advbd]}" != "$advunit" -o \
+	 "${BDIPL[advbd]}" != "$advipl" -o \
+	"${BDITYPE[advbd]}" != "$advitype" ]
+then
+	BDCPU[advbd]="$advbindcpu"
+	BDUNIT[advbd]="$advunit"
+	BDIPL[advbd]="$advipl"
+	BDITYPE[advbd]="$advitype"
+	integer x=${BDCHGS[advbd]}
+	let x\|=$BSP_CHG
+	BDCHGS[advbd]=$x
+fi
+
+num=1
+while [ $num -le "$CUSTOM_NUM" ]
+do
+	bspxlattoval $num "${bspvalue[num]}"
+	if [ -n "${bspname[num]}" -a -n "$val" ]
+	then
+		if [ -n "$params" ]
+		then
+			params="$params "
+			vals="$vals "
+		fi
+		params="${params}${bspname[num]}"
+		vals="${vals}${val}"
+	fi		
+	let num+=1
+done
+BDBSPPARAMS[advbd]=$params
+BDBSPVALS[advbd]=$vals
+BDHASBSP[advbd]=1
+#call sleep 2
+footer "$ADVFOOTER"
+}
+
+
+function verifyhdw
+{
+# verifyhdw()
+# Called when the F4=Verify hotkey is selected from the Hardware Device
+# Configuration screen to verify the entry for the corresponding line.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	verifyconf $BDFID ${LINETOBD[$BDLINE]}
+}

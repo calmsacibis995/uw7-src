@@ -1,0 +1,1120 @@
+#!/bin/osavtcl
+#ident "@(#)ncfgprompter	28.4"
+#ident "$Header$"
+#
+#  Based on OpenServer ncfgUI version 13.1
+#
+#	Copyright (C) 1993-1996 The Santa Cruz Operation, Inc.  
+#	    All Rights Reserved.
+#
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+
+set NCFG_DIR /usr/lib/netcfg
+
+#cmdtrace on [ open $NCFG_DIR/tmp/ncfgprompter.log a+ ]
+
+#source $NCFG_DIR/lib/libSCO.tcl
+
+# Load the SCOAdmin library to get IntlLocalizeMsg
+loadlibindex /usr/lib/sysadm.tlib
+source $NCFG_DIR/bin/ncfgprompter.msg.tcl
+
+
+
+#--------------------------------------------------------------------------
+#	@(#) ipwidget.tcl 1.2 96/05/22 
+#
+#	Copyright (C) The Santa Cruz Operation, 1996.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#--------------------------------------------------------------------------
+
+proc updateIPwidgetValue {widget} {
+	
+	set val	   [VxGetVar $widget val]
+	set a_addr [VxGetVar $widget a_addr]
+	set b_addr [VxGetVar $widget b_addr]
+	set c_addr [VxGetVar $widget c_addr]
+	set d_addr [VxGetVar $widget d_addr]
+	
+	set value "[VtGetValues $a_addr -value]"
+	append value "."
+	append value "[VtGetValues $b_addr -value]"
+	append value "."
+	append value "[VtGetValues $c_addr -value]"
+	append value "."
+	append value "[VtGetValues $d_addr -value]"
+	
+	VtSetValues $val -value value
+}
+
+
+proc checkIPwidgetCB {form cbs} {
+	set value  [keylget cbs value]
+	set widget [keylget cbs widget]
+	
+	set a_addr [VxGetVar $form a_addr]
+	set b_addr [VxGetVar $form b_addr]
+	set c_addr [VxGetVar $form c_addr]
+	set d_addr [VxGetVar $form d_addr]
+
+	set a_addr_flag [VxGetVar $form a_addr_flag]
+	set b_addr_flag [VxGetVar $form b_addr_flag]
+	set c_addr_flag [VxGetVar $form c_addr_flag]
+	set d_addr_flag [VxGetVar $form d_addr_flag]
+	
+	set skip 0
+	set length [string length $value]
+	if {$length == 0} {
+		return
+	}
+	
+	if {$length == 3} {
+		set skip 1
+	}
+	if {[string range $value [expr $length - 1] end] == "."} {
+		set skip 1
+		set value [string range $value 0 [expr $length - 2]]
+		VtSetValues $widget -value $value
+	}
+	if {![ctype digit $value]} then {
+		VtBeep
+		VtSetValues $widget -value ""
+		return
+	}
+	
+	if {$value < 0 || $value > 255} then {
+		VtBeep
+		VtSetValues $widget -value ""
+		return
+	}
+	
+	set type [VxGetVar $form type]
+	set attr [VxGetVar $form attr]
+
+	if {$skip } then {
+		if {$widget == $a_addr} {
+			if { $a_addr_flag } {VtSetFocus $b_addr}
+			VxSetVar $form a_addr_flag 1
+		}
+		if {$widget == $b_addr} {
+			if { $b_addr_flag } {VtSetFocus $c_addr}
+			VxSetVar $form b_addr_flag 1
+		}
+		if {$widget == $c_addr} {
+			if { $c_addr_flag } {VtSetFocus $d_addr}
+			VxSetVar $form c_addr_flag 1
+		}
+	}
+
+}
+
+proc getIPwidgetValue {widget} {
+	
+	set a_addr [VxGetVar $widget a_addr]
+	set b_addr [VxGetVar $widget b_addr]
+	set c_addr [VxGetVar $widget c_addr]
+	set d_addr [VxGetVar $widget d_addr]
+	
+	set value "[VtGetValues $a_addr -value]"
+	append value "."
+	append value "[VtGetValues $b_addr -value]"
+	append value "."
+	append value "[VtGetValues $c_addr -value]"
+	append value "."
+	append value "[VtGetValues $d_addr -value]"
+	
+	return $value
+}
+
+proc AttrSetIPwidgetCB {form cbs} {
+
+	global ATTR_WIDGETS
+
+#	puts stderr "IPBOX cbs: $cbs"
+
+	set a_addr [VxGetVar $form a_addr]
+	set b_addr [VxGetVar $form b_addr]
+	set c_addr [VxGetVar $form c_addr]
+	set d_addr [VxGetVar $form d_addr]
+
+	set currentFocus [ string trim [ VtInfo -whatFocus ]]
+
+	if { [ cequal $currentFocus $a_addr ] } {
+		return
+	}
+	if { [ cequal $currentFocus $b_addr ] } {
+		return
+	}
+	if { [ cequal $currentFocus $c_addr ] } {
+		return
+	}
+	if { [ cequal $currentFocus $d_addr ] } {
+		return
+	}
+
+	set value  [keylget cbs value]
+	set wroot [keylget cbs dialog]
+	set widget [keylget cbs widget]
+	
+	set length [string length $value]
+#	if {$length == 0} {
+#		set value "0"
+#		VtSetValues $widget -value $value
+#	}
+
+    set type [VxGetVar $form type]
+	set attr [VxGetVar $form attr]
+
+    set o_value [ keylget ATTR_WIDGETS $attr.VAL ]
+    set value [getIPwidgetValue $form ]
+
+    if { [ keylget cbs mode ] == "changed" && $o_value == $value } {
+	    # Short-circuit the callback here.
+	    return
+    } 
+
+#	puts stderr "Calling SetAttr $wroot $type $attr $value "
+
+	SetAttr $wroot $type $attr $value
+
+}
+
+
+
+
+proc setIPwidgetValue {widget value} {
+	
+	set a_addr [VxGetVar $widget a_addr]
+	set b_addr [VxGetVar $widget b_addr]
+	set c_addr [VxGetVar $widget c_addr]
+	set d_addr [VxGetVar $widget d_addr]
+	
+	VxSetVar $widget a_addr_flag 0
+	VxSetVar $widget b_addr_flag 0
+	VxSetVar $widget c_addr_flag 0
+	VxSetVar $widget d_addr_flag 0
+
+	set values [split $value "."]
+	VtSetValues $a_addr -value [lindex $values 0]
+	VtSetValues $b_addr -value [lindex $values 1]
+	VtSetValues $c_addr -value [lindex $values 2]
+	VtSetValues $d_addr -value [lindex $values 3]
+
+}
+
+
+proc createIPwidget {form type attr} {
+	
+	set a_addr [VtText $form.a -columns 3 -CHARM_columns 4 \
+			-leftSide FORM \
+			-leftOffset 0 \
+			-callback "SaSetFocus next" \
+			-losingFocusCallback "AttrSetIPwidgetCB $form" \
+			-valueChangedCallback "checkIPwidgetCB $form" ]
+	
+	set a_label [VtLabel $form.al -label "." \
+			-leftOffset 0 \
+			-leftSide $a_addr -alignTop $a_addr]
+	
+	set b_addr [VtText $form.b -columns 3 -CHARM_columns 4 \
+			-callback "SaSetFocus next" \
+			-losingFocusCallback "AttrSetIPwidgetCB $form" \
+			-valueChangedCallback "checkIPwidgetCB $form" \
+			-leftOffset 0 \
+			-leftSide $a_label -alignTop $a_label ]
+	
+	set b_label [VtLabel $form.bl -label "." \
+			-leftOffset 0 \
+			-leftSide $b_addr -alignTop $b_addr]
+	
+	set c_addr [VtText $form.c -columns 3 -CHARM_columns 4 \
+			-callback "SaSetFocus next" \
+			-losingFocusCallback "AttrSetIPwidgetCB $form" \
+			-valueChangedCallback "checkIPwidgetCB $form" \
+			-leftOffset 0 \
+			-leftSide $b_label -alignTop $b_label ]
+	
+	set c_label [VtLabel $form.cl -label "." \
+			-leftOffset 0 \
+			-leftSide $c_addr -alignTop $c_addr]
+	
+	set d_addr [VtText $form.d -columns 3 -CHARM_columns 4 \
+			-callback "SaSetFocus next" \
+			-losingFocusCallback "AttrSetIPwidgetCB $form" \
+			-valueChangedCallback "checkIPwidgetCB $form" \
+			-leftSide $c_label -alignTop $c_label \
+			-leftOffset 0 ]
+	
+	VxSetVar $form type $type
+	VxSetVar $form attr $attr
+
+	VxSetVar $form a_addr_flag 0
+	VxSetVar $form b_addr_flag 0
+	VxSetVar $form c_addr_flag 0
+	VxSetVar $form d_addr_flag 0
+
+	VxSetVar $form a_addr $a_addr
+	VxSetVar $form b_addr $b_addr
+	VxSetVar $form c_addr $c_addr
+	VxSetVar $form d_addr $d_addr
+	
+}
+
+###########################################################
+
+
+proc InitializeGlobals {} \
+		{
+	global SCREENARRAY SCREENSTACK
+	
+	set SCREENARRAY(BASIC) ""
+}
+
+#-----------------------------------------------------------------------------
+# The Widget server interface:
+#-----------------------------------------------------------------------------
+
+proc PresentString {s {len 75} {repstr \n}} \
+		{
+	set desc ""
+	while { [ clength $s ] > $len && [string match "* *" [ crange $s 0 $len ]] } {
+		set i [ string last " " [ crange $s 0 $len ] ]
+		set desc "$desc[ crange $s 0 $i ]$repstr"
+		set s "[ crange $s [ incr i ] end ]"
+	}
+	if { ! [ string compare $desc "" ] } {
+		return $s
+	} else {
+		return "$desc$s"
+	}
+}
+
+proc InfoExit {cbs} \
+		{
+	VtClose
+	exit 0
+}
+
+proc PrompterHelp {cbs} \
+		{
+	global PAGEINIT
+	set BOOK  [ keylget PAGEINIT HELPB ]
+	set TOPIC [ keylget PAGEINIT HELPT ]
+
+	if { [ string compare $BOOK "" ] && [ string compare $TOPIC "" ] } 	{
+		VtDisplayHelp [ keylget cbs widget ] -book $BOOK -topic $TOPIC
+	}
+}
+
+proc PrompterOK {cbs} \
+		{
+	global childPid OLDstdout NO_OUTPUT wroot READONLY
+	global SCREENLIST
+	
+	VtLock
+	set ndtype [ SendRequest "USER_DONE" ]
+	if { ! $NO_OUTPUT } {
+		#		puts stderr [ array names SCREENARRAY ]
+		set SCREENLIST [ lrmdups $SCREENLIST ]
+		foreach i $SCREENLIST {
+			foreach j [ SendRequest "CURRENT $i" ] {
+				for {set s $j} {[regsub \"\"(.*)\"\" $s \"\\1\" sub]} {set s $sub} {}
+				set j $s
+				set attr [ lindex $j 0 ]
+				set value [ lindex $j 2 ]
+				if { [ string first " " $value ] != -1 } {
+					set value "\"$value\""
+				}
+				puts $OLDstdout "$attr=$value"
+			}
+		}
+	}
+	VtUnLock
+	if { [ info exists childPid ] } {
+		kill $childPid
+	}
+	if { ! [ string compare [ lindex $ndtype 1 ] NDTYPE_READ_ONLY ] && ! $READONLY } {
+		set info [ VtInformationDialog $wroot.info \
+				-wmDecoration { TITLE RESIZE BORDER } \
+				-message [ IntlLocalizeMsg SCO_NCFGPROMPTER_MSG_NDTYPE_READ_ONLY ] \
+				-okCallback InfoExit \
+				-ok \
+				]
+		VtShow $info
+	} else {
+		VtClose
+		exit 0
+	}
+}
+
+proc InitFocus {type list wroot} \
+		{
+	global ATTR_WIDGETS
+	
+	set focus_list ""
+	foreach l $list {
+		set attr [ lindex $l 0 ]
+		
+		case [ lindex $l 2 ] {
+			{IPBOX} {
+				set val [ keylget ATTR_WIDGETS $attr.VALUE ]
+				lappend focus_list $val.a
+				lappend focus_list $val.b
+				lappend focus_list $val.c
+				lappend focus_list $val.d
+			}
+			{RADIO TOGGLE} {
+				foreach i [ keylget ATTR_WIDGETS $attr.VALUE ] {
+					set val [ lindex $i 1 ]
+					if { [ string compare $val "" ] } {
+						lappend focus_list $val
+					}
+				}
+			}
+			default {
+				set val [ keylget ATTR_WIDGETS $attr.VALUE ]
+				if { [ string compare $val "" ] } {
+					lappend focus_list [ keylget ATTR_WIDGETS $attr.VALUE ]
+				}
+		}   }
+	}
+	#	set FOCUS($type) $focus_list
+	lappend $focus_list [ VtGetValues $wroot -ok ]
+	
+	#	 puts stderr $wroot
+	#	 puts stderr $focus_list
+	#	 puts stderr [ lindex $focus_list 0 ]
+	
+	SaSetTabGroups $wroot $focus_list
+	#	 SaSetFocusList $wroot $focus_list
+	SaSetFocus [ lindex $focus_list 0 ] ""
+}
+
+
+proc SetAttrCONT {type {cbs ""}} \
+		{
+	DisplayCurrentValues	
+}
+
+proc SetAttr {parent type attr value} \
+		{
+	#puts stderr "SetAttr: $type $attr $value"
+	if { [ string first " " $value ] != -1 || ! [ string compare $value "" ] } {
+		set value "\"$value\""
+	}
+	set result [ SendRequest "SET $attr $value" ]
+	set message [ translit "\"" "" [ lrange $result 1 end ] ]
+	case [ lindex $result 0 ] {
+		ERROR {
+			set eb [ VtErrorDialog $parent.error \
+					-ok \
+					-okLabel [ IntlLocalizeMsg SCO_NCFGPROMPTER_MSG_DISMISS ] \
+					-okCallback "SetAttrCONT $type" \
+					-help \
+					-message "$message" \
+					]
+			VtShowDialog $eb
+		}
+		WARNING {
+			set eb [ VtWarningDialog $parent.warning \
+					-ok \
+					-okLabel [ IntlLocalizeMsg SCO_NCFGPROMPTER_MSG_DISMISS ] \
+					-okCallback "SetAttrCONT $type" \
+					-help \
+					-message "$message" \
+					]
+			VtShowDialog $eb
+		}
+		INFO {
+			set eb [ VtMessageDialog $parent.info \
+					-ok \
+					-okLabel [ IntlLocalizeMsg SCO_NCFGPROMPTER_MSG_DISMISS ] \
+					-okCallback "SetAttrCONT $type" \
+					-help \
+					-message "$message" \
+					]
+			VtShowDialog $eb
+		}
+		OK {
+			SetAttrCONT $type
+		}
+		default {
+			puts stderr "ncfgprompter(SetAttr): Illegal response from BE script:\n\t$result"
+			exit 1
+		}
+	}
+}
+
+proc AttrSet {type attr cbs} \
+		{
+	global ATTR_WIDGETS
+	
+	#puts stderr "AttrSet: $cbs"
+	set w_type [ keylget ATTR_WIDGETS $attr.TYPE ]
+	case $w_type {
+		{TOGGLE RADIO} {
+			set value ""
+			foreach i [ keylget ATTR_WIDGETS $attr.VALUE ] {
+				set i_name [ lindex $i 0 ]
+				set i_widget [ lindex $i 1 ]
+				
+				set x [ VtGetValues $i_widget -value ]
+				#echo "$attr/$i_name: $x"
+				if { [ VtGetValues $i_widget -value ] } {
+					if { $w_type == "TOGGLE" } {
+						lappend value $i_name
+					} else {
+						set value $i_name
+						break
+					}
+				}
+			}
+		}
+		IPBOX {
+			# Should never get here
+			return
+		}
+		default {
+			set value [ keylget cbs value ]
+			set mode [ keylget cbs mode ]
+			set o_value [ keylget ATTR_WIDGETS $attr.VAL ]
+			#puts stderr "SET($attr,$o_value,$value)\n$cbs"
+			if { [ keylget cbs mode ] == "changed" && [ cequal $o_value $value ] } {
+				# This only occurs when you have a LABEL field, and
+				# you type into it and hit ENTER *AND* the BE script
+				# process this entry (for example upper cases it)
+				# and passes back something different to ncfgprompter
+				# in CURRENT BASIC than was previously sent to it
+				# with SET attr value.	If this happens then the BE
+				# will receive a new SET attr... from here because
+				# the Text widget generates a value changed cb as
+				# a result of the VtSetValues of the new (processed)
+				# value.  So... short-circuit the callback here.
+				return
+			}
+		}
+	}
+	set active [ keylget ATTR_WIDGETS $attr.ACTIVE ]
+	# JAW redundant 
+	keylset ATTR_WIDGETS $attr.ACTIVE $active
+	keylset ATTR_WIDGETS $attr.VAL $value 
+	SetAttr [ keylget cbs dialog ] $type $attr $value
+	if { "[ keylget cbs mode ]" == "done" } {
+		SaSetFocus next ""
+	}
+}
+
+proc DisplayCurrentValues {} \
+		{
+
+	global CURRENTNAME
+	global ATTR_WIDGETS READONLY
+	
+	set list [ SendRequest "CURRENT $CURRENTNAME" ]
+
+	# puts stderr "DisplayCurrentValues: $list"
+	foreach i $list {
+		for {set s $i} {[regsub \"\"(.*)\"\" $s \"\\1\" sub]} {set s $sub} {}
+		set i $s
+		set attr [ lindex $i 0 ]
+		set active [ expr { ([ lindex $i 1 ] == 1)? "1" : "0" } ]
+		set value [ lindex $i 2 ]
+		
+		set fs_changed 1
+		set fv_changed 1
+		
+		if [ keylget ATTR_WIDGETS $attr.ACTIVE ret ] {
+			set o_active [ expr { ( $ret == 1)? "1" : "0" } ]
+			if { $active == $o_active } {
+				set fs_changed 0
+			}
+		}
+		if [ keylget ATTR_WIDGETS $attr.VAL ret ] {
+			set o_value $ret
+			if { ! [ string compare $value $o_value ] } {
+				set fv_changed 0
+			}
+		}
+		#puts stderr "CHANGEVAL($attr,$value)"
+		keylset ATTR_WIDGETS $attr.ACTIVE $active
+		keylset ATTR_WIDGETS $attr.VAL	  $value
+		
+		set w_type [ keylget ATTR_WIDGETS $attr.TYPE ]
+		# jaw fix ipbox
+		if { $READONLY && $w_type != "TOGGLE" && $w_type != "IPBOX" } {
+			VtSet [ keylget ATTR_WIDGETS $attr.VALUE ] -label $value
+			if { $fs_changed } {
+				#				VtSetSensitive [ keylget ATTR_WIDGETS $attr.PROMPT ] $active
+				VtSetSensitive [ keylget ATTR_WIDGETS $attr.VALUE ]	 $active
+			}
+			
+		} else {
+			case $w_type {
+				{RADIO TOGGLE} {
+					if { $w_type == "RADIO" } {
+						set value [ list $value ]
+					}
+					foreach i [ keylget ATTR_WIDGETS $attr.VALUE ] {
+						set i_name [ lindex $i 0 ]
+						set i_widget [ lindex $i 1 ]
+						
+						set found 0
+						foreach v $value {
+							if { $v == $i_name } {
+								set found 1
+								break
+							}
+						}
+						if { $found } {
+							VtSetValues $i_widget -value 1
+						} else {
+							VtSetValues $i_widget -value 0
+						}
+						if { $READONLY } {
+							VtSetSensitive $i_widget 0
+						} elseif { $fs_changed } {
+							VtSetSensitive $i_widget $active
+						}
+					}
+					if { $fs_changed } {
+						#					VtSetSensitive [ keylget ATTR_WIDGETS $attr.PROMPT ] $active
+					}
+				}
+				IPBOX {
+					if { $fv_changed } {
+						setIPwidgetValue [ keylget ATTR_WIDGETS $attr.VALUE ]  $value
+					}
+				}
+				NEWSCREEN {
+					VtSetValues [ keylget ATTR_WIDGETS $attr.VALUE ] -label $value
+				}
+				default {
+					if { $fv_changed } {
+						# jaw fix
+						#				puts stderr "Setting $attr to $value"
+						VtSetValues [ keylget ATTR_WIDGETS $attr.VALUE ] -value $value
+					}
+					if { $fs_changed } {
+						#					VtSetSensitive [ keylget ATTR_WIDGETS $attr.PROMPT ] $active
+						VtSetSensitive [ keylget ATTR_WIDGETS $attr.VALUE ]	 $active
+					}
+				}
+			}
+		}
+	}
+}
+
+proc DrawScreen {wroot} 		{
+	global READONLY ATTR_WIDGETS PAGEINIT
+	global CURRENTNAME
+
+	set sname $CURRENTNAME
+	
+	set ATTR_WIDGETS ""
+	#AlgnFormList
+	#FormItem
+	
+	set a_list [ SendRequest "LIST $CURRENTNAME" ]
+
+	set wlab [ VtLabel $wroot.label \
+			-label [ PresentString [ keylget PAGEINIT INFO ] ]\
+			-labelLeft \
+			-CHARM_topOffset 1 \
+			]
+	
+	set AlgnForm ""
+	
+	#  Create the VxAlignedForm
+	
+	loop i 0 [ llength $a_list ] 1 {
+		set item   [ lindex $a_list $i ]
+		set attr   [ lindex $item 0 ]
+		set prompt [ lindex $item 1 ]
+		set widget [ lindex $item 2 ]
+		set shelp  [ lindex $item 3 ]
+		
+		set FormItem [ list $prompt ]
+		
+		keylset ATTR_WIDGETS $attr.TYPE $widget
+		keylset ATTR_WIDGETS $attr.NUM	[expr { $i + 1 } ]
+		
+		#		puts stderr [ list $attr $prompt $widget $shelp ]
+		#		flush stderr
+		
+		case $widget {
+			LABEL {
+				
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+				} else {
+					lappend FormItem " VtText \
+							-callback \"AttrSet $sname $attr\" \
+							-shortHelpCallback SaShortHelpCB \
+							-shortHelpString \"$shelp\" \
+							
+					"
+				}
+			}
+			
+			NEWSCREEN {
+				lappend FormItem " VtPushButton \
+						-callback \"DrawNewScreenCB $attr\" \
+						-label \"$prompt\" \
+						-shortHelpCallback SaShortHelpCB \
+						-shortHelpString \"$shelp\" \
+						"
+			}
+			
+			IPBOX {
+				lappend FormItem " VtForm \
+						-shortHelpCallback SaShortHelpCB \
+						-shortHelpString \"$shelp\" \
+						"
+			}
+			
+			NOECHOLABEL {
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+				} else {
+					lappend FormItem "	VtText \
+							-noEcho \
+							-callback \"AttrSet $sname $attr\" \
+							-shortHelpCallback SaShortHelpCB \
+							-shortHelpString \"$shelp\" \
+							"
+				}
+			}
+			LIST {
+				set values [ SendRequest "VALUES $attr" ]
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+				} else {
+					lappend FormItem " VtComboBox \
+							-CHARM_borderWidth 0 \
+							-CHARM_width 25 \
+							-itemList \"$values\" \
+							-callback \"AttrSet $sname $attr\" \
+							-xmArgs {ignoreCase FALSE} \
+							-shortHelpCallback SaShortHelpCB \
+							-shortHelpString \"$shelp\" \
+							
+					"
+				}
+			}
+			ROLIST {
+				set values [ SendRequest "VALUES $attr" ]
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+				} else {
+					lappend FormItem " VtComboBox \
+							-CHARM_borderWidth 0 \
+							-CHARM_width 25 \
+							-readOnly \
+							-itemList \"$values\" \
+							-callback \"AttrSet $sname $attr\" \
+							-xmArgs {ignoreCase FALSE} \
+							-shortHelpCallback SaShortHelpCB \
+							-shortHelpString \"$shelp\" \
+							
+					"
+				}
+			}
+			RADIO {
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+#					keylset ATTR_WIDGETS $attr.VALUE $w
+				} else {
+					lappend FormItem " VtRadioBox \
+							-horizontal \
+							-callback \"AttrSet $sname $attr\" \
+							-shortHelpCallback SaShortHelpCB \
+							-shortHelpString \"$shelp\" \
+							
+					"
+				}
+			}
+			TOGGLE {
+				lappend FormItem "	VtCheckBox \
+						-horizontal \
+						-callback \"AttrSet $sname $attr\" \
+						-shortHelpCallback SaShortHelpCB \
+						-shortHelpString \"$shelp\" \
+						
+				"
+				
+			}
+		}
+		
+		#		puts stderr "$FormItem"
+		
+		lappend AlgnForm $FormItem
+		set FormItem ""
+	}
+	
+	#	puts stderr "$AlgnForm"
+	set form [ VxAlignedForm $wroot.aform "$AlgnForm" ]
+	
+	# do the radio box and checkboxes
+	foreach i  [ keylkeys ATTR_WIDGETS ] {
+		
+		set num	 [ keylget ATTR_WIDGETS $i.NUM ]
+		set type [ keylget ATTR_WIDGETS $i.TYPE ]
+		
+		#	puts stderr [ list $sname $i $num $type ]
+		flush stderr
+		
+		case $type {
+			IPBOX {
+				createIPwidget [ VxGetVar $form "widget$num" ] $sname $i 
+				keylset ATTR_WIDGETS $i.VALUE [	 VxGetVar $form widget$num ]
+			}
+			RADIO {
+
+
+				if {$READONLY} {
+					lappend FormItem " VtLabel "
+
+					set values [ SendRequest "VALUES $i" ]
+					set v [ lindex $values 0 ]
+					set wid  [	 VxGetVar $form widget$num ]
+					VtSet $wid -label $v
+					keylset ATTR_WIDGETS $i.VALUE [	 VxGetVar $form widget$num ]
+
+				} else {
+
+					set values [ SendRequest "VALUES $i" ]
+					
+					set w [ VxGetVar $form "widget$num" ]
+					
+					foreach v $values {
+						set x [ VtToggleButton $w.$v \
+								-value $v \
+								]
+						
+						keylset ATTR_WIDGETS $i.VALUE.$v $x 
+					}
+				}
+				
+			}
+			
+			TOGGLE {
+				set values [ SendRequest "VALUES $i" ]
+				set w [ VxGetVar $form "widget$num" ]
+				foreach v $values {
+					set x [ VtToggleButton $w.$v \
+							-value $v \
+							]
+					keylset ATTR_WIDGETS $i.VALUE.$v $x
+					if { $READONLY == 1 } {
+							VtSetSensitive $x 0
+					}
+				}
+			} 
+			default {
+				keylset ATTR_WIDGETS $i.VALUE [	 VxGetVar $form widget$num ]
+			}
+		}
+	}   
+	
+	
+	
+	
+	VtRemoveAllTabGroups $wroot
+	#	foreach a $a_list {
+	#		set attr [ lindex $a 0 ]
+	#		foreach i [ keylget ATTR_WIDGETS $attr.VALUE ] {
+	#			VtAddTabGroup [ lindex $i end ]
+	#		}
+	#	}
+			
+	DisplayCurrentValues
+	
+	VtShowDialog $wroot
+	
+#	VtSeparator $wroot.sep -below $form
+	VtLabel $wroot.sep -label " "
+
+	# set $wroot.statusBar [ SaStatusBar sbar 0 ]
+	set statusBar [ SaStatusBar $wroot.sbar ]
+	
+#	SaStatusBarSet $statusBar "This is a test"
+	
+	InitFocus $sname $a_list $wroot
+}
+		
+
+proc NewScreenCancel { old_current cbs} \
+		{
+	global CURRENTNAME
+	global SCREENSTACK SCREENARRAY
+	global ATTR_WIDGETS PAGEINIT
+	
+			
+
+	foreach i $old_current {
+		set attr [ lindex $i 0 ]
+		set o_value [ lindex $i 2 ]
+		set value [ keylget ATTR_WIDGETS $attr.VAL ]
+			if { $value != $o_value } {
+			SetAttr [ keylget cbs dialog ] $CURRENTNAME $attr $o_value
+		}
+	}
+
+	if { [ cequal $CURRENTNAME BASIC ] } {
+
+		global childPid
+	
+		VtClose 
+		if { [ info exists childPid ] } {
+			kill $childPid
+		}
+		exit 3
+	}
+
+	set	 CURRENTNAME  [ lvarpop SCREENSTACK ]
+	set	 ATTR_WIDGETS $SCREENARRAY($CURRENTNAME.WIDGETS)
+	set	 PAGEINIT     $SCREENARRAY($CURRENTNAME.PAGEINIT)
+	
+	VtDestroyDialog [ keylget cbs dialog ]
+	
+}
+		
+proc NewScreenOk {screenname cbs} \
+		{
+	global CURRENTNAME
+	global PAGEINIT
+	global SCREENSTACK SCREENARRAY
+	global ATTR_WIDGETS
+	
+	if { [ cequal $screenname BASIC ] } {
+
+		PrompterOK $cbs
+
+	}
+
+	set	 CURRENTNAME  [ lvarpop SCREENSTACK ]
+	#	 puts stderr [ list "Poping " $CURRENTNAME ]
+	
+	set	 ATTR_WIDGETS $SCREENARRAY($CURRENTNAME.WIDGETS)
+	set	 PAGEINIT     $SCREENARRAY($CURRENTNAME.PAGEINIT)
+	
+	VtDestroyDialog [ keylget cbs dialog ]
+}
+
+proc DrawNewScreenCB {screenname cbs} \
+		{
+	DrawNewScreen $screenname  [ keylget cbs dialog ] 
+}
+
+proc DrawNewScreen {screenname wroot} \
+		{
+	global PAGEINIT
+	global READONLY
+	global CURRENTNAME
+	global SCREENSTACK SCREENARRAY SCREENLIST
+	global ATTR_WIDGETS
+	
+	VtUnLock
+
+	#	 puts stderr [ list "Pushing " $CURRENTNAME ]
+
+	if { [string compare $screenname BASIC ] } {
+
+		set SCREENARRAY($CURRENTNAME.WIDGETS) $ATTR_WIDGETS
+		set SCREENARRAY($CURRENTNAME.PAGEINIT) $PAGEINIT
+		set SCREENARRAY($screenname) ""
+		lvarpush SCREENSTACK $CURRENTNAME
+		set ATTR_WIDGETS ""
+	}
+
+	lappend SCREENLIST $screenname
+	set CURRENTNAME $screenname
+	
+	set INIT [ SendRequest "PAGEINIT $screenname" ]
+
+	keylset PAGEINIT TITLE [ lindex $INIT 0 ]
+	keylset PAGEINIT INFO  [ lindex $INIT 1 ]
+	keylset PAGEINIT HELPB [ lindex $INIT 2 ]
+	keylset PAGEINIT HELPT [ lindex $INIT 3 ]
+	keylset PAGEINIT OK    [ lindex $INIT 4 ]
+
+	set TITLE [ lindex $INIT 0 ]
+	set BOOK  [ lindex $INIT 2 ]
+	set TOPIC [ lindex $INIT 3 ]
+	
+#	puts stderr $INIT
+	
+	if { [ string compare $BOOK "" ] && [ string compare $TOPIC "" ] } 	{
+		set HELPYN "-help"
+	} else {
+		set HELPYN "-ok"
+	}
+
+	set currentval [ SendRequest "CURRENT $screenname" ]
+	
+	if {$READONLY} {
+		set wroot [ VtFormDialog $wroot.$screenname \
+				-title "$TITLE" \
+				$HELPYN \
+				-okCallback "NewScreenOk {$screenname}" ]
+	} else {
+		set wroot [ VtFormDialog $wroot.$screenname \
+				-title "$TITLE" \
+				-ok -cancel $HELPYN \
+				-okCallback "NewScreenOk {$screenname}" \
+				-cancelCallback "NewScreenCancel {$currentval}" \
+				-cancelButton CANCEL ]
+	}
+#	SaCharmSetMaxFormDimensions $wroot 1
+
+	if {[VtInfo -charm]} {
+		set displayWidth [VtInfo -displayWidth]
+		set displayHeight [VtInfo -displayHeight]
+		incr displayWidth -3
+		incr displayHeight -5
+		VtSetValues $wroot \
+			-CHARM_height $displayHeight \
+			-CHARM_width $displayWidth \
+			-CHARM_resizable 0 
+ 	}
+
+	DrawScreen $wroot 
+	VtUnLock
+}
+	
+proc SendRequest {request} \
+		{
+	global BEstdin BEstdout
+	
+	#puts stderr "Send:$request"
+	puts $BEstdin $request
+	flush $BEstdin
+	
+	set message ""
+	set quotes 0
+	while { 1 } {
+		if { [ gets $BEstdout mesg ] == -1 } {
+			puts stderr "[IntlLocalizeMsg SCO_NCFGPROMPTER_ERR_BE_SCRIPT_DIED]"
+			exit 1
+		}
+		
+		set len [ string length $mesg ]
+		set m $mesg
+		set inx [ string first "\"" $m ]
+		while { $inx != -1 } {
+			set quotes [ expr ! $quotes ]
+			set m [ string range $m [ expr $inx+1 ] end ]
+			set inx [ string first "\"" $m ]
+		}
+		if { $message == "" } {
+			set message $mesg
+		} else {
+			append message "\n"
+			append message $mesg
+		}
+		if { ! $quotes } {
+			break
+		}
+	}
+	return $message
+}
+
+# main Main MAIN
+
+ErrorTopLevelCatch {
+	
+	# grab name of this script minus the tcl extension
+	set scriptname [file tail [file root [info script]]]
+	
+	#puts stderr "ncfgprompter: $argv"
+	
+	set argv_len [ llength $argv ]
+	if { $argv_len == 0 } {
+		puts stderr "[IntlLocalizeMsg SCO_NCFGPROMPTER_ERR_USAGE [ list $scriptname ]]"
+		exit 1
+	}
+	
+	set READONLY 0
+	set NO_OUTPUT 0
+
+	
+	set args_start 0
+	for {set i 0} { $i < $argv_len } { incr i } {
+		case [ lindex $argv $i ] {
+			readonly {
+				set READONLY 1
+				set args_start [ expr $i+1 ]
+			}
+			no_output {
+				set NO_OUTPUT 1
+				set args_start [ expr $i+1 ]
+			}
+		}
+	}
+
+	if { [ expr $argv_len - $args_start ] == 0 }  {
+		# ncfgprompter talks directly to the ncfgBE now
+		set BEstdin stdout
+		set BEstdout stdin
+	}
+
+	
+	set OLDstdout [ dup stdout ]
+	if { ! [ info exists BEstdin ] } {
+		dup stdin  stdout
+	
+		pipe a BEstdin 
+		pipe BEstdout b
+		
+		set childPid [ fork ]
+		case $childPid {
+			-1 {
+				puts stderr "[IntlLocalizeMsg SCO_NCFGPROMPTER_ERR_FORK_FAIL [ list $scriptname ]]"
+				exit 1
+			}
+			0 {
+				close $BEstdin
+				close $BEstdout
+				
+				close stdin
+				dup $a stdin
+				close $a
+				
+				close stdout
+				dup $b stdout
+				close $b
+				fcntl stdout NOBUF 1
+				
+				set prog [ lindex $argv $args_start ]
+				set args [ lrange $argv [ expr $args_start+1 ] end ]
+				execl $prog $args
+			}
+		}
+		
+		close $a
+		close $b
+	}
+
+	set wroot [ VtOpen ncfgprompter ]
+	
+	VtSetAppValues $wroot
+	VtSetAppValues $wroot -helpCallback "PrompterHelp"
+	
+	InitializeGlobals
+	
+	DrawNewScreen BASIC $wroot
+
+	#cmdtrace on stderr
+	
+	VtMainLoop
+	
+} ncfgprompter
+
+

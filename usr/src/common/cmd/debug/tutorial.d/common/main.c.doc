@@ -1,0 +1,390 @@
+#ident	"@(#)debugger:tutorial.d/common/main.c.doc	1.1"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include "macro.h"
+
+static int	lines;
+
+void
+error(const char *msg)
+{
+	(void) fprintf(stderr,
+		"Error at line %d: %s\n", lines, msg);
+	exit(1);
+}
+
+void
+print_token(const struct token *tok)
+{
+	switch(tok->type)
+	{
+	case OTHER:
+	case PARAMETER:
+	case WORD:
+		(void) fputs(tok->string, stdout);
+		break;
+	case DEFINE:
+		(void) fputs("define", stdout);
+		break;
+	case OPEN_PAREN:
+		(void) putchar('(');
+		break;
+	case CLOSE_PAREN:
+		(void) putchar(')');
+		break;
+	case COMMA:
+		(void) putchar(',');
+		break;
+	case EQUAL:
+		(void) putchar('=');
+		break;
+	}
+}
+
+static struct token	*next_tok;
+
+/* Break the input stream up into tokens */
+static void
+tokenize(const char *buf)
+{
+	struct token	*head = 0;
+	struct token	*tail = 0;
+	struct token	*token;
+	const char	*next = buf;
+	char		c;
+	size_t		len;
+
+	while ((c = *next) != '\0')
+	{
+		token = (struct token *)malloc(sizeof(struct token));
+		if (!token)
+		{
+			(void) fprintf(stderr, "malloc failed!\n");
+			exit(1);
+		}
+		token->string = 0;
+		token->next = 0;
+
+		if (!head)
+			head = token;
+		else
+			tail->next = token;
+		tail = token;
+
+		switch (c)
+		{
+			case '(':
+				token->type = OPEN_PAREN;
+				break;
+
+			case ')':
+				token->type = CLOSE_PAREN;
+				break;
+
+			case ',':
+				token->type = COMMA;
+				break;
+
+			case '=':
+				token->type = EQUAL;
+				break;
+
+			case '$':
+				token->type = PARAMETER;
+				if (!isdigit(*next))
+					error("Digit expected after $");
+				++next;
+				goto save_string;
+
+			default:
+				if (isalpha(c))
+				{
+					token->type = WORD;
+					while (isalnum(*next))
+						++next;
+				}
+				else
+				{
+					token->type = OTHER;
+					while ((c = *next) != '\0')
+					{
+						if (isalpha(c) || c == '('
+							|| c == ')'
+							|| c == ','
+							|| c == '$'
+							|| c == '=')
+							break;
+						++next;
+					}
+				}
+
+save_string:
+				len = next - buf + 1;
+				if (token->type == WORD
+					&& strncmp("define", buf, len-1) == 0)
+				{
+					token->type = DEFINE;
+				}
+				else
+				{
+					token->string = (char *)malloc(len);
+					if (!token->string)
+					{
+						(void) fprintf(stderr,
+							"malloc failed!\n");
+						exit(1);
+					}
+					(void) strncpy(token->string,
+						buf, len);
+					token->string[len-1] = '\0';
+				}
+				break;
+		}
+		buf = next;
+	}
+
+	next_tok =  head;
+}
+
+/* Get the next token from the input stream */
+/* or from the command line */
+static struct token *
+gettok(int read_more)
+{
+	static char		buf[BUFSIZ];
+	struct token		*token;
+
+	if (!next_tok)
+	{
+		if (read_more)
+		{
+			if (!fgets(buf, BUFSIZ, stdin))
+				return 0;
+			++lines;
+			tokenize(buf);
+		}
+		else
+			return 0;
+	}
+
+	token = next_tok;
+	next_tok = next_tok->next;
+	token->next = 0;
+	return token;
+}
+
+/* Get the tokens making up a macro definition */
+/* and add the definition to the table */
+static void
+add_def(struct token *name, int read_more)
+{
+	struct token		*head = 0;
+	struct token		*tail = 0;
+	struct token		*tok;
+	int			parens = 0;
+
+	while ((tok = gettok(read_more)) != 0)
+	{
+		if (tok->type == CLOSE_PAREN)
+		{
+			if (parens)
+				--parens;
+			else
+			{
+				free(tok);
+				break;
+			}
+		}
+		else if (tok->type == OPEN_PAREN)
+			++parens;
+
+		if (head)
+			tail->next = tok;
+		else
+			head = tok;
+		tail = tok;
+	}
+
+	insert(name, head);
+}
+
+static void
+process_def()
+{
+	struct token *tok;
+	struct token *name;
+
+	if ((tok = gettok(1)) == 0 || tok->type != OPEN_PAREN)
+		error("Expecting left paren");
+	else if ((name = gettok(1)) == 0 || name->type != WORD)
+		error("Expecting alphanumeric name");
+	else if ((tok = gettok(1)) == 0 || tok->type != COMMA)
+		error("Missing comma in macro definition");
+
+	add_def(name, 1);
+}
+
+/* Get the macro's arguments when the macro is used */
+struct arglist *
+getargs(struct token **inlist)
+{
+	struct arglist	*head = 0;
+	struct arglist	*tail = 0;
+	struct token	*arghead = 0;
+	struct token	*argtail = 0;
+	struct token	*tok = *inlist;
+	int		parens = 0;
+
+	head = tail = (struct arglist *)malloc(sizeof(struct arglist));
+	if (head == 0)
+	{
+		(void) fprintf(stderr, "malloc failed!\n");
+		exit(1);
+	}
+
+	while (tok)
+	{
+		if (tok->type == COMMA && !parens)
+		{
+			tail->tokens = arghead;
+
+			tail->next = (struct arglist *)malloc(
+				sizeof(struct arglist));
+			if (!tail->next)
+			{
+				(void) fprintf(stderr, "malloc failed!\n");
+				exit(1);
+			}
+			tail = tail->next;
+			argtail->next = 0;
+			arghead = argtail = 0;
+			tok = tok->next;
+			continue;
+		}
+
+		if (tok->type == CLOSE_PAREN)
+		{
+			if (parens)
+				--parens;
+			else
+			{
+				tail->tokens = arghead;
+				argtail->next = 0;
+				*inlist = tok->next;
+				break;
+			}
+		}
+		else if (tok->type == OPEN_PAREN)
+			++parens;
+
+		if (!arghead)
+			arghead = tok;
+		else
+			argtail->next = tok;
+		argtail = tok;
+		argtail->next = 0;
+		*inlist = tok->next;
+		tok = tok->next;
+	}
+
+	tail->tokens = arghead;
+	return head;
+}
+
+static char *Usage = "Usage: macro [-Dmacro[=definition]] ...\n";
+
+main(int argc, char **argv)
+{
+	struct token	*definition;
+	struct token	*name;
+	struct token	*token;
+	struct arglist	*arguments;
+	char		*argptr;
+	int		i;
+
+	for (i = 1; i < argc; ++i)
+	{
+		argptr = argv[i];
+		if (*argptr++ != '-' || *argptr++ != 'D')
+		{
+			(void) fprintf(stderr, Usage);
+			exit(1);
+		}
+		tokenize(argptr);
+		if ((name = gettok(0)) == 0 || name->type != WORD)
+		{
+			(void) fprintf(stderr, Usage);
+			exit(1);
+		}
+		if ((token = gettok(0)) != 0)
+		{
+			if (token->type != EQUAL)
+			{
+				(void) fprintf(stderr, Usage);
+				exit(1);
+			}
+		}
+		add_def(name, 0);
+	}
+
+	token = gettok(1);
+	while (token)
+	{
+		if (token->type == DEFINE)
+		{
+			free(token);
+			process_def();
+			token = gettok(1);
+		}
+		else if (token->type == WORD
+			&& (definition = lookup(token)) != 0)
+		{
+			if ((token = gettok(1)) != 0
+				&& token->type == OPEN_PAREN)
+			{
+				struct token	*head = 0;
+				struct token	*tail = 0;
+				int		parens = 0;
+
+				while ((token = gettok(1)) != 0)
+				{
+					if (token->type == CLOSE_PAREN)
+					{
+						if (parens)
+							--parens;
+						else
+							break;
+					}
+					else if (token->type == OPEN_PAREN)
+						++parens;
+
+					if (!head)
+						head = token;
+					else
+						tail->next = token;
+					tail = token;
+				}
+				if (parens)
+					error("Close paren expected");
+				arguments = getargs(&head);
+				expand(definition, arguments);
+				token = gettok(1);
+			}
+			else
+				expand(definition, 0);
+		}
+		else
+		{
+			print_token(token);
+			if (token->string)
+				free(token->string);
+			free(token);
+			token = gettok(1);
+		}
+	}
+	exit(0);
+	/*NOTREACHED*/
+}

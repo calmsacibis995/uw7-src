@@ -1,0 +1,96 @@
+#!/bin/sh
+#ident	"@(#)hpnp.model	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+# HP-UX Network Peripheral Model Script
+#
+# This script invokes the original model script
+# from the subdirectory model.orig and pipes its
+# output to hpnpf.
+#
+# Hpnpf does not exit on signal 15.  Thus, the 
+# original model script can catch the signal,
+# echo a string and exit.  Hpnpf will exit when
+# its standard input is closed.
+#
+
+MODEL=`basename $0`
+REALMODEL=`echo $0 | sed -e "s%$MODEL%model.orig/$MODEL%"`
+
+#
+# This name may be initialized when the script is
+# installed in the spooler.  If not, use the name
+# of this script ($MODEL) as the peripheral to contact.
+#
+PERIPH=
+if [ "$PERIPH" = "" ]
+then
+	PERIPH=$MODEL
+fi
+LOG=/tmp/$PERIPH.$$
+HPNPF=/usr/lib/hpnp/hpnpf
+LPLOG=/tmp/hpnpf.$$
+LOGTRIES=5
+
+echo "$1\t$REALMODEL | $HPNPF -x $PERIPH" >> $LPLOG
+
+#
+# Remove the log file if job is cancelled
+# or the scheduler is shutdown.
+#
+trap "rm -f $LOG; rm -f $LPLOG; trap 15;kill -15 0;exit 0" 15
+
+ERRORLOGS=0
+while :
+do
+    #
+    # Save the stderr messages in a temporary log file
+    # and discard stdout which is the peripheral output.
+    #
+    rm -f $LOG
+    if $REALMODEL "$@" | $HPNPF -x $PERIPH 2> $LOG > /dev/null
+    then
+	#
+	# If the transfer is successful, remove
+	# the log file and exit.
+	#
+	rm -f $LOG
+	exit 0
+    else
+	#
+	# Added the request ID to the stderr message
+	# and store it in the lp log file.
+	#
+	# Only record the first $LOGTRIES errors.  If
+	# the spooler gets in a loop retrying a job, the
+	# disk won't fill up with spooler log error messages.
+	#
+	if test -s $LOG -a $ERRORLOGS -lt $LOGTRIES
+	then
+	    echo "$1\t`cat $LOG`" >> $LPLOG
+	    ERRORLOGS=`expr $ERRORLOGS + 1`
+	fi
+	if test $ERRORLOGS -eq $LOGTRIES
+	then
+	    echo "$1\t$LOGTRIES errors logged for $1; errors no longer logged" >> $LPLOG
+	    ERRORLOGS=`expr $ERRORLOGS + 1`
+	fi
+    fi
+    if [ ! -s $LPLOG ]
+    then
+	rm -f $LPLOG
+    fi
+done

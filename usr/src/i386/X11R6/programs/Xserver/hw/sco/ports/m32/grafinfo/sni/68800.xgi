@@ -1,0 +1,376 @@
+/*
+ *	@(#) 68800.xgi 11.1 97/10/22
+ *
+ * Copyright (C) 1994 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* ************************************************************************* *
+ *                                                                           *
+ *                     SNI.68800.ATI8514.1280x1024-256                       *
+ *                     SNI.68800.ATI8514.1024x768-64K                        *
+ *                     SNI.68800.ATI8514.1024x768-256                        *
+ *                     SNI.68800.ATI8514.800x600-64K                         *
+ *                     SNI.68800.ATI8514.800x600-256                         *
+ *                     SNI.68800.ATI8514.640x480-64K                         *
+ *                     SNI.68800.ATI8514.640x480-256                         *
+ *                                                                           *
+ * ************************************************************************* */
+
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   1280x1024-256 "1280x1024 256-color, 2MB"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1280;
+	PIXHEIGHT	= 1024;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0312;			/* 8bpp, 1280x1024 hires	*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0002;			/* hires			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EC, 0x00);		/* set color 0 to black		*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);		/* mask dac to 0 for now	*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EA, 0xFF);		/* unmask dac			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   1024x768-64K "1024x768 64K-color, 2MB"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "TrueColor";
+	DEPTH		= 16;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0D42;			/* 16bpp, 5-6-5, 1024x768 hires	*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0002;			/* hires			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   1024x768-256 "1024x768 256-color"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 1024;
+	PIXHEIGHT	= 768;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0342;			/* 8bpp, 1024x768 hires		*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0002;			/* hires			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EC, 0x00);		/* set color 0 to black		*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);		/* mask dac to 0 for now	*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EA, 0xFF);		/* unmask dac			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   800x600-64K "800x600 64K-color"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "TrueColor";
+	DEPTH		= 16;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0D02;			/* 16bpp, 5-6-5, 800x600 hires	*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0002;			/* hires			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	outw(0x26ee, 0x0068);		/* make sure pitch is multiple	*/
+	outw(0x76ee, 0x0068);		/*   of 128 _bytes_, not pixels	*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   800x600-256 "800x600 256-color"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 800;
+	PIXHEIGHT	= 600;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0302;			/* 8bpp, 800x600 hires		*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0002;			/* hires			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EC, 0x00);		/* set color 0 to black		*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);		/* mask dac to 0 for now	*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EA, 0xFF);		/* unmask dac			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   640x480-64K "640x480 64K-color"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "TrueColor";
+	DEPTH		= 16;
+	PIXWIDTH	= 640;
+	PIXHEIGHT	= 480;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0D21;			/* 16bpp, 5-6-5, 640x480 lores	*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0001;			/* lores			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+    }
+
+/* ===================================================== */
+
+VENDOR SNI         "SNI"
+ MODEL  68800       "68800"
+  CLASS  ATI8514     "ATI8514"
+   MODE   640x480-256 "640x480 256-color"
+
+    PORT(VGA,EFF);
+    PORT(0x1CE:2);
+
+    DATA
+    {
+	XDRIVER		= "m32";
+	VISUAL		= "PseudoColor";
+	DEPTH		= 8;
+	PIXWIDTH	= 640;
+	PIXHEIGHT	= 480;
+    }
+
+    PROCEDURE SetGraphics
+    {			     
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0321;			/* 8bpp, 640x480 lores		*/
+	r1 = 0x0001;			/* round up pitch to next 128	*/
+	callrom(r8, 0x0064, r0, 2);	/* load shadow set		*/
+
+	r0 = 0x0001;			/* lores			*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EC, 0x00);		/* set color 0 to black		*/
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02ED, 0x00);
+	out(0x02EA, 0x00);		/* mask dac to 0 for now	*/
+    }
+
+    PROCEDURE SetText
+    {
+	in(r8, 0x52EE);
+	and(r8, 0x7F);
+	shl(r8, 0x7);
+	or(r8, 0xC000);			/* r8 contains BIOS ROM segment	*/
+
+	r0 = 0x0000;			/* vga passthrough		*/
+	callrom(r8, 0x0068, r0, 1);	/* set mode			*/
+
+	out(0x02EA, 0xFF);		/* unmask dac			*/
+    }
+
+/* ===================================================== */

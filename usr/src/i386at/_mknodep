@@ -1,0 +1,27 @@
+#ident	"@(#):mknodep	16.1	98/03/03"
+
+# this script builds those parts of the system which have no dependencies.
+# therefore they can be run at the same time as the graphics build which
+# only used 1 CPU.
+
+echo "START `basename $0` `date`"
+if [ -z "$PARALLEL" ]
+then
+	PARALLEL=`/sbin/psrinfo -n`
+fi
+
+export PARALLEL
+PARALLEL=`expr $PARALLEL - 1`
+if [ $PARALLEL -eq 0 ]
+then
+	PARALLEL=1
+fi
+
+./:mkktools "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >ktools.out 2>&1
+./:mkuts "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >uts.out 2>&1
+./:mkmputs "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >mputs.out 2>&1
+./:mkminiuts "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >miniuts.out 2>&1
+./:mknatccs "${CPU}" "${ROOT}" "${TOOLS}" "${MACH}" "${WORK}" "${CPU}" >natccs.out 2>&1
+
+echo "ENDED `basename $0` `date`"
+exit 0

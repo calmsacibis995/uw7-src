@@ -1,0 +1,327 @@
+#ident	"@(#)fdinit	15.1"
+
+function reset_geometry
+{
+#	reset_geometry(disk)
+#		called to clear the pdinfo structure on the unix partition
+
+	typeset _G disk=$1
+	typeset root_dir=/.extra.d
+
+
+	footer "$BADDISK_FOOTER"
+	[ -s "$root_dir/usr/sbin/disksetup" ] || get_tools '*disksetup'
+	$root_dir/usr/sbin/disksetup -w ${CHAR_DISK_NODES[disk]}
+	footer "$GENERIC_WAIT_FOOTER"
+}
+
+function chk_disksanity
+{
+# chk_disksanity ( which_disk )
+	typeset _t disk=$1
+	integer errtn=0
+
+	[ -z "${DISK_SIZE[disk]}" -o "${DISK_SIZE[disk]}" -lt 0 ] && errtn=2
+	[ -z "${DISK_NUMCYL[disk]}" -o "${DISK_NUMCYL[disk]}" -lt 0 ] && errtn=2
+	[ $errtn = 0 ] && {
+		fdsize_chk $disk 
+		errtn=$?
+	}
+	case $errtn in
+	1)
+		eval display "\"${BADDISK_INFO[1]}\"" -below 4 -bg $MAGENTA -fg $WHITE
+		_t=$CURWIN
+		baddisk_choice 1
+		input_handler
+		wclose $_t
+		if [ "$DO_REBOOT" = MAYBE ]
+		then
+			eval display "\"${BADDISK_INFO[2]}\"" -below 4 -bg $MAGENTA -fg $WHITE
+			_t=$CURWIN
+			baddisk_choice 2
+			input_handler
+			wclose $_t
+			if [ "$DO_REBOOT" = NO ]
+			then
+				reset_geometry $disk
+			fi
+			halt
+		elif [ "$DO_REBOOT" = YES ]
+		then
+			halt
+		else
+			eval DISK${disk}_WAS_INSANE=YES
+			one_unix_partition $disk
+		fi
+		;;
+	2)
+		footer "$FOOTER_FAILED_DISK"
+		eval display -w "\"$FAILED_DISK\"" -below 4 -bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		halt
+		;;
+	esac
+}
+
+function baddisk_choice
+{
+	typeset reason=$1
+	typeset baddiskopt
+
+	typeset OIFS="$IFS"
+	IFS="$nl"
+	set -A BADDISK_OPT ${BADDISK_CHOOSE[reason]}
+	IFS="$OIFS"
+	baddiskopt=$BADDISK_OPT
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	CHOOSE_TITLE="$PARTS_CHOOSE_TITLE"
+	choose -f -e -exit baddisk_exit -winparms "-above 8 -fg $COMBO2_FG -bg $COMBO2_BG" "$baddiskopt" "${BADDISK_OPT[@]}"
+}
+
+function baddisk_exit
+{
+	case $CHOICE in
+	${BADDISK_OPT[0]})
+		DO_REBOOT=NO
+		;;
+	${BADDISK_OPT[1]})
+		DO_REBOOT=YES
+		;;
+	${BADDISK_OPT[2]})
+		DO_REBOOT=MAYBE
+		;;
+	esac
+}
+
+function unused_partition
+{
+	integer disk=$1 partition=$2
+
+	PARTSTATUS[disk*4+partition]=
+	PARTTYPE[disk*4+partition]="$unused"
+	PARTPCT[disk*4+partition]=0
+	PARTMB[disk*4+partition]=
+	PARTSTART[disk*4+partition]=
+	PARTEND[disk*4+partition]=
+	PARTLENGTH[disk*4+partition]=
+}
+
+function init_partitions
+{
+	typeset _t
+
+	display "$DISK_EXPLAIN" -below 8
+	_t=$CURWIN
+	fd 1 18
+	input_handler
+	wclose $_t
+}
+
+function one_unix_partition
+{
+# create single unix partition for disk $1
+	integer i disk=$1
+	PARTSTATUS[disk*4+1]="$Boot"
+	PARTTYPE[disk*4+1]=$UNIX
+	PARTPCT[disk*4+1]=100
+	PARTMB[disk*4+1]=${DISK_SIZE[disk]}
+	PARTSTART[disk*4+1]=0
+	let "PARTEND[disk*4+1]=DISK_NUMCYL[disk]-1"
+	PARTLENGTH[disk*4+1]=${DISK_NUMCYL[disk]}
+	UNIX_PARTITION[disk]=YES
+	UNIX_PARTITION_SIZE[disk]=${PARTMB[disk*4+1]}
+
+	for i in 2 3 4
+	do
+		unused_partition $disk $i
+	done
+	BOOTSECTOR="$Yes"
+}
+
+function fdsize_chk
+{
+	integer i=0 sum=0 
+	integer disk=$1
+	let USABLE_SIZE[disk]=0
+	for i in 1 2 3 4
+	do
+		if [ ! "${PARTTYPE[disk*4+$i]}" = "$unused" ]
+		then
+			if [ -n "${PARTLENGTH[disk*4+$i]}" ]
+			then
+				if (( PARTLENGTH[disk*4+$i] == 0 ))
+				then
+					eval errmsg "$FD_ERR_UNDEF"
+					return 1
+				fi
+				let sum=sum+PARTLENGTH[disk*4+$i]
+				if (( sum > "${DISK_NUMCYL[disk]}" ))
+				then
+					errmsg "$FD_ERR_OVER_100"
+					return 1
+				fi
+				if (( PARTSTART[disk*4+$i] > DISK_NUMCYL[disk] )) || (( PARTEND[disk*4+$i] > DISK_NUMCYL[disk] ))
+				then
+					eval errmsg "$FD_ERR_ADDR_TOOBIG"
+					return 1
+				fi
+				if [ "${PARTTYPE[disk*4+$i]}" = "$UNIX" ]
+				then
+					if [ "${PARTSTATUS[disk*4+$i]}" = "$Boot" ]
+					then
+						let USABLE_SIZE[disk]=\(${PARTLENGTH[disk*4+$i]}\)*${DISK_CYLSIZE[disk]}/1000
+					fi
+				fi
+				integer prevslc=${i}-1
+				while (( prevslc > 0 ))
+				do
+					if [ ! "${PARTTYPE[disk*4+prevslc]}" = "$unused" ]
+					then
+						if (( PARTSTART[disk*4+$i] <= PARTEND[disk*4+prevslc] ))
+						then
+							errmsg "$FD_ERR_BAD_ADDRS"
+							return 1
+						else
+							break
+						fi
+					fi
+					let prevslc=prevslc-1
+				done
+			else
+				eval errmsg "\"$FD_ERR_UNDEF\""
+				return 1
+			fi
+		fi
+	done
+	return 0
+}
+
+function read_geometry
+{
+	integer disk=$1
+	typeset junk heads cyls secs secsz
+
+	partsize -d ${CHAR_DISK_NODES[disk]} 2>/dev/null | {
+		read junk
+		read junk heads cyls secs secsz
+	} || return 0
+	DISK_CYLSIZE[disk]=$(getcylsize $secs $heads $secsz)
+	DISKCYLS[disk]=$cyls
+	eval HD${disk}OPT=" "
+	return 1
+}
+
+function fix_partitions
+{
+	typeset _t
+
+	[ "$DISK0_WAS_INSANE" = YES ] && return 0
+	display "${DISK_INFO[0]}" -below 4
+	_t=$CURWIN
+	PARTS_choice
+	input_handler
+	wclose $_t
+	if [ $do_PARTS = YES ]
+	then
+		init_partitions
+	else
+		one_unix_partition 0
+	fi
+	fsinit
+}
+
+function PARTS_choice
+{
+	typeset PARTSOP
+	typeset OIFS="$IFS"
+	IFS="$nl"
+	set -A PARTS_OPTS ${DISK_CHOOSE}
+	IFS="$OIFS"
+	PARTSOP=$PARTS_OPTS
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	CHOOSE_TITLE="$PARTS_CHOOSE_TITLE"
+	choose -f -e -help "helpwin destpart" -exit PARTS_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$PARTSOP" "${PARTS_OPTS[@]}"
+}
+
+function PARTS_exit
+{
+	case $CHOICE in
+	${PARTS_OPTS[0]})
+		do_PARTS=YES
+		;;
+	${PARTS_OPTS[1]})
+		do_PARTS=NO
+		;;
+	${PARTS_OPTS[2]})
+		halt
+		;;
+	esac
+}
+
+function fdinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset have_defined_partitions
+	integer dsk=0 disk=0
+	typeset i 
+	typeset OIFS="$IFS"
+	have_defined_partitions[0]=NO
+	BOOTSECTOR="$No"
+	NDISKS=0
+	DISKCHK[1]="$Yes"
+	DISKCHK[2]="$Yes"
+	RESETGEOM[0]="$No"
+	RESETGEOM[1]="$No"
+	while (( (dsk=dsk+1) <= ${#CHAR_DISK_NODES[@]} ))
+	do
+		disk=dsk-1
+		read_geometry $disk
+		let NDISKS+=1
+		DISK_DEVS[NDISKS]=${CHAR_DISK_NODES[disk]}
+		eval "$(fdisk -L ${CHAR_DISK_NODES[disk]} </dev/null)"
+		DISK_SIZE[disk]="${NUMMB%.*}"
+		DISK_NUMCYL[disk]=$NUMCYL
+		have_defined_partitions[disk]=NO
+		for i in 1 2 3 4
+		do
+			typeset IFS="$tab"
+			eval set -- \$PART${i}
+			if [ -z "$3" ]
+			then
+				PARTSTATUS[disk*4+i]=
+				PARTTYPE[disk*4+i]="$unused"
+				PARTPCT[disk*4+i]=0
+				PARTMB[disk*4+i]=
+				PARTSTART[disk*4+i]=
+				PARTEND[disk*4+i]=
+				PARTLENGTH[disk*4+i]=
+			else
+				have_defined_partitions[disk]=YES
+				PARTTYPE[disk*4+i]="$3"
+				PARTSTART[disk*4+i]=$4
+				PARTEND[disk*4+i]=$5
+				PARTLENGTH[disk*4+i]=$6
+				let "PARTMB[disk*4+i]=${6}*DISK_CYLSIZE[disk]/1000"
+				PARTPCT[disk*4+i]="$7"
+				if [ "$2" = "Active" ]
+				then
+					PARTSTATUS[disk*4+i]="$Boot"
+					if [ "$3" = "$UNIX" ]
+					then
+						UNIX_PARTITION[disk]=YES
+						UNIX_PARTITION_SIZE[disk]=${PARTMB[disk*4+i]}
+					fi
+				else
+					PARTSTATUS[disk*4+i]="$NonBoot"
+				fi
+			fi
+			PARTORIG[disk*4+i]="${PARTTYPE[disk*4+i]}${PARTSTART[disk*4+i]}${PARTEND[disk*4+i]}"
+		done
+		IFS="$OIFS"
+		chk_disksanity $disk
+	done
+	if [ "${have_defined_partitions[0]}" = NO ]
+	then
+		one_unix_partition 0
+	fi
+}

@@ -1,0 +1,83 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3","tp4","tp5","tp6","tp7");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api ctest1-2");
+	@tps=grep(/tp/,@output);
+	chop(@tps);
+	&verify(@tps==2 &&
+		$tps[0] eq "ctest1: ic2 tp2" && $tps[1] eq "ctest1: ic2 tp3");
+}
+
+
+sub tp2 {
+	$tp=tp2;
+	&verify(grep(/TP Start/,@journal) == 2);
+}
+
+sub tp3 {
+	$tp=tp3;
+	&verify(grep(/ctest1: ic2 tp2/,@journal) &&
+		grep(/ctest1: ic2 tp3/,@journal));
+}
+
+sub tp4 {
+	$tp=tp4;
+	@results=grep(/^$TEST_PURPOSE_RESULT/,@journal);
+
+	foreach(@results) {
+		&breakup_result($_);
+		if ($tpnumber==2) {
+			&verify($result==1 && $result_text eq "FAIL");
+			return;
+		}
+	}
+	&fail;
+}
+
+sub tp5 {
+	$tp=tp5;
+	foreach(@results) {
+		&breakup_result($_);
+		if ($tpnumber==3) {
+			&verify($result==2 && $result_text eq "UNRESOLVED");
+			return;
+		}
+	}
+	&fail;
+}
+
+sub tp6 {
+	$tp=tp6;
+	@infolines=grep(/^$TEST_CASE_INFORMATION/,@journal);
+	foreach(@infolines) {
+		&breakup_infoline($_);
+		if ($tpnumber==2) {
+			&verify($block==1 && $sequence==1);
+			return;
+		}
+	}
+	&fail;
+}
+
+sub tp7 {
+	$tp=tp7;
+	$next=0;
+	@infolines=grep(/^$TEST_CASE_INFORMATION/,@journal);
+	foreach(@infolines) {
+		&breakup_infoline($_);
+		if ($tpnumber==2) {
+			$next=1;
+		} elsif ($next) {
+			&verify($block==1 && $sequence==1);
+			return;
+		}
+	}
+	&fail;
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

@@ -1,0 +1,149 @@
+#!/usr/bin/sh --
+# @(#)cmd.vxvm:common/voladm/inst.allinit.sh	1.2 3/3/97 03:22:22 - cmd.vxvm:common/voladm/inst.allinit.sh
+#ident	"@(#)cmd.vxvm:common/voladm/inst.allinit.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOL_SCRIPTS_LIB:-/usr/lib/vxvm/lib}/vxcommon
+
+bail()
+{
+	rm -f $RDIR/${cntrl}.failed
+	if not [ -f $reconfigfile ]; then
+		rm -f $pcapfile $pcaplist
+	fi
+	quit 101
+}
+
+disknum=1
+defname=
+
+set_OS_variables
+set_rootdisk
+
+VOLADM_MENU=$1
+disksfile=$2
+cntrl=$2
+
+voladm_menu_push Init
+voladm_help_push yorn.help
+
+if [ "$VOLADM_MENU" = "Quick" ] ; then
+	voladm_begin_screen -M vxvmshm:563 "Volume Manager Quick Installation"
+else
+	voladm_begin_screen -M vxvmshm:561 "Volume Manager Custom Installation"
+fi
+
+[ -d $STATEDIR ] || volmkdirs			# create dirs if needed
+
+[ -d $DISKDIR ] || volmkdirs			# create dirs if needed
+
+[ -s $RDIR/$disksfile ] || bail			# not called from inst.top
+
+> $RDIR/${cntrl}.failed				# truncate/create error file
+
+voladm_help_push disk.nameadd.help
+voladm_yorn -M vxvmshm:546 "Use default disk names for these disks?" y
+if [ $? -ne 0 ]
+then
+	use_default_dmnames="no"
+else
+	use_default_dmnames="yes"
+fi
+voladm_help_pop
+
+exec 3<&0 < $RDIR/$disksfile
+while read disk; do
+	if dogi_root_device $disk
+	then
+			continue
+	fi
+
+	if voladm_disk_in_use $disk ; then
+		ewritemsg -M vxvmshm:299\
+	"Partition(s) for disk $disk are in use. Disk cannot be initialized."
+		voladm_continue
+		continue
+	fi
+
+	defname=`vxnewdmname rootdg`
+
+	if [ "$use_default_dmnames" = "no" ] ; then
+		voladm_help_push inst.dmname.help
+		_riput=`disk="$disk" egettxt "Enter disk name for $disk" vxvmshm:227`
+		while (true) ; do
+			read_input "$_riput" "<name>" $defname
+			input_len=`strlen $input`
+			if [ `expr $input_len \> 10` = 1 ] ; then
+				ewritemsg -M vxvmshm:398\
+		"The disk name is too long. Please re-enter."
+				continue
+			fi
+			_dinput=$input
+			break
+		done
+#		[ "X$defname" = "X$input" ] && disknum=`expr $disknum + 1`
+		voladm_help_pop
+	else
+		_dinput=$defname
+		export disk _dinput; ewritemsg -M vxvmshm:374\
+	"The $disk disk will be given disk name $_dinput"
+	fi
+
+	if voladm_yorn -M vxvmshm:300 \
+			"Perform surface analysis (highly recommended)" y
+	then
+		sa_opt=-y
+	else
+		sa_opt=-n
+	fi
+	echo "$disk $sa_opt" >> $pnewlist
+	touch $pnewfile
+	[ -d $DISKDIR/$disk ] || mkdir -p $DISKDIR/$disk
+	echo ${_dinput} > $DISKDIR/${disk}/dmname
+
+done
+exec 0<&3 3<&-
+
+echo
+voladm_menu_pop
+voladm_continue
+
+[ -s $RDIR/${cntrl}.failed ] && voladm_yorn
+
+if [ -s $RDIR/${cntrl}.failed ]; then
+
+	if [ "$VOLADM_MENU" = "Quick" ] ; then
+		voladm_menu_push "QuickInstall"
+		voladm_begin_screen -M vxvmshm:563 "Volume Manager Quick Installation"
+	else
+		voladm_menu_push "Custom Install"
+		voladm_begin_screen -M vxvmshm:561 "Volume Manager Custom Installation"
+	fi
+	ewritemsg -M vxvmshm:428 "The following disks failed to be encapsulated:"
+	(echo ""; cat $RDIR/${cntrl}.failed; echo "") | voladm_display
+	voladm_yorn -M vxvmshm:130 "Cancel installation" n && bail
+	rm -f ${cntrl}.failed
+fi
+
+# 134 "" 
+
+
+quit 0

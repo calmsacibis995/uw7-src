@@ -1,0 +1,65 @@
+#!/sbin/sh
+#
+#ident "@(#)S70pf	1.5"
+#
+# Push filters that were loaded before reboot.
+#
+umask 022
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+
+LABEL="UX:$0"
+CAT=uxrc
+PF_DEFS=/etc/pf.d/IP
+PF=/usr/sbin/pushfilter
+NF="NULL_FILTER"
+
+pfmt -l $LABEL -s nostd -g $CAT:197 "Loading filters...\n"
+
+if [ ! -x $PF ]
+	then
+		pfmt -l $LABEL -s error -g $CAT:198 "%s doesn't exist or is not executable.\n" $PF ;
+		exit 1 ;
+fi
+
+for f in $PF_DEFS/net*
+	do
+		INTRFS=`basename $f`
+		LAST=."$INTRFS"
+		STATEF=$PF_DEFS/$LAST
+		if [ -f $STATEF ]
+			then
+				read IN OUT < $STATEF
+				if [ "$IN" != "$NF" ]
+					then
+						IF="-I $IN"
+					fi
+				if [ "$OUT" != "$NF" ]
+					then
+						OF="-O $OUT"
+					fi
+				if [ ! -z "$IF" ] || [ ! -z "$OF" ] 
+					then
+					$PF  -i $INTRFS $IF $OF > /dev/null 2>&1
+					if [ "$?" != 0 ]
+						then
+							pfmt -l $LABEL -s error -g $CAT:199 "Error in loading filters for interface %s.\n" $INTRFS
+						else
+						pfmt -l $LABEL -s nostd -g $CAT:200 "Done for interface %s.\n" $INTRFS
+					fi
+					else
+						pfmt -l $LABEL -s nostd -g $CAT:201 "No filters for interface %s.\n" $INTRFS
+				fi
+		fi
+done

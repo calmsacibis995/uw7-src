@@ -1,0 +1,162 @@
+#ident	"@(#)pkg.acp:preremove	1.2.4.9"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f /var/sadm/pkg/${PKGINST}/install/inst/locale/${LOCALE}/${PKGMSG} \
+	-a -d "/usr/lib/locale/${LOCALE}/LC_MESSAGES" ]
+   then
+	ln -s ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		/usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+FAILURE=1	# fatal error
+
+REBUILD=0
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+ERR=/tmp/acp.rm.err
+
+trap '' 1 2 3 5 15 
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:101 " The Installable Driver feature has been removed. The %s cannot be removed." ${NAME} 2>&1`
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+
+rem_module () {
+
+MODULE=$1
+MODARGS=$2
+
+	${CONFBIN}/idinstall -gs ${MODULE} | /usr/bin/sed -e\
+		's/	Y/	N/' > System 2>/dev/null
+	${CONFBIN}/idinstall -us ${MODULE} > ${ERR} 2>&1
+
+	if [ $? != 0 ]
+    	then
+    		message `pfmt -s nostd -g ${PKGMSG}:102 " The removal of %s cannot be completed due to an error in the removal of the driver module. The file %s contains the errors." ${MODULE} ${ERR} 2>&1`
+    		exit $FAILURE
+    	fi
+    	${CONFBIN}/idinstall -P ${PKGINST} -d${MODARGS} ${MODULE} > ${ERR} 2>&1
+
+}
+
+## remove the xnamfs: Driver.o, space.c, sdevice.d, mtune.d, Modstub.o
+rem_module xnamfs opsTb
+
+for MODULE in XENIX consem devadp i286x isocket osocket sp v3compat xout
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RET="$?"
+	if
+		[ "${RET}" -ne "100" -a "${RET}" -ne "0" ]
+	then
+
+		${CONFBIN}/idinstall -P ${PKGINST} -d ${MODULE} 2>> /tmp/${module}.err
+		REBUILD=1
+	fi
+done
+
+#
+# remove the SCO portion of PTM with by calling sco_pt.install with zero.
+# this will update the ptm/pts/ptem system file, the ptm/pts node file
+# and remove the ptm rc file. The only thing this script won't remove
+# is the 'putdev's' we did. we need to do that first by ourselves
+#
+
+# create temporary /etc/conf/cf.d/mtune; it's blown away
+# below after we're done playing w/the tuneables....
+# do not clobber mtune if it exists already
+MTUNEORG=/usr/tmp/mtune.$$
+if [ -f /etc/conf/cf.d/mtune ]
+then
+        cp /etc/conf/cf.d/mtune $MTUNEORG
+        cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+else
+        cat /etc/conf/mtune.d/* > /etc/conf/cf.d/mtune
+fi
+
+set - `${CONFBIN}/idtune -g NUMSCOPT`
+NUMSCOPT=$1
+
+# if mtune existed restore it, else remove temp /etc/conf/cf.d/mtune
+if [ -f $MTUNEORG ]
+then
+        cp $MTUNEORG /etc/conf/cf.d/mtune
+        rm -f $MTUNEORG
+else
+        rm -f /etc/conf/cf.d/mtune 2>/dev/null 1>/dev/null
+fi
+
+
+
+TEMP=0
+until
+	[ "$TEMP" -eq $NUMSCOPT ]
+do
+	/sbin/putdev -d ptyp${TEMP} > /dev/null 2>&1
+	TEMP=`expr $TEMP + 1`
+done
+
+/sbin/sh /var/sadm/pkg/acp/install/sco_pt.install 0
+
+
+#change the group of /dev/[r]dsk/[01]s5 back to sys
+#change the group perms of /dev/[r]dsk/[01]s5 back to  0
+
+if [ -b /dev/dsk/[01]s5 ]
+then 
+	chgrp sys /dev/dsk/[01]s5
+	chmod g-rw /dev/dsk/[01]s5
+fi
+
+if [ -c /dev/rdsk/[01]s5 ]
+then 
+	chgrp sys /dev/rdsk/[01]s5
+     	chmod g-rw /dev/rdsk/[01]s5
+fi
+
+#remove the group dos from /etc/group
+groupdel dos > /dev/null 2>&1 
+
+rm -f /dev/hd1[0-6] > /dev/null 2>&1
+rm -f /dev/rhd1[0-6] > /dev/null 2>&1
+rm -f /dev/install1 /dev/rinstall1 /dev/fd148ds8 /dev/fd148ds9 /dev/fd148 /dev/rfd148ds8 /dev/rfd148ds9 /dev/rfd148 > /dev/null 2>&1
+rm -f /dev/fd196ds15 /dev/fd196 /dev/rfd196ds15 /dev/rfd196 /dev/rfd148 > /dev/null 2>&1
+rm -f /dev/rfd1135ds18 /dev/rfd196ds18 /dev/rdsk/f1q18dt /dev/rfd1135ds9 /dev/rfd196ds9 /dev/rdsk/f1q9dt /dev/rdsk/f1d8t /dev/rdsk/f1d9t > /dev/null 2>&1
+rm -f /dev/fd1135ds18 /dev/fd196ds18 /dev/dsk/f1q18dt /dev/fd1135ds9 /dev/fd196ds9 /dev/dsk/f1q9dt /dev/dsk/f1d8t /dev/dsk/f1d9t > /dev/null 2>&1
+rm -f /dev/hd1a /dev/u[012] /dev/rhd1a /dev/rd1d /dev/sctfdm1 /dev/sctfdm129
+
+
+
+rm -f $TMP > /dev/null 2>&1 
+
+if
+	[ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+	
+	${CONFBIN}/idbuild
+	if
+		[ "$?" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+
+fi

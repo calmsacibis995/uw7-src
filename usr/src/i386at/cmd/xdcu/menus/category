@@ -1,0 +1,44 @@
+#ident	"@(#)dcu:menus/category	1.15"
+
+function catdone
+{
+# catdone()
+# Menu exit callback for when the Software Device Driver Selection menu
+# is exited by selecting "Return to DCU Main Menu".
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 3 ] && {
+print -u2 "$0 called"
+set -x
+}
+
+	dcumain
+	return 0
+}
+
+function category
+{
+# category()
+# Called from main menu when the Software Device Drivers option
+# is selected to display a menu of the possible driver categories.
+# Calling/Exit State: void.
+
+[ "$DCUDEBUG" -gt 2 ] && {
+print -u2 "$0 called"
+set -x
+}
+	integer lines=9
+	place_window $CATMAINWIDTH+5 $lines -title "$CATMAIN_TITLE" -current 'footer "$CATMAIN_FOOTER"'
+	typeset wid=$CURWIN
+	open_menu -exit 'catdone' -x 3 -y 1
+	typeset catid=$MID
+		add_menu_item -help 'helpwin dcu.network' -select "wclose $wid; drivers \$network_interface_cards" -entry 'msgnoerr $CAT1_PROMPT'  "$network_interface_cards"
+		add_menu_item -help 'helpwin dcu.scsi' -select "wclose $wid;drivers \$host_bus_adapters" -entry 'msgnoerr $CAT2_PROMPT'  "$host_bus_adapters"
+		add_menu_item -help 'helpwin dcu.com' -select "wclose $wid; drivers \$communications_cards" -entry 'msgnoerr $CAT3_PROMPT'  "$communications_cards"
+		add_menu_item -help 'helpwin dcu.video' -select "wclose $wid; drivers \$video_cards" -entry 'msgnoerr $CAT4_PROMPT'  "$video_cards"
+		add_menu_item -help 'helpwin dcu.sound' -select "wclose $wid; drivers \$sound_boards" -entry 'msgnoerr $CAT5_PROMPT'  "$sound_boards"
+		add_menu_item -help 'helpwin dcu.misc' -select "wclose $wid; drivers \$miscellaneous" -entry 'msgnoerr $CAT6_PROMPT'  "$miscellaneous"
+		add_menu_item -help 'helpwin dcu.all' -select "wclose $wid; drivers \$alldrivers" -entry 'msgnoerr $CAT7_PROMPT'  "$alldrivers"
+		add_menu_item -help 'helpwin dcu.return' -select "wclose $wid; catdone" -entry 'msgnoerr $CAT8_PROMPT'  "$catreturn"
+	run_menu $catid 0
+}

@@ -1,0 +1,116 @@
+#ident	"@(#)Imakefile	1.4"
+
+/**/#	Copyright (c) 1994 Novell
+/**/#	  All Rights Reserved
+
+/**/#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+/**/#	Novell.
+/**/#	The copyright notice above does not evidence any
+/**/#	actual or intended publication of such source code.
+
+#include    <Motif.tmpl>
+#include    <Motif.rules>
+#include    <C++.tmpl>
+#include    <C++.rules>
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+ XLIBDIR     =  $(ROOT)/$(MACH)/usr/X/lib
+SETUPDIR     =  $(ROOT)/$(MACH)/usr/lib/setup
+
+ LD_RUN_PATH =  /usr/X/lib
+   LDOPTIONS = $(CDEBUGFLAGS) $(CCOPTIONS) $(LOCAL_LDFLAGS) 
+
+ CDEBUGFLAGS = -O
+
+
+SRCS =		cDebug.C		\
+		setup.C			\
+		setupWin.C		\
+		controlArea.C		\
+		controlAreaCBs.C	\
+		actionArea.C		\
+		actionAreaCBs.C		\
+		variables.C		\
+		browseDialog.C		\
+		browseDialogCBs.C	\
+		listDialog.C		\
+		listDialogCBs.C		\
+		passwdDialog.C		\
+		passwdDialogCBs.C	\
+		treeBrowse.C		\
+		treeBrowseCBs.C		\
+		errorDialog.C
+
+HDRS =		cDebug.h		\
+		setup_txt.h		\
+		setupAPIs.h		\
+		setup.h			\
+		setupWin.h		\
+		controlArea.h		\
+		controlAreaCBs.h	\
+		actionArea.h		\
+		variables.h		\
+		treeBrowse.h		\
+		treeBrowseCBs.h
+
+OBJS =		cDebug.o		\
+		setup.o			\
+		setupWin.o		\
+		controlArea.o		\
+		controlAreaCBs.o	\
+		actionArea.o		\
+		actionAreaCBs.o		\
+		variables.o		\
+		browseDialog.o		\
+		browseDialogCBs.o	\
+		listDialog.o		\
+		listDialogCBs.o		\
+		passwdDialog.o		\
+		passwdDialogCBs.o	\
+		treeBrowse.o		\
+		treeBrowseCBs.o		\
+		errorDialog.o
+
+          PROGS = SetupApp 
+
+
+       DTLIBSRC = $(LIBSRC)/Dt
+          DTLIB = $(DTLIBSRC)/libDt.so
+      MDTILIBSRC = $(USLCLIENTSRC)/libMDtI
+         MDTILIB = $(MDTILIBSRC)/libMDtI.so
+
+       INCLUDES = -I$(INC) -I../include -I$(LIBSRC) -I$(LIBSRC)/Dt -I$(TOP) -I$(INCLUDESRC)
+
+          XLIBS = XmClientLibs $(XMULIB) /*$(DTLIB)*/ $(XLIB) /*$(MDTILIB)*/
+  SYS_LIBRARIES = ../libnws/libc++obj.a ../libnws/libcobj.a -lm -lsetup -lgen -lsocket -ltree -lhosts
+       C++FLAGS = $(DEBUG) -DX_WCHAR -DFUNCPROTO -DXTFUNCPROTO $(INCLUDES)
+
+           C++C = LD_RUN_PATH=/usr/X/lib $(PFX)CC
+.SUFFIXES: .o .C .c
+
+all:: $(PROGS)
+
+NormalCPlusPlusProgramTarget($(PROGS),$(OBJS),$(LLIBS),$(XLIBS),$(SYS_LIBS))
+
+InstallProgramWithFlags($(PROGS), $(BINDIR), -o bin -g bin -m 755)
+
+install::	all makeMCatalog
+
+makeMCatalog:
+	mkmsgs -o gensetup.str gensetup.msg
+	[ -d $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES ] || \
+		mkdir -p $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES
+	cp gensetup.msg $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES/gensetup
+
+/**/#	Install the message catalog file for this generic setup application
+InstallMsgCatalog(gensetup)
+
+clobber:: clean
+	$(RM) $(PROGS)
+
+CleanTarget()
+
+DependTarget()
+
+LintTarget()
+

@@ -1,0 +1,103 @@
+1. Overview and Configuration.
+
+Two programs comprise the load test, a mail generator program
+and a multiprotocol mail reader program.
+Two physical machines are needed to run the test suite.
+
+One machine (the server machine) needs to have a virtual domain
+configured and the multihoming channel enabled.
+
+The user and multihoming table filed are managed by the test scripts.
+
+Configuration is via the file load.cfg in this directory.
+Edit the file to set all variables and run the program
+on the master machine.  The program runs as root and .rhost for root
+must be set up on the slave machine.
+
+The master machine will have test users created on it if they
+do not already exist.
+
+The overall architecture is to have the master machine act as a mail
+server.  The slave machine will use SMTP to send mail to the master
+machine.  It will also have large numbers of IMAP and POP clients
+(mailread program) connecting to the server to access mail.
+
+Some users are placed into virtual domains and some are not.
+Some users read their mail locally, most read it over the
+network via POP and IMAP.
+
+After everything is done, checking is done to see that messages
+arrived, any lost messages is a failure case.
+
+2. Support programs specification
+
+mailgen - a mail generator program, generates predetermined loads.
+mailread - a mail reading program, fetches mail over pop/imap or generates
+	a report based on mailbox contents (local).
+
+Command line arguments for each command line tool:
+
+mailgen -delay n -direct -users n -speed n -duration n -body file user[@host]
+
+	-delay is how long to sleep before beginning test,
+		this is used to allow all processes to start up and get
+		ready before the test is initiated.
+	-direct says use SMTP directly rather than /usr/lib/sendmail
+	-users says user is a prefix with numbers after it for N users.
+	-speed is number of messages per second to attempt to send.
+		note that sequenced users get one per sequenced user,
+		in effect speed is multiplied by users per second.
+	-duration is number of seconds to run the test.
+	user[@host] is destination user (or prototype user for sequence).
+
+mailread -pop/-imap -random -interval n -last n user@domain passwd
+   or
+mailread -local user
+
+	-pop is use POP3 protocol to fetch (and delete) messages from host.
+	-imap is use IMAP4 protocol to fetch (and delete) messages from host.
+	-interval is polling interval to check for new messages.
+	-random means randomize the polling interval 0-100% of the interval
+		each time.
+	-last number - the sequence number of the last message expected
+		to arrive.  The program will terminate if all messages
+		from zero up to the last sequence # arrive.
+	If a hangup signal is received then it is assumed that all the mail
+		did not arrive and a failure report is generated to stdout.
+	Lost mail is considered a failure case.
+
+	The pop and imap run modes are dynamic, that is they run continuously
+	and poll host for new mail until all mail has been received
+	or until SIGINT is received.  We take advantage of rsh/rcmd behavior
+	that signals are passed on to the remote program, a report to stdout
+	can be generated on SIGINT.
+
+	The -local run mode is designed to parse a mail box at the end
+	of a load test and generate a report.
+
+3. Running the tests
+
+First edit the load.cfg file to the desired settings.
+There are a few canned scripts for 10, 25, 100, and 200 user load tests.
+Then run the mail adming GUI and add the multihome channel
+Make sure your path has /sbin and /usr/sbin.
+Then run the script "setup" to create the mail aliases and the test users.
+
+Then run the load script on the master machine.
+The load script wants to run as root.
+
+The scripts rcp and rcmd to the slave machine to start the appropriate
+programs.  The slave machine is cleaned up (all files removed) when
+the tests are complete.
+
+Run the script cleanup to remove the mail aliases and the test users.
+
+4. Test case specification
+
+load - We generate random recipient lists.
+	Five types of recipients exists:
+	mail to a local user.
+	mail to a multihome user.
+	mail to a local alias.
+	mail to a multihome alias.
+	mail to a multihome alias that references a local alias.

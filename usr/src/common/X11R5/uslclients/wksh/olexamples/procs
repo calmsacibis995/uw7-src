@@ -1,0 +1,52 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/procs	1.5.1.1"
+
+
+export OPTIONS
+OPTIONS=-f
+
+do_ps() {	# $1=reschedule
+	sv $TEXT string:"`ps $OPTIONS`"
+	if [ "$1" ]
+	then ato $TOPLEVEL 20000 do_ps
+	fi
+}
+
+do_options() {
+	if [ ! "$POP" ]
+	then
+		cps POP pop popupWindowShell $TOPLEVEL \
+			apply:'gv $OPT string:OPTIONS' \
+			reset:'sv $OPT string:$OPTIONS'
+		cmw CAP cap caption $POP_UCA label:"Options for PS: "
+		cmw OPT opt textField $CAP string:"$OPTIONS"
+	fi
+	pu $POP GrabNone
+}
+
+BUTTONTYPE=oblongButton
+
+oi TOPLEVEL ps ps -openlook "$@"
+
+cmw FORM form form $TOPLEVEL
+cmw WINDOW window scrolledWindow $FORM \
+	viewHeight:200 viewWidth:300 \
+	recomputeHeight:false recomputeWidth:false
+cmw TEXT text staticText $WINDOW string:"`ps $OPTIONS`"
+cmw CA ca controlArea $FORM `under $WINDOW 10` center:true
+
+addbuttons $CA	"Run PS" do_ps  "Options" do_options
+
+ato $TOPLEVEL 20000 "do_ps true"
+
+rw $TOPLEVEL
+ml

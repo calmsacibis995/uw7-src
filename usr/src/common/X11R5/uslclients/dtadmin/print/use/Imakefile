@@ -1,0 +1,83 @@
+/**/#ident	"@(#)dtadmin:print/use/Imakefile	1.20.1.4"
+/**/#copyright	"%c%"
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+         SRCS = \
+		prtmgr.c \
+		submit.c \
+		openprt.c \
+		properties.c \
+		filterops.c \
+		filter.c \
+		cancel.c \
+		lpsys.c \
+		error.c \
+		utils.c \
+		drawicon.c
+
+         OBJS = \
+		prtmgr.o \
+		submit.o \
+		openprt.o \
+		properties.o \
+		filterops.o \
+		filter.o \
+		cancel.o \
+		lpsys.o \
+		error.o \
+		utils.o \
+		drawicon.o
+
+  EXTRA_DEFINES = -DSVR4_1ES
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+    GIZMOLIBSRC = $(LIBSRC)/Gizmo
+      DTILIBSRC = $(DTCLIENTSLIB)
+         DTILIB = $(DTILIBSRC)/libDtI.so
+          DTLIB = $(DTLIBSRC)/libDt.so
+       GIZMOLIB = $(GIZMOLIBSRC)/libGizmo.so
+
+#if UTSXENV
+          LPSRC = /x/DTXENV/lp
+#else
+          LPSRC = $(ROOT)/usr/src/$(WORK)/cmd/lp
+#endif
+          LPINC = $(LPSRC)/include
+       LPLIBSRC = $(LPSRC)/lib
+     LPLIBLPSRC = $(LPLIBSRC)/lp
+        LPLIBLP = $(LPLIBLPSRC)/liblp.a
+    LPLIBMSGSRC = $(LPLIBSRC)/msgs
+       LPLIBMSG = $(LPLIBMSGSRC)/liblpmsg.a
+    LPLIBACCSRC = $(LPLIBSRC)/access
+       LPLIBACC = $(LPLIBACCSRC)/liblpacc.a
+    LPLIBSYSSRC = $(LPLIBSRC)/systems
+       LPLIBSYS = $(LPLIBSYSSRC)/liblpsys.a
+    LPLIBPRTSRC = $(LPLIBSRC)/printers
+       LPLIBPRT = $(LPLIBPRTSRC)/liblpprt.a
+    LPLIBREQSRC = $(LPLIBSRC)/requests
+       LPLIBREQ = $(LPLIBREQSRC)/liblpreq.a
+    LPLIBOAMSRC = $(LPLIBSRC)/oam
+       LPLIBOAM = $(LPLIBOAMSRC)/liblpoam.a
+    LPLIBFLTSRC = $(LPLIBSRC)/filters
+       LPLIBFLT = $(LPLIBFLTSRC)/liblpflt.a
+
+LPLIBS = $(LPLIBREQ) $(LPLIBPRT) $(LPLIBSYS) $(LPLIBMSG) $(LPLIBACC) \
+		$(LPLIBFLT) $(LPLIBLP) $(LPLIBOAM)
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTILIBSRC) -I$(GIZMOLIBSRC) -I$(USLCLIENTSRC) \
+		-I$(LPINC) -I$(DTLIBSRC)
+LOCAL_LIBRARIES = $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientLibs $(LPLIBS)
+        DEPLIBS = $(DTILIB) $(DTLIB) $(GIZMOLIB) XolClientDepLibs
+
+  SYS_LIBRARIES = -lcurses -lgen -lm
+
+ComplexProgramTarget(PrtMgr)
+
+InstallMultiple(PrintMgr/Types,$(DESKTOPDIR)/PrintMgr)
+InstallMultiple(PrintMgr/dpost,$(DESKTOPDIR)/PrintMgr/Filters)
+InstallMultiple(PrintMgr/postprint,$(DESKTOPDIR)/PrintMgr/Filters)
+InstallMultiple(PrintMgr/wrap,$(DESKTOPDIR)/PrintMgr/Filters)
+
+InstallMsgCatalog(PrtMgr)

@@ -1,0 +1,24 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/tokinit	1.5.3.1"
+# This script is only applicable for ODI drivers and not DLPI or MDI.
+
+# get list of all modules loaded
+mods=`modadmin -s`
+
+# add leading and trailing spaces for the 'case' statement below
+mods=`echo \ $mods\ `
+
+# if the fdditsm module is loaded, then the odisr module CANNOT be loaded
+# so just exit
+
+case "$mods" in
+*fdditsm\ *)		exit 0;;
+esac
+
+# if the fdditsm module is NOT loaded but the toktsm module is loaded,
+# then load the odisr module.
+
+case "$mods" in
+*toktsm\ *)		modadmin -l odisr;;
+esac
+
+exit 0

@@ -1,0 +1,454 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/init.d/vxvm-reconfig.sh	1.3 9/16/97 11:56:31 - cmd.vxvm:unixware/init.d/vxvm-reconfig.sh
+#ident	"@(#)cmd.vxvm:unixware/init.d/vxvm-reconfig.sh	1.3"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+# This file contains commands to be executed after the root fsck but before
+# anything else on the system executes.
+
+exec < /dev/console
+
+# First mount a seperate /usr read-only.
+
+mountusr()
+{
+usrmnt=
+usrvol=
+exec < /etc/vfstab
+while read dev rdev mpoint fstype more
+do
+	case $mpoint in
+	/usr )
+		usrmnt="/etc/fs/$fstype/mount -r $dev $mpoint"
+		case $dev in
+		/dev/vx/dsk/*)
+			usrvol="`expr "\$dev" : '/dev/vx/dsk/\(.*\)'`"
+			;;
+		*)      
+			continue
+			;;
+		esac
+		;;
+	*)      
+		continue
+		;;
+	esac
+done
+exec < /dev/null
+[ -n "$usrmnt" ] && {
+		if [ ! -d /usr/bin ]; then
+			$usrmnt 2> /dev/null
+			if [ $? != 0 ]
+			then
+#				ewritemsg -M vxvmshm:156 \
+#		 	"Tools needed for the configuration of root are not avai#lable."
+				quit 30
+			fi
+		else
+			usrmnt=
+		fi
+	}
+}
+
+# function to unmount a seperate /usr file system before exiting the
+# script.  This requires the stopping of vxconfigd so that /usr will be
+# unreferenced.
+
+undoit()
+{
+	[ -n "$usrmnt" ] && {
+		vxdctl stop
+		/sbin/umount /usr
+	} 2> /dev/null
+}
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+#SAVEDIR=/VXVM2.1-UPGRADE
+#upgrade_reconf=$SAVEDIR/online.plexes
+
+bail()
+{
+	rm -f $reconfigfile
+	undoit
+	exit 30
+}
+
+initdisk()
+{
+	_init_dg=$1
+	_init_dev=${2}$VOL_FULL_SLICE
+	_init_disk=$3
+	/usr/sbin/vxdisk define $_init_dev > /dev/null 2>&1 	# may already be defined
+	if not ecmd /usr/sbin/vxdisk online $_init_dev; then
+		ewritemsg -M vxvmshm:155 "Definition of $2 failed." $0 "$@"
+		return 10
+	fi
+
+	set_pub_attr $_init_dev
+#	if not ecmd /usr/sbin/vxdisk -f init $_init_dev \
+#	    puboffset=$VOL_PUB_OFFSET publen=$VOL_PUB_LEN ; then
+#		ewritemsg -M vxvmshm:151 "Initialization of $2 failed." $0 "$@"
+#		return 10
+#	fi
+	if not ecmd /usr/sbin/vxdisk -f init $_init_dev ; then
+		ewritemsg -M vxvmshm:247 "Initialization of $2 failed." $0 "$@"
+		return 10
+	fi
+
+	if [ "X$_init_dg" != "Xrootdg" ] &&
+	   not /usr/sbin/vxdg list "$_init_dg" > /dev/null 2>&1; then
+		ecmd /usr/sbin/vxdg init "$_init_dg" "$_init_disk=$_init_dev"
+	else
+		ecmd /usr/sbin/vxdg -g "$_init_dg" adddisk "$_init_disk=$_init_dev"
+	fi
+	if [ $? -ne 0 ]; then
+		export _init_dg; ewritemsg -M vxvmshm:112 \
+ 			"Addition of $2 to $_init_dg disk group failed." $0 "$@"
+		return 10
+	fi
+	if [ -f $mkdbfile -a $first_disk = no ]; then
+		if $VOLD -k -m enable $VOLDOPTS; then
+			ewritemsg -M vxvmshm:381 \
+	 "The Volume Daemon has been enabled for transactions."
+			rm -f $mkdbfile
+			sync
+			first_disk=yes
+		else
+			/usr/sbin/vxdctl -k stop 2> /dev/null
+			ewritemsg -M vxvmshm:380 \
+				"The Volume Daemon could not be enabled."
+			return 10
+		fi
+	fi 
+}
+
+# remove_swap - remove swap areas on the given disk
+#
+# If not all swap areas can be removed, then we cannot encapsulate this
+# disk.
+remove_swap()
+{
+	rmswaplist=`swap -l 2> /dev/null |
+		sed -n "s%^\(/dev/dsk/\${1}s[^ 	]*\).*%\1%p"`
+	if [ -n "$rmswaplist" ]
+	then
+		for rmsw in $rmswaplist; do
+			if ecmd swap -d $rmsw 2> /dev/null
+			then
+				swap_removed="$swap_removed $rmswaplist"
+			else
+				disk=$1 rmsw=$rmsw ewritemsg -M vxvmshm:132 \
+				 "Cannot delete swap area $rmsw from disk $disk"
+				return 1
+			fi
+		done
+	fi
+	return 0
+}
+
+#set -x
+mountusr
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+if [ ! -f $reconfigfile ]
+then
+	[ -n "$usrmnt" ] && /sbin/umount /usr
+	#ret=$?
+	#echo "/usr umounted with $ret in vxvm-reconfig"
+	exit 0
+fi
+
+reboot=no; export reboot
+first_disk=no
+set_OS_variables
+swap_removed=
+
+if [ ! -f $mkdbfile ]; then
+	# restart vold 
+	/usr/sbin/vxdctl enable 2> /dev/null
+	if [ $? -eq 4 ]; then
+		/usr/sbin/vxconfigd -k -m enable
+	fi
+fi
+
+# Remove volumes not needed because of vxunroot
+
+if [ -f $rmvols ]
+then
+        exec 3<&0 < $rmvols
+        while read vol; do
+                /usr/sbin/vxedit -rf rm $vol
+        done
+        exec 0<&3 3<&-
+        rm -f $rmvols
+fi
+
+if [ -f $rmvmdisks ]; then
+	exec 3<&0 < $rmvmdisks
+	while read disk; do
+		export disk; ewritemsg -M vxvmshm:574 \
+		  "Volume Manager: Removing $disk from Volume Manager control."
+		dm=`/usr/sbin/vxdisk -q list $disk |
+			sed -n 's/disk:.*name=\(.*\) id=.*/\1/p'`
+		if not ecmd /usr/sbin/vxdg rmdisk $dm ||
+		   not ecmd vxdiskunsetup $disk; then
+			export disk; ewritemsg -M vxvmshm:443 \
+				"The removing of $disk failed."
+			voladm_continue
+		fi
+	done
+	exec 0<&3 3<&-
+	rm -f $rmvmdisks
+fi
+
+[ -d $STATEDIR ] || volmkdirs
+xcmd cd $STATEDIR
+
+if [ -f $relfile ]; then
+	xcmd umount /stand
+	reboot=yes
+	/usr/lib/vxvm/bin/vxswapreloc
+	if [ $? -eq 37 ]
+	then
+		uadmin 2 1
+	fi
+fi
+
+rm -f $reconfigfile
+rm -f $pnewerr $pcaperr
+sync
+
+if [ -f $pnewfile -o -f $pcapfile ]; then
+	ewritemsg -M vxvmshm:386 \
+		"The Volume Manager is now reconfiguring (partition phase)..."
+fi
+
+if [ -f $pnewfile ]; then
+	exec 3<&0 < $pnewlist
+	while read disk setup_opts; do
+		export disk; ewritemsg -M vxvmshm:572 \
+			"Volume Manager: Partitioning $disk as a new disk."
+		if not ecmd vxdisksetup $setup_opts $disk; then
+			disk="$disk" ewritemsg -M vxvmshm:442 \
+				"The partitioning of $disk failed."
+			echo $disk >> $pnewerr
+		else
+			echo $disk >> $newlist
+			xcmd touch $newfile
+			xcmd touch $reconfigfile
+
+		fi
+	done
+	exec 0<&3 3<&-
+fi
+
+if [ -f $pcapfile ]; then
+	exec 3<&0 < $pcaplist
+	while read disk; do
+		failed=
+		export disk; ewritemsg -M vxvmshm:573 \
+		  "Volume Manager: Partitioning $disk as an encapsulated disk."
+		if not ecmd remove_swap $disk ||
+		   not ecmd vxcap-part $disk
+		then
+			export disk; ewritemsg -M vxvmshm:442 \
+				"The partitioning of $disk failed."
+			echo $disk >> $pcaperr
+		else
+			echo $disk >> $caplist
+			xcmd touch $capfile
+			xcmd touch $reconfigfile
+			reboot=yes
+		fi
+	done
+	exec 0<&3 3<&-
+fi
+
+if [ -s $pnewerr -o -s $pcaperr ]; then
+	(
+		if [ -s $pnewerr ]; then
+			ewritemsg -M vxvmshm:427 "The following disks failed partitioning:"
+			cat $pnewerr
+		fi
+		if [ -s $pcaperr ]; then
+			ewritemsg -M vxvmshm:425 "The following disks failed encapsulation:"
+			cat $pcaperr
+		fi
+	) | voladm_display
+	voladm_continue
+	ewritemsg -M vxvmshm:589 \
+"You can either continue now, or reverse all changes the Volume Manager
+  has made during this reconfiguration."
+
+	if voladm_yorn -M vxvmshm:510 "Undo changes made during partition phase" n; then
+		xcmd sed -e 's/ -[yn]//' < $pnewlist > $tmpfile1
+		xcmd cat $pcaplist >> $tmpfile1
+		exec 3<&0 < $tmpfile1
+		while read disk; do
+			[ -s $DISKDIR/$disk/vtoc ] || continue
+			export disk; ewritemsg -M vxvmshm:641 "undo $disk...."
+			LC_ALL=C export LC_ALL
+			echo 'y' |
+			  $EDVTOC -f $DISKDIR/$disk/vtoc /dev/rdsk/${disk}$VOL_FULL_SLICE >/dev/null
+		done
+		exec 0<&3 3<&-
+		rm -f $pnewerr $pcaperr $newlist $caplist
+		sync
+	fi
+fi
+
+rm -f $pcapfile $pcaplist $pnewfile $pnewlist
+
+if [ $reboot = "yes" ]; then
+	ewritemsg -M vxvmshm:459 \
+	 "The system will now be rebooted to continue the reconfiguration."
+
+	cd /
+	sleep 5
+	uadmin 2 1
+fi
+
+if [ -f $mkdbfile ]; then
+	xcmd vxiod set 10
+	xcmd $VOLD -k -r reset -m disable
+	xcmd /usr/sbin/vxdctl init
+	xcmd /usr/sbin/vxdg init rootdg
+fi
+
+if not [ -f $newfile -o -f $capfile ]; then
+	# if any swap areas were removed, add them back
+	if [ -n "$swap_removed" ]
+	then
+		swap -c
+	fi
+	undoit
+	quit 0
+fi
+
+ewritemsg -M vxvmshm:385 \
+"The Volume Manager is now reconfiguring (initialization phase)..."
+rm -f $newerr $caperr
+
+# # make sure at least 0 length files exist for both, so loops work
+
+[ -f $newlist ] || xcmd touch $newlist
+[ -f $caplist ] || xcmd touch $caplist
+
+exec 3<&0 < $newlist
+while read disk; do
+	if [ -s $DISKDIR/$disk/dmname ]; then
+		dmname=`cat $DISKDIR/$disk/dmname`
+		export dmname disk; ewritemsg -M vxvmshm:570 \
+			"Volume Manager: Adding $dmname ($disk) as a new disk."
+	else
+		dmname=
+		export disk; ewritemsg -M vxvmshm:568 \
+			"Volume Manager: Adding $disk as a new disk."
+	fi
+	if [ -s $DISKDIR/$disk/dg ]; then
+		dgname=`cat $DISKDIR/$disk/dg`
+	else
+		dgname=rootdg
+	fi
+	if not initdisk "$dgname" $disk "$dmname"; then
+		echo $disk >> $newerr
+		continue;
+	fi
+done
+exec 0<&3 3<&-
+
+exec 3<&0 < $caplist
+while read disk; do
+	if [ -s $DISKDIR/$disk/dmname ]; then
+		dmname=`cat $DISKDIR/$disk/dmname`
+		export dmname disk; ewritemsg -M vxvmshm:571 \
+	"Volume Manager: Adding $dmname ($disk) as an encapsulated disk."
+	else
+		dmname=
+		export disk; ewritemsg -M vxvmshm:569 \
+			"Volume Manager: Adding $disk as an encapsulated disk."
+	fi
+	if [ -s $DISKDIR/$disk/dg ]; then
+		dgname=`cat $DISKDIR/$disk/dg`
+	else
+		dgname=rootdg
+	fi
+	if not remove_swap $disk || not initdisk "$dgname" $disk "$dmname"; then
+		echo $disk >> $caperr
+		continue
+	fi
+	vxcap-vol $disk
+	status=$?
+	if [ $status -ne 0 -a $status -ne 101 -a $status -ne 102 ]; then
+		export disk; ewritemsg -M vxvmshm:392 \
+			"The creation of encapsulated volumes for $disk failed."
+		echo $disk >> $caperr
+		continue
+	fi
+
+	# if vxcap-vol encapsulated the root file system, then we must
+	# arrange to start the root file system volume out of the kernel.
+	# If we encapsulated a mounted file system then we must reboot.
+	if [ $status -eq 102 ]
+	then
+		if not vxroot $disk; then
+			ewritemsg -M vxvmshm:401 \
+				"The encapsulation of the Boot Disk failed."
+		fi
+		reboot=yes
+	elif [ $status -eq 101 ]
+	then
+		reboot=yes
+	fi
+done
+exec 0<&3 3<&-
+
+rm -f $newfile $capfile $newlist $caplist
+
+if [ -s $newerr -o -s $caperr ]; then
+	if [ -s $pnewerr ]; then
+		ewritemsg -M vxvmshm:426 \
+			"The following disks failed initialization:"
+		voladm_display $newerr
+		voladm_continue
+	fi
+	if [ -s $pcaperr ]; then
+		ewritemsg -M vxvmshm:425 \
+			"The following disks failed encapsulation:"
+		voladm_display $newerr
+		voladm_continue
+	fi
+	rm -f $newerr $caperr
+fi
+
+if [ $reboot = "yes" ]; then
+	ewritemsg -M vxvmshm:460 \
+		"The system will now be rebooted."
+	cd /
+	sleep 5
+	uadmin 2 1
+fi
+# if any swap areas were removed, add them back
+if [ -n "$swap_removed" ]
+then
+	swap -c	
+fi
+undoit
+quit 0

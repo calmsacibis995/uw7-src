@@ -1,0 +1,71 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3","tp4");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api ctest-parallel");
+	@coutput=@output;
+	@cjournal=@journal;
+	&run("-e contrib/api ptest-parallel");
+
+#	process both output files to remove known differences
+	grep(s/ctest/test/g,@coutput);
+	grep(s!results/.*/journal!results/0000e/journal!,@coutput);
+	grep(s/tmp\/.*/tmp/g,@coutput);
+	@coutput=sort(@coutput);
+	
+	grep(s/ptest/test/g,@output);
+	grep(s!results/.*/journal!results/0000e/journal!,@output);
+	grep(s/tmp\/.*/tmp/g,@output);
+	@output=sort(@output);
+
+	&verify(&compare_arrays(*coutput,*output));
+}
+
+
+sub tp2 {
+	$tp=tp2;
+
+# 	process both journal files to remove known differences
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@cjournal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@cjournal);
+	grep(s/ctest/test/g,@cjournal);
+	grep(s/tmp\/.*/tmp/g,@cjournal);
+	@cjournal=sort(@cjournal);
+
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@journal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@journal);
+	grep(s/ptest/test/g,@journal);
+	grep(s/tmp\/.*/tmp/g,@journal);
+	@journal=sort(@journal);
+
+	&verify(&compare_arrays(*cjournal,*journal));
+}
+
+sub tp3 {
+	$tp=tp3;
+	&run("-e contrib/api stest-parallel");
+	grep(s/stest/test/g,@output);
+	grep(s!results/.*/journal!results/0000e/journal!,@output);
+	grep(s/tmp\/.*/tmp/g,@output);
+	@output=sort(@output);
+
+	&verify(&compare_arrays(*coutput,*output));
+}
+
+sub tp4 {
+	$tp=tp4;
+
+	grep(s/\d\d:\d\d:\d\d/00:00:00/g,@journal);
+	grep(s/($TEST_CASE_INFORMATION\|\d+ \d+) \S+ /$1 0000 /o,@journal);
+	grep(s/stest/test/g,@journal);
+	grep(s/tmp\/.*/tmp/g,@journal);
+	@journal=sort(@journal);
+
+	&verify(&compare_arrays(*cjournal,*journal));
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

@@ -1,0 +1,717 @@
+#ident	"@(#)nas:i386/chkgen.in	1.7"
+
+/* chkgen.in */
+
+/* Input file to chkgen.awk:  describes instruction operand combinations.
+** The description here has operands in the order of the Intel processor
+** handbook, NOT the i386 assembler syntax.  That makes it easier to check
+** enter the encodings from the book.  Pieces of code in stmt386.c take
+** care of reversing the operands to check for validity.
+**
+** For the most part, operand encodings are written down in the order they're
+** shown in the i386 manual.  However, because chk_list() does a linear walk,
+** this can lead to long searches for popular encodings if they're near the
+** end.  Therefore, some of the check-lists have been adjusted to improve
+** assembler efficiency, based on some statistics gathering.  They are noted.
+*/
+
+/* It's a good idea to edit this file with a W I D E screen and small characters! */
+
+/*****************************************
+**					**
+**	adc	add	and	cmp	**
+**	or	sbb	sub	xor	**
+**					**
+*****************************************/
+/* Tables for arithmetic/logical instructions.
+** The check-routine sorts out the following special cases:
+**	[e]a[xl],$
+**	r,$	for small $
+** The old assembler always chose the first of these for
+**	%eax,$	(small $)
+** We can choose either, based on conditional compilation.
+**
+** The order of combinations has been tuned from statistics.
+*/
+
+cl_ar2		gl_adc		gl_add		gl_and		gl_cmp		gl_or		gl_sbb		gl_sub		gl_xor
+ar2_rm32_lit:
+    r32/m32,$	0x81,/2		0x81,/0		0x81,/4		0x81,/7		0x81,/1		0x81,/3		0x81,/5		0x81,/6
+ar2_r8_lit:
+    r8/m8,$	0x80,/2		0x80,/0		0x80,/4		0x80,/7		0x80,/1		0x80,/3		0x80,/5		0x80,/6
+ar2_rm16_lit:
+    r16/m16,$	0x81,/2,W	0x81,/0,W	0x81,/4,W	0x81,/7,W	0x81,/1,W	0x81,/3,W	0x81,/5,W	0x81,/6,W
+    m,r32	0x11,/r		0x01,/r		0x21,/r		0x39,/r		0x09,/r		0x19,/r		0x29,/r		0x31,/r
+    r32,r32/m	0x13,/r		0x03,/r		0x23,/r		0x3B,/r		0x0B,/r		0x1B,/r		0x2B,/r		0x33,/r	
+    m,r8	0x10,/r		0x00,/r		0x20,/r		0x38,/r		0x08,/r		0x18,/r		0x28,/r		0x30,/r
+    r8,r8/m	0x12,/r		0x02,/r		0x22,/r		0x3A,/r		0x0A,/r		0x1A,/r		0x2A,/r		0x32,/r	
+    m,r16	0x11,/r,W	0x01,/r,W	0x21,/r,W	0x39,/r,W	0x09,/r,W	0x19,/r,W	0x29,/r,W	0x31,/r,W
+    r16,r16/m	0x13,/r,W	0x03,/r,W	0x23,/r,W	0x3B,/r,W	0x0B,/r,W	0x1B,/r,W	0x2B,/r,W	0x33,/r,W
+    ----
+    /* ib literal */
+ar2_lit8_16:
+    r16/m16,$	0x83,/2,ib,W	0x83,/0,ib,W	0x83,/4,ib,W	0x83,/7,ib,W	0x83,/1,ib,W	0x83,/3,ib,W	0x83,/5,ib,W	0x83,/6,ib,W
+ar2_lit8_32:
+    r32/m32,$	0x83,/2,ib	0x83,/0,ib	0x83,/4,ib	0x83,/7,ib	0x83,/1,ib	0x83,/3,ib	0x83,/5,ib	0x83,/6,ib
+ar2_al_lit:
+    %al,$	0x14		0x04		0x24		0x3C		0x0C		0x1C		0x2C		0x34
+ar2_ax_lit:
+    %ax,$	0x15,W		0x05,W		0x25,W		0x3D,W		0x0D,W		0x1D,W		0x2D,W		0x35,W
+ar2_eax_lit:
+    %eax,$	0x15		0x05		0x25		0x3D		0x0D		0x1D		0x2D		0x35
+
+/*****************
+**		**
+**	arpl	**
+**		**
+*****************/
+cl_arpl		gl_arpl
+    r16/m16,r16	0x63,/r
+
+/*********************************
+**				**
+**	Bit instructions:	**
+**	bsf/bsr			**
+**				**
+*********************************/
+cl_bsfr		gl_bsf		gl_bsr
+    r16,r16/m16	0xBC,/r,<,W	0xBD,/r,<,W
+    r32,r32/m32	0xBC,/r,<	0xBD,/r,<
+
+/*********************************
+**				**
+**	Bit instructions:	**
+**	bt/btc/btr/bts		**
+**				**
+*********************************/
+cl_bit		gl_bt		gl_btc		gl_btr		gl_bts
+    r16/m16,r16	0xA3,/r,<,W	0xBB,/r,<,W	0xB3,/r,<,W	0xAB,/r,<,W
+    r32/m32,r32	0xA3,/r,<	0xBB,/r,<	0xB3,/r,<	0xAB,/r,<
+    r16/m16,$	0xBA,<,/4,ib,W	0xBA,<,/7,ib,W	0xBA,<,/6,ib,W	0xBA,<,/5,ib,W
+    r32/m32,$	0xBA,<,/4,ib	0xBA,<,/7,ib	0xBA,<,/6,ib	0xBA,<,/5,ib
+
+/*****************
+**		**
+**	bound	**
+**		**
+*****************/
+cl_bound	gl_bound
+    r16,m	0x62,/r,W
+    r32,m	0x62,/r
+
+/*****************
+**		**
+**	clr	**
+**		**
+*****************/
+/* Clear instructions are either xor (register case) or mov (memory case).  */
+cl_clr		gl_clr
+    r8		0x30,/r
+    r16		0x31,/r,W
+    r32		0x31,/r
+clr_mem:
+    m8		0xC6,/0
+    m16		0xC7,/0,W
+    m32		0xC7,/0
+
+/*****************
+**		**
+**	esc	**
+**		**
+*****************/
+cl_esc		gl_esc
+    r16/m	0xD8,/0,W
+
+/*********************************
+**				**
+**	"grp6" instructions	**
+**				**
+*********************************/
+cl_grp6		gl_sldt		gl_str		gl_lldt		gl_ltr		gl_verr		gl_verw
+    r16/m16	0x00,<,/0	0x00,<,/1	0x00,<,/2	0x00,<,/3	0x00,<,/4	0x00,<,/5
+
+/*********************************
+**				**
+**	"grp7" instructions	**
+**				**
+*********************************/
+cl_grp7		gl_sgdt		gl_sidt		gl_lgdt		gl_lidt	
+    m		0x01,<,/0	0x01,<,/1	0x01,<,/2	0x01,<,/3
+
+/* Register should be 16-bit.  For compatibility with old
+** assembler, accept 32-bit, as well.
+*/
+cl_grp7a	gl_smsw		gl_lmsw
+    r16/m16	0x01,<,/4	0x01,<,/6
+    r32		0x01,<,/4	0x01,<,/6
+
+/*************************
+**			**
+**	inc/dec		**
+**			**
+*************************/
+cl_incdec	gl_dec		gl_inc
+    r8/m8	0xFE,/1		0xFE,/0
+    r16		0x48,+r,W	0x40,+r,W
+    r32		0x48,+r		0x40,+r
+    m16		0xFF,/1,W	0xFF,/0,W
+    m32		0xFF,/1		0xFF,/0
+
+/*****************
+**		**
+**	int	**
+**		**
+*****************/
+/* Literal value of 3 (breakpoint) is a special case. */
+cl_int		gl_int
+    $		0xCD,ib
+cl_int_3:
+    $		0xCC
+
+/*************************
+**			**
+**	unary:		**
+**	div, idiv, mul	**
+**	neg, not	**
+**			**
+*************************/
+cl_unary	gl_div		gl_idiv		gl_mul		gl_neg		gl_not
+    r8/m8	0xF6,/6		0xF6,/7		0xF6,/4		0xF6,/3		0xF6,/2
+    r16/m16	0xF7,/6,W	0xF7,/7,W	0xF7,/4,W	0xF7,/3,W	0xF7,/2,W
+    r32/m32	0xF7,/6		0xF7,/7		0xF7,/4		0xF7,/3		0xF7,/2
+
+/*************************
+**			**
+**	enter		**
+**			**
+*************************/
+/* use hard-coded generate routine */
+cl_enter	gl_enter
+    $,$		0
+
+/*****************
+**		**
+**	imul	**
+**		**
+*****************/
+
+/* The approach here is to recognize the 1- and 2-operand
+** forms and leave the 3-operand forms for the check routine,
+** which selects one of the special combinations below.  The
+** gen routine finishes up the special form after the usual
+** stuff is done.
+*/
+&cl_imul	gl_imul
+    r8/m8	0xF6,/5
+    r16/m16	0xF7,/5,W
+    r32/m32	0xF7,/5
+    r16,r16/m	0xAF,/r,<,W
+    r32,r32/m	0xAF,/r,<
+    ----
+/* Part that precedes (in book, follows, in syntax) an immediate.
+** Entries here must parallel entries under imul_imm.  Assume 8-bit
+** immediate, punt to larger if we have to.
+*/
+imul_imm8:
+    /* 8-bit literal */
+    r16,r16/m	0x6B,/r,W
+    r32,r32/m	0x6B,/r
+    r16		0x6B,/r,W
+    r32		0x6B,/r
+    ----
+imul_imm:
+    r16,r16/m	0x69,/r,W
+    r32,r32/m	0x69,/r
+    r16		0x69,/r,W
+    r32		0x69,/r
+
+/*****************
+**		**
+**	in/out	**
+**		**
+*****************/
+/* The operand size variants for in/out are selected by the check
+** routine.  The check routine also verifies that "m" is really
+** "(%dx)", the syntax inherited from the old assembler.
+*/
+cl_inout	gl_in		gl_out
+    $		0xE4,ib		0xE6,ib
+    $		0xE5,ib,W	0xE7,ib,W
+    $		0xE5,ib		0xE7,ib
+cl_inout_dx:
+    m		0xEC		0xEE
+    m		0xED,W		0xEF,W
+    m		0xED		0xEF
+
+/*********************************
+**				**
+**	unconditional jump	**
+**				**
+*********************************/
+
+cl_jmp		gl_jmp		gl_call
+jmp_mem:
+    r32		0xFF,/4		0xFF,/2
+jmp_pcr8:
+    m		0xEB,@1		0xE8,@4
+    ----
+jmp_pcr32:
+    m		0xE9,@4		0xE8,@4
+
+/*************************
+**			**
+**	lar, lsl	**
+**			**
+*************************/
+cl_lar		gl_lar		gl_lsl
+    r16,r16/m16	0x02,<,/r,W	0x03,<,/r,W
+    r32,r32/m32	0x02,<,/r	0x03,<,/r
+
+/*****************
+**		**
+**	lea	**
+**		**
+*****************/
+cl_lea		gl_lea
+    r16,m	0x8D,/r,W
+    r32,m	0x8D,/r
+
+/*************************
+**			**
+**	ljmp/lcall	**
+**			**
+*************************/
+/* $,$ case generated by C code explicitly. */
+cl_ljmp		gl_ljmp		gl_lcall
+    $,$		0xEA		0x9A
+cl_ljmp_rm:
+    r32/m	0xFF,/5		0xFF,/3
+
+/*********************************
+**				**
+**	load segment regs:	**
+**	lss/lds/les/lfs/lgs	**
+**				**
+*********************************/
+cl_lseg		gl_lds		gl_lss		gl_les		gl_lfs		gl_lgs
+    r16,m	0xC5,/r,W	0xB2,<,/r,W	0xC4,/r,W	0xB4,<,/r,W	0xB5,<,/r,W
+    r32,m	0xC5,/r		0xB2,<,/r	0xC4,/r		0xB4,<,/r	0xB5,<,/r
+
+/*****************
+**		**
+**	mov	**
+**		**
+*****************/
+/* Tables for move instructions, including to/from special registers.
+** These tables have been adjusted, based on statistics.  Empirically,
+** movl constitutes about 1/3 of C-generated code, and the "r32,m"
+** form is 2-3 times more common than the "m,r32" form.
+*/
+cl_mov		gl_mov
+/* Beware the arrangement of the first 6 entries:  they parallel
+** mov_axmoff and mov_moffax
+*/
+mov_regmem:
+    r32,m	0x8B,/r
+mov_memreg:
+    m,r32	0x89,/r
+    r8,m	0x8A,/r
+    m,r8	0x88,/r
+    r16,m	0x8B,/r,W
+    m,r16	0x89,/r,W
+/**/
+    r32,r32	0x8B,/r,R
+    r32,$	0xB8,+r
+    m32,$	0xC7,/0
+    r8,r8	0x8A,/r,R
+    r8,$	0xB0,+r
+    m8,$	0xC6,/0
+    r16,r16	0x8B,/r,W,R
+    r16,$	0xB8,+r,W
+    m16,$	0xC7,/0,W
+    /* segment registers */
+    r16/m,sreg	0x8C,/r
+    sreg,r16/m	0x8E,/r
+    /* special registers:  entry is generic dummy entry; check routine chooses proper variant */
+mov_spreg:
+    r32,spreg	0x00
+    spreg,r32	0x00
+/* %cr[023] */
+mov_cr:
+    r32,spreg	0x20,/r,<,L
+    spreg,r32	0x22,/r,<,R
+/* %dr[012367] */
+mov_dr:
+    r32,spreg	0x21,/r,<,L
+    spreg,r32	0x23,/r,<,R
+/* %tr[34567] */
+mov_tr:
+    r32,spreg	0x24,/r,<,L
+    spreg,r32	0x26,/r,<,R
+    /* Entries parallel mov_regmem, mov_memreg. */
+mov_axmoff:
+    %eax,m	0xA1,moff
+mov_moffax:
+    m,%eax	0xA3,moff
+    %al,m	0xA0,moff
+    m,%al	0xA2,moff
+    %ax,m	0xA1,moff,W
+    m,%ax	0xA3,moff,W
+/**/
+
+
+/*************************
+**			**
+**	movsx, movzx	**
+**			**
+*************************/
+/* These instructions are done as three separate tables to get
+** the checking right on the registers.
+*/
+cl_movxbw	gl_movsbw	gl_movzbw
+    r16,r8/m	0xBE,/r,W,<	0xB6,/r,W,<
+
+cl_movxbl	gl_movsbl	gl_movzbl
+    r32,r8/m	0xBE,/r,<	0xB6,/r,<
+
+cl_movxwl	gl_movswl	gl_movzwl
+    r32,r16/m	0xBF,/r,<	0xB7,/r,<
+
+/*****************
+**		**
+**	pop	**
+**		**
+*****************/
+cl_pop		gl_pop
+pop_r16:
+    r16		0x58,+r,W
+pop_r32:
+    r32		0x58,+r
+    m16		0x8F,/0,W
+    m32		0x8F,/0
+/* These get sorted out by chk_pop. */
+pop_sreg:
+pop_ds:
+    sreg	0x1F
+pop_es:
+    sreg	0x07
+pop_ss:
+    sreg	0x17
+pop_fs:
+    sreg	0xA1,<
+pop_gs:
+    sreg	0xA9,<
+/* Word versions of sreg pop's.  Must be in order:  ds, es, ss, fs, gs */
+pop_sreg_w:
+    sreg	0x1F,W
+    sreg	0x07,W
+    sreg	0x17,W
+    sreg	0xA1,<,W
+    sreg	0xA9,<,W
+
+/*****************
+**		**
+**	push	**
+**		**
+*****************/
+/* The order of combinations has been adjusted based on statistics. */
+cl_push		gl_push
+push_r32:
+    r32		0x50,+r
+    m32		0xFF,/6
+push_imm8:
+    /* Special case form, small immediate.  Order must be same as push_imm. */
+    $		0x6A,ib
+    $		0x6A,ib,W
+push_r16:
+    r16		0x50,+r,W
+    m16		0xFF,/6,W
+push_imm:
+    $		0x68,id
+    $		0x68,iw,W
+push_sreg:
+    /* Most handled in check code; use first one to encode %cs */
+push_cs:
+    sreg	0x0E
+push_ss:
+    sreg	0x16
+push_ds:
+    sreg	0x1E
+push_es:
+    sreg	0x06
+push_fs:
+    sreg	0xA0,<
+push_gs:
+    sreg	0xA8,<
+/* Word versions of push-segment:  order must match above:  cs, ss, ds, es, fs, gs. */
+push_sreg_w:
+    sreg	0x0E,W
+    sreg	0x16,W
+    sreg	0x1E,W
+    sreg	0x06,W
+    sreg	0xA0,<,W
+    sreg	0xA8,<,W
+
+/*********************************
+**				**
+**	set condition code	**
+**				**
+*********************************/
+cl_setcc0	gl_seto		gl_setno	gl_setc		gl_setnc	gl_setz		gl_setnz	gl_setna	gl_seta
+    r8/m8	0x90,<,/0	0x91,<,/0	0x92,<,/0	0x93,<,/0	0x94,<,/0	0x95,<,/0	0x96,<,/0	0x97,<,/0
+
+cl_setcc1	gl_sets		gl_setns	gl_setp		gl_setnp	gl_setl		gl_setnl	gl_setng	gl_setg
+    r8/m8	0x98,<,/0	0x99,<,/0	0x9A,<,/0	0x9B,<,/0	0x9C,<,/0	0x9D,<,/0	0x9E,<,/0	0x9F,<,/0
+
+/*****************************************
+**					**
+**	shift/rotate group:		**
+**	sa[lr][bwl], sh[lr][bwl]	**
+**	rc[lr][bwl], ro[lr][bwl]	**
+**					**
+*****************************************/
+#define gl_shl gl_sal		/* identical behavior and encoding */
+cl_shift	gl_rol		gl_ror		gl_rcl		gl_rcr		gl_sal		gl_shr		gl_sar
+shft_imm_s:
+    r8/m8,$	0xC0,/0,ib	0xC0,/1,ib	0xC0,/2,ib	0xC0,/3,ib	0xC0,/4,ib	0xC0,/5,ib	0xC0,/7,ib
+    r16/m16,$	0xC1,/0,ib,W 	0xC1,/1,ib,W 	0xC1,/2,ib,W 	0xC1,/3,ib,W 	0xC1,/4,ib,W 	0xC1,/5,ib,W	0xC1,/7,ib,W
+    r32/m32,$	0xC1,/0,ib 	0xC1,/1,ib 	0xC1,/2,ib 	0xC1,/3,ib 	0xC1,/4,ib 	0xC1,/5,ib	0xC1,/7,ib
+shft_imm_e:
+    r8/m8,%cl	0xD2,/0		0xD2,/1		0xD2,/2		0xD2,/3		0xD2,/4		0xD2,/5		0xD2,/7	
+    r16/m16,%cl	0xD3,/0,W 	0xD3,/1,W 	0xD3,/2,W 	0xD3,/3,W 	0xD3,/4,W 	0xD3,/5,W 	0xD3,/7,W
+    r32/m32,%cl	0xD3,/0	 	0xD3,/1	 	0xD3,/2	 	0xD3,/3	 	0xD3,/4	 	0xD3,/5	 	0xD3,/7	
+shft_imm_1:
+/* Shifts by 1.  Generate routine discriminates.
+** Must be in same order as shft_imm.  Leaving out ",$"
+** avoids GL_IMM flag.
+*/
+    r8/m8	0xD0,/0		0xD0,/1		0xD0,/2		0xD0,/3		0xD0,/4		0xD0,/5		0xD0,/7
+    r16/m16	0xD1,/0,W	0xD1,/1,W	0xD1,/2,W	0xD1,/3,W	0xD1,/4,W	0xD1,/5,W	0xD1,/7,W
+    r32/m32	0xD1,/0		0xD1,/1		0xD1,/2		0xD1,/3		0xD1,/4		0xD1,/5		0xD1,/7
+
+
+/*************************
+**			**
+**	double shifts	**
+**			**
+*************************/
+/* The assembler syntax omits %cl for that form of the instruction.
+** The $imm8 form is handled by peeling off the first operand.
+** The selection is done in the check routine.
+*/
+&cl_shxd	gl_shld		gl_shrd
+/* %cl versions: */
+    r16/m16,r16	0xA5,<,/r,W	0xAD,<,/r,W
+    r32/m32,r32	0xA5,<,/r	0xAD,<,/r
+/* $imm8 versions: */
+cl_shxd_imm8:
+    r16/m16,r16	0xA4,<,/r,W	0xAC,<,/r,W
+    r32/m32,r32	0xA4,<,/r	0xAC,<,/r
+
+/*****************
+**		**
+**	test	**
+**		**
+*****************/
+/* The order of cases has been adjusted based on statistics. */
+cl_test		gl_test
+    r32/m32,r32	0x85,/r
+    r8/m8,r8	0x84,/r
+    r16/m16,r16	0x85,/r,W
+    %al,$	0xA8
+    %ax,$	0xA9,W
+    %eax,$	0xA9
+    r8/m8,$	0xF6,/0
+    r16/m16,$	0xF7,/0,W
+    r32/m32,$	0xF7,/0
+/* The processor manual does not contain these variants, but the
+** old assembler allows them.  They're identical to the "m,r"
+** combinations.
+*/
+    r32,m32	0x85,/r
+    r8,m8	0x84,/r
+    r16,m16	0x85,/r,W
+
+/*****************
+**		**
+**	xchg	**
+**		**
+*****************/
+cl_xchg		gl_xchg
+    r16,%ax	0x90,+r,L,W
+    %ax,r16	0x90,+r,R,W
+    r32,%eax	0x90,+r,L
+    %eax,r32	0x90,+r,R
+    r8,r8/m	0x86,/r
+    m,r8	0x86,/r
+    r16,r16/m	0x87,/r,W
+    m,r16	0x87,/r,W
+    r32,r32/m	0x87,/r
+    m,r32	0x87,/r
+
+/*********************************
+**				**
+**	fld/fst/fstp/ffree	**
+**	fxch			**
+**				**
+*********************************/
+/* fxch uses the table after it determines there is an operand. */
+&cl_fld0	gl_fld		gl_fst		gl_fstp		gl_ffree	gl_fxch
+    %stn	0xD9,/0		0xDD,/2		0xDD,/3		0xDD,/0		0xD9,/1
+
+/*************************
+**			**
+**	fld[slt]	**
+**	fild[l ll]	**
+**	fbld		**
+**			**
+*************************/
+cl_fld1		gl_flds		gl_fldl		gl_fldt		gl_fild		gl_fildl	gl_fildll	gl_fbld
+    m		0xD9,/0		0xDD,/0		0xDB,/5		0xDF,/0		0xDB,/0		0xDF,/5		0xDF,/4
+
+/*************************
+**			**
+**	fst[slt]	**
+**	fist[l ll]	**
+**			**
+*************************/
+cl_fst1		gl_fsts		gl_fstl		gl_fist		gl_fistl
+    m		0xD9,/2		0xDD,/2		0xDF,/2		0xDB,/2	
+
+/*************************
+**			**
+**	fstp[slt]	**
+**	fistp[l ll]	**
+**	fbstp		**
+**			**
+*************************/
+cl_fstp1	gl_fstps	gl_fstpl	gl_fstpt	gl_fistp	gl_fistpl	gl_fistpll	gl_fbstp
+    m		0xD9,/3		0xDD,/3		0xDB,/7		0xDF,/3		0xDB,/3		0xDF,/7		0xDF,/6
+
+/*****************************************
+**					**
+**	fadd, fmul variants:		**
+**	fadds	faddl	fiadd	fiaddl	**
+**	fmuls	fmull	fimul	fimull	**
+**					**
+*****************************************/
+
+cl_faddmul	gl_fadds	gl_faddl	gl_fiadd	gl_fiaddl	gl_fmuls	gl_fmull	gl_fimul	gl_fimull
+    m		0xD8,/0		0xDC,/0		0xDE,/0		0xDA,/0		0xD8,/1		0xDC,/1		0xDE,/1		0xDA,/1
+
+/*************************************************
+**						**
+**	fsub, fsubr, fdiv, fdivr variants	**
+**						**
+*************************************************/
+
+cl_fsub		gl_fsubs	gl_fsubl	gl_fisub	gl_fisubl	gl_fsubrs	gl_fsubrl	gl_fisubr	gl_fisubrl
+    m		0xD8,/4		0xDC,/4		0xDE,/4		0xDA,/4		0xD8,/5		0xDC,/5		0xDE,/5		0xDA,/5
+
+cl_fdiv		gl_fdivs	gl_fdivl	gl_fidiv	gl_fidivl	gl_fdivrs	gl_fdivrl	gl_fidivr	gl_fidivrl
+    m		0xD8,/6		0xDC,/6		0xDE,/6		0xDA,/6		0xD8,/7		0xDC,/7		0xDE,/7		0xDA,/7
+
+cl_fop		gl_fadd		gl_fmul		gl_fsub		gl_fsubr	gl_fdiv		gl_fdivr
+    %st,%stn	0xD8,/0,R	0xD8,/1,R	0xD8,/4,R	0xD8,/5,R	0xD8,/6,R	0xD8,/7,R
+    %stn,%st	0xDC,/0,L	0xDC,/1,L	0xDC,/4,L	0xDC,/5,L	0xDC,/6,L	0xDC,/7,L
+
+/* floating operations with pop */
+cl_fopp		gl_faddp	gl_fmulp	gl_fsubp	gl_fsubrp	gl_fdivp	gl_fdivrp
+    %stn,%st	0xDE,/0,L	0xDE,/1,L	0xDE,/4,L	0xDE,/5,L	0xDE,/6,L	0xDE,/7,L
+
+/*************************
+**			**
+**	fcom[ls]	**
+**	fcomp[ls]	**
+**	ficom[l]	**
+**	ficomp[l]	**
+**			**
+*************************/
+cl_fcom		gl_fcoms	gl_fcoml	gl_fcomps	gl_fcompl	gl_ficom	gl_ficoml	gl_ficomp	gl_ficompl
+    m		0xD8,/2		0xDC,/2		0xD8,/3		0xDC,/3		0xDE,/2		0xDA,/2		0xDE,/3		0xDA,/3
+
+/*************************
+**			**
+**	fcom/fcomp	**
+**	fucom/fucomp	**
+**			**
+*************************/
+cl_fcom0	gl_fcom		gl_fcomp	gl_fucom	gl_fucomp
+    %stn	0xD8,/2		0xD8,/3		0xDD,/4		0xDD,/5
+
+/*********************************
+**				**
+**	fldcw			**
+**	fnstcw/fstcw		**
+**	fstenv/fldenv		**
+**				**
+*********************************/
+cl_fcntl	gl_fldcw	gl_fstcw	gl_fnstcw	gl_fstenv	gl_fldenv	gl_fnstenv
+    m		0xD9,/5		0xD9,/7,~	0xD9,/7		0xD9,/6,~	0xD9,/4		0xD9,/6
+
+/*************************
+**			**
+**	fnstsw/fstsw	**
+**			**
+*************************/
+cl_fstsw	gl_fnstsw	gl_fstsw
+    %ax		0xDF,/4		0xDF,/4,~
+    m		0xDD,/7		0xDD,/7,~
+
+/*********************************
+**				**
+**	fsave/fnsave/frstor	**
+**				**
+*********************************/
+cl_fsave	gl_fsave	gl_fnsave	gl_frstor
+    m		0xDD,/6,~	0xDD,/6		0xDD,/4
+
+/*********************************
+**				**
+**	i486 new instructions	**
+**				**
+*********************************/
+
+/* bswap */
+cl_bswap	gl_bswap
+    r32		0xC8,<,+r
+
+/* xadd, cmpxchg */
+cl_xadd		gl_xadd		gl_cmpxchg
+    r8/m,r8	0xC0,<,/r	0xB0,<,/r
+    r16/m,r16	0xC1,<,/r,W	0xB1,<,/r,W
+    r32/m,r32	0xC1,<,/r	0xB1,<,/r
+
+/* invlpg */
+cl_invlpg	gl_invlpg
+    m		0x01,<,/7
+
+/*********************************
+**				**
+**	P5 new instructions	**
+**				**
+*********************************/
+
+/* cmpxchg8b */
+cl_cmpxchg8b	gl_cmpxchg8b
+    m		0xC7,<,/1
+
+/*********************************
+**				**
+**	P6 new instructions	**
+**				**
+*********************************/
+/* cmov */
+cl_cmov		gl_cmov
+    r32,m	0x40,/r,R
+    r16,m	0x40,/r,R,W
+    r32,r32	0x40,<,/r,R
+    r16,r16	0x40,<,/r,W,R
+
+/* fcomi, fcompi, fucomi, fucompi */
+cl_fcomi0	gl_fcomi	gl_fcompi	gl_fucomi	gl_fucompi
+%stn		0xDB,/6		0xDF,/6		0xDB,/5		0xDF,/5
+
+cl_fcmov	gl_fcmovb	gl_fcmove	gl_fcmovbe	gl_fcmovu	gl_fcmovnb	gl_fcmovne	gl_fcmovnbe	gl_fcmovnu
+%st,%stn	0xDA,/0,R	0xDA,/1,R	0xDA,/2,R	0xDA,/3,R	0xDB,/0,R	0xDB,/1,R	0xDB,/2,R	0xDB,/3,R
+

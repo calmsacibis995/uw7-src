@@ -1,0 +1,207 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/zl5380/postinstall	1.1.3.1"
+
+do_extract () {
+
+	###
+	# Extract Driver.o from loadable module
+	###
+	mv /tmp/$PKGINST/$PKGINST /tmp/$PKGINST/Driver.o
+
+	for sec in data data1 rodata rodata1 text
+	do
+		mcs -n .drv_$sec -d Driver.o
+		mcs -n .rel.drv_$sec -d Driver.o
+	done
+
+	mcs -n .mod_dep -d Driver.o
+	mcs -n .rel.mod_dep -d Driver.o
+
+	###
+	# remove .comment because it is now about 2k.  Really it should be 
+	# pstamped note that all our loadable drivers have large .comment 
+	# sections that should be pstamped.
+	###
+
+	mcs -d Driver.o
+}
+
+abort_install () {
+
+	message -d ${FAIL_INST}
+	if [ $OVERLAY ]
+	then
+		if [ -d /var/sadm/hba.save/$PKGINST ]
+		then
+			SVDIR=/var/sadm/hba.save/$PKGINST
+			for FILE in Driver.o space.c disk.cfg
+			do
+				if [ -f $SVDIR/pack.d/$FILE ]
+				then 
+					cp $SVDIR/pack.d/$FILE /etc/conf/pack.d/$PKGINST
+				fi
+			done
+			if [ -f $SVDIR/drvmap.d/$PKGINST ]
+			then
+				cp $SVDIR/drvmap.d/$PKGINST /etc/conf/drvmap.d
+			fi
+			if [ -f $SVDIR/mdevice.d/$PKGINST ]
+			then
+				cp $SVDIR/mdevice.d/$PKGINST /etc/conf/mdevice.d
+			fi
+		fi
+	fi
+	exit ${FAILURE}
+}
+
+do_install () {
+
+	${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+	RET=$?
+	if [ ${RET} != 0 ]
+	then
+		OVERLAY=1
+		SVDIR=/var/sadm/hba.save/$PKGINST
+
+		if [ ! -d $SVDIR/pack.d ]
+		then
+			mkdir -p $SVDIR/pack.d 2>&1 >/dev/null
+		fi
+
+		for FILE in Driver.o space.c disk.cfg
+		do
+			mv /etc/conf/pack.d/$PKGINST/$FILE $SVDIR/pack.d
+			if [ "$FILE" = "space.c" ]
+			then
+			   mv /tmp/$PKGINST/Space.c /etc/conf/pack.d/$PKGINST/space.c
+			else
+			   mv /tmp/$PKGINST/$FILE /etc/conf/pack.d/$PKGINST/$FILE
+			fi
+			[ $? -ne 0 ] && abort_install
+		done
+
+		if [ ! -d $SVDIR/drvmap.d ]
+		then
+			mkdir $SVDIR/drvmap.d 2>&1 >/dev/null
+		fi
+		mv /etc/conf/drvmap.d/$PKGINST $SVDIR/drvmap.d
+		mv /tmp/$PKGINST/Drvmap /etc/conf/drvmap.d/$PKGINST
+		[ $? -ne 0 ] && abort_install
+
+		if [ ! -d $SVDIR/mdevice.d ]
+		then
+			mkdir $SVDIR/mdevice.d 2>&1 >/dev/null
+		fi
+		mv /etc/conf/mdevice.d/$PKGINST $SVDIR/mdevice.d
+		mv /tmp/$PKGINST/Master /etc/conf/mdevice.d/$PKGINST
+		[ $? -ne 0 ] && abort_install
+	else
+		rm -f ${ERR}
+		mv disk.cfg /etc/conf/pack.d/${1}
+		chown bin /etc/conf/pack.d/${1}/disk.cfg 
+		chgrp bin /etc/conf/pack.d/${1}/disk.cfg
+	fi
+	mv ${1}.h /usr/include/sys
+	chown bin /usr/include/sys/${1}.h
+	chgrp bin /usr/include/sys/${1}.h
+}
+
+register() {
+if [ $OVERLAY ]
+then
+installf -c none $PKGINST - << !!EOF
+/etc/conf/pack.d/$PKGINST/Driver.o
+/etc/conf/pack.d/$PKGINST/disk.cfg
+/etc/conf/pack.d/$PKGINST/space.c
+/etc/conf/drvmap.d/$PKGINST
+/etc/conf/mdevice.d/$PKGINST
+!!EOF
+else
+installf -c none $PKGINST - << !!EOF
+/etc/conf/pack.d/${PKGINST}/disk.cfg
+/usr/include/sys/${PKGINST}.h
+/etc/loadmods
+!!EOF
+fi
+installf -f $PKGINST
+}
+
+# Messaging related stuff
+PKGMSG=hba.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+# Check if we're installing during initial system installation.
+# If so, set ROOT=/mnt; otherwise ROOT is null.  Make sure that
+# we're not pkgadd'ing over a pkg that was installed during that
+# first system installation (i.e., check UPDATE).
+ROOT=
+[ "$SETNAME" = "from_loadhba" -a "$UPDATE" != "yes" ] && ROOT="/mnt"
+LC_MESSAGES=$ROOT/usr/lib/locale/$LOCALE
+
+if [ ! -f ${LC_MESSAGES}/LC_MESSAGES/${PKGMSG} ]
+then
+	if [ -f ${REQDIR}/inst/locale/${LOCALE}/$PKGMSG} -a \
+		-d ${ROOT}/usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+			${LC_MESSAGES}/LC_MESSAGES
+	fi
+fi
+FAIL_INST=`pfmt -s ERROR -g ${PKGMSG}:2 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module.  The file %s contains the errors." "${PKGINST}" "${ERR}" 2>&1`
+
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+ERR=/tmp/err.out
+
+cd /tmp/${PKGINST}
+[ -f /tmp/${PKGINST}/Driver.o ] || do_extract
+do_install ${PKGINST}
+
+if test -f /bin/grep
+then
+	grep $PKGINST /etc/loadmods >/dev/null
+	[ $? -ne 0 ] &&
+		cat /tmp/$PKGINST/loadmods >>/etc/loadmods
+else
+	cat /tmp/$PKGINST/loadmods >>/etc/loadmods
+fi
+
+# Register changes made to system into the contents file
+register
+
+# Cleanup temporary files and directories
+rm -fr /tmp/${PKGINST} /tmp/hbacpio.z >/dev/null 2>&1
+removef ${PKGINST} /tmp /tmp/${PKGINST} /tmp/${PKGINST}/Drvmap \
+	/tmp/${PKGINST}/modcpio.z /tmp/hbacpio.z /tmp/${PKGINST}/Master \
+	/tmp/${PKGINST}/System >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+# If this package is being added as an add-on package (not being installed 
+# from the initial system installation via loadhba), then for non-ISA cards
+# which have boardids run 'dcu -s'.
+if [ "$ROOT" != "/mnt" ]
+then
+	cat /etc/conf/drvmap.d/${PKGINST} | awk -F'|' '
+		BEGIN {
+			BOARDID = 1
+		}
+	
+		{
+			if (NF > 1) {
+				if ($2 !~ /Y/)
+					if ($2 !~ /N/)
+						if($3 != "") {
+							BOARDID = 0
+							exit
+						}
+			}
+		}
+	
+		END {
+			exit BOARDID 
+		}'
+	[ $? -eq 0 ] && /sbin/dcu -s
+fi
+/etc/conf/bin/idbuild
+exit 0

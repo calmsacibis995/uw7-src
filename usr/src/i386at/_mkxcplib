@@ -1,0 +1,32 @@
+#ident	"@(#)mk:i386at/:mkxcplib	1.2.1.5"
+#ident  "$Header$"
+#
+#	Build Compatibility Package libraries
+#	For each directory build the library by invoking its
+#	makefile (<dir>.mk).
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+cd ${Root}/usr/src/${Work}/xcplib
+
+ROOT=${Root}
+MACH=${Mach}
+TOOLS=${Tools}
+export MACH ROOT TOOLS
+
+for l in libx lxcurses lxtermlib
+do
+	cd $l
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f ${l}.mk install
+	cd ..
+done
+
+echo "ENDED `basename $0` `date`"
+exit 0

@@ -1,0 +1,343 @@
+#ident	"@(#)dtadmin:dialup/addttymon	1.2"
+
+echo "****************************************************************"
+echo
+echo "This script is obsolete, and may not be present in future releases!"
+echo
+echo "You can setup a ttymon port monitor using the Dialup_Setup."
+echo "Invoke the graphical Dialup_Setup."
+echo "Select Actions -> Setup Devices -> Device -> New -> "
+echo "		Choose a Device -> Choose Direct"
+echo "If you select Bi-Directional or Incoming Only for the port being set up,"
+echo "you will put a ttymon monitor on the selected port."
+echo "If you select Outgoing Only, no ttymon will be created on the port." 
+echo "Select Add to save the information."
+echo
+echo "****************************************************************"
+TMPFILE=/tmp/tty$$
+trap  'rm -rf $TMPFILE; echo \\n$0 Done.\\007\\n; exit' 0 15
+trap  '' 2 3
+
+if [ ! "`id | grep root`" ]
+then
+	echo "You must be root to execute this command."
+	exit 1
+fi
+
+VER=`ttyadm -V`
+SUB=0
+#determine the serial ports being used
+for TTY in  `grep tty /etc/uucp/Devices| grep -v "#"|cut -d" " -f2`
+do
+SUB=`expr $SUB + 1`
+eval TTY$SUB=\$TTY 
+done
+
+if [ "$SUB" -eq 0 ] # no serial ports set up
+then
+echo "No Devices are currently set up, please use 'Dialup Setup: Devices'."
+exit 2
+fi
+
+# if more than one device is given in /etc/uucp/Devices, find out which
+# device(s) the user wants bidirectional 
+
+if [ "$SUB" -gt 1 ]
+then
+	echo "The following device names appear in /etc/uucp/Devices.\n"
+	I=1
+	while [ "$I" -le "$SUB" ]
+	do
+		eval TMP=`echo \\$TTY$I`
+		NUM=`echo $TMP | sed -n -e 's/..*\([0-9][0-9]\).*/\1/p'`
+
+		if [ "$NUM" -eq 0 ]
+		then
+               		PORT=COM1
+
+		elif [ "$NUM" -eq 1 ]
+        	then
+                	PORT=COM2
+        	else
+                	PORT=tty$NUM
+      		fi 
+		
+		echo "\t$PORT"
+
+		I=`expr $I + 1`
+	done
+
+	if [ "$I" -eq 3 ]
+	then
+		BOTH="both"
+	fi
+	echo "\nIf you want ${BOTH:-all} to be bidirectional -"
+	echo "press: <Enter> \n"
+	echo "If you want only a specific device(s) to be bidirectional -"
+	echo "enter a device name and press <Enter>. Press <q> when done.\n"
+	J=0
+	while 
+	echo "Enter a device name or <q> to quit: \c"
+	read ANS
+	do
+		I=1
+		case $ANS in
+			[Cc][Oo][Mm]1) ANS=tty00;;
+			[Cc][Oo][Mm]2) ANS=tty01;;
+		esac
+			
+		case $ANS in
+			   "")	if [ "$J" -eq 0 ]
+				then 
+					break # whew, we got off easy here - 
+			               	      # no input verification 
+				else
+					echo "\n\007Entry not understood.\n"
+				fi;;
+
+		tty[0-9][0-9])	while [ "$I" -le "$SUB" ]
+				do
+					eval LISTITEM=\$TTY$I
+					if [ "$ANS" = "$LISTITEM" ]
+					then
+						if [ -r "/dev/$ANS" ]
+						then
+						        J=`expr $J + 1`
+							if [ "$J" -eq "$SUB" ]
+							then
+								eval TMPDEV$J=\$ANS
+								break 2
+							else
+								eval TMPDEV$J=\$ANS
+								break
+							fi
+						else
+							echo "\n\007$ANS non-existant\n"
+							break
+						fi
+					elif [ "$I" -lt "$SUB" ]
+					then
+						I=`expr $I + 1`
+					else
+						echo "\007\n$ANS not in Devices list\n"
+						continue 2
+					fi
+				done;;
+			    q)  break;;
+			    *)  echo "\n\007Invalid entry - $ANS\n";;
+		esac
+	done
+
+	if [ "$ANS" = 'q' -a  "$TMPDEV1" = "" ] 
+	then
+		echo "\nUsing original Devices list," # they must have changed their mind
+		while 
+		echo "\nis this acceptable? (y/n) \c"
+		read OK
+		do
+			case $OK in
+			
+			y* | Y* ) echo; break;;
+			n* | N* ) echo "\nExiting with no changes.\n"
+				  exit 0;;
+			      * ) ;;
+			esac
+		done
+
+	elif [ "$ANS" != "" ] 
+ 	then
+		I=1
+		while [ "$I" -le "$J" ]
+		do
+			eval TTY$I=\$TMPDEV$I
+			I=`expr $I + 1`
+		done
+		SUB=$J
+	fi
+fi
+
+# now make sure that we can access the desired devices
+
+I=1
+while [ "$I" -le "$SUB" ]
+do
+eval LINE=/dev/\$TTY$I
+
+if [ ! -r "$LINE" ]
+then
+	echo "\nCannot add a ttymon - $LINE non-existant.\007\n"
+	exit 4
+fi
+
+set `ls -o $LINE`
+
+if [ "$3" != "lp" ] # looks good
+then
+	if [ "$1" != crw-rw-rw- ]
+	then
+		chmod 666 $LINE
+	fi
+elif [  ! "`lpstat -v | grep $LINE`" ] # device ownership incorrect
+then
+	chown root $LINE
+	chmod 666 $LINE
+else
+	if [ "$LINE" = /dev/tty00 ]
+	then
+		COMPORT=COM1
+	
+	elif [ "$LINE" = /dev/tty01 ]
+	then
+		COMPORT=COM2
+	else
+		COMPORT=$LINE
+	fi
+
+	set `lpstat -v | grep $LINE` 
+	echo "\007\n$COMPORT is being used by printer:`echo $3 | sed -n 's/://p'"
+	echo "\nUse Dialup Setup to choose a different COM port."
+	exit 3
+fi
+I=`expr $I + 1`
+done
+
+# now see if there is a ttymon configured
+
+ENTRY=0 
+for MON in  `sacadm -L 2>/dev/null | grep ttymon | cut -d":" -f1`
+do
+	ENTRY=`expr $ENTRY + 1`
+	eval TTYMON$ENTRY=\$MON 
+done
+
+if [ "$ENTRY" -eq 0 ] # there are no port monitors configured
+then
+	# create a port monitor with pmtag = ttymon1
+	sacadm -a -p ttymon1 -t ttymon -c "/usr/lib/saf/ttymon" \
+	-v $VER
+
+	# add  bi-directional service(s) to  be monitored by ttymon1
+
+	I=1 
+	while [ $I -le $SUB ]
+	do
+		eval LINE=/dev/\$TTY$I
+		eval TAG=`echo \$TTY$I|cut -c4-7`
+
+		pmadm -a -p ttymon1 -s $TAG -v $VER -fu -S login -m \
+		"`ttyadm -b -h -r0 -t 60 -d$LINE -s /usr/bin/shserv \
+		-l auto -m ldterm -p \"SVR4.2 login: \"`"
+		
+		if [ $? -eq 0 ]
+		then
+ 			if [ "$LINE" = /dev/tty00 ]
+                	then
+                        	PORT=COM1
+
+                	elif [ "$LINE" = /dev/tty01 ]
+                	then
+                        	PORT=COM2
+                	else
+                        	PORT=$LINE
+                	fi
+			echo "\nttymon successfully added for $PORT\n"
+		fi
+	
+		I=`expr $I + 1`
+	done
+	exit 0
+fi
+>$TMPFILE #wc will need this file, even if it's empty
+
+# let's see if the device(s) exist in a _pmtab file
+
+I=1 
+while [ $I -le $ENTRY ]
+do
+	eval MON=\$TTYMON$I
+	J=1 
+	while [ $J -le $SUB ]
+	do
+		eval TMP=\$TTY$J
+
+ 		DEVNUM=`echo $TMP | sed -n -e 's/..*\([0-9][0-9]\).*/\1/p'`
+		egrep "tty$DEVNUM|${DEVNUM}s" \
+		 /etc/saf/$MON/_pmtab > /dev/null
+
+		if [ $? -eq 0 ] # found one
+		then
+			TAG=`egrep "tty$DEVNUM|${DEVNUM}s" \
+                           /etc/saf/$MON/_pmtab|cut -d":" -f1`
+			LINE=/dev/$TMP
+
+			# remove the entry, 
+			pmadm -r -p $MON -s $TAG
+
+			# recreate it as bi-directional
+			pmadm -a -p $MON -s $TAG -v $VER \
+			-fu -S login -m "`ttyadm -b -h -r0 \
+			-t 60 -d $LINE -s /usr/bin/shserv \
+			-l auto -m ldterm -p \"SVR4.2 login: \"`"
+			
+		if [ $? -eq 0 ]
+		then
+ 			if [ "$DEVNUM" -eq  00 ]
+                	then
+                        	PORT=COM1
+
+                	elif [ "$DEVNUM" -eq 01 ]
+                	then
+                        	PORT=COM2
+                	else
+                        	PORT=$LINE
+                	fi
+			echo "\nttymon successfully added for $PORT\n"
+		fi
+			echo "/dev/$TMP" >> $TMPFILE
+		fi
+
+		J=`expr $J + 1`
+
+	done
+	I=`expr $I + 1`
+done
+
+if [ "`wc -l $TMPFILE | sed -n 's/  *\([0-9]*\) ..*/\1/p'`" -ne $SUB ]
+then
+	# we'll add the tty(s) to the first ttymon
+
+	I=1 
+	while [ $I -le $SUB ]
+	do
+		eval LINE=/dev/\$TTY$I
+		if [ ! "`grep $LINE $TMPFILE`" ]
+		then
+			eval TMP=\$TTY$I
+			DEVNUM=`echo $TMP|cut -c4-7`
+
+			pmadm -a -p $TTYMON1 -s $DEVNUM \
+			-v $VER -fu -S login -m \
+			"`ttyadm -b -h -r0 -t 60 -d$LINE \
+			 -s /usr/bin/shserv \
+			-l auto -m ldterm -p \"SVR4.2 login: \"`"
+
+			if [ $? -eq 0 ]
+			then
+ 				if [ "$LINE" = /dev/tty00 ]
+                		then
+                        		PORT=COM1
+
+                		elif [ "$LINE" = /dev/tty01 ]
+                		then
+                        		PORT=COM2
+                		else
+                        		PORT=$LINE
+                		fi
+			echo "\nttymon successfully added for $PORT\n"
+			fi
+
+		fi
+		I=`expr $I + 1`
+	done
+fi
+

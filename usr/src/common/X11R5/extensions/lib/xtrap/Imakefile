@@ -1,0 +1,75 @@
+/**/#ident	"@(#)r5extensions:lib/xtrap/Imakefile	1.2"
+/**/#ident	"@(#)r5extensions:lib/xtrap/Imakefile	1.1"
+
+#define DoNormalLib NormalLibXTrap
+#define DoSharedLib SharedLibXTrap
+#define DoDebugLib DebugLibXTrap
+#define DoProfileLib ProfileLibXTrap
+#include <Library.tmpl>
+#ifdef RsArchitecture
+
+REQUIREDLIBS = $(EXTENSIONSRC)/lib/libXext.a $(XLIBSRC)/libX11.a $(TOOLKITSRC)/libXt.a
+
+#endif
+   STD_DEFINES = LibraryDefines ExtensionDefines
+
+/**/# Xt used first because the headers should first come from the Xt
+/**/# binding.
+
+           TOP = ../../.. 
+  STD_INCLUDES = -I$(INCLUDESRC)/Xt
+
+INCLUDES = -I$(TOP) -I$(INCLUDESRC) -I$(EXTENSIONSRC)/include \
+	   -I$(EXTENSIONSRC)/include/xtrap -I$(XLIBSRC) \
+           -I$(TOOLKITSRC) -I$(FONTSRC)/include
+SRCS =  XETrapInit.c XEConTxt.c XEWrappers.c XEDsptch.c \
+        XECallBcks.c XEPrInfo.c XERqsts.c chparse.c \
+        XEStrMap.c sleep.c XEKeybCtrl.c 
+OBJS =  XETrapInit.o XEConTxt.o XEWrappers.o XEDsptch.o \
+        XECallBcks.o XEPrInfo.o XERqsts.o chparse.o \
+        XEStrMap.o sleep.o XEKeybCtrl.o 
+LOBJS = XETrapInit.ln XEConTxt.ln XEWrappers.ln XEDsptch.ln \
+        XECallBcks.ln XEPrInfo.ln XERqsts.ln chparse.ln \
+        XEStrMap.ln sleep.ln XEKeybCtrl.ln 
+
+XTRAPREF = $(TOP)/../../xtrapcode/
+
+
+       LINTLIBS = $(LINTXLIB) $(LINTXEXT) $(LINTXTOOL)
+
+LibraryObjectRule()
+
+#if DoSharedLib
+      SOXTRAPREV = SharedXTrapRev
+#if DoNormalLib
+SharedLibraryTarget(XTrap,$(SOXTRAPREV),$(OBJS),shared,..)
+#else
+SharedLibraryTarget(XTrap,$(SOXTRAPREV),$(OBJS),.,.)
+#endif
+InstallSharedLibrary(XTrap,$(SOXTRAPREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+NormalLibraryTarget(XTrap,$(OBJS))
+InstallLibrary(XTrap,$(USRLIBDIR))
+#endif
+#if DoProfileLib
+ProfiledLibraryTarget(XTrap,$(OBJS))
+InstallLibrary(XTrap_p,$(USRLIBDIR))
+#endif
+#if DoDebugLib
+DebuggedLibraryTarget(XTrap,$(OBJS))
+#endif
+
+LintLibraryTarget(XTrap,$(SRCS))
+InstallLintLibrary(XTrap,$(LINTLIBDIR))
+
+
+links:
+	$(RM) Imakefile; \
+	$(LN) $(XTRAPREF)/lib_xtrap.imake_r5 Imakefile; \
+	for i in $(SRCS); do (set -x; $(RM) $$i; $(LN) $(XTRAPREF)/$$i .); done
+
+DependTarget()
+
+NormalLintTarget($(SRCS))
+

@@ -1,0 +1,284 @@
+#!/bin/sh -x   
+#ident	"@(#)postinstall	1.6"
+#  Postinstall script for the LS
+#
+
+HOW_INSTALL=NORMAL
+# The following HOW_INSTALL clauses are order dependent
+
+# We are rebooting after installation if the script
+# /etc/rc2.d/S02POSTINST exists
+[ -f /etc/rc2.d/S02POSTINST ] && {
+	HOW_INSTALL=POSTREBOOT
+}
+
+# We are on the boot floppies if:
+# the script /etc/inst/scripts/postreboot.sh exists 
+[ -f /etc/inst/scripts/postreboot.sh ] && {
+#	HOW_INSTALL=ON_BFLOP
+exit 0
+}
+
+if $SILENT_INSTALL
+then
+	pfmt -s nostd -g ls.pkg:5 "Setting up chosen locales . . .\n"
+fi
+
+## Read in the value of PKGINSTALL_TYPE
+#UPGFILE=/etc/inst/save.user/${PKGINST}.env
+#[ -r "$UPGFILE" ] && . $UPGFILE
+#
+# iconv_data was changed from a regular file in 2.01 to
+# a build script in 2.1.  As is currently stands, after
+# an upgrade, this file will have redundant information in
+# it.  This doesn't break anything, but isn't particularly
+# pretty, either.
+# This space is a place holder for some cleanup logic that
+# should be added for the UPGRADE/UPGRADE2 cases.
+
+ROOT=/
+LSVAR=/var/opt/ls
+ICONV=/usr/lib/iconv
+
+defadm locale LANG="$LOCALE" 2>/dev/null
+
+#
+# system definitions for a locale are in the file
+#    /usr/lib/locale/${LOCALE}/locale_def
+#
+if [ "$LOCALE" != "C" ]
+then
+	LOCALEDEF=/usr/lib/locale/${LOCALE}/locale_def
+else
+# this will allow non-US ASCII keyboards to work properly in the C locale
+	if [ "$KEYBOARD" != "NONE" ]
+	then
+		LOCALEDEF=/usr/lib/locale/en_US/locale_def
+	fi
+fi
+
+if [ ! -z "${LOCALEDEF}" -a -r "${LOCALEDEF}" ]
+
+then
+	. ${LOCALEDEF}
+	if [ "$LOC_MAPCHAN" != "" ]
+	then
+		defadm keyboard MAPCHAN="${LOC_MAPCHAN} " 2>/dev/null
+	else
+		defadm -d keyboard MAPCHAN 2>/dev/null
+	fi
+	if [ "$LOC_TERM" != "" ]
+	then
+		defadm coterm TERM="${LOC_TERM} " 2>/dev/null
+	else
+		defadm coterm TERM="AT386 " 2>/dev/null
+	fi
+	if [ "$LOC_M_TERM" != "" ]
+	then
+		defadm coterm-M TERM="${LOC_M_TERM} " 2>/dev/null
+	else
+		defadm coterm-M TERM="AT386-M " 2>/dev/null
+	fi
+	if [ "$LOC_COFONT" != "" ]
+	then
+		defadm cofont COFONT="${LOC_COFONT} " 2>/dev/null
+	else
+		defadm -d cofont COFONT 2>/dev/null
+	fi
+	#
+	# set MBCONSOLE in coterm if locale requires it.
+	#
+	if [ "$LOC_MBCONSOLE" = "yes" ]
+	then
+		defadm coterm MBCONSOLE="$LOC_MBCONSOLE" 2>/dev/null
+	fi
+
+	if [ "$GRAPHICS" = "YES" ]
+	then
+		if [ "$LOC_XMODIFIERS" != "" ]
+		then
+			defadm Xim XMODIFIERS="$LOC_XMODIFIERS " 2>/dev/null
+		else
+			defadm -d Xim XMODIFIERS 2>/dev/null
+		fi
+
+		if [ "$KEYBOARD" != "NONE" ]
+		then
+		    defadm keyboard XKEYBOARD="$KEYBOARD " 2>/dev/null
+		else
+		    defadm keyboard XKEYBOARD="US " 2>/dev/null
+		fi
+		defadm Xim XNLSPATH="/usr/X/lib/Xsi/\$XKEYBOARD " 2>/dev/null
+		if [ "$LOC_NUMLOCK" != "" ]
+		then
+			defadm keyboard NUMLOCK="$LOC_NUMLOCK " 2>/dev/null
+		else
+			defadm -d keyboard NUMLOCK 2>/dev/null
+		fi
+		if [ "$LOC_SHIFTDOWN" != "" ]
+		then
+			defadm keyboard SHIFTDOWN="$LOC_SHIFTDOWN " 2> /dev/null
+		else
+			defadm -d keyboard SHIFTDOWN 2> /dev/null
+		fi
+
+		XSCONFIG_DIR=/usr/lib/X11/xsconfig
+		if [ -d ${XSCONFIG_DIR} ]
+		then
+			savepwd=`pwd`
+			cd ${XSCONFIG_DIR}
+			if ${XSCONFIG_DIR}/xsconfig.sh $KEYBOARD && [ -f .Xsco.cfg ]
+			then
+				mv ${XSCONFIG_DIR}/.Xsco.cfg /usr/lib/X11
+			else
+				echo "ls: couldn't create .Xsco.cfg"
+			fi
+			cd $savepwd
+		fi
+
+	fi
+	if [ "$LOC_KCODESET" != "" ] && [ "$LOCALE" != "C" -o "$HOW_INSTALL" = "NORMAL" ]
+	then
+		savepwd=`pwd`
+		cd /usr/lib/iconv/kmods/$LOC_KCODESET
+		/etc/conf/bin/idinstall -k -u ccnv
+		/etc/conf/bin/idbuild  -M ccnv 2>&1 > /dev/null
+		cd $savepwd
+	fi
+else
+#
+#  If there is not locale file, 
+#  test for ISO8859x locales and set values otherwise,
+#  make sure things are set to the default
+#
+
+	TESTLOCALE=`echo $LOCALE | cut -f2 -d.`
+	
+	TESTCASE=`echo $TESTLOCALE | cut -f1 -d-`
+
+	if [ "$TESTCASE" = "ISO8859" ]
+	then  
+
+		case  $TESTLOCALE in
+
+		ISO8859-2) 	COFONT_VALUE=8859-2
+				MAPCHAN_VALUE=88592.dk;;
+
+		ISO8859-5)	COFONT_VALUE=8859-5
+				MAPCHAN_VALUE=88591.dk;;
+
+		ISO8859-7)	COFONT_VALUE=8859-7
+				MAPCHAN_VALUE=88597.dk;;
+
+		ISO8859-9)	COFONT_VALUE=8859-9
+				MAPCHAN_VALUE=88599.dk;;
+
+		esac
+
+		defadm keyboard MAPCHAN="/usr/lib/mapchan/$MAPCHAN_VALUE" 2>/dev/null
+		defadm cofont COFONT="$COFONT_VALUE" 2>/dev/null	
+		defadm coterm TERM=AT386-ie 2>/dev/null
+		defadm coterm MBCONSOLE="no" 2>/dev/null
+                defadm coterm-M TERM="AT386-M" 2>/dev/null
+
+                XSCONFIG_DIR=/usr/lib/X11/xsconfig
+                if [ -d ${XSCONFIG_DIR} ]
+                then
+                        savepwd=`pwd`
+                        cd ${XSCONFIG_DIR}
+                        if ${XSCONFIG_DIR}/xsconfig.sh $KEYBOARD && [ -f .Xsco.cfg ]
+                        
+			then
+                                mv ${XSCONFIG_DIR}/.Xsco.cfg /usr/lib/X11
+                        else
+
+                                echo "ls: couldn't create .Xsco.cfg"
+                        fi
+
+                        cd $savepwd
+
+                fi
+
+	
+	else
+
+
+		if [ "$HOW_INSTALL" = "NORMAL" ]
+		then
+			if [ -x /usr/bin/pcfont ] ; then
+				/usr/bin/pcfont > /dev/null 2> /dev/null
+			fi
+			if [ -x /usr/bin/mapkey ] ; then
+				/usr/bin/mapkey > /dev/null 2> /dev/null
+			fi
+				/usr/bin/mapchan -n > /dev/null 2> /dev/null
+			fi
+		defadm  cofont COFONT 2>/mev/null
+		defadm coterm TERM="AT386" 2>/dev/null
+		defadm coterm-M TERM="AT386-M" 2>/dev/null
+
+
+
+
+		defadm -d keyboard KEYBOARD XKEYBOARD SHIFTDOWN MAPCHAN XNLSPATH XMODIFIERS NUMLOCK 2>/dev/null
+		defadm -d Xim XMODIFIERS 2>/dev/null
+
+		fi
+	fi
+
+#
+#  Record what's been configured for the LS
+#  Overwrite what's there.
+#
+
+echo LOCALE=\"$LOCALE\" > $LSVAR/config
+echo KEYBOARD=\"$KEYBOARD\" >> $LSVAR/config
+echo DOALL=\"$DOALL\" >> $LSVAR/config
+echo LANGUAGE=\"$LANGUAGE\" >> $LSVAR/config
+echo TERR=\"$TERR\" >> $LSVAR/config
+echo GRAPHICS=\"$GRAPHICS\" >> $LSVAR/config
+#echo CLASSES=\"$CLASSES\" >> $LSVAR/config
+
+if [ "$GRAPHICS" = "YES" ]
+then
+#
+# Turn on input method for the C locale (so foreign keyboards still work)
+#
+
+
+if [ "$KEYBOARD" != "NONE" ] ; then
+    echo >>/usr/X/lib/locale/C/ol_locale_def "\
+!Next line installed by ls
+*inputMethod:Local"
+fi
+
+#
+# set up fonts
+#
+# fonts.alias is handled through a build script.
+# All that is needed here is to run mkfontdir, if it exists
+#
+if [ "$LANGUAGE" = "ja" -o "$DOALL" = "YES" ]
+then
+    if [ -x /usr/bin/X11/mkfontdir -a -d /usr/lib/X11/fonts/misc ]
+    then
+	/usr/bin/X11/mkfontdir /usr/lib/X11/fonts/misc
+    fi
+fi
+#
+# assign to flist the names of any fonts that we are not installing.
+# font.list is of the form:
+# locale  font_file_pathname
+#
+#flist="`egrep -v \"^#|^${LANGUAGE}[ 	]|^${LANGUAGE}_|^${LANGUAGE}\.[0-9a-zA-Z]*[ 	]|^[^ 	]*_${TERR}[ 	]|^[^	 ]*_${TERR}\.[0-9a-zA-Z]*[ 	]\" $LSVAR/font.list|cut -f2- - | cut -d' ' -f2- - `"
+#
+#  Store packaging info
+#
+fi
+
+
+#
+# All done - exit with correct exit code.
+#
+exit 0
+

@@ -1,0 +1,99 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:24:30
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ *	 Copyright (C) The Santa Cruz Operation, 1991-1998.
+ * 
+ */
+
+/*
+ *	MODIFICATION HISTORY
+ *
+ *	Created June 16, 1995
+ */
+
+#include <Server.tmpl>
+
+SRCS =	milCmap.c milCursor.c milData.c milGC.c \
+	milImage.c milInit.c milScreen.c milWin.c \
+        milClock.c milFillRct.c milGlyph.c milRectOps.c \
+        milFillSp.c milFont.c milVid.c milLine.c milRW.c 
+OBJS =	milCmap.o milCursor.o milData.o milGC.o \
+	milImage.o milInit.o milScreen.o milWin.o \
+        milClock.o milFillRct.o milGlyph.o milRectOps.o \
+        milFillSp.o milFont.o milVid.o milLine.o milRW.o 
+
+    DDXLIBS = libmil.a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -D VOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef SCP_PRODUCT
+NormalLibraryTarget(mil,$(OBJS))
+SharedXDriverTarget(mil,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(mil,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(mil,$(DDXLIBS),milInit.c)
+
+#else
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(mil,$(OBJS))
+LintLibraryTarget(mil,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(mil,libmil.a)
+
+#endif /* USLArchitecture */
+
+/**/#
+/**/#  You may want to change "ports" to the manufacture's name
+/**/#
+
+InstallGrafFile(grafinfo/matrox,milpci.xgi,matrox)
+InstallGrafFile(grafinfo/matrox,milpci.tmpl,matrox)
+InstallGrafFile(grafinfo/sni,milpci.xgi,sni)
+InstallGrafFile(grafinfo/sni,milpci.tmpl,sni)
+InstallNamedNonExec(grafinfo/matrox/milpci.unq,milpci,$(USRLIBDIR)/vidconf/AOF/UNIQUE/matrox)
+InstallNamedNonExec(grafinfo/AOF/milpci,milpci,$(USRLIBDIR)/vidconf/AOF/ID/matrox)
+InstallNamedNonExec(grafinfo/AOF/snimilpci,milpci,$(USRLIBDIR)/vidconf/AOF/ID/sni)
+InstallNamedNonExec(grafinfo/matrox/Settings.milpci.doc,Settings.milpci.doc,$(USRLIBDIR)/grafinfo/matrox)
+InstallMultipleFlags(grafinfo/matrox/milpci,$(USRLIBDIR)/vidconf/scripts,$(INSTBINFLAGS))
+InstallMultipleFlags(grafinfo/sni/snimilpci,$(USRLIBDIR)/vidconf/scripts,$(INSTBINFLAGS))
+
+DependTargetSCP(milInit.c)

@@ -1,0 +1,51 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/cs	1.1.2.13"
+
+if [ ! -d /usr/bin ]
+then			# /usr not mounted
+	exit
+fi
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+USAGE="/etc/init.d/cs { start | stop }"
+
+case "$1" in
+'start')
+	pid=
+	if [ -z "$_AUTOBOOT" ]
+	then
+		set -- `/sbin/ps -e | /usr/bin/egrep ' cs$'`
+		[ $? -eq 0 ] && pid=$1
+	fi
+	if [ "${pid}" = "" ]
+	then
+		/usr/sbin/cs
+	fi
+	;;
+'csstart')
+		/usr/sbin/cs
+	;;
+'stop')
+	if [ -z "$_AUTOKILL" ]	
+	then
+		set -- `/sbin/ps -e | /usr/bin/egrep ' cs$'`
+		[ $? -eq 0 ] && kill -9 $1 2>/dev/null
+	fi
+	;;
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	;;
+esac

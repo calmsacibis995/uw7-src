@@ -1,0 +1,212 @@
+#ident	"@(#)cg:i386/intrinsics	1.17"
+
+
+function alloca(x)::x86
+{
+% mem x
+/ALLOCA
+	movl	%esp,%ecx
+ 	subl	x,%esp
+	andl	$0xfffffffc,%esp
+	movl	%esp,%eax
+	pushl	8(%ecx)
+	pushl	4(%ecx)
+	pushl	(%ecx)
+}
+function memcpy(x,y,z)::x86
+{
+% con z==4; mem x,y
+	movl	x,%eax
+	movl	y,%ecx
+	movl	(%ecx), %edx
+	movl	%edx, (%eax)
+}
+function memset(x,y,z)::x86
+{
+% con y(v),z==4; mem x; lab t
+# Mask off the low order byte of y and replicate it into all four
+# bytes of a full word.
+	.set 	t,[v&0xff]
+	.set	t,t|[t<<8]|[t<<16]|[t<<24]
+	movl	x, %eax
+	movl	$t,(%eax)
+% con y(v),z==8; mem x; lab t
+	.set 	t,[v&0xff]
+	.set	t,t|[t<<8]|[t<<16]|[t<<24]
+	movl	x, %eax
+	movl	$4, %ecx
+	movl	$t, (%eax)
+	addl	%eax, %ecx
+	movl	$t, (%ecx)
+% con y(v),z!%4; mem x; lab t
+	.set 	t,[v&0xff]
+	.set	t,t|[t<<8]|[t<<16]|[t<<24]
+/INTRINSIC
+	movl	%edi,%edx
+	movl	z, %ecx
+	movl	$t,%eax
+	movl	x, %edi
+	shrl	$0x2,%ecx
+	rep;	sstol 
+	movl	%edx,%edi
+	movl	x, %eax
+/INTRINSICEND
+% con z<16; mem x,y
+/INTRINSIC
+	movl	%edi,%edx
+	movl	z, %ecx
+	movl	y,%eax
+	movl	x, %edi
+	rep;	sstob
+	movl	%edx,%edi
+	movl	x, %eax
+/INTRINSICEND
+% con y(v); mem x; ureg z; lab t, l
+	.set 	t,[v&0xff]
+	.set	t,t|[t<<8]|[t<<16]|[t<<24]
+/INTRINSIC
+	movl	%edi,%edx
+	movl	z, %ecx
+	movl	$t,%eax
+	movl	x, %edi
+	shrl	$0x2,%ecx
+	rep;	sstol 
+	movl	%edi,%ecx
+	movl	%edx,%edi
+	movl	z,%edi
+	xchgl	%edi,%ecx
+	andl	$3,%ecx
+	je	l
+	rep;	sstob
+l:
+	movl	%edx,%edi
+	movl	x, %eax
+/INTRINSICEND
+% con y(v); mem x,z; lab t, l
+	.set 	t,[v&0xff]
+	.set	t,t|[t<<8]|[t<<16]|[t<<24]
+/INTRINSIC
+	movl	%edi,%edx
+	movl	z, %ecx
+	movl	$t,%eax
+	movl	x, %edi
+	shrl	$0x2,%ecx
+	rep;	sstol 
+	movl	z,%ecx
+	andl	$3,%ecx
+	je	l
+	rep;	sstob
+l:
+	movl	%edx,%edi
+	movl	x, %eax
+/INTRINSICEND
+}	
+# function abs is valid for all x86 processors in all modes 
+#
+function abs(x)::x86
+{
+% con x<0
+	movl	x,%eax
+	negl	%eax
+% con x>=0
+	movl	x,%eax
+% reg x; lab y
+	movl x,%eax
+	testl %eax,%eax
+	jns  y
+	negl %eax
+y:
+% mem x; lab z
+	movl x,%eax
+	testl %eax,%eax
+	jns  z
+	negl %eax
+z:
+}
+function fabs(x):noieee:x86
+{
+%reg x
+	fabs
+%mem x
+	fldl x
+	fabs
+}
+#
+#
+function sqrt(x):noieee:x86
+{
+%reg x
+	fsqrt
+%mem x
+	fldl x
+	fsqrt
+}
+#
+#
+function exp(x):noieee:x86
+{
+%reg x
+	fldl
+	fld1	
+	fldl2e	
+	fmul	%st(2),%st
+	fst	%st(2)
+	fprem	
+	f2xm1	
+	fadd	
+	fscale	
+	fstp	%st(1)
+%mem x
+	fldl	x
+	fld1	
+	fldl2e	
+	fmul	%st(2),%st
+	fst	%st(2)
+	fprem	
+	f2xm1	
+	fadd	
+	fscale	
+	fstp	%st(1)
+}
+function log(x):noieee:x86
+{
+%reg x
+        fldln2
+        fldl   
+        fyl2x
+%mem x
+        fldln2
+        fldl    x
+        fyl2x
+}
+#
+# Following Trignometric functions valid on all x86 processors only in noieee
+#
+function atan(x):noieee:x86
+{
+%reg x
+        fldl
+        fld1
+        fpatan
+%mem x
+        fldl	x
+        fld1
+        fpatan
+}
+function cos(x):noieee:x86
+{
+%reg x
+	fcos
+%mem x
+	fldl x
+	fcos
+}
+
+function sin(x):noieee:x86
+{
+%reg x
+	fsin
+%mem x
+	fldl x
+	fsin
+}

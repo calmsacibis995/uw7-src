@@ -1,0 +1,110 @@
+#ident	"@(#)ccsdemos:thr_demos/life_qsort/README	1.1"
+This directory contains two threads demo programs: the game of life program,
+and quicksort. Each program has a process version and a multithreaded version.
+See the README files and source code under life and quicksort directories for
+descriptions on the algorithms used in these programs and how to invoke
+them on command line.
+
+A graphics interface is also provided to visually display the 
+performance improvement of multithreaded programs.  YOU MUST HAVE WKSH
+AND ASSOCIATED GRAPHICS LIBRARIES IN ORDER TO RUN THESE PROGRAMS.
+
+The source code is structured as follows:
+	- life/life.c is the multithreaded life program.
+	- life/plife.c is the single (traditional) process version of the life
+	  program.
+	- quicksort/quicksort.c implements the multithreaded quicksort algorithm
+	- quicksort/qsort.c is identical to quicksort.c except that
+	  when invoked from the graphics interface, the number of threads
+	  and the number of LWP are set to one to mimic the sequential
+	  quicksort.
+	- demo.w is the wksh script that deals with the visuals.
+	- pipslp.c is a daemon kicked off in background to hold open
+          the FIFO used for IPC between the demo programs
+          (sending iteration timings) and the wksh script (reading
+          and moving gauges).
+
+The graphics interface has three components: a set of control buttons
+to select demo programs, to set desired options and to run/stop demos;
+some property windows to display the options passed to the demo chosen;
+two gauges, one for the process version and one for the multithreaded
+version, to display the time spent in each run.
+
+Various options can be passed to these demo programs.  
+The number of LWPs, number of threads,
+and binding of threads to LWPS are supported for the threaded version.
+The number of iterations through life or quicksort (mainly used to get an
+average time measurement of several runs), the gridsize (arraysize for
+quicksort) used, and the scaling factor are supported for both process and 
+threaded versions.  There is also a bind to processor property.  It is currently
+not implemented, but it shows up on the menu.  If selected, it does
+nothing except pass appropriate arguments to the demo programs.
+
+The scaling factor affects the numbers generated.  As the gauges
+require the numbers to be between 0-100, the scaling factor simply
+divides the clock-ticks into a number that fits.  On different speed
+systems, you may need to adjust this accordingly. (warning: if 
+this factor is not properly set, and the numbers sent to the gauges
+are greater than 100, they are truncated to 100)
+
+Output of the gauges are:
+  The running average of all iterations from the current running
+    instance of the demo program is shown at top.
+  The number on side of gauge, and gauge movement, are driven from
+    each iteration timing sent over FIFO.  Note that the threaded
+    program sends the negative of its timing so the script can tell
+    which gauge to drive.
+  Also output is the speed factor of the thread version compared with
+    the process version.  For example, 1.5 says threaded version runs
+    150% faster than process version, .5 says that threaded version is
+    50% of process version (slower in this case.)
+
+
+Before running the demo, please make sure that you are in an X-window 
+session and the window manager is running.  If DISPLAY, LD_LIBRARY_PATH,
+and TERM are not set up automatically when you started the X session,
+set them up properly as follows:
+
+	TERM=xterm
+	DISPLAY=[xterm_name]:0.0
+	LD_LIBRARY_PATH=/usr/X/lib
+
+in addition, if $ROOT points to the life_qsort directory
+
+	PATH=$PATH:$ROOT/life:$ROOT/quicksort:$ROOT
+
+then
+
+	export TERM DISPLAY LD_LIBRARY_PATH PATH
+
+Logging in as a graphics user will usually ensure these variables are set.
+Also make sure that the wksh package is installed.
+
+To compile the demo programs and run the wksh script, enter the 
+following commands:
+
+	MAKEALL
+	wksh demo.w
+
+A demo window will show up on your screen at this point.  To select a
+demo program to run(default is life), click on the 'choose demo' button.
+A small window will pop up, choose the demo you want by first clicking in 
+the check box next to the name of the desired program, then clicking the
+'Apply' button. Clicking on the 'Reset' button will undo any change made
+before the 'Apply' button is pressed. The 'resetFactory' option is used
+to reset to the default settings.  To run/stop the 
+multithreaded/process version of the demo program, click on the 
+corresponding menu button in the window.  To quit the demo, click on
+the 'quit demo' button.  This will close the demo window and kill the
+associated processes.
+
+The number of threads or LWPs, the gridsize/arraysize, 
+the number of iterations, and the scaling factor
+can be changed by first double clicking in the labelled
+windows, then typing in the desired numbers. The initial 
+values shown are the default set ups for the demo programs.
+Click on the 'Apply Vals' button after making all the changes.  The invocation
+of the chosen demo programs thereafter will reflect these changes.
+The binding property of threads can be changed by clicking on the 'Properties'
+button first, then selecting the correct option in the pop up window.
+

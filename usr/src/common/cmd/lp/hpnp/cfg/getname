@@ -1,0 +1,197 @@
+#!/bin/ksh
+#ident	"@(#)getname	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  Call this program as "getname option-name default-peripheral-name"
+
+OPTION=$1
+DEFAULT=$2
+
+while [ 0 ] 
+do
+  echo ""
+  if [ -n "$DEFAULT" ]
+  then
+    if [ "$OPTION" = "option4" -o "$OPTION" = "option5" ]
+    then
+      echo "Enter the network peripheral name or IP address (default=$DEFAULT): $NL"
+    else
+      echo "Enter the network peripheral name (default=$DEFAULT): $NL"
+    fi
+  else
+    if [ "$OPTION" = "option4" -o "$OPTION" = "option5" ]
+    then
+      echo "Enter the network peripheral name or IP address: $NL"
+    else
+      echo "Enter the network peripheral name: $NL"
+    fi
+  fi
+  read -r PNAME
+  if [ "$PNAME" = "q" ]
+  then
+    exit 1
+  fi
+  if [ -z "$PNAME" ]
+  then
+    PNAME="$DEFAULT"
+  fi
+  if [ -z "$PNAME" ]
+  then
+    continue
+  fi
+  if [ "$PNAME" = "?" ]
+  then
+      case $OPTION in
+	option2)
+          echo ""
+          echo "The peripheral name is used by various services to contact the"
+          echo "network peripheral.  The peripheral name can be a short name"
+          echo "like \"picasso\" or a domain name like \"picasso.light.com\"."
+          echo "The domain is not required for the HP network peripheral to"
+          echo "operate in a domain naming environment since it does not make"
+          echo "any DNS (Domain Name System) lookups."
+          echo ""
+          echo "The name must begin with a letter, and must be terminated with"
+          echo "either a letter or a number.  Other characters in the name are"
+          echo "limited to letters, numbers, periods, and hyphens.  The name"
+	  echo "is limited to 32 characters."
+	  ;;
+	option4)
+	  echo ""
+	  echo "The peripheral named will be sent five \"echo\" packets by the"
+	  echo "ping utility.  This is a low level network test that tests if"
+	  echo "the peripheral is responding to its IP address."
+	  echo ""
+	  echo "If this test passes, the next step is to test the network"
+	  echo "peripheral operation by sending a file to the peripheral."
+	  echo ""
+	  echo "If this test fails, the problem must be diagnosed before further"
+	  echo "tests are made."
+	  ;;
+	option5)
+	  echo ""
+	  echo "The peripheral named will have a file sent to it over the"
+	  echo "network.  The spooler is not involved in the file transfer."
+	  echo "Sending the peripheral a file without involving the spooler"
+	  echo "shows that the system is working so far and gives us confidence"
+	  echo "that everything should work after configuring the spooler."
+	  echo ""
+	  echo "If this test passes, the next step is to configure the spooler"
+	  echo "to transfer printjobs over the network."
+	  echo ""
+	  echo "If this test fails, the problem must be diagnosed before"
+	  echo "configuring the spooler."
+	  ;;
+	option6hp)
+	  echo ""
+	  echo "The lp spooler destination name can be different from the network"
+	  echo "peripheral name.  The lp spooler destination name is the name used"
+	  echo "with the -d option of the \"lp\" command.  The network peripheral"
+	  echo "name is the name entered in /etc/hosts, NIS (Network Information"
+	  echo "Service), or DNS (Domain Name System.)"
+	  ;;
+	option6sun)
+	  echo ""
+	  echo "The lpr printer name can be different from the network peripheral"
+	  echo "name.  The lpr printer name is the name used with the -P option"
+	  echo "of the \"lpr\" command.  The network peripheral name is the"
+	  echo "name entered in /etc/hosts, NIS (Network Information Service),"
+	  echo "or DNS (Domain Name System.)"
+	  ;;
+	option7)
+	  echo ""
+	  echo "The $BOOTPTAB entry for this peripheral will be removed."
+	  echo "If there is a configuration file, it is removed also."
+	  ;;
+      esac
+      echo ""
+      $QUITHELP
+      continue
+  fi
+
+  case $OPTION in
+    option2)
+      #
+      # Verify that the name fits the requirements.  Some versions of
+      # /etc/bootpd do not allow the name to start with a digit although
+      # it is legal.  The network peripheral only stores 32 characters 
+      # for the name.  Arguably, we could allow a longer name here, but it
+      # would be truncated at the peripheral anyway.
+      #
+      echo $PNAME | grep '^[a-zA-Z][a-zA-Z0-9\.-]*[a-zA-Z0-9]$' > /dev/null
+      FAILED=$?
+      if [ $FAILED -eq 0 ]
+      then
+        LENGTH=`expr $PNAME : '.*'`
+        if [ $LENGTH -gt 32 ]
+        then
+	  FAILED=1
+        fi
+      fi
+      if [ $FAILED -ne 0 ]
+      then
+        echo ""
+        echo "$PNAME is an invalid name."
+        echo ""
+        echo "The names must begin with a letter, and must be terminated with"
+        echo "either a letter or a number.  Other characters in the name are"
+        echo "limited to letters, numbers, periods, and hyphens.  The name"
+        echo "is limited to 32 characters."
+      else
+        break
+      fi
+      ;;
+    option4|option5)
+      LOOKUPPNAME="`gethostaddr $PNAME`"
+      if [ -z "$LOOKUPPNAME" ]
+      then
+	echo ""
+	echo "$PNAME: unknown peripheral"
+	echo ""
+	echo "The IP address was not found for this name.  Enter the name in"
+	echo "/etc/hosts, NIS (Network Information Service), or DNS (Domain"
+	echo "Name System) and try this test again.  An IP address can be given"
+	echo "at the prompt for this test instead of a name although the name"
+	echo "must still be entered /etc/hosts, NIS, or DNS before configuring"
+	echo "the spooler."
+	echo ""
+	$QUITHELP
+      else
+        break
+      fi
+      ;;
+    option6hp|option6sun)
+      LOOKUPPNAME="`gethostaddr $PNAME`"
+      if [ -z "$LOOKUPPNAME" ]
+      then
+	echo ""
+	echo "*****************************************************************"
+	echo "$PNAME: unknown peripheral"
+	echo ""
+	echo "The IP address was not found for this name.  Enter the name in"
+	echo "/etc/hosts, NIS (Network Information Service), or DNS (Domain"
+	echo "Name System) before attempting to use this peripheral through"
+	echo "the spooler."
+	echo "*****************************************************************"
+      fi
+      break
+      ;;
+    *) break ;;
+  esac
+done
+
+echo $PNAME > "$TMP/NAME"
+exit 0

@@ -1,0 +1,115 @@
+#ident	"@(#)upgrade:i386/cmd/upgrade/diffs/etc/profile	1.5.2.1"
+#ident	"$Header$"
+
+trap "" 1 2 3
+umask 022	# set default file creation mask
+export LOGNAME
+
+eval `defadm locale LANG`
+export LANG
+. /etc/TIMEZONE
+
+case "$0" in
+-jsh | -ksh | -rsh | -sh)
+# issue message of the day
+	trap : 1 2 3
+	echo ""		# skip a line
+	if [ -s /etc/motd ] ; then cat /etc/motd; fi
+
+	trap "" 1 2 3
+# set default attributes for terminal
+	stty erase '^h' echoe
+
+	# check if it is an at386
+	/usr/sbin/isat386
+	if [ $? = 0 ]
+	then
+		# it is an at386, check for color
+		/usr/sbin/adpt_type
+		if [ $? = 3 ]	# VGA color?
+		then
+			eval `defadm coterm TERM`
+			eval `defadm coterm MBCONSOLE 2>/dev/null`
+			# work around Dell Fastwrite VGA
+			# problem -- force text mode
+			# to color 80x25
+			# However, in multibyte console mode,
+			# this is not needed.
+			if [ -z "$MBCONSOLE" -o "$MBCONSOLE" != "yes" ]
+			then
+				stty VGA_C80x25 1>/dev/null 2>/dev/null
+			fi
+		else
+			eval `defadm coterm-M TERM`
+		fi
+	fi
+
+	if [ "$TERMCAP" = "" ]
+	then TERMCAP=/etc/termcap
+	fi
+	export TERM TERMCAP
+
+# check mailbox and news bulletins
+	mailcheck 2>/dev/null
+	if [ $LOGNAME != root -a -d /var/news ]
+	then news -n
+	fi
+#	Uncomment this script if you wish to use secure RPC facility
+#
+#	ps -e | grep rpcbind 1>/dev/null
+#	if [ $? = 0 ] 
+#	then
+#		ps -e | grep keyserv 1>/dev/null
+#		if [ $? = 0 ] 
+#		then
+#			echo "Please login to the network"
+#			/usr/bin/keylogin
+#		else
+#			echo `date`: "secure rpc nonfunctional; keyserv is down" >>/var/adm/log/rpc.log
+#		fi
+#	else
+#		echo `date`: "secure rpc nonfunctional; rpcbind is down" >>/var/adm/log/rpc.log
+#	fi
+#	
+	;;
+-su)
+	:
+#	Uncomment this script if you wish to use secure RPC facility
+#
+#	ps -e | grep rpcbind 1>/dev/null
+#	if [ $? = 0 ] 
+#	then
+#		ps -e | grep keyserv 1>/dev/null
+#		if [ $? = 0 ] 
+#		then
+#			echo "Please login to the network"
+#			/usr/bin/keylogin
+#		else
+#			echo `date`: "secure rpc nonfunctional; keyserv is down" >>/var/adm/log/rpc.log
+#		fi
+#	else
+#		echo `date`: "secure rpc nonfunctional; rpcbind is down" >>/var/adm/log/rpc.log
+#	fi
+#	
+	;;
+esac
+export PATH;
+eval `defadm keyboard 2> /dev/null`
+export KEYBOARD XKEYBOARD NUMLOCK MAPCHAN SHIFTDOWN
+eval `defadm Xim 2> /dev/null`
+export XNLSPATH XMODIFIERS
+test -x /usr/bin/tty &&
+case "`/usr/bin/tty`" in
+/dev/console) 
+	[ ! -z "$MAPCHAN" ] && /usr/bin/mapchan -f $MAPCHAN
+	stty -istrip cs8
+	;;
+/dev/pts*)
+	stty -istrip cs8
+	;;
+esac
+if [ ! -r $HOME/.UpgradeVer`uname -v` ] && [ -x /usr/sbin/pkginst/upuser ]
+then
+	/usr/sbin/pkginst/upuser
+fi
+trap 1 2 3

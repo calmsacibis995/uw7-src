@@ -1,0 +1,167 @@
+#!/sbin/sh
+#ident	"@(#)listen.setup	1.3"
+#ident 	"$Header$"
+
+#script will set up a SVR4.2 listener and its uucp access points
+#exit codes:
+#0	all worked
+#1	usage or uname -n was not found in /etc/hosts by nametoaddr (OBSOLETE)
+#2	somehow listener database was not configurable
+#3	though listener is ok, an error happened to uucico set up
+#	and some uucp set up will not be attempted
+#4	though listener AND uucico are ok, an error happened.
+#	we will continue to try the rest of set up.
+RET_CODE=0	#hopefully never changes
+
+#
+#  This function gets passed the name of a file.  What it then does is
+#  collapse together any non-commented (#) lines that are continued by
+#  use of a backslash (\).  This makes it very easy to run sed on these
+#  lines later, without worrying about multiple line entries.
+#
+collapse()
+{
+	INFILE=$1
+	cp ${INFILE} /tmp/tmpsed
+	while (grep '^[^#].*\\$' /tmp/tmpsed)
+	do
+		ed - /tmp/tmpsed <<!
+/^[^#].*\\\\$
+s/\\\\//
+j
+w
+q
+!
+	done
+
+	cp /tmp/tmpsed ${INFILE}
+	rm -f /tmp/tmpsed 2>/dev/null
+}
+
+#we now configure the listener at the "wildcard" address
+#rather than at the machine's primary interface address.
+ADDR="00000000"
+
+# The following ( ) shell scripts are to capture WARNING
+# messages resulting from installing the package
+# in Maintenance mode (aka init S) when the sac
+# program is not running or has never yet been run.
+# The database files are correctly updated when these
+# error numbers are received, the messages usually read:
+#
+# warning - could not ascertain sac status
+# warning - port monitor, tcp is not running
+# 
+# use sacadm for -m inet/tcp0 option for uucp use
+# of subdevices
+
+ERR_LOG=/tmp/listen.err
+> ${ERR_LOG}
+
+#
+#  Always remove and add service for nlps
+#
+/usr/sbin/pmadm -r -s 0 -p tcp 2>/dev/null
+/usr/sbin/pmadm -a -p tcp -s 0 \
+	-i root -v `/usr/sbin/nlsadmin -V` \
+	-m `/usr/sbin/nlsadmin -c /usr/lib/saf/nlps_server \
+	-A \\\x10020ACE${ADDR}0000000000000000 2>/dev/null` 2>/dev/null
+PMRET=$?
+[ "${PMRET}" != "0" -a "${PMRET}" != "10" ] && {
+	echo "pmadm -a -p tcp failed (svc 0) - returned ${PMRET}" \
+		>>${ERR_LOG}
+	RET_CODE=2
+}
+
+#
+#  the consolidation of the netcmds pkg into nsu lp and cmd-inet requires
+#  our always setting up the lp/lpd.  Up and over means we delete and
+#  add every time to track the current ip address.
+#
+pmadm -r -p tcp -s lp > /dev/null 2>&1
+pmadm -a -p tcp -s lp -i root -v `nlsadmin -V` -m `nlsadmin -o /var/spool/lp/fifos/listenS5 2>/dev/null` > /dev/null 2>&1
+
+pmadm -r -p tcp -s lpd > /dev/null 2>&1
+pmadm -a -p tcp -s lpd -i root -v `nlsadmin -V` -m `nlsadmin -o /var/spool/lp/fifos/listenBSD -A "\x10020203${ADDR}0000000000000000" 2>/dev/null` > /dev/null 2>&1
+
+#
+#  uucico service - remove it and replace it
+#
+/usr/sbin/pmadm -r -s 10103 -p tcp 2>/dev/null
+/usr/sbin/pmadm -a -p tcp -s 10103 -i nuucp -m "`/usr/sbin/nlsadmin -c \"/usr/lib/uucp/uucico -r 0 -u nuucp -i TLI\" 2>/dev/null`" -v `/usr/sbin/nlsadmin -V` -y "uucp" 2>/dev/null
+PMRET=$?
+[ "${PMRET}" != "0" ] && {
+	echo "pmadm -a -p tcp failed (svc 10103, uucico) - returned ${PMRET}" \
+		>>${ERR_LOG}
+	RET_CODE=3
+}
+
+#
+#  cu service - remove it and replace it
+#
+/usr/sbin/pmadm -r -s cu -p tcp 2>/dev/null
+/usr/sbin/pmadm -a -p tcp -s cu -i root -m "`/usr/sbin/nlsadmin -c \"/usr/lib/saf/ttymon -g -h -m ntty,tirdwr,ldterm\" 2>/dev/null`" -v `/usr/sbin/nlsadmin -V` -fu -y"cu" 2>/dev/null
+PMRET=$?
+[ "${PMRET}" != "0" ] && {
+	echo "pmadm -a -p tcp failed (svc cu) - returned ${PMRET}" \
+		>>${ERR_LOG}
+	RET_CODE=4
+}
+
+#
+#  Delete TcpCico10103 line if it exists, and then
+#  add TcpCico line to Devices.tcp for uucp device
+#
+collapse /etc/uucp/Devices.tcp >/dev/null 2>&1
+sed -e "/^TcpCico10103/d" /etc/uucp/Devices.tcp > /tmp/Devices.tcp 2>/dev/null
+cp /tmp/Devices.tcp /etc/uucp/Devices.tcp 2>/dev/null
+echo "TcpCico10103,eg tcp - - TLI \D nls.uucico" >> /etc/uucp/Devices.tcp
+PMRET=$?
+[ ${PMRET} -ne 0 ] && {
+	echo "adding TcpCico10103 to /etc/uucp/Devices.tcp returned ${PMRET}" \
+		>>${ERR_LOG}
+	RET_CODE=4
+	/usr/sbin/installf inet /etc/uucp/Devices.tcp v 0644 uucp uucp 1 NULL NULL >/dev/null 2>&1
+}
+
+#
+#  Check to see if uucico is set up.  If not, set it up.  If it is
+#  set up, force Systems.tcp and Devices.tcp to be the first entries.
+#
+collapse /etc/uucp/Sysfiles >/dev/null 2>&1
+/usr/bin/grep '^[^#]*service=uucico[ 	]*systems=[^#]*Systems.tcp' \
+	/etc/uucp/Sysfiles >/dev/null 2>&1
+if [ $? -ne 0 ]
+then
+	echo "service=uucico  systems=Systems.tcp:Systems \
+		devices=Devices.tcp:Devices" >> /etc/uucp/Sysfiles
+	[ $? -ne 0 ] && {
+		echo "didn't create /etc/uucp/Sysfiles" >>${ERR_LOG}
+		RET_CODE=4
+	}
+else
+	PAT1="/^\([^#]*service=uucico\)/s/Systems.tcp://"
+	PAT2="/^\([^#]*service=uucico\)/s/:Systems.tcp//"
+	PAT3="/^\([^#]*service=uucico\)/s/Devices.tcp://"
+	PAT4="/^\([^#]*service=uucico\)/s/:Devices.tcp//"
+	PAT5="/^\([^#]*service=uucico\)/s/systems=/systems=Systems.tcp:/"
+	PAT6="/^\([^#]*service=uucico\)/s/devices=/devices=Devices.tcp:/"
+
+	#
+	#  Force Systems.tcp and Dialers.tcp to be the first relevant
+	#  entries by removing them forcibly and putting them in the
+	#  right place.
+	#
+	sed -e "${PAT1}" -e "${PAT2}" -e "${PAT3}" -e "${PAT4}" \
+		< /etc/uucp/Sysfiles > /tmp/Sysfiles 2>/dev/null
+
+	sed -e "${PAT5}" -e "${PAT6}" \
+		< /tmp/Sysfiles > /etc/uucp/Sysfiles 2>/dev/null
+
+	rm -f /tmp/Sysfiles
+fi
+
+if [ "noinstallf" != "$1" ]
+then	/usr/sbin/installf -f inet &
+fi
+exit $RET_CODE

@@ -1,0 +1,79 @@
+#
+#	@(#) Imakefile 11.1 97/10/22 
+#
+# Modification History
+#
+#	S000, 11-Jun-91, staceyc@sco.com
+#		Fixed include flags.
+#	S001, 18-Jun-91, buckm@sco.com
+#		Get rid of scoVGA.c.
+#	S002, 22-Jul-91, mikep@sco.com
+#		Remove scoUtils.c
+#	S003, 13-Mar-92, mikep@sco.com
+#		Add include path for R5 fonts
+#	S004, 02-Sep-92, hiramc@sco.COM
+#		Remove scoKeyMap, it is an empty source file
+#	S005, 05-Nov-92, chrissc@sco.COM
+#		added DEFINES line to include connections mechanisms.
+#		this is for AT&T pseudo tty support.
+#       S006, Tue Jul  2 01:30:35 GMT 1996, kylec@sco.COM
+#               Use #ifdef USLArchitecture
+#
+
+
+#include <Server.tmpl>
+
+#ifdef USLArchitecture
+SRCS1 = scoInit.c scoCursor.c scoIo.c scoKbd.c scoMouse.c io386.s \
+	scoScrSw.c scoConfig.c scoScreen.c scoPopUp.c scoEvents.c \
+	stubs.c
+
+OBJS = scoInit.o scoCursor.o scoIo.o scoKbd.o scoMouse.o io386.o \
+	scoScrSw.o scoConfig.o scoScreen.o scoPopUp.o scoEvents.o \
+	stubs.o
+#else
+SRCS1 = mouse.c scoInit.c scoCursor.c scoIo.c scoKbd.c scoMouse.c io386.s \
+	scoScrSw.c scoConfig.c scoScreen.c scoPopUp.c scoMerge.c \
+	scoXTest1.c stubs.c
+
+OBJS = mouse.o scoInit.o scoCursor.o scoIo.o scoKbd.o scoMouse.o io386.o \
+	scoScrSw.o scoConfig.o scoScreen.o scoPopUp.o scoMerge.o \
+	scoXTest1.o stubs.o
+#endif
+
+SRCS =	$(SRCS1) 
+
+OFILES = scoInit.o
+
+   AS = as
+   INCLUDES = -I. -I$(SERVERSRC)/include -I../include -I$(INCLUDESRC) \
+-I$(SERVERSRC)/mi -I$(FONTINCSRC)
+   DEFINES = ConnectionFlags $(OS_DEFINES) $(DESDEFS) $(EXT_DEFINES) \
+-DLIBDIR=\"$(LIBDIR)\"
+
+
+NormalLibraryObjectRule()
+
+all:: $(OFILES) 
+
+lintlib:
+
+NormalLibraryTarget(mit,$(OBJS))
+NormalLintTarget($(SRCS1))
+InstallManPage(Xsco,$(MANDIR))
+
+LinkFileList(includes,sco.h scoext.h scoIo.h scoOs.h xsrv_msgcat.h,../../../include,../hw/sco/mit)
+
+includes::
+	MakeDir(../../../include/sys)
+
+LinkFileList(includes,console.h,../../../include/sys,../../hw/sco/mit)
+
+NamesFromLibrary(mit,mit)
+
+DependTarget()
+
+HDK_HEADERS = sco.h scoext.h scoIo.h scoOs.h xsrv_msgcat.h
+InstallHDKMultiple($(HDK_HEADERS),$(HDKSERVERDIR)/include)
+InstallHDKLibrary(mit,$(HDKSERVERLIBDIR))
+InstallHDKNamedNonExec(scoInit.o,scoInit.o,$(HDKSERVERLIBDIR))

@@ -1,0 +1,74 @@
+#!/sbin/sh
+#ident	"@(#)usermodU	1.2"
+
+# This script is called by the usermod command and searches for all 
+# files belonging to <logname> and changes the owner of those files 
+# to <newuid>, which is the new uid that <logname> will have after 
+# usermod completes.  The search paths are based on variables specified
+# in /etc/default/usermod and, possibly, /etc/default/useradd.
+#
+# Two variables, LOCAL_PATH and REMOTE_PATH identify files and directories
+# to be examined.  These variables consist of colon-separated paths.  All
+# paths specified by LOCAL_PATH are followed only on the local machine;
+# paths specified by REMOTE_PATH are followed to remote machines.
+#
+# This script substitutes <logname> for instances of "{login}" found at
+# the end of a path.
+
+#check usage
+if [ "X$1" = "X" -o "X$2" = "X" -o "X$3" = "X" ]
+then
+	echo "usage:  $0 <logname> <olduid> <newuid> <homedir>"
+	exit 1
+fi
+
+#get environment variable values
+. /etc/default/useradd
+. /etc/default/usermod
+LOGNAMEVAR={login}
+LOGNAMESTR=$1
+OLDUID=$2
+NEWUID=$3
+REALHOMEDIR=$4
+
+#search specified directories and chown files belonging to the user
+LOCAL=-local
+for SEARCHPATH in $LOCAL_PATH $REMOTE_PATH
+do
+	SEARCHDIRS=$SEARCHPATH
+	while true
+	do
+		if [ "X$SEARCHDIRS" = "X" ]
+		then
+			break
+		fi
+		LOCATION=`echo $SEARCHDIRS | cut -f1 -d":"`
+		if [ "X$LOCATION" != "X" ]
+		then
+			if [ "$LOCATION" = "$HOMEPATH" ]
+			then
+				# we can get the real home directory from
+				# usermod, so why assume it's in $HOMEPATH?
+				TARGET=$REALHOMEDIR
+			else
+				# if $LOGNAMEVAR is at the end of the path,
+				# convert it to $LOGNAMESTR
+				BASE=`basename $LOCATION`
+				if [ "$BASE" = "$LOGNAMEVAR" ]
+				then
+					DIR=`dirname $LOCATION`
+					TARGET=${DIR}/$LOGNAMESTR
+				else
+					TARGET=$LOCATION
+				fi 
+			fi
+			find $TARGET -user $LOGNAMESTR $LOCAL -print \
+			  2>/dev/null | xargs chown -h $NEWUID 2>/dev/null
+		fi
+		SEARCHDIRS=`echo $SEARCHDIRS | cut -f2- -d":" -s`
+	done
+
+	# turn off local search for the second iteration
+	LOCAL=
+done
+exit 0

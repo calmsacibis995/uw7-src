@@ -1,0 +1,180 @@
+/*
+ *	@(#)Imakefile	11.1	10/22/97	11:58:27
+ *	@(#)Imakefile	6.4	12/15/95	08:31:21
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1993.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ *	SCO MODIFICATION HISTORY
+ *
+ * S016, Wed Aug  6 15:26:06 PDT 1997, hiramc@sco.COM
+ *	Properly use CC to make globals.o - not the system's cc
+ * S015, Thu Jul 11 01:59:55 GMT 1996, kylec@sco.com
+ *      Add DEFINES for DYNADDXDIR, DYEXTCONFIG, and XLIBDIR.
+ * S014, 16-Nov-94, hiramc
+ *      Remove Special SpecialFlagsObjectRule(ddxArgs, NullParameter)
+ *      for ddxArgs, ddxLoad, ddxMisc, ddxOutput, dyddxload, dynamicScr,
+ *      staticScr and globStub for BL10 build
+ * S013, 08-Nov-94, davidw
+ *	rcc is gone.  Use cc -Xt + use a relative define name.
+ * S012, 17-Sep-93, mikep
+ *	Add dynamic loading of extensions
+ * S011, 14-Aug-93, mikep
+ *	use _FONTSRC_ variable to find font source
+ * S010, 20-Apr-93, staceyc
+ * 	deal with compiler gagging on too many -Dsymbol's on command line
+ *	also clean up header for sccs tools
+ * S009, 19-Dec-92, mikep
+ *	There's an optimization bug in this directory somewhere.  
+ *	It shows up by lack of a root tile on EFF drivers. Use a hammer
+ *	to stop it for now.
+ * S008, 18-Dec-92, davidw
+ * 	added SPecialFlagsObjectRule() for all .c's cause compiler
+ *	only allows about 25 -Ddefines and there were 26. 
+ * S007, 13-Oct-92, mikep
+ *	generate globals.c on the fly
+ * S006, 31-Aug-92, mikep
+ *	replace statStub.c with dynamicScr.c
+ * S005, 25-Aug-91, mikep
+ *	make staticScr.o depend upon ports.def
+ * S004, 25-Aug-91, mikep
+ *	Added staticScr.c
+ * S003, 19-Aug-91, pavelr
+ *          Put in rule for globals.o
+ * S002, 11-Jun-91, mikep
+ *	Added ddxOutput.c
+ * S001, 21-Feb-91, mikep
+ *	put it back
+ *	added Server.tmpl
+ * S000, 20-Feb-91, hiramc
+ *	remove ddxLoad.c from the SRCS list as it won't
+ *	compile without a bunch of special SGI include
+ *	files in the SGI OS
+ */
+
+#include <Server.tmpl>
+#include <ports.def>
+
+#ifndef HDKArchitecture
+
+SRCS =  \
+	ddxArgs.c \
+	ddxLoad.c \
+	ddxMisc.c \
+	ddxOutput.c \
+	dyddxload.c \
+	dynamicExt.c \
+	dynamicScr.c
+
+OBJS = $(SRCS:.c=.o)
+#endif /* HDKArchitecture */
+
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/include -I../include -I$(INCLUDESRC)
+
+   NAMEFILES = \
+$(SERVERSRC)/cfb/names.cfb \
+$(SERVERSRC)/cfb16/names.cfb16 \
+$(SERVERSRC)/cfb32/names.cfb32 \
+$(SERVERSRC)/dix/names.dix \
+$(SERVERSRC)/hw/sco/nfb/names.nfb \
+$(SERVERSRC)/mfb/names.mfb \
+$(SERVERSRC)/mi/names.mi \
+$(SERVERSRC)/os/names.os \
+$(SERVERSRC)/hw/sco/dyddx/names.dyddx \
+$(SERVERSRC)/hw/sco/grafinfo/names.grafinfo \
+$(SERVERSRC)/hw/sco/mit/names.mit \
+$(SERVERSRC)/hw/sco/mit/libs/names.libs \
+$(SERVERSRC)/hw/sco/ports/gen/names.gen \
+$(LIBSRC)/font/names.font
+
+DEFINES = -DDYNADDXDIR=\"$(LIBDIR)/dyddx\" -DDYEXTCONFIG=\"$(LIBDIR)/dyddx/extensions.cf\" \
+          -DXLIBDIR=\"$(LIBDIR)\"
+
+#ifndef HDKArchitecture
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(dyddx,$(OBJS))
+ProfiledLibraryTarget(dyddx,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(dyddx,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(dyddx,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(dyddx,$(OBJS))
+
+LintLibraryTarget(dyddx,$(SRCS))
+NormalLintTarget($(SRCS))
+
+NamesFromLibrary(dyddx,dyddx)
+
+globals.c: $(NAMEFILES)
+	rm -f globals.c
+	sh mkglobals.sh
+
+globals.o: globals.c dyddx.h
+	$(CC) -Xt -c -DGLOBALSFILE globals.c
+
+#endif /* HDKArchitecture */
+
+staticStub.o: staticStub.c staticStub.h
+
+staticStub: staticStub.o
+	$(CC) $(CFLAGS) staticStub.o -o staticStub
+
+staticStub.h: $(CONFIGSRC)/cf/ports.def Imakefile
+	rm -f staticStub.h staticScr.h staticScr.o
+	egrep -e '[ 	]-D' $(CONFIGSRC)/cf/ports.def \
+	    | sed -e 's/StaticScreens[	 ]/StaticScreens "/' \
+	          -e 's/STATIC_XXX/STATIC_XXX"/' > staticStub.h
+
+staticScr.h: staticStub
+	./staticStub > staticScr.h
+
+staticScr.c: staticScr.h
+
+staticScr.o: staticScr.c $(CONFIGSRC)/cf/ports.def Imakefile
+
+dynamicScr.o: dynamicScr.c
+
+#ifndef HDKArchitecture
+all:: staticScr.o dynamicScr.o globStub.o globals.o
+#else
+all:: staticScr.o globStub.o
+#endif
+
+clean::
+	rm -f staticStub.h staticScr.h staticStub.o staticStub
+
+#ifndef HDKArchitecture
+LinkFileList(includes,commonDDX.h ddxArgs.h ddxScreen.h dyddx.h,../../../include,../hw/sco/dyddx)
+
+DependTarget()
+#endif
+
+HDKOBJS = globals.o dynamicScr.o
+HDKSRCS = Imakefile globStub.c staticStub.c staticScr.c
+HDKHEADERS = ddxScreen.h commonDDX.h dyddx.h
+InstallHDKLibrary(dyddx,$(HDKSERVERLIBDIR))
+InstallHDKMultiple($(HDKOBJS),$(HDKSERVERLIBDIR))
+InstallHDKMultiple($(HDKSRCS),$(HDKDDXDIR)/dyddx)
+InstallHDKMultiple($(HDKHEADERS),$(HDKSERVERINCDIR))

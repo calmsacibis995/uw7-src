@@ -1,0 +1,92 @@
+#!/sbin/sh
+#ident	"@(#)init	15.1	97/12/19"
+
+. /isl/ui_modules/common.rc
+
+if [ "$direction" != "NEXT" ]
+then
+	echo "ERROR: Init module run with direction != NEXT."
+	exit 1
+fi
+#-----------------------------------------------
+
+
+#ivar comment "Starting init module..."
+
+#
+# Add any extra boot parameters (e.g. IGNORE_MACHINE_CHECK=yes) to the
+# end of /stand/boot. We only want those that were set manually by the user.
+# Also, don't copy INITSTATE; it's used to control ISL behavior.
+#
+# Process any bootparms that are meant to be ivar variables.
+# If, at the boot: prompt, the user types in ivar_foo="bar",
+# then we should set the ivar variable foo to bar. This
+# allows hand-modification of the install flow. These also do
+# not get copied to /stand/boot.
+#
+
+SKIP_LANG=`ivar get SKIP_LANG`
+[ "$SKIP_LANG" = "0" ] && ivar set skip_lang 0
+#
+# Set up the default language (C)
+#
+junk=`ivar get LANG`
+[ -z "$junk" ] && ivar set LANG C
+
+
+#
+# Our policy is to require at least 1 HBA disk (see the hba module).
+# Only set this variable if it's not already set.
+#
+junk=`ivar get hba_num_min`
+[ -z "$junk" ] && ivar set hba_num_min 1
+
+#
+# Automatically move on after this many HBA disks have been read.
+# Normally we don't use this, we let them stick in as many as they
+# want. If you want to automatically continue the install after the
+# HBA disk, set this to 1.
+# Only set this variable if it's not already set.
+#
+junk=`ivar get hba_num_max`
+[ -z "$junk" ] && ivar set hba_num_max 1000
+
+
+#
+# This is the minimum size hard disk required (megs) 
+# This is used by the disk_size module.
+#
+junk=`ivar get min_hd_size`
+[ -z "$junk" ] && ivar set min_hd_size 80
+
+#
+# This is where some of the install scripts are.
+#
+junk=`ivar get SCRIPTS`
+[ -z "$junk" ] && ivar set SCRIPTS /etc/inst/scripts
+junk=`ivar get C_SCRIPTS`
+[ -z "$junk" ] && ivar set C_SCRIPTS /etc/inst/locale/C/menus
+junk=`ivar get LANGDEP_SCRIPTS`
+[ -z "$junk" ] && ivar set LANGDEP_SCRIPTS /etc/inst/locale/C/menus
+
+#
+# The minumum memory size, in bytes. MEMSIZE doesn't include 500k?
+# MEMSIZE comes from the init process (bootstrap.c).
+# The minimum is supposed to be 16 meg ram.
+#
+junk=`ivar get MIN_MEMSIZE`
+#[ -z "$junk" ] && ivar set MIN_MEMSIZE 16777216
+[ -z "$junk" ] && ivar set MIN_MEMSIZE 16000000
+
+
+#ivar comment "Finished init module"
+
+#for m in boot2 do_cmds welcome lang keyboard license hba dcu disk_size media check_media check_preserve whole_disk partition change_slices slices disk_ops cans services packages name date security inst partition_sys pkginst                 ifile net_wrapper
+#do
+#	ivar set debug_$m 1
+#done
+
+#
+# Go on to the next module
+#
+ii_exit NEXT

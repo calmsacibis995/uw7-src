@@ -1,0 +1,180 @@
+#!/usr/bin/ksh
+#ident	"@(#)setxpand	15.1"
+
+#Input:  	A directory that is the output of pkgmk -c for one or more
+#		pkg/sip images.
+
+#Output:	A directory that is the same as the input, except that all
+#		compressed files whose names do *not* end in .Z are
+#		uncompressed
+
+USAGE="usage:\t`basename $0` -s source -d destination pkg/sip name\n
+\tsource and destination must be absolute path names\n
+\tIf source and destination are the same, compressed files\n
+\tin source will be uncompressed in place."
+
+unset SOURCE DEST
+while getopts s:d: c
+do
+	case $c in
+	s)	SOURCE=$OPTARG
+		;;
+	d)	DEST=$OPTARG
+		;;
+	\?)	echo $USAGE >&2
+		exit 1
+		;;
+	*)	echo Internal error during getopts. >&2
+		exit 2
+		;;
+	esac
+done
+shift `expr $OPTIND - 1`
+[ $# -ge 1 ] || {
+	echo ERROR -- Must give the name of at least one pkg/sip. >&2
+	echo $USAGE >&2
+	exit 1
+}
+[ $SOURCE ] || {
+	echo ERROR -- Must supply the name of a package directory. >&2
+	echo $USAGE >&2
+	exit 1
+}
+[ $DEST ] || {
+	echo ERROR -- Must supply the name of a destination directory. >&2
+	echo $USAGE >&2
+	exit 1
+}
+[ -d $SOURCE ] || {
+	echo ERROR -- $SOURCE: No such directory. >&2
+	exit 3
+}
+[ -d $DEST ] || {
+	mkdir -p $DEST > /dev/null 2>&1
+	[ $? -eq 0 ] || {
+		echo ERROR -- Cannot create directory $DEST >&2
+		exit 4
+	}
+}
+[ $PARALLEL ] || {
+	echo PARALLEL not set, using 2. >&2
+	PARALLEL=2
+	export PARALLEL
+}
+PKGLIST="$*"
+for i in $PKGLIST
+do
+	[ -f $SOURCE/$i/pkgmap ] || {
+		echo ERROR -- package $i, no pkgmap file >&2
+		problem=true
+	}
+done
+[ $problem ] && exit 1
+
+# Begin the main processing.
+[ $SOURCE = $DEST ] || {
+	echo "=== `date`: Copying $SOURCE \n\tinto $DEST"
+	cd $SOURCE
+	# make a list of pkgs
+	TMPLIST=/tmp/x.list.$$
+	rm -rf {TMPLIST}
+	for i in $PKGLIST
+	do
+		echo $i >> ${TMPLIST}
+	done
+
+
+SPLIT=${ROOT}/usr/src/${WORK}/build/tools/hsplit
+export SPLIT
+
+	FIND=/tmp/find.$$
+	# split the list of pkgs
+	cat ${TMPLIST} | ${SPLIT} ${PARALLEL} ${FIND}
+	rm -f ${TMPLIST}
+
+	# get a list of files for all pkgs
+	LIST=/tmp/list.$$
+	for i in ${FIND}.*
+	do
+		num=`echo $i | sed -e 's/^.*\.//'`
+		find `cat $i` -type f -follow -print > ${LIST}.${num} &
+	done
+
+	wait
+	rm ${FIND}.*
+
+	# cpio the files
+	for i in ${LIST}.*
+	do
+		num=`echo $i | sed -e 's/^.*\.//'`
+		cat $i | cpio -pduL $DEST &
+	done
+	wait
+}
+
+echo === `date`: Creating list of compressed files.
+cd $DEST
+#Don't uncompress .Z files (see ul93-09924)
+	ISC=/tmp/isc.$$
+	# get the list of compressed files
+	for i in ${LIST}.*
+	do
+		num=`echo $i | sed -e 's/^.*\.//'`
+		grep -v "\.Z$" $i | iscompress -   > ${ISC}.${num} &
+	done
+	wait
+
+	rm -f ${LIST}.*
+	# merge the lists of compressed files and re-split evenly
+	COMPR=/tmp/COMPRESSED.$$
+	for i in ${ISC}.*
+	do
+		[ -s $i ] && cat $i
+	done | ${SPLIT} ${PARALLEL} ${COMPR}
+	rm -f ${ISC}.*
+
+echo === `date`: Decompressing files.
+mkdir _tmp	#Make the _tmp directory in the same file system as $DEST.
+		#That way, the mv below will not involve a copy.
+
+if [ -s ${COMPR}.1 ]	#Make sure at least 1 file exists.
+then
+	for i in ${COMPR}.*
+	do
+		num=`echo $i | sed -e 's/^.*\.//'`
+		TMPNAME=_tmp/tmpname.${num}
+		while read name
+		do
+			uncompress < $name > ${TMPNAME}
+			mv ${TMPNAME} $name
+		done < $i &
+	done
+	wait
+fi
+
+rmdir _tmp
+rm -f ${COMPR}.*
+
+echo === `date`: Editting pkginfo and pkgmap files.
+for i in $PKGLIST
+do
+	/usr/bin/ed -s $i/pkginfo <<-!
+		g/COMPRESSED=true/d
+		w
+		q
+	!
+	# We've just edited the pkginfo file, so update the pkginfo entry in
+	# the pkgmap file.
+	set -- $(ls -l $i/pkginfo)
+	SIZE=$5
+	set -- $(sum < $i/pkginfo)
+	SUM=$1
+	/usr/bin/ed -s $i/pkgmap <<-!
+		g/ i pkginfo /s/ [0-9]* [0-9]* / $SIZE $SUM /
+		w
+		q
+	!
+done
+
+echo === `date`: $0 is done.
+exit 0

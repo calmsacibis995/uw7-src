@@ -1,0 +1,73 @@
+#ident	"@(#)ihvkit:display/README.3	1.1"
+
+Following are the instructions for creating/installing the Video Device
+Driver and Display Modules provided in the IHV Kit.  The instructions
+for the ATI samples are the same as for the JAWS samples:
+
+
+ATI
+
+First, the associated kernel driver must be created and installed:
+
+     # cd /usr/src/ihvkit/display/lfb256/FB/ati
+     # make
+     # cd bin
+
+     The following line should be executed only if the driver already
+     exists:
+
+     # /etc/conf/bin/idinstall -d ati
+
+     Now, perform the actual install of the driver, and create the loadable
+     module:
+
+     # /etc/conf/bin/idinstall -ak ati
+     # /etc/conf/bin/idbuild -M ati
+
+     At this point, the driver is active.  Without rebooting or
+     rebuilding the kernel, test it by typing:
+
+     # < /dev/ati
+
+     If successful, the above command line will display the physical
+     address of the ATI frame buffer.  If it fails, you will see an
+     error message indicating what was wrong.
+
+
+Next, the Chipset-specific Display Module library (LFB) must be created:
+
+     # cd /usr/src/ihvkit/display/lfb256
+     # /usr/X/bin/imake -DTOPDIR=. -DCURDIR=. -I/usr/X/lib/config
+
+     During the next step, ignore the displayed makefile failure report
+     about not knowing how to make 'all'.
+
+     # make DISPLIBREV=2
+
+
+Now, create the vendor-specific Display Module library (ATI):
+
+     # cd devices/ati
+     # /usr/X/bin/imake -DTOPDIR=. -DCURDIR=. -I/usr/X/lib/config
+     # make DISPLIBREV=2
+
+
+Finally, install the library and configuration files in the appropriate
+places:
+
+     # cp libati.so.2 /usr/X/lib/display
+     # cd ../..
+     # cp liblfb.so.2 /usr/X/lib/display
+     # mv /usr/X/defaults/Xwinconfig /usr/X/defaults/OXwinconfig
+     # cp config-ati.2 /usr/X/defaults/Xwinconfig
+
+
+At this point, to use the new Display Modules, just start or restart xdm.
+
+
+
+GD54XX
+
+To create the chip-specific GD54XX Display module library, with its
+associated Super-VGA library (vga256), follow the instruction located in
+/usr/src/ihvkit/display/vga256/devices/gd54xx/README.

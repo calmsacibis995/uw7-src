@@ -1,0 +1,72 @@
+#!/usr/bin/ksh
+#ident	"@(#)dscpio	15.1"
+pkgdir=$1
+shift
+i=${1%%/*}
+cd $pkgdir/$i || { echo no such directory: $i; exit 0; }
+if [ -f setinfo ]
+then
+	find pkg* set* install -print | cpioout
+	exit
+fi
+case "$1" in
+$i/root.*)
+	ROOT=${1#*/}
+	PART=${ROOT##*.}
+	LISTS=$pkgdir/$i/install/*.$PART.list
+	;;
+$i/reloc.*)
+	ROOT=${1#*/}
+	PART=${ROOT##*.}
+	LISTS=$pkgdir/$i/install/*.$PART.list
+	;;
+*([!/]))
+	ROOT=root
+	PART=1
+	LISTS=$pkgdir/$i/install/*.$PART.list
+	;;
+$i/root)
+	ROOT=root
+	PART=1
+	LISTS=$pkgdir/$i/install/*.$PART.list
+	;;
+$i/reloc)
+	ROOT=reloc
+	PART=1
+	LISTS=$pkgdir/$i/install/*.$PART.list
+	;;
+*)
+	echo I do not know how to process $1 >&2
+	exit 1
+esac
+if [ -f "$pkgdir/$i/install/moreinfo" ]
+then
+	while read line
+	do
+		eval ${line%%=*}=\"${line#*=}\"
+	done < $pkgdir/$i/install/moreinfo
+	for j in $ACTIONCLASSES
+	do
+		let x=PART$j
+		if (( x == PART ))
+		then
+			rm -f /tmp/$j.list
+			cut -f1 -d' ' $pkgdir/$i/install/$j.list > /tmp/$j.list
+			OLISTS="$OLISTS /tmp/$j.list"
+		fi
+	done
+fi
+
+{
+	if [ $ROOT = "root.1" -o $ROOT = root  -o $ROOT = "reloc.1" -o $ROOT = "reloc" ]
+	then
+		find pkg* install -print
+	else
+		find pkginfo -print
+	fi
+	sed "s!^!$ROOT/!" $LISTS
+	if [ -n "$OLISTS" ]
+	then
+		cat $OLISTS
+	fi
+} | cpioout

@@ -1,0 +1,204 @@
+#!/sbin/sh
+#ident	"@(#)disk_ops	15.1	98/03/04"
+
+. /isl/ui_modules/common.rc
+. /isl/ui_modules/disk.rc
+. /etc/inst/scripts/choose
+. /etc/inst/scripts/tools
+
+# check_params - Checks if the first arg is equal to at least one of the
+# following arguments.
+# Typical usage is to check if choice is one of the acceptable ones.
+# Eg. check_params $CHOICE $CHOICES[0] $CHOICES[1]...
+
+function check_params {
+	[ -n "$debug" ] && set -x
+	echo $@ >&2
+        typeset param
+        integer i=1 nparams=$#
+        typeset first=$1
+        [ -z "$first" ] && (( i = nparams ))
+        while (( i < nparams ))
+        do
+                shift
+                if [ "$first" = "$1" ]
+                then
+                        msg
+                        return 0
+                fi
+                (( i += 1 ))
+        done
+        msg "$USE_CHOICE"
+        return 1
+}
+
+function test_bb {
+	[ "${F_BB[$1]}" = "$Yes" ] && HDOPT[$1]=" " || HDOPT[$1]="-n"
+	check_params "${F_BB[$1]}" "$Yes" "$No"
+	return $?
+}
+
+function test_rg {
+	RESETGEOM[$1]="${F_RG[$1]}"
+	check_params "${F_RG[$1]}" "$Yes" "$No"
+	return $?
+}
+
+function check_reset_geometry {
+
+	[ -n "$debug" ] && set -x
+	integer disk=0
+
+	RESET_DISKS=""
+	while (( disk < NDISKS ))
+	do
+		if [ "${RESETGEOM[disk]}" = "$Yes" ]
+		then
+			[ -n "$RESET_DISKS" ] && RESET_DISKS="$RESET_DISKS and $(( disk + 1 ))" || RESET_DISKS="$((disk+1))"
+		fi
+		(( disk += 1 ))
+	done
+
+	if [ -n "$RESET_DISKS" ]
+	then
+		eval "display \"$RESET_MESSAGE\" -bg $WHITE -fg $BLUE -above 1 -below 8"
+		DISPLAY_WIN=$CURWIN
+
+		open_radio 
+		rid=$RID
+		add_radio "${RESET_CHOICE[0]}" \
+			  -entry 'CHOICE="${RESET_CHOICE[0]}"'
+		add_radio "${RESET_CHOICE[1]}" \
+			  -entry 'CHOICE="${RESET_CHOICE[1]}"'
+		radio_runparms $rid 2
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		             -above 18 -below 1 -title "$CHOOSE_TITLE"
+		footer "$CHOOSE_FOOTER"
+		run_radio $rid 0 2
+		input_handler 
+		destroy_radio $rid
+		wclose $DISPLAY_WIN
+		if [ "$CHOICE" = "${RESET_CHOICE[0]}" ]
+		then
+			display "$RESET_WAIT"
+			reset_geometry $disk
+			call sleep 5
+			call uadmin 2 1
+		else
+			return 1
+		fi
+	fi
+	wclose $DISPLAY_WIN
+	return 0
+}
+			
+function create_form
+{
+[ -n "$debug" ] && set -x
+	
+	integer cols=1 maxwidth
+	typeset a
+	#
+	# Create check boxes
+	#
+	(( cols += NDISKS ))
+	open_form
+	my_form=$FID
+
+	max "${#bb_title}" "${#boot_title}" "${#geo_title}"
+	(( D_WIDTHS[1]=$? ))
+
+	a="$Disk"
+	a="$a 1"
+	max "${#Yes}" "${#No}" "${#a}"
+	(( maxwidth=$? ))
+	
+	(( a = 2 ))
+	while (( a <= cols ))
+	do
+		(( D_WIDTHS[$a]=maxwidth ))
+		D_TITLES[$a]="$Disk $((a-1))"
+		[ "${HDOPT[$((a-2))]}" = " " ] && F_BB[$((a-2))]="$Yes" || F_BB[$((a-2))]="$No"
+		[ "$BOOTSECTOR" = "$Yes" ] && F_BS="$Yes" || F_BS="$No"
+		[ "${RESETGEOM[$((a-2))]}" = "$Yes" ] && F_RG[$((a-2))]="$Yes" || F_RG[$((a-2))]="$No"
+		(( a += 1 ))
+	done
+
+	setup_table -offset 1 -rows 3 -cols $cols -titles D_TITLES -widths D_WIDTHS
+
+	next_field_prompt -l  "$boot_title"
+	(( a = 0 ))
+	while (( a < NDISKS ))
+	do
+		if (( a != 0 ))
+		then
+			invisible="-invisible"
+		else
+			invisible=
+		fi
+		next_field -entry "msgnoerr" \
+			   -exit "BOOTSECTOR=\"\$F_BS\"; check_params \"\$F_BS\" \"$Yes\" \"$No\"" \
+			   -choice "choose \"\$F_BS\" \"$Yes\" \"$No\"" \
+			   $invisible \
+			   F_BS
+		(( a+=1 ))
+	done
+
+	next_row
+	
+	next_field_prompt -l  "$bb_title"
+	(( a = 0 ))
+	while (( a < NDISKS ))
+	do
+		next_field -entry "msgnoerr" \
+			   -exit "test_bb $a" \
+			   -choice "choose \"\${F_BB[$a]}\" \"$Yes\" \"$No\"" \
+			   F_BB[$a]
+		(( a+=1 ))
+	done
+
+	next_row
+	
+	next_field_prompt -l  "$geo_title"
+	(( a = 0 ))
+	while (( a < NDISKS ))
+	do
+		next_field -entry "msgnoerr" \
+			   -exit "test_rg $a" \
+			   -choice "choose \"\${F_RG[$a]}\" \"$Yes\" \"$No\"" \
+			   F_RG[$a]
+		(( a+=1 ))
+	done
+
+	integer fwidth=$TABLE_WIDTH+1
+        place_window $fwidth 5 -bg $COMBO2_BG -fg $COMBO2_FG \
+                     -title "$title" -current 'footer "$keys"'
+	wid=$CURWIN
+        set_hotkey  9 "save_and_exit PREV"
+        set_hotkey  1 "ivar set help_topic disk_ops; save_and_exit HELP"
+	run_form $my_form
+}
+
+
+function save_and_exit
+{
+[ -n "$debug" ] && set -x
+	wclose $main_window
+	store_disk_info
+	ii_exit $1
+}
+
+
+#
+# Main
+#
+load_disk_info
+while :
+do
+	create_form
+	input_handler
+	check_reset_geometry
+	[ $? = 0 ] && break
+done
+save_and_exit NEXT
+

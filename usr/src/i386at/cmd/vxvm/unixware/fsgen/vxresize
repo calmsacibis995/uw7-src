@@ -1,0 +1,79 @@
+#!/usr/bin/sh -
+# @(#)cmd.vxvm:unixware/fsgen/volresize.sh	1.2 3/3/97 03:25:19 - cmd.vxvm:unixware/fsgen/volresize.sh
+#ident	"@(#)cmd.vxvm:unixware/fsgen/volresize.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+quit()
+{
+	rm -f $tmpfile1 $tmpfile2
+	exit $1
+}
+
+tmpfile1=${TMPDIR:-/tmp}/vx.1.$$
+tmpfile2=${TMPDIR:-/tmp}/vx.2.$$
+
+trap "quit 1" INT HUP QUIT TERM
+
+fstype=$1
+usetype=$2
+diskgroup=$3
+volname=$4
+newlen=$5
+warnonly=$6
+
+warnmsg=ERROR
+warnerr=1
+[ -n "$warnonly" ] && {
+	warnmsg=WARNING
+	warnerr=0
+}
+export warnmsg
+
+# try to get the official fstype for a mounted file system
+[ -z "$fstype" ] && {
+	fstype=`df -n "/dev/vx/dsk/$diskgroup/$volname" 2> /dev/null`
+}
+# try to get the fstype from the volume
+[ -z "$fstype" ] && {
+	fstype=`vxprint -v -F %fstype -g "$diskgroup" "$volname" 2> /dev/null`
+}
+# try to get the fstype from the fstyp command
+[ -z "$fstype" -o "$fstype" = "-" ] && {
+	fstype=`fstyp "/dev/vx/rdsk/$diskgroup/$volname" 2> /dev/null`
+}
+# otherwise, there is no discernable fstype, print a warning and exit
+[ -n "$fstype" ] || {
+	u=$usetype v=$volname egettxt >&2 \
+	  "$u/vxresize: WARNING: Volume $v: Cannot determine file system type" \
+		vxvmshm:82
+	quit 0
+}
+
+resize=$__VXVM_ROOT_DIR/usr/lib/vxvm/type/$usetype/fs.d/$fstype/vxresize
+if [ ! -x "$resize" ]
+then
+	u=$usetype v=$volname fs=$fstype egettxt >&2 \
+'$u/vxresize: $warnmsg: Volume $v: File system type $fs\n\tdoes not support resizes' \
+		vxvmshm:81
+	quit $warnerr
+fi
+"$resize" "$diskgroup" "$volname" "$newlen" $warnonly
+quit $?

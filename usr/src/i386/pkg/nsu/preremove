@@ -1,0 +1,179 @@
+#ident	"@(#)preremove	1.3"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+FAILURE=1	# fatal error
+
+REBUILD=0
+
+CONFDIR=/etc/conf
+CONFBIN=$CONFDIR/bin
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:51 " The Installable Driver feature has been removed. The %s cannot be removed." ${NAME} 2>&1`
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+			-o ! -x ${CONFBIN}/idcheck ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+#
+#	Do the following for TSA
+#
+
+#trap 'exit 3' 15
+
+# These variables should have been set by the request script.
+#[ "$DEBUG" ] && set -x
+#DOT=${DOT:-/opt/bin} export DOT
+TCPPORT=${TCPPORT:-413}
+
+# shut down the daemon
+/bin/sh /etc/init.d/unixtsa stop
+
+# Edit /etc/inet/services
+grep '^unixtsa' /etc/inet/services >/dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	TMP=/var/tmp/unixtsa.$$
+	egrep -v '^unixtsa' /etc/inet/services >$TMP
+	cat $TMP >/etc/inet/services
+	rm -f $TMP
+fi
+#	Work for TSA is done
+
+for MODULE in timod tirdwr pckt ptem ptm pts ticlts ticots ticotsor ntty net md5
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RES="$?"
+	if
+		[ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -d ${MODULE}
+		REBUILD=1
+	fi
+done
+
+#
+#remove entries added to the device database
+#
+for DEVICE in pseudo_master ticlts ticots ticotsord
+do
+	# Error may only indicate we are not running an ES system
+	# or entry does not exist.
+	MSG="`/sbin/putdev -d ${DEVICE} 2>&1`"
+	RETURN=$?
+	if	[ "$RETURN" = 1 -o "$RETURN" = 2 -o "$RETURN" = 5 ]
+		# there's a fatal error that will affect the other devices, too.
+		# so print error and abort the loop
+	then	pfmt -s nostd -g ${PKGMSG}:52 "Device Database Error %s when deleting %s\n" $RETURN $DEVICE 2>&1
+		echo $MSG
+		break
+	elif	[ "$RETURN" != 0 -a "$RETURN" != 3 ]
+		# return 0: everything worked.
+		# return 3: entry was not there to delete
+		#when none of the above, error gets printed and we loop
+	then	pfmt -s nostd -g ${PKGMSG}:52 "Device Database Error %s when deleting %s\n" $RETURN $DEVICE 2>&1
+		echo $MSG
+	fi
+done
+
+# The lp Networking service must be down to be removed!
+
+/usr/sbin/lpshut >/dev/null 2>&1
+
+#
+# remove the listener id
+#
+/usr/sbin/userdel listen  >/dev/null 2>&1
+#
+# remove listen-type port monitors and any symbolic links that might
+# be lying arount
+#
+sacadm -L -t listen 2>/dev/null | cut -f1 -d: >/tmp/listeners
+for i in `cat /tmp/listeners`
+do
+	sacadm -r -p $i >/dev/null 2>&1
+done
+# Remove the cmds added to the NET administration role
+#	cp is needed by nsu and dfs, so neither preremoves remove it.
+#	The packages can then remain independent.
+#/usr/bin/adminrole -r \
+#   pmadm,nlsadmin,sacadm,cs,keymaster,idadmin,rxservice,cat \
+#   NET >/dev/null 2>&1
+#
+# symlinks and links
+#
+LHOME=$BASEDIR/usr/net/nls
+if [ -f $LHOME/listen ]
+then
+	rm $LHOME/listen
+fi
+if [ -f $LHOME/dbfconv ]
+then
+	rm $LHOME/dbfconv
+fi
+if [ -f $LHOME/nlps_server ]
+then
+	rm $LHOME/nlps_server
+fi
+if [ -f /usr/bin/nlsadmin ]
+then
+	rm /usr/bin/nlsadmin
+fi
+rm /tmp/listeners
+
+#
+#	Remove entries from /etc/netconfig
+#
+
+grep -v '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticlts[ 	]' /etc/netconfig 2>/dev/null >/tmp/$$.1
+grep -v '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticotsord[ 	]' /tmp/$$.1 2>/dev/null >/tmp/$$.2
+grep -v '[ 	]loopback[ 	][ 	]*-[ 	][ 	]*/dev/ticots[ 	]' /tmp/$$.2 2>/dev/null >/etc/netconfig
+
+rm -f /rmp/$$.1 /tmp/$$.2
+
+#
+#	Remove entries from OAM scripts...
+#
+# OAM - OAM
+if [ -f /usr/sadm/sysadm/menu/netservices/netserve.menu ] 
+then
+	fgrep -v 'name_to_address^Machine and Service Address Management^name_to_addr/map.menu' /usr/sadm/sysadm/menu/netservices/netserve.menu 2>/dev/null >/tmp/$$.3
+	cp /tmp/$$.3 /usr/sadm/sysadm/menu/netservices/netserve.menu
+fi
+
+removef -f $PKGINST
+
+#
+if
+	[ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+	
+	${CONFBIN}/idbuild
+	if
+		[ "$?" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+fi

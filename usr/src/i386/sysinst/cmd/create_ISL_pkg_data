@@ -1,0 +1,62 @@
+#!/bin/ksh
+
+#ident "@(#)create_ISL_pkg_data	15.1	98/03/04"
+
+#
+# create_ISL_pkg_data
+#
+
+case $# in
+0)
+	pkg_dir=$ROOT/$SPOOL
+	setinfo=$ROOT/usr/src/i386/set/UnixWare/setinfo
+#	setinfo=$pkg_dir/UnixWare/setinfo
+	[ ! -f $setinfo ] && {
+		echo "UnixWare setinfo file not found."
+		exit 1
+	}
+	;;
+1)
+	pkg_dir=$1
+	setinfo=$pkg_dir/../usr/src/i386/set/UnixWare/setinfo
+	;;
+2)
+	pkg_dir=$1
+	setinfo=$2
+	;;
+*)
+	usage
+	;;
+esac
+
+[ ! -d "$pkg_dir" ] && {
+	echo "$0: $pkg_dir is not a directory."
+	exit 1
+}
+
+[ ! -f "$setinfo" ] && {
+	echo "$0: $setinfo does not exist."
+	exit 1
+}
+
+# gen.pkg.table 
+#	scans the pkg/ directory and
+#	extracts info from 'pkginfo' and 'depend' files;
+#	this produces the output file pkg_table.
+
+echo gen.pkg.table $pkg_dir ...
+echo ""
+if gen.pkg.table $pkg_dir ; then
+	echo "$0: gen.pkg.table reported errors."
+fi
+
+echo ""
+echo gen.can.ifile $setinfo...
+echo ""
+gen.can.ifile $pkg_dir $setinfo
+
+[ ! -s /tmp/can_ifile ] && {
+	echo "$0: gen.can.ifile failed to create /tmp/can_ifile."
+	exit 1
+}
+mv /tmp/can_ifile $PROTO/desktop/ui_modules

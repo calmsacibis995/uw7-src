@@ -1,0 +1,110 @@
+                         IHV Diskette format
+
+                         Document Version: 6.1
+
+diskette formatted as either DOS or UnixWare s5 filesystem.
+If formatted as s5, certain character must be capitalized for idinstall.
+
+Note that this differs slightly from the UnixWare 2.1 and 2.1.1 IHV diskette
+format.
+
+Your driver may use more DSP files than the following files in the example
+below (i.e. Rc, Sd, Autotune, etc.)
+
+The example below assumes that netdrvr is the name of your driver.  This
+should correspond to the DRIVER_NAME= in the bcfg file.
+
+/ (root of floppy disk)
+|
++-unixware  (directory)
+   |
+   +-netdrvr1   (directory)
+   |  | Master
+   |  | System
+   |  | Node
+   |  | Driver.o
+   |  | Drvmap
+   |  | netdrvr1.mod          <-- optional -- for NetInstall in etc/conf/mod.d
+   |  | Space.c
+   |  | firmware.o            <-- optional; see below
+   |  |   You must have 1 bcfg file for each BUS= supported by the driver:
+   |  +-bcfg                  <-- since we can't have a 4 character extension
+   |  |                           we create a directory containing our bcfgs.
+   |  |  - Inetdrvr           <-- bcfg file for ISA
+   |  |  - Enetdrvr           <-- bcfg file for EISA
+   |  |  - Pnetdrvr           <-- bcfg file for PCI
+   |  |  - Mnetdrvr           <-- bcfg file for MCA
+   |  +-locale    (directory)
+   |     |   depending on $LOCALE, the following will be used
+   |     + C
+   |     | - msg.o                 <-- for "C" locale (default)
+   |     | - tx_buf_num            <-- for "C" locale (default)
+   |     | - cable_type            <-- for "C" locale (default)
+   |     + es  (directory)   Spanish
+   |     | - msg.o            <-- message file for driver
+   |     | - tx_buf_num       <-- help file for CUSTOM[x] line 5.  Will be copie
+d
+   |     |                        to /etc/inst/locale/$LOCALE/menus/nics/
+   |     |                        /help/tx_buf_num
+   |     | - cable_type
+   |     + fr  (directory)   French
+   |     | - msg.o            <-- message file for driver
+   |     | - tx_buf_num
+   |     | - cable_type
+   |     + others
+   |
+   |
+   +-netdrvr2   (directory)
+   |  | Master
+   |  | System
+   |  | Node
+   |  | Driver.o
+   |  | Drvmap
+   |  | netdrvr1.mod          <-- optional -- for NetInstall in etc/conf/mod.d
+   |  | Space.c
+   |  | msg.o                 <-- optional; see below
+   |  | firmware.o            <-- optional; see below
+   |  |   You must have 1 bcfg file for each BUS= supported by the driver:
+   |  +-bcfg
+   |  |  - Inetdrvr           <-- bcfg file for ISA
+   |  |  - Enetdrvr           <-- bcfg file for EISA
+   |  |  - Pnetdrvr           <-- bcfg file for PCI
+   |  |  - Mnetdrvr           <-- bcfg file for MCA
+   |  +-locale    (directory)
+   |     |   depending on $LOCALE, the following will be used
+   |     + C
+   |     | - msg.o                 <-- for "C" locale (default)
+   |     | - tx_buf_num            <-- for "C" locale (default)
+   |     | - cable_type            <-- for "C" locale (default)
+   |     + es  (directory)   Spanish
+   |     | - msg.o            <-- message file for driver
+   |     | - tx_buf_num       <-- help file for CUSTOM[x] line 5.  Will be copie
+d
+   |     |                        to /etc/inst/locale/$LOCALE/menus/nics/
+   |     |                        /help/tx_buf_num
+   |     | - cable_type
+   |     + fr  (directory)   French
+   |     | - msg.o            <-- message file for driver
+   |     | - tx_buf_num
+   |     | - cable_type
+   |     + others
+   |
+   +-netdrvrN  (directory)
+    ....
+
+Note that help files should adhere to DOS file naming conventions
+
+An alternate method is to require IHV disks to be in UnixWare pkgadd format
+and the files would be installed/copied into the appropriate location.
+We would need to document this location and process in more depth.  As the
+Gemini installation technology isn't well defined, I propose method#1 above.
+It also allows vendors to include drivers for 3 (possibly more) operating
+systems on one DOS formatted floppy:
+
+Windows
+OpenServer 5.0 MDI  - custom installable image; see appendix A.
+Gemini         MDI  - per the above
+
+This is a powerful incentive to choose the first method.
+-----------------------------------------------------------------------------
+

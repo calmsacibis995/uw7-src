@@ -1,0 +1,434 @@
+#ident	"@(#)xenv:i386/reedit.unx	1.6"
+#
+#	Cross Pathedit for i386 SGS
+#
+#
+#	This script is executed by master pathedit when building
+#	cross SGS for Unix target.
+#	Format of the call: 	pted.unx <machine>
+#	where machine is i386
+#
+
+# 
+# Function mkadir: attempts to make the directory structure specified
+# in $1.  Since the -p flag to make is not present on older systems,
+# it may be necessary to create intermediate directories.  The
+# function creates the directories by tricking the shell into using
+# recursion.
+#
+
+mkadir() {
+	dir=`dirname $1`
+	if [ ! -d $dir ] 
+	then
+		(mkadir $dir) 
+		mkdir $1
+	elif [ ! -d $1 ]
+	then
+		mkdir $1
+	fi
+}
+
+_CPU=$1		# CCS we are going to build (i386|i860|m68k|...)
+_PROOT=$2	# Root of this source
+_TOOLS=$3	# The TOOLS dir to be created
+_MACH=$4	# The target machine (i386at|mb1|...)
+_WORK=$5	
+_HPFX=$6	# Prefix of the CCS we are using to build this CCS
+
+echo "exit 0" >${_CPU}
+chmod 0755 ${_CPU}
+
+eval `id | sed 's/([^)]*)//gp'`
+
+BASE=${_TOOLS}
+
+__INCDIR=/tmp/${_CPU}
+__TMPDIR=/usr/tmp
+__DBO=RBO
+
+cont="T"
+echo "Do you want the SGS built with the default parameters? (y or n):  \c"
+while [ "$cont" = "T" ]
+do
+	x=`line`
+	if [ "$x" = "y" ]
+	then
+		stdparam="T"
+		cont="F"
+	elif [ "$x" = "n" ]
+	then
+		stdparam="F"
+		cont="F"
+	else
+		echo "Please type 'y' or 'n': \c"
+	
+	fi
+done
+
+if [ "$stdparam" = "T" ]
+then
+	__BIN=$BASE/bin
+	__LIB=$BASE/lib
+	__CBIN=$BASE/usr/ccs/bin
+	__CCBIN=$BASE/usr/ccs/bin
+	__CLIB=$BASE/usr/ccs/lib
+	__CCLIB=$BASE/usr/ccs/lib
+	__USRLIB=$BASE/usr/lib
+	__USRBIN=$BASE/usr/bin
+	__INC=$BASE/usr/include
+	__CCINC=$BASE/usr/include
+	__ETC=$BASE/etc
+	__SHLIB=$BASE/shlib
+	__PREFIX=${_CPU}
+	__MAC=
+	__OWN=$uid
+	__GRP=$gid
+	__LIBSGS=
+else
+
+	echo "Enter absolute directory for CCS run-time binaries:  \c"
+	x=`line`
+	__CBIN=${x:=$BASE/usr/ccs/bin}
+	__CCBIN=$__CBIN
+
+	echo "Enter absolute directory for CCS run-time libraries:  \c"
+	x=`line`
+	__CLIB=${x:=$BASE/usr/ccs/lib}
+	__CCLIB=$__CLIB
+
+	echo "Enter absolute directory for non-CCS run-time binaries:  \c"
+	x=`line`
+	__BIN=${x:=$BASE/bin}
+
+	echo "Enter absolute directory for non-CCS run-time libraries:  \c"
+	x=`line`
+	__LIB=${x:=$BASE/lib}
+
+	echo "Enter absolute directory for non-CCS run-time usr libraries:  \c"
+	x=`line`
+	__USRLIB=${x:=$BASE/usr/lib}
+
+	echo "Enter absolute directory for non-CCS run-time usr binaries:  \c"
+	x=`line`
+	__USRBIN=${x:=$BASE/usr/bin}
+
+	echo "Enter absolute directory for header files:  \c"
+	x=`line`
+	__INC=${x:=$BASE/usr/include}
+	__CCINC=$__INC
+
+	echo "Enter absolute directory for etc files:  \c"
+	x=`line`
+	__ETC=${x:=$BASE/etc}
+
+	echo "Enter absolute directory for shlib files:  \c"
+	x=`line`
+	__SHLIB=${x:=$BASE/shlib}
+
+	echo "Enter relative pathname of cross-environment libsgs:  \c"
+	x=`line`
+	__LIBSGS=${x}
+
+	echo "Enter generic prefix for names:  \c"
+	x=`line`
+	__PREFIX=${x:=$_CPU}
+
+	echo "Enter owner of executables:  \c"
+	x=`line`
+	__OWN=${x:=$uid}
+
+	echo "Enter group of executables:  \c"
+	x=`line`
+	__GRP=${x:=$gid}
+fi
+
+# Need these directories for cross-compilation of libcurses
+(mkadir $BASE/usr/tmp)
+(mkadir $BASE/usr/bin)
+(mkadir $BASE/etc)
+
+(mkadir $__CBIN)
+(mkadir $__CLIB)
+(mkadir $__BIN)
+(mkadir $__LIB)
+(mkadir $__USRLIB)
+(mkadir $__USRLIB/libp)
+(mkadir $__USRBIN)
+(mkadir $__INC)
+(mkadir $__INC/sys)
+(mkadir $__ETC)
+(mkadir $__SHLIB)
+
+if [ ! -f $__ETC/install ]
+then
+	cp ../../../install/install.sh $__ETC/install
+	chmod 0555 $__ETC/install
+fi
+
+if /bin/i386 -o /bin/i486 -o /bin/i860 >/dev/null 2>&1
+then
+	__ARCH=AR32WR
+else
+	__ARCH=AR32W
+fi
+
+__CPP=$__LIB/cpp
+
+echo "These parameters are used for your SGS:"
+echo "CCSBIN:		$__CBIN"
+echo "CCSLIB:		$__CLIB"
+echo "BIN:		$__BIN"
+echo "LIB:		$__LIB"
+echo "USRLIB:		$__USRLIB"
+echo "USRBIN:		$__USRBIN"
+echo "INC:		$__INC"
+echo "ETC:		$__ETC"
+echo "SHLIB:		$__SHLIB"
+echo "PREFIX:		$__PREFIX"
+echo "MAC:		$__MAC"
+echo "OWN:		$__OWN"
+echo "GRP:		$__GRP"
+
+echo "Do you want the SGS built with these parameters? (y or n):  \c"
+x=`line`
+if [ "$x" != "y" ]
+then
+	echo "Run pathedit again."
+	exit
+fi
+
+if [ ! -d ../../inc/${__PREFIX} ] 
+then
+	mkdir ../../inc/${__PREFIX}
+fi
+cp paths.h ../../inc/${__PREFIX}/paths.h
+chmod 0644 ../../inc/${__PREFIX}/paths.h
+
+if [ -f ../../inc/${__PREFIX}/sgs.h ]
+then
+	chmod 0644 ../../inc/${__PREFIX}/sgs.h
+fi
+
+echo "\n ******** Making paths.h ********"
+ed - ../../inc/${__PREFIX}/paths.h <<!
+1,\$s|SGS|$__PREFIX|g
+1,\$s|I386BINDIR|$__CBIN|
+1,\$s|I386CCBINDIR|$__CCBIN|
+1,\$s|I386LIBDIR|$__CLIB|
+1,\$s|I386CCLIBDIR|$__CCLIB|
+1,\$s|I386LIBPATH|$__CLIB:$__USRLIB|
+1,\$s|I386INCDIR|$__INC|
+1,\$s|I386CCINCDIR|$__INC|
+1,\$s|I386TMPDIR|$__TMPDIR|
+1,\$s|I386CPP|$__CPP|
+1,\$s|I386LDROOT|$_TOOLS|
+w
+q
+!
+
+echo "\n ******** Making sgs.h ********"
+ed - ./sgs.h <<Y
+g|SGS|s|".*"|"$__PREFIX"|
+w ./sgs.h
+q
+Y
+cp sgs.h ../../inc/${__PREFIX}/sgs.h
+
+if [ -s ../../sgs.mk ]
+then
+    chmod 0644 ../../sgs.mk
+fi
+
+echo "\n ******** Making global makefile ********"
+chmod 0644 ../../sgs.mk.${_CPU}
+_RP=`pwd`
+ed - ../../sgs.mk.${_CPU} <<X
+1,\$s|^RP[	 ]*=.*|RP = $_RP|
+w ../../sgs.mk
+q
+X
+
+chmod 0644 cmdrules
+chmod 0644 librules
+
+echo "\n ******** Making sgs rulefile (sgsrules) ********"
+__YACC="${_PROOT}/usr/src/${_WORK}/cmd/sgs/yacc/${_CPU}/yacc -p${_PROOT}/usr/src/${_WORK}/cmd/sgs/yacc/common/yaccpar"
+__LEX=${_PROOT}/usr/src/${_WORK}/cmd/sgs/lex/${_CPU}/lex
+__MAKE=${__CBIN}/${__PREFIX}make
+__LINK_MODE=
+chmod 0644 sgs-rules
+ed - ./sgs-rules <<X
+1,\$s|^ARCH[	 ]*=.*|ARCH = $__ARCH|
+1,\$s|^BIN[	 ]*=.*|BIN = $__BIN|
+1,\$s|^CCSBIN[	 ]*=.*|CCSBIN = $__CBIN|
+1,\$s|^CCSLIB[	 ]*=.*|CCSLIB = $__CLIB|
+1,\$s|^CPU[	 ]*=.*|CPU = $_CPU|
+1,\$s|^DBO[	 ]*=.*|DBO = $__DBO|
+1,\$s|^DFLTCLIB[	 ]*=.*|DFLTCLIB = $__CLIB|
+1,\$s|^DFLTINC[	 ]*=.*|DFLTINC = $__INC|
+1,\$s|^ETC[	 ]*=.*|ETC = $__ETC|
+1,\$s|^GLOBALINC[	 ]*=.*|GLOBALINC =|
+1,\$s|^GRP[	 ]*=.*|GRP = $__GRP|
+1,\$s|^INC[	 ]*=.*|INC = /usr/include|
+1,\$s|^LEX[	 ]*=.*|LEX = $__LEX|
+1,\$s|^LIB[	 ]*=.*|LIB = $__LIB|
+1,\$s|^LIBELF[	 ]*=.*|LIBELF = \$(SGSBASE)/libelf/\$(CPU)/libelf.a|
+1,\$s|^LIBDWARF2[	 ]*=.*|LIBDWARF2 = \$(SGSBASE)/libdwarf2/\$(CPU)/libdwarf2.a|
+1,\$s|^LIBLD[	 ]*=.*|LIBLD = \$(SGSBASE)/libld/\$(CPU)/libld.a|
+1,\$s|^LIBP[	 ]*=.*|LIBP = $__CLIB/libp|
+1,\$s|^LIBSGS[	 ]*=.*|LIBSGS = $__LIBSGS|
+1,\$s|^LINK_MODE[	 ]*=.*|LINK_MODE = $__LINK_MODE|
+1,\$s|^LPASS[	 ]*=.*|LPASS = .|
+1,\$s|^MACH[	 ]*=.*|MACH = $_MACH|
+1,\$s|^MAKE[	 ]*=.*|MAKE = $__MAKE|
+1,\$s|^NATIVE[	 ]*=.*|NATIVE = no|
+1,\$s|^OWN[	 ]*=.*|OWN = $__OWN|
+1,\$s|^PFX[	 ]*=.*|PFX = $_HPFX|
+1,\$s|^SGS[	 ]*=.*|SGS = $_CPU|
+1,\$s|^TINC[	 ]*=.*|TINC = \$(TOOLS)/usr/include|
+1,\$s|^TOOLS[	 ]*=.*|TOOLS = $_TOOLS|
+1,\$s|^USRBIN[	 ]*=.*|USRBIN = $__USRBIN|
+1,\$s|^USRLIB[	 ]*=.*|USRLIB = $__USRLIB|
+1,\$s|^YACC[	 ]*=.*|YACC = $__YACC|
+w ./sgsrules
+q
+X
+
+echo "\n ******** Making sgs library rulefile (sgs.l.rules) ********"
+cat sgsrules >sgs.l.rules
+ed - sgs.l.rules <<X
+1,\$s|^CC[	 ]*=.*|CC = \$(PFX)cc -Xa -D_EFTSAFE -DCALL_TZSET |
+1,\$s|^INC[	 ]*=.*|INC = \$(TOOLS)/usr/include|
+1,\$s|^MACH[	 ]*=.*|MACH = .|
+1,\$s|^PFX[	 ]*=.*|PFX = $_CPU|
+\$,\$a
+.c.o:
+	$(CC) $(CFLAGS) $(DEFLIST) -c $<
+.
+w
+q
+X
+
+# The following is only executed in the special case of CCS-only integration.
+# This ensures that the OS-owned libraries get installed in the correct
+# location for CCS-only builds.
+if [ "$(_MACH)" -eq "$(_WORK)" ]
+then   
+chmod 644 lib.rulefile
+ed - lib.rulefile <<Y
+1,\$s|^MACH[	 ]*=.*|MACH = .|
+w ./lib.rulefile
+q
+Y
+chmod 444 lib.rulefile
+fi
+
+__LEX="\$(PFX)lex -l${__CLIB}/lex/ncform"
+__YACC="\$(PFX)yacc -p${__CLIB}/yaccpar"
+
+echo "\n ******** Making command rulefile (for xenv use) ********"
+ed - ./cmdrules <<X
+1,\$s|^CC[	 ]*=.*|CC = \$(PFX)cc -Ki486 -Kieee -Xt|
+1,\$s|^CPU[	 ]*=.*|CPU = $_CPU|
+1,\$s|^MACH[	 ]*=.*|MACH = $_MACH|
+1,\$s|^SGS[	 ]*=.*|SGS =|
+1,\$s|^PFX[	 ]*=.*|PFX = $__PREFIX|
+1,\$s|^TOOLS[	 ]*=.*|TOOLS = $_TOOLS|
+1,\$s|^INC[	 ]*=.*|INC = \$(TOOLS)/usr/include|
+1,\$s|^LEX[	 ]*=.*|LEX = $__LEX|
+1,\$s|^YACC[	 ]*=.*|YACC = $__YACC|
+w $__CLIB/cmdrules
+q
+X
+chmod 0644 $__CLIB/cmdrules
+
+echo "\n ******** Making library rulefile (for xenv use) ********"
+ed - ./librules <<X
+1,\$s|^CC[	 ]*=.*|CC = \$(PFX)cc -Ki486 -Kieee -Xt|
+1,\$s|^CPU[	 ]*=.*|CPU = $_CPU|
+1,\$s|^MACH[	 ]*=.*|MACH = $_MACH|
+1,\$s|^SGS[	 ]*=.*|SGS =|
+1,\$s|^PFX[	 ]*=.*|PFX = $__PREFIX|
+1,\$s|^TOOLS[	 ]*=.*|TOOLS = $_TOOLS|
+1,\$s|^INC[	 ]*=.*|INC = \$(TOOLS)/usr/include|
+1,\$s|^LEX[	 ]*=.*|LEX = $__LEX|
+1,\$s|^YACC[	 ]*=.*|YACC = $__YACC|
+w $__CLIB/librules
+q
+X
+chmod 0644 $__CLIB/librules
+
+echo "\n ******** Changing Make makefile ********"
+_Sgsrules=`pwd`/sgsrules
+chmod 0644 ../../../make/make.mk
+ed - ../../../make/make.mk <<X
+1,\$s|^include.*|include $_Sgsrules|
+w
+q
+X
+
+echo "\n ******** Adjusting lint command ********"
+chmod 0644 ../../alint/common/lint
+ed - ../../alint/common/lint <<X
+1,\$s|^\(LPASS=\${_CCSLIB:-\).*}|\\1$__CLIB}|
+1,\$s|^\(LLDIR=\${_CCSLIB:-\).*}|\\1$__CLIB}|
+w
+q
+X
+
+echo "\n ******** Making front-end to make ********"
+ed - make-i386 <<X
+1,\$s|^MAKECMD=.*|MAKECMD=$__CBIN/xxxmake|
+1,\$s|xxx|$__PREFIX|g
+w make.tmp
+q
+X
+chmod 777 make.tmp
+
+echo "\n ******** Making cross environment script ********"
+ed - env-i386 <<X
+1,\$s|^PATH.*|PATH=$__CBIN:$__BIN:$__USRBIN:\$PATH|
+1,\$s|^PS1=.*|PS1="${__PREFIX}crossenv: "|
+1,\$s|^PFX=.*|PFX=$__PREFIX|
+1,\$s|^TOOLS=.*|TOOLS=$_TOOLS|
+1,\$s|^CMDRULES=.*|CMDRULES=$__CLIB/cmdrules|
+1,\$s|^LIBRULES=.*|LIBRULES=$__CLIB/librules|
+w env.tmp
+q
+X
+chmod 777 env.tmp
+
+echo "\n ******** Setting proper version of elftypes.h *******"
+rm -f ../../inc/common/sys/elftypes.h
+if  [ -f /bin/i386 ]
+then 
+	if /bin/i386
+	then
+		echo "cp ../../inc/common/sys/etype_I386.h ../../inc/common/sys/elftypes.h"
+		cp ../../inc/common/sys/etype_I386.h ../../inc/common/sys/elftypes.h
+	fi
+fi
+if [ -f /bin/m88k ]
+then
+	if /bin/m88k
+	then
+		echo "cp ../../inc/common/sys/etype_88K.h ../../inc/common/sys/elftypes.h"
+	fi
+fi
+if [ -f /bin/u3b2 ]
+then
+	if /bin/u3b2
+	then
+		echo "cp ../../inc/common/sys/etype_M32.h ../../inc/common/sys/elftypes.h"
+		cp ../../inc/common/sys/etype_M32.h ../../inc/common/sys/elftypes.h
+	fi
+fi
+if [ -f /bin/uts ]
+then
+	if /bin/uts
+	then
+		echo "cp ../../inc/common/sys/etype_UTS.h ../../inc/common/sys/elftypes.h"
+		cp ../../inc/common/sys/etype_UTS.h ../../inc/common/sys/elftypes.h
+	fi
+fi

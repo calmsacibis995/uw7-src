@@ -1,0 +1,40 @@
+
+#!/usr/bin/wksh -openlook
+
+Run() {
+typeset LOG_FILE
+	Get_Selected_Cmds $CMD_WID_LIST
+	WID_NUM_RUN=0
+	CNT=0
+	while [ $CNT -lt $SEL_COUNT ]
+	do
+		eval SUITE=\$sel_suite$CNT
+		eval COMMAND=\$sel_cmd$CNT
+		CNT=`expr $CNT + 1`
+		(( y1 = WID_NUM_RUN * 50 ))
+		eval DD=\$RUNCHECK_$COMMAND
+		if  kill -0 $DD  2>/dev/null
+		then
+		    warn "$SUITE suites already running. Cannot run again"
+		    continue
+		fi
+
+		get_file_names $SUITE
+		if [ -f $CONFIG_FILE ]
+		then
+			SCENARIO=`sed 's/#.*//' $CONFIG_FILE | awk -F= '/TEST_SCENARIO/ {printf "%s",$2}' `
+		  	if [ "$SCENARIO" = "" ]
+		  	then
+				SCENARIO=all
+		  	fi
+			LOG_FILE=${SUITE##RUN_}.log
+		  	/usr/X/bin/xterm -C -bg lightblue -geometry 60x15+0+$y1 -lf "$LOG_FILE" -T $SUITE -E $COMMAND $SCENARIO GUI=YES $SERVER $DB_INDEX $AREV_YES &
+			RUN_BG="$RUN_BG $!"
+			eval RUNCHECK_$COMMAND="$!"
+		else
+			Notice $FORM "$CONFIG_FILE not found."
+		fi
+		(( WID_NUM_RUN = WID_NUM_RUN + 1 ))
+	done
+}
+

@@ -1,0 +1,197 @@
+#ident	"@(#)request	1.3"
+#ident	"$Header$"
+
+#	
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#	
+#
+#  Main routine
+#  
+
+
+# There are three scenarious in which this script will run:
+#
+# $HOW_INSTALL=
+#
+# (a) ON_BFLOP:         it is called from foundation set installation on the
+#                       boot floppies.
+#
+# (b) POSTREBOOT:       it is called upon reboot from set installation on the
+#                       boot floppies.
+#
+# (c)NORMAL:            it is called from pkgadd'ing the individual package
+#                       or from the network set installation.
+
+TTY=/dev/tty
+HOW_INSTALL=NORMAL
+#  The following HOW_INSTALL clauses are order dependent
+
+# We are rebooting after fnd set installation if the script
+# /etc/rc2.d/S02POSTINST exists
+[ -f /etc/rc2.d/S02POSTINST ] && {
+        HOW_INSTALL=POSTREBOOT
+        TTY=/dev/console
+}
+
+# We are in foundation set installation on the boot floppies if:
+# the script /etc/inst/scripts/postreboot.sh exists
+[ -f /etc/inst/scripts/postreboot.sh ] && {
+        HOW_INSTALL=ON_BFLOP
+}
+
+[ "$HOW_INSTALL" = "ON_BFLOP" ] || {
+	exec >${TTY}
+	exec 2>${TTY}
+	exec <${TTY}
+}
+
+#
+#  Make sure LANG environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+[ ${LANG} ] || LANG="C"
+export LANG
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+MENU_RESP=$1
+if [ "${MENU_RESP}" = "" ]
+then
+        echo No response file given.  Usage: $0 response-file
+        exit 1
+fi
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+[ "$UPDEBUG" = YES ] && goany
+
+export PKGINSTALL_TYPE AUTOMERGE
+
+PKGINSTALL_TYPE=NEWINSTALL
+
+$SCRIPTS/chkpkgrel
+
+case $? in
+	0)	PKGINSTALL_TYPE=NEWINSTALL	;;
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	6)	PKGINSTALL_TYPE=UPGRADE2	;;
+	*)	;;
+esac
+
+[ "$UPDEBUG" = "YES" ] && goany
+[ "$PKGINSTALL_TYPE" = "NEWINSTALL" ] || AUTOMERGE=Yes
+[ "$HOW_INSTALL" = "NORMAL" ] || AUTOMERGE=Yes
+
+export PKGINSTALL_TYPE AUTOMERGE
+
+############# End  UPGRADE AND OVERLAY #######################
+
+
+#
+#  Do we have OA&M Package installed?
+#
+`pkginfo -i oam > /dev/null 2>&1`
+USE_OAM=$?
+OAM=YES
+[ "${USE_OAM}" != "0" ] && OAM="NO"
+
+#
+# Are we installing oam now...if so then set OAM...
+#
+for i in $PKGLIST
+do
+	case $i in
+	oam)		OAM=YES;;
+	esac
+done
+
+export OAM
+	
+[ "$UPDEBUG" = YES ] && goany
+
+#
+# set CLASSES to contain OAMadmin IFF
+# the packages oam are installed, respectively.
+#
+unset CLASSES
+CLASSES="none build save"
+[ "${OAM}" = "YES" ] && CLASSES=${CLASSES}" OAMadmin"
+
+#
+# include "upgrade" class if we are doing an upgrade..
+#
+[ "${PKGINSTALL_TYPE}" = "UPGRADE" ] || [ "${PKGINSTALL_TYPE}" = "UPGRADE2" ] && CLASSES=${CLASSES}" upgrade"
+
+#
+# this file should have been created by nics...if it is not there
+# then create it..
+#
+[ -d /etc/inst/nics ] || mkdir /etc/inst/nics
+if [ ! -f /etc/inst/nics/nics.map ]
+then
+	cat <<-!EOF! > /etc/inst/nics/nics.map
+	imx586     imx586
+	ee16       ee16
+	ie6        TCM503
+	el16       TCM507
+	el3        TCM5X9
+	3c523      TCM523
+	el2mca     TCM523
+	wd         SMC8K
+	SMC8000    SMC8K
+	ne1000     NE1000
+	ne2100     NE2100
+	ne2000     NE2000
+	ne2_32     NE2
+	am1500     NE1500T
+	am1500t    NE1500T
+	ne1500t    NE1500T
+	ntr2000    NTR2000
+	token      IBM164
+	eltoken    IBM164
+	nflxe      nflxe
+	nflxt      nflxt
+	pnt        pnt
+	!EOF!
+fi
+
+#
+# If we're doing fnd set installation, save HOW_INSTALL in MENU_RESP so that
+# postinstall knows how it is being invoked. Then copy this request script
+# and the postinstall script into /etc/inst/scripts
+#
+
+[ "${HOW_INSTALL}" = "ON_BFLOP" ] && {
+        echo "HOW_INSTALL=ON_BFLOP" >> ${MENU_RESP}
+	echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${MENU_RESP}
+        echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+        echo AUTOMERGE=\"${AUTOMERGE}\" >> ${MENU_RESP}
+        cp ${REQDIR}/request /etc/inst/scripts/inetrequest
+        cp ${REQDIR}/postinstall /etc/inst/scripts/inetpostinst
+        chmod +x /etc/inst/scripts/inet*
+        exit 0
+}
+
+#
+# if nothing to install, exit w/ code 77 for pkging tools to exit gracefully.
+#
+[ "$CLASSES" ] || exit 77
+
+echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+
+############# Begin  UPGRADE AND OVERLAY #######################
+
+echo AUTOMERGE=\"${AUTOMERGE}\" >> ${MENU_RESP}
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${MENU_RESP}
+echo HOW_INSTALL=\"${HOW_INSTALL}\" >> ${MENU_RESP}
+
+[ "$UPDEBUG" = YES ] && goany
+
+############# End  UPGRADE AND OVERLAY #######################
+
+exit 0

@@ -1,0 +1,55 @@
+#ident	"@(#)r5fonts:lib/font/Imakefile	1.7"
+
+XCOMM $XConsortium: Imakefile,v 1.6 91/07/22 22:19:39 rws Exp $
+#include <Server.tmpl>
+
+#if SharedFontLibraries
+#define DoSharedLib     YES
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+EXTRA_DEFINES = -KPIC
+#endif
+
+#define	IHaveSubdirs
+
+NAT_SUBDIRS = bitmap/native fontfile/native fc/native util/native
+NAT_OBJS = bitmap/native/?*.o fontfile/native/?*.o fc/native/?*.o \
+	   util/native/?*.o
+SUBDIRS = bitmap fontfile fc Speedo ATM util Type1
+OBJS = bitmap/?*.o fontfile/?*.o fc/?*.o util/?*.o
+DONES = bitmap/DONE fontfile/DONE fc/DONE Speedo/DONE util/DONE Type1/DONE
+
+
+XCOMM
+XCOMM To build a shared library, all objects have to be built with -KPIC
+XCOMM We can use the same objects to build libfont.a, but this increases
+XCOMM the size of libfont.a and also the executables will run slightly slower
+XCOMM We need libfont.a only for 'mkfontdir' and 'bdftopcf' utilities
+XCOMM All others (X and fs) use libfont.so. The reason we don't want to use
+XCOMM libfont.so with mkfontdir and bdftopcf is that these executables are
+XCOMM run as part of the build (on the host machine)
+XCOMM
+
+
+#if SharedFontLibraries
+all:: subdirs libfont.so.$(SOFONTLIBREV)
+LibraryObjectRule()
+SharedLibraryTarget1(font,$(SOFONTLIBREV),$(OBJS),.,.)
+#if UslLocalityTuning
+FurSharedLibraryTarget(font,$(SOFONTLIBREV),$(OBJS),.,.)
+#endif
+
+InstallSharedLibrary(font,$(SOFONTLIBREV),$(USRLIBDIR))
+#if UslLocalityTuning
+InstallFurLibrary(font,$(SOFONTLIBREV),$(USRLIBDIR))
+#endif
+
+#endif
+
+all:: subdirs libfont.a
+NormalDepLibraryTarget(font,$(SUBDIRS) $(DONES),$(OBJS))
+NormalDepLibraryTarget(font_nat,$(NAT_SUBDIRS) $(DONES),$(NAT_OBJS))
+
+NamedMakeSubdirs(subdirs,$(SUBDIRS))
+ForceSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))

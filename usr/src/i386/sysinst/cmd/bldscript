@@ -1,0 +1,25 @@
+#!/usr/bin/sh
+#ident "@(#)bldscript	15.1	98/03/04"
+
+echo Creating hba floppy image
+
+TMPDIR=${TMPDIR:-/tmp/hba.$$}
+HBADIR=${HBADIR:-${PROTO}/stage/hbaflop}
+
+TMPDIR=$TMPDIR HBADIR=$HBADIR ${ROOT}/usr/src/${WORK}/pkg/ihvhba/bldscript -s
+
+[ -d ${PROTO}/stage ] || mkdir ${PROTO}/stage
+[ -f ${PROTO}/stage/hbaflop.cpio ] && rm -rf hbaflop.cpio
+
+cd $HBADIR
+# exclude the ictha HBA because its autodetect routine can hose some
+# of the hardware in the system.
+find . -print | grep tmp | egrep -v "hbacpio|ictha" > /tmp/filelist.$$ 
+find etc -print  >> /tmp/filelist.$$
+cat /tmp/filelist.$$ | cpio -oVLD -H crc > $PROTO/stage/hbaflop.cpio
+#$BZIP -9 -s64k $PROTO/stage/hbaflop.cpio > $PROTO/stage/hbaflop.cpio.z
+#$WRT -s $PROTO/stage/hbaflop.cpio.z > $PROTO/stage/hbaflop.image
+#rm -rf hbaflop.cpio*
+
+echo Image is $PROTO/stage/hbaflop.cpio
+

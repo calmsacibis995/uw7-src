@@ -1,0 +1,139 @@
+#ident	"@(#)debugger:tutorial.d/common/macro.c.doc	1.3"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "macro.h"
+
+struct macro_def
+{
+	struct token		*name;
+	struct token		*definition;
+	struct macro_def	*left;
+	struct macro_def	*right;
+};
+
+static struct macro_def	*root;
+
+/* Add a new macro definition. */
+/* Definitions are stored in a binary tree. */
+void
+insert(struct token *name, struct token *list)
+{
+	struct macro_def	*defn;
+	struct macro_def	*node;
+	int			val = 0;
+
+	if ((defn = (struct macro_def *)malloc(
+		sizeof(struct macro_def))) == 0)
+	{
+		(void) fprintf(stderr, "malloc failed!\n");
+		exit(1);
+	}
+
+	defn->name = name;
+	defn->definition = list;
+	defn->left = defn->right = 0;
+
+	node = root;
+	for (;;)
+	{
+		val = node ? strcmp(name->string, node->name->string) : 0;
+		if (val < 0)
+		{
+			if (!node->left)
+			{
+				node->right = defn;
+				return;
+			}
+			else
+				node = node->left;
+		}
+		else if (val > 0)
+		{
+			if (!node->right)
+			{
+				node->right = defn;
+				return;
+			}
+			node = node->right;
+		}
+		else
+		{
+			(void) fprintf(stderr, "Warning, %s redefined\n",
+				name->string);
+			node->definition = list;
+			free(defn);
+			return;
+		}
+	}
+}
+
+/* Lookup up name, if it is in the table return a pointer to */
+/* the list of tokens making up the definition */
+struct token *
+lookup(struct token *name)
+{
+	struct macro_def	*node;
+	int			val;
+
+	node = root;
+	while (node)
+	{
+		val = strcmp(name->string, node->name->string);
+		if (val < 0)
+			node = node->left;
+		else if (val > 0)
+			node = node->right;
+		else
+			return node->definition;
+	}
+	return 0;
+}
+
+/* Replace a macro name with its definition */
+void
+expand(struct token *tok_list, struct arglist *args)
+{
+	struct token	*macro;
+	struct arglist	*subargs;
+	struct arglist	*param;
+	int		i;
+	int		n;
+
+	while (tok_list)
+	{
+		if (tok_list->type == WORD
+			&& (macro = lookup(tok_list)) != 0)
+		{
+			if ((tok_list = tok_list->next) != 0
+				&& tok_list->type == OPEN_PAREN)
+			{
+				tok_list = tok_list->next;
+				subargs = getargs(&tok_list);
+				expand(macro, subargs);
+			}
+			else
+				expand(macro, 0);
+		}
+		else if (tok_list->type == PARAMETER)
+		{
+			n = tok_list->string[1] - '0';
+			param = args;
+			for (i = 1; i < n; ++i)
+			{
+				if (!param)
+					error("Missing argument");
+				param = param->next;
+			}
+			if (param)
+				expand(param->tokens, 0);
+			tok_list = tok_list->next;
+		}
+		else
+		{
+			print_token(tok_list);
+			tok_list = tok_list->next;
+		}
+	}
+}

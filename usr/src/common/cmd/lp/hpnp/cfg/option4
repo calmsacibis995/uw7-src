@@ -1,0 +1,68 @@
+#!/bin/ksh
+#ident	"@(#)option4	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+# Make sure directory containing ping is part of PATH
+#
+PATH="$PATH:/etc:/usr/sbin"
+
+trap "" 1 2 3 15
+
+#        type  name  test
+getname "option4" $1
+if [ $? -ne 0 ]
+then
+  exit 1
+fi
+PNAME=`cat -- $TMP/NAME`
+rm -- "$TMP/NAME"
+
+echo ""
+echo "========================================================="
+echo "Testing network connectivity to $PNAME .... "
+echo ping $PNAME
+ping "$PNAME" 5 | tee -- "$TMP/PCNCT" 2>&1
+cat -- "$TMP/PCNCT" | grep "is alive" > /dev/null 2>&1
+RETCODE=$?
+if [ $RETCODE -ne 0 ]
+then
+	RETCODE=1
+	cat -- "$TMP/PCNCT" | grep "unknown host" > /dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		RETCODE=2
+	fi
+fi
+rm -- "$TMP/PCNCT"
+
+#  RETCODE of 0 indicates success 1 indicates not reachable,
+#  and 2 indicates unknown host.
+
+echo ""
+if [ $RETCODE -ne 0 ]
+then
+  echo "$PNAME failed the network connectivity test"
+else
+  echo "$PNAME passed the network connectivity test"
+fi
+echo "========================================================="
+
+echo ""
+echo "The printer network connectivity test is complete."
+echo "Press the return key to continue ... $NL"
+read -r RESP
+
+exit 0

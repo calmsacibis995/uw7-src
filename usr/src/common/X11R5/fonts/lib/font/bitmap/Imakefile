@@ -1,0 +1,44 @@
+#ident	"@(#)r5fonts:lib/font/bitmap/Imakefile	1.3"
+
+XCOMM $Header$
+XCOMM $XConsortium: Imakefile,v 1.6 92/05/13 14:12:15 gildea Exp $
+#include <Server.tmpl>
+
+#if SharedFontLibraries
+EXTRA_DEFINES = -KPIC
+#endif
+
+        INCLUDES = -I$(FONTSRC)/include -I../include -I$(FONTSERVERSRC)/include
+         HEADERS = 
+#ifdef FontFormatDefines
+     FORMAT_DEFS = FontFormatDefines
+#endif
+            SRCS = bdfread.c bdfutils.c bitmap.c bitmaputils.c bitscale.c \
+		   bitmapfuncs.c pcfread.c pcfwrite.c snfread.c \
+		   fontink.c bitmapfile.c
+
+            OBJS = bdfread.o bdfutils.o bitmap.o bitmaputils.o bitscale.o \
+		   bitmapfuncs.o pcfread.o pcfwrite.o snfread.o \
+		   fontink.o bitmapfile.o
+
+SubdirLibraryRule($(OBJS))
+.c.o:
+	@if [ -d native ]; then exit 0; else set -x; mkdir native; fi
+	$(RM) $@ native/$@
+	$(HCC) -c $(HCFLAGS) $(_NOOP) $*.c
+	$(MV) $@ native/$@
+	$(RM) $@
+	$(CC) -c $(CFLAGS) $(_NOOP) $*.c
+
+clean::
+	-@if [ -d native ]; then \
+	(set -x; cd native; $(RM) *.o); else exit 0; fi
+
+includes::
+
+/* NormalLibraryObjectRule() */
+NormalLintTarget($(SRCS))
+
+
+DependTarget()
+

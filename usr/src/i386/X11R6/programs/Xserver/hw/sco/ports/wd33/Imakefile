@@ -1,0 +1,138 @@
+/*
+ *  @(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/*
+ *
+ *      SCO MODIFICATION HISTORY
+ *
+ *	S001	Fri 27-Aug-1993	toma@sco.com
+ *              changed GRAFDIR from $(USERLIBDIR)/grafinfo to
+ *              /usr/lib/grafinfo so make install works ok
+ *	S000	Mon 01-July-1993	edb@sco.com
+ *              copied fr. wd driver and modified
+ */
+
+#include <Server.tmpl>
+
+SRCS =	wd33Cmap.c wd33Data.c wd33GC.c \
+	wd33Init.c wd33Screen.c wd33Win.c \
+	wd33RectOps.c wd33FillSp.c wd33Bres.c wd33TileStip.c \
+	wd33Image.c wd33FillRct.c wd33Glyph.c wd33DrwGlyph.c \
+	wd33Font.c
+
+OBJS =	wd33Cmap.o wd33Data.o wd33GC.o \
+	wd33Init.o wd33Screen.o wd33Win.o \
+	wd33RectOps.o wd33FillSp.o wd33Bres.o wd33TileStip.o \
+	wd33Image.o wd33FillRct.o wd33Glyph.o wd33DrwGlyph.o \
+	wd33Font.o
+
+       DDXLIBS = libwd33.a
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+        -I$(SERVERSRC)/hw/sco/ports/wd \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(wd33,$(OBJS))
+SharedXDriverTarget(wd33,6.0,$(OBJS),shared,..)
+LintLibraryTarget(wd33,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(wd33,$(DDXLIBS))
+
+#else /* USLArchitecture */
+
+
+USRLIBDIR=$(DESTDIR)/usr/lib
+GRAFDIR=/usr/lib/grafinfo
+
+#STD_DEFINES = ServerDefines -DDEBUG
+#   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+#         -I$(SERVERSRC)/ddx/mfb   -I$(SERVERSRC)/ddx/mi \
+#	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(INCLUDESRC)
+   INCLUDES = -I. -I$(SERVERSRC)/ddx/nfb -I$(SERVERSRC)/ddx/cfb \
+        -I$(SERVERSRC)/ddx -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+        -I$(SERVERSRC)/ddx/mi -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx/ports/wd \
+        -I$(SERVERSRC)/ddx/mfb -I$(SERVERSRC)/ddx/ports/gen -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+     ASM_INCLUDES = -I.
+    ASMDEBUGFLAGS = 
+      ASM_DEFINES = 
+         ASMFLAGS = $(ASMDEBUGFLAGS) $(ASM_DEFINES) $(ASM_INCLUDES)
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(wd33,$(OBJS))
+ProfiledLibraryTarget(wd33,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+NormalAsmObjectRule()
+DebuggedLibraryTarget(wd33,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+NormalAsmObjectRule()
+ProfiledLibraryTarget(wd33,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+NormalAsmObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(wd33,$(OBJS))
+LintLibraryTarget(wd33,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(wd33,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+DependTarget()
+
+InstallGrafFile(./grafinfo/wd,wd90c33.xgi,wd)
+

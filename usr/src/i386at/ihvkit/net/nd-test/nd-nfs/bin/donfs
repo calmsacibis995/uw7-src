@@ -1,0 +1,130 @@
+#! /usr/bin/sh -p
+iclist="ic1"
+ic1="test1"
+
+tet_startup="prepare_tests"
+prepare_tests()
+{
+	if [ -z "$REMOTE_MACHINE" ]
+	then
+		tet_delete test1 "Parameter REMOTE_MACHINE not set"
+		return
+	fi
+	
+	if [ -z "$LOCAL_FS" -o -z "REMOTE_FS" ]
+	then
+		tet_delete test1 "Parameter LOCAL_FS and/or REMOTE_FS not set"
+		return
+	fi
+
+	if [ -z "$ITERATIONS" ]
+	then
+		tet_delete test1 "Parameter ITERATIONS not set"
+		return
+	fi
+
+	MY_PWD=`pwd`
+
+	MY_NAME=`uname -n`
+
+	/sbin/umount  $LOCAL_FS  2>/dev/null
+	/sbin/mount -F nfs $REMOTE_MACHINE:$REMOTE_FS $LOCAL_FS  2> /dev/null
+	if [ $? -ne 0 ]
+	then
+		tet_delete test1  "Cannot mount $REMOTE_MACHINE:$REMOTE_FS, please make sure that $REMOTE_FS exists and is shared on the system \"$REMOTE_MACHINE\", no file system is mounted on \"$LOCAL_FS\", then start the tests."
+		return
+	fi
+
+	cd $LOCAL_FS
+	mkdir $LOCAL_FS/$MY_NAME 2>/dev/null
+	if [ $? -ne 0 ]
+	then
+#Possibly it exists because of a previous run.
+		rm -fr $LOCAL_FS/$MY_NAME
+		mkdir $LOCAL_FS/$MY_NAME  2> /dev/null
+		if [ $? -ne 0 ]
+		then
+			cd $MY_PWD
+			tet_delete test1 "Unable to create directory at $LOCAL_FS"
+			/sbin/umount  $LOCAL_FS  
+			return
+		fi
+	fi
+
+	FS_NAME_UPD=$LOCAL_FS/$MY_NAME
+	if [ -f /tmp/file_copy ]
+	then
+		:
+	else
+		i=0
+		rm -f /tmp/to_be_copied /tmp/file_copy
+		while [ $i -lt 150 ]
+		do
+			cat /etc/profile >> /tmp/to_be_copied
+			i=`expr $i + 1`
+		done
+		i=0
+		while [ $i -lt 4 ]
+		do
+			cat /tmp/to_be_copied >> /tmp/file_copy
+			i=`expr $i + 1`
+		done	
+	fi
+	cd $MY_PWD
+	TARGET_FILE=testfile.jnk
+}
+
+test1()
+{
+i=0
+tet_infoline "NFS_TST_01 The contents of the files copied to NFS and back to local volume should match"
+#echo "NFS tests have started... "
+#echo "please wait for the completion message."
+while [ $i -lt $ITERATIONS ]
+do
+
+	j=`expr $i + 1`
+	echo "Going thru pass $j"
+	
+	rm -f /tmp/copied_file.$REMOTE_MACHINE
+	cp /tmp/file_copy $FS_NAME_UPD/$TARGET_FILE 2>> /dev/null
+	if [ $? -ne 0 ]
+	then
+		tet_infoline "First copy of pass $j failed" 
+		tet_result FAIL
+		/sbin/umount  $LOCAL_FS
+		return
+	else
+		cp $FS_NAME_UPD/$TARGET_FILE $FS_NAME_UPD/x
+		rm -f $FS_NAME_UPD/$TARGET_FILE
+		cp $FS_NAME_UPD/x /tmp/copied_file.$REMOTE_MACHINE 2> time_log.$REMOTE_MACHINE
+		if [ $? -ne 0 ]
+		then
+			tet_infoline "Copy back of pass $j failed" 
+			tet_infoline `cat time_log.$REMOTE_MACHINE`
+			tet_result FAIL
+			return
+		else
+			diff /tmp/copied_file.$REMOTE_MACHINE /tmp/file_copy > /dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				tet_infoline "Pass $j failed" 
+				tet_infoline "Comparison failed"
+				tet_result FAIL
+				/sbin/umount  $LOCAL_FS
+				return;
+			fi
+		fi
+	fi
+	i=`expr $i + 1 `
+done
+rm -rf /tmp/to_be_copied /tmp/file_copy
+rm -rf /tmp/copied_file.*
+rm -rf  $FS_NAME_UPD/$TARGET_FILE $FS_NAME_UPD/x
+rm -rf  $LOCAL_FS/$MY_NAME 
+/sbin/umount  $LOCAL_FS
+tet_result PASS
+}
+
+. ${TET_SUITE_ROOT}/lib/xpg3sh/tcm.sh
+. ${TET_SUITE_ROOT}/lib/xpg3sh/tetapi.sh

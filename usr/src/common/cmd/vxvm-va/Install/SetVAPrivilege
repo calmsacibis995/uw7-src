@@ -1,0 +1,109 @@
+#!/bin/sh
+#
+# /* @(#)install/SetVAPrivilege	1.10 1/19/96 04:25:36 -  */
+#ident	"@(#)cmd.vxva:vxvm-va/Install/SetVAPrivilege	1.1"
+#
+# Copyright(C)1994 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 4800 GREAT AMERICA PARKWAY, SANTA CLARA, CA 95054
+
+PKGTOP=/opt/vxvm-va
+VXVA=$PKGTOP/bin/vxva
+ss=/etc/security/tfm/users
+login=$1
+
+if [ ! -d $ss/$login ]
+then 
+	eval echo `gettxt Vxva_inst:7 "$login isn't a desktop user!"`
+	exit 1
+fi
+
+# Remove any old vxva pathnames from the TFM database, by removing vxva
+if [ -f $ss/$login/cmds/vxva ];
+then
+	if /sbin/tfadmin adminuser -r vxva $login  2>/dev/null
+	then
+		continue
+	else
+		if /usr/bin/adminuser -r vxva $login  2>/dev/null
+		then
+			continue
+		else
+			eval echo `gettxt Vxva_inst:2 "You don't have the privilege to run adminuser!"`
+			exit
+		fi
+	fi
+fi
+
+if /sbin/tfadmin adminuser -a vxva:$VXVA:owner:audit:compat:dacread:dacwrite:dev:filesys:macread:macwrite:mount:multidir:setplevel:setspriv:setuid:sysops:setupriv:driver:rtime:macupgrade:fsysrange:setflevel:auditwr:tshar:plock:core:loadmod $login   2>/dev/null
+then 
+	eval echo `gettxt Vxva_inst:8 "$login is given the privilege to run Volume Manager!"`
+else 	
+	if /usr/bin/adminuser -a vxva:$VXVA:owner:audit:compat:dacread:dacwrite:dev:filesys:macread:macwrite:mount:multidir:setplevel:setspriv:setuid:sysops:setupriv:driver:rtime:macupgrade:fsysrange:setflevel:auditwr:tshar:plock:core:loadmod $login  2>/dev/null
+	then 
+		eval echo `gettxt Vxva_inst:8 "$login is given the privilege to run Volume Manager!"`
+	else 
+		eval echo `gettxt Vxva_inst:2 "You don't have the privilege to run adminuser!"`
+		exit
+	fi
+fi
+
+
+# figure out the localized directory and icon names
+DESK=/usr/X/desktop
+DAYONEDIR=/usr/X/desktop/LoginMgr/DayOne
+LOGDIRCMD=/usr/X/adm/upgrade/dtlogindir
+if [ ! -d $DAYONEDIR -o ! -x $LOGDIRCMD ]
+then
+	# desktop corrupted or installing on pre 2.0 system?
+	eval echo `gettxt Vxva_inst:1 "desktop icon installation failed for: $i"`
+else
+	if [ -f $DAYONEDIR/$login ]
+	then
+		hdir=`$LOGDIRCMD $login`
+
+		if [ $? -ne 0 ]
+		then
+			# desktop user with no home dir or
+			# the user has been removed.
+			continue
+		fi
+
+		locale=`cat $DAYONEDIR/$login`
+		admdir=`LC_ALL=$locale /usr/bin/gettxt dayone:2 "Admin_Tools"`
+
+		if [ -d $hdir/$admdir ]
+		then
+			vDemo=`LC_ALL=$locale /usr/bin/gettxt Vxva_inst:4 "vxva_Demo"`
+			vMgr=`LC_ALL=$locale /usr/bin/gettxt Vxva_inst:5 "Volume_Mgr"`
+			vDemo_Setup=`LC_ALL=$locale /usr/bin/gettxt Vxva_inst:6 "vxvaDemo_Setup"`
+
+			# remove old stuff
+			rm -f $hdir/$admdir/VxVA_Demo
+			rm -f $hdir/$admdir/vxva_Demo
+			rm -f $hdir/$admdir/$vMgr
+			rm -f $hdir/$admdir/$vDemo
+			rm -f $hdir/$admdir/$vDemo_Setup
+
+			# add new stuff
+			ln -s $PKGTOP/bin/run_vxva $hdir/$admdir/$vMgr
+			ln -s $PKGTOP/bin/vxva_demo $hdir/$admdir/$vDemo
+			ln -s $PKGTOP/bin/vxva_setup $hdir/$admdir/$vDemo_Setup
+		fi
+	fi
+fi

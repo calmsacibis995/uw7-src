@@ -1,0 +1,857 @@
+#ident	"@(#)ii_hw_select	15.1"
+exec 2>>/tmp/ii_look
+
+typeset iiname
+typeset CHOICE_DISPLAY="${II_DETECT_NONE}"
+typeset BUSTYPES
+typeset call=ii_hw_list
+
+integer II_HW_SELECT_ONCE=0 II_HW_LIST_ONCE=0
+integer iinum
+integer NUM_NICS_DETECT=0
+integer iiindex=0
+integer iiret=0
+integer IIROW=2
+
+#
+#  This function reduces a set of possible I/O address, RAM address,
+#  or IRQs by those values already in the resmgr that would conflict.
+#  Usage:
+#	ii_reduce PARM  (where PARM is one of IRQ, MEMADDR, or IOADDR)
+#
+function ii_reduce
+{
+	echo "========== In ii_reduce ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_reduce: parameter is ${1}"
+		input_handler
+	}
+
+	typeset PARM=${1}
+	typeset INRANGE=0
+	typeset PSTART PEND TSTART TEND START END Modname Parm
+
+	/sbin/resmgr -p "MODNAME ${PARM}" > /tmp/${PARM}.raw
+
+	#
+	#  Get rid of all entries with no modname or PARM value; they're
+	#  not relevant here.
+	#
+	while read Modname Parm 
+	do
+		[ "${Modname}" = "-" -o "${Modname}" = "$unused" ] && {
+			echo "${Modname} ${Parm}" >> /tmp/${PARM}.trash
+			continue
+		}
+		case "${Parm}" in
+		[0-9]*)
+			echo "${Parm}" >> /tmp/${PARM}.taken
+			continue
+			;;
+		esac
+		echo "${Modname} ${Parm}" >> /tmp/${PARM}.trash
+	done < /tmp/${PARM}.raw
+
+	OIFS=${IFS}
+	IFS="-"
+	> /tmp/${PARM}.ok
+	while read PSTART PEND
+	do
+		[ -z "${PEND}" ] && PEND="${PSTART}"
+		let START=16'#'${PSTART}
+		let END=16'#'${PEND}
+		INRANGE=0
+		IFS=${OIFS}
+		[ -s /tmp/${PARM}.taken ] && {
+			while read TSTART TEND
+			do
+				[ -z "${TEND}" ] && TEND="${TSTART}"
+				let TSTART=16'#'${TSTART}
+				let TEND=16'#'${TEND}
+				(( ${START} >= ${TSTART} && ${START} <= ${TEND} )) && {
+					INRANGE=1
+					break
+				}
+				(( ${END} >= ${TSTART} && ${END} <= ${TEND} )) && {
+					INRANGE=1
+					break
+				}
+			done < /tmp/${PARM}.taken
+		}
+		IFS="-"
+		[ "${INRANGE}" = "0" ] && {
+			if [ "${PARM}" = "IRQ" -o "${PARM}" = "DMAC" ]
+			then
+				echo "${PSTART}" >> /tmp/${PARM}.ok
+			else
+				echo "${PSTART}-${PEND}" >> /tmp/${PARM}.ok
+			fi
+		}
+	done < /tmp/${PARM}.poss
+	rm -f /tmp/${PARM}.raw /tmp/${PARM}.poss /tmp/${PARM}.taken \
+		> /dev/null 2>&1
+	IFS=${OIFS}
+
+} #end of ii_reduce()
+
+function ii_hw_parms
+{
+	echo "========== In ii_hw_parms ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	unset CONFIG_FILE SLOT KEY
+
+	unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY
+	unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+	unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+	# Get CONFIG_FILE variable
+	. /tmp/ii_config
+
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_parms: ${CONFIG_DIR}/${CONFIG_FILE}"
+		input_handler
+	}
+
+	. ${CONFIG_DIR}/${CONFIG_FILE}
+
+	ETH_HW=${DRIVER_NAME}
+
+	typeset iiparm 
+	typeset mustconfig=0
+
+	[ ! -z "${INT}" ] && {
+		> /tmp/IRQ.poss
+		for iiparm in ${INT}
+		do
+			echo "${iiparm}" >> /tmp/IRQ.poss
+		done
+		ii_reduce IRQ
+		cp /tmp/IRQ.ok /tmp/${ETH_HW}.irq
+		#
+		#  If all choices are exhausted, it's an error.
+		#
+		[ ! -s /tmp/${ETH_HW}.irq ] && {
+			wclose ${CURWIN}
+			display -w "${INETINST_NET_FAILURE} ${INETINST_NO_IRQ}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+		mustconfig=1
+	}
+
+	[ ! -z "${PORT}" ] && {
+		> /tmp/IOADDR.poss
+		for iiparm in ${PORT}
+		do
+			echo "${iiparm}" >> /tmp/IOADDR.poss
+		done
+		ii_reduce IOADDR
+		cp /tmp/IOADDR.ok /tmp/${ETH_HW}.ioaddr
+		#
+		#  If all choices are exhausted, it's an error.
+		#
+		[ ! -s /tmp/${ETH_HW}.ioaddr ] && {
+			wclose ${CURWIN}
+			display -w "${INETINST_NET_FAILURE} ${INETINST_NO_IO}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+		mustconfig=1
+	}
+
+	[ ! -z "${MEM}" ] && {
+		> /tmp/MEMADDR.poss
+		for iiparm in ${MEM}
+		do
+			echo "${iiparm}" >> /tmp/MEMADDR.poss
+		done
+		ii_reduce MEMADDR
+		cp /tmp/MEMADDR.ok /tmp/${ETH_HW}.ramaddr
+		#
+		#  If all choices are exhausted, it's an error.
+		#
+		[ ! -s /tmp/${ETH_HW}.ramaddr ] && {
+			wclose ${CURWIN}
+			display -w "${INETINST_NET_FAILURE} ${INETINST_NO_RAM}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+		mustconfig=1
+	}
+
+	[ ! -z "${DMA}" ] && {
+		> /tmp/DMAC.poss
+		for iiparm in ${DMA}
+		do
+			echo "${iiparm}" >> /tmp/DMAC.poss
+		done
+		ii_reduce DMAC
+		cp /tmp/DMAC.ok /tmp/${ETH_HW}.dma
+		#
+		#  If all choices are exhausted, it's an error.
+		#
+		[ ! -s /tmp/${ETH_HW}.dma ] && {
+			wclose ${CURWIN}
+			display -w "${INETINST_NET_FAILURE} ${INETINST_NO_DMA}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			netinst_clean ERROR
+			return 1
+		}
+		mustconfig=1
+	}
+
+	[ -n "${CUSTOM_NUM}" ] && [ "0" != "${CUSTOM_NUM}" ] && mustconfig=1
+
+	#
+	# Overwrite ii_parms with the new information
+	#
+	echo "CONFIG_FILE=\"$CONFIG_FILE\"" > /tmp/ii_parms
+	echo "NICS_NAME=\"$NAME\"" >> /tmp/ii_parms
+	echo "DRIVER_NAME=\"$DRIVER_NAME\"" >> /tmp/ii_parms
+	[ "$KEY" ] && echo "KEY=\"$KEY\"" >> /tmp/ii_parms
+	[ "$SLOT" ] && echo "SLOT=\"$SLOT\"" >> /tmp/ii_parms
+
+	. ${CONFIG_DIR}/${CONFIG_FILE}
+	
+	[ "${mustconfig}" != "0" ] && {
+		ii_hw_config
+		return $?
+	}
+	return 0
+
+} #end of ii_hw_parms()
+
+#
+# The function to detect what is on the system already.
+#
+function ii_find_ids
+{
+	echo "========== In ii_find_ids ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_find_ids: "
+		input_handler
+	}
+
+	integer iires NUM_RES_BRDIDS
+
+	iinum=0
+	/sbin/resmgr | while read rkey[iinum] junk
+	do
+		let iinum+=1
+	done
+
+	/sbin/resmgr -p "MODNAME BRDBUSTYPE BRDID SLOT BUSNUM,n" > /tmp/resmgr.out
+
+	> /tmp/resmgr.brdid
+	iires=0
+	iinum=0
+	while read modname[iires] brdbustype brdid[iires] slot[iires] busnum[iires]
+	do
+		[ "${modname[iires]}" = "-" ] &&
+		[ "${brdid[iires]}" != "-" ] && {
+			[ ${slot[iires]} = "-" ] && slot[iires]=0
+			[ ${busnum[iires]} = "-" ] && busnum[iires]=0
+			key[iires]=${rkey[iinum]}
+			case $brdbustype in
+			1)
+				bustype[iires]=ISA;;
+			2)
+				bustype[iires]=EISA;;
+			4)
+				bustype[iires]=PCI;;
+			8)
+				bustype[iires]=PCCARD;;
+			16)
+				bustype[iires]=PNPISA;;
+			32)
+				bustype[iires]=MCA;;
+			esac
+
+			echo "${key[iires]} ${modname[iires]} ${bustype[iires]} ${busnum[iires]} ${brdid[iires]} ${slot[iires]}" >> /tmp/resmgr.brdid
+
+			nicfile[iires]="-"
+			nicname[iires]="-"
+
+			let iires+=1
+		}
+		let iinum+=1
+	done < /tmp/resmgr.out
+	NUM_RES_BRDIDS=$iires
+
+	cd ${IIROOT}/config
+	iinum=0
+	for config_file in *
+	do
+		unset NAME BOARD_IDS BUS
+
+		. ${config_file}
+		
+		[ -z "${BOARD_IDS}" ] && continue
+
+		iires=0
+		while (( iires < NUM_RES_BRDIDS ))
+		do
+			for id in ${BOARD_IDS}
+			do
+				[ "${id}" = "${brdid[iires]}" ] && {
+					case ${nicname[iires]} in
+					"-")
+					  nicname[iires]=${NAME}
+					  nicfile[iires]=${config_file}
+					  ;;
+					"INVALID")
+					  echo "${NAME} ${config_file}" >> /tmp/ii_conflict.$iires
+					  ;;
+					*)
+					  echo "${nicname[iires]} ${nicfile[iires]}" > /tmp/ii_conflict.$iires
+					  echo "${NAME} ${config_file}" >> /tmp/ii_conflict.$iires
+					  nicname[iires]="INVALID"
+					  ;;
+					esac
+					break
+				}
+			done
+			let iires+=1
+		done
+	done
+
+	unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY
+	unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+	unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+	iinum=0
+	iires=0
+	while (( iires < NUM_RES_BRDIDS ))
+	do
+		[ "${nicname[iires]}" = "-" ] && {
+			let iires+=1
+			continue
+		}
+
+		D_KEY[iinum]=${key[iires]}
+		D_SLOT[iinum]=${slot[iires]}
+		D_BUS[iinum]=${bustype[iires]}
+		D_BUSNUM[iinum]=${busnum[iires]}
+
+		[ "${nicname[iires]}" != "INVALID" ] && {
+			D_NAME[iinum]=${nicname[iires]}
+			D_FILE[iinum]=${nicfile[iires]}
+			let iinum+=1
+			let iires+=1
+			continue
+		}
+
+		[ -f /tmp/ii_conflict.$iires ] && {
+			${IIROOT}/usr/bin/sort /tmp/ii_conflict.$iires > /tmp/ii_conflict
+			i=0
+			unset LIST
+			while read nn[i] nf[i]
+			do
+				LIST="$LIST ${nn[i]}"
+				let i+=1
+			done < /tmp/ii_conflict
+
+			TXT="${II_SELECT_EXPLAIN2}
+                    ${D_BUS[iinum]} ${II_BUS} ${D_BUSNUM[iinum]}, ${II_SLOT} ${D_SLOT[iinum]}.
+
+${II_SELECT_EXPLAIN3}"
+			display "${TXT}" -below 6 -fg $COMBO1_FG -bg $COMBO1_BG
+			DISWIN=${CURWIN}
+
+		        choose -f -e -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "" $LIST
+		        input_handler
+			wclose ${DISWIN}
+			wclose ${CURWIN}
+
+			i=0
+			for name in ${nn[@]}
+			do
+				[ "${CHOICE}" = ${nn[i]} ] && {
+					D_NAME[iinum]=${nn[i]}
+					D_FILE[iinum]=${nf[i]}
+					echo "${brdid[iires]} ${D_BUS[iinum]} ${D_BUSNUM[iinum]} ${D_SLOT[iinum]} ${D_FILE[iinum]}" >> /tmp/ii.conflicts
+					let iinum+=1
+					break
+				}
+				let i+=1
+			done
+		}
+
+		let iires+=1
+	done
+	NUM_NICS_DETECT=$iinum
+
+	if (( NUM_NICS_DETECT > 0 ))
+	then
+		echo "CONFIG_FILE=${D_FILE[0]}" > /tmp/ii_config
+		echo "SLOT=${D_SLOT[0]}" >> /tmp/ii_config
+		echo "KEY=${D_KEY[0]}" >> /tmp/ii_config
+
+		typeset -L6 pbus
+		typeset -R4 pbusnum
+		typeset -R2 pslot
+		typeset -L32 pname
+
+		> /tmp/cards
+		iinum=0
+		while (( iinum < NUM_NICS_DETECT ))
+		do
+			pbus=${D_BUS[iinum]}
+			pbusnum=${D_BUSNUM[iinum]}
+			pslot=${D_SLOT[iinum]}
+			pname=${D_NAME[iinum]}
+			echo " $pbus  $pbusnum     $pslot   $pname" >> /tmp/cards
+			let iinum+=1
+		done 
+		${IIROOT}/usr/bin/sort /tmp/cards > /tmp/ii_cards
+		rm /tmp/cards
+		CARDS=`cat /tmp/ii_cards`
+		CHOICE_DISPLAY="${II_DETECT_SOME}${CARDS}"
+	fi
+
+} #end of ii_find_ids()
+
+function ii_hw_detect_one
+{
+	echo "========== In ii_hw_detect_one ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_detect_one: "
+		input_handler
+	}
+
+	CONFIG_DIR=${IIROOT}/config
+	echo "CONFIG_FILE=${D_FILE[0]}" > /tmp/ii_config
+	echo "SLOT=${D_SLOT[0]}" >> /tmp/ii_config
+	echo "KEY=${D_KEY[0]}" >> /tmp/ii_config
+
+	ii_hw_parms
+
+	return $iiret
+
+} #end of ii_hw_detect_one()
+
+function ii_hw_detect_more
+{
+	echo "========== In ii_hw_detect_more ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_detect_more: "
+		input_handler
+	}
+
+	wclose ${CURWIN}
+
+	open_radio -entry 'footer "${INETINST_HW_SEL_FOOTER}"' -fg $COMBO2_FG \
+		   -bg $COMBO2_BG
+
+	typeset IIRID=$RID
+
+	iinum=0
+	iiindex=0
+	typeset pbus pbusnum pslot
+	typeset -L32 pname
+	while (( iinum < NUM_NICS_DETECT ))
+	do
+		pbus=${D_BUS[iinum]}
+		pbusnum=${D_BUSNUM[iinum]}
+		pslot=${D_SLOT[iinum]}
+		pname=${D_NAME[iinum]}
+		TXT="$pname (${pbus} ${II_BUS} ${pbusnum} , ${II_SLOT} ${pslot})"
+		add_radio "${TXT}" -help "helpwin ${D_FILE[$iinum]}" \
+		          -entry "iiindex=${iinum}"
+		let iinum+=1
+	done
+	[ "${iinum}" -gt "18" ] && let iinum=18
+	radio_runparms $IIRID ${iinum}
+
+	typeset title_len
+	let title_len=${#INETINST_HW_SEL_TITLE}+4
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && let RADIO_WIN_WIDTH=title_len
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 -below 1 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_HW_SEL_TITLE}"
+
+	run_radio $IIRID 0 ${iinum}
+	input_handler
+
+	CONFIG_DIR=${IIROOT}/config
+	echo "CONFIG_FILE=${D_FILE[iiindex]}" > /tmp/ii_config
+	echo "SLOT=${D_SLOT[iiindex]}" >> /tmp/ii_config
+	echo "KEY=${D_KEY[iiindex]}" >> /tmp/ii_config
+	destroy_radio $IIRID
+
+	ii_hw_parms
+
+	return $iiret
+
+} #end of ii_hw_detect_more()
+
+function ii_hw_list
+{
+	echo "========== In ii_hw_list ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_list: "
+		input_handler
+	}
+
+	wclose ${CURWIN}
+
+	footer "${GENERIC_WAIT_FOOTER}"
+
+	[ "$II_HW_LIST_ONCE" = 0 ] && {
+		> /tmp/cards
+		cd ${IIROOT}/config
+		for config_file in *
+		do
+			unset NAME BUS
+			. ${config_file}
+		
+			for iibus in $BUSTYPES
+			do
+				[ ${BUS} = ${iibus} ] && {
+				echo "${NAME} ${config_file}" >> /tmp/cards
+				break
+				}
+			done
+		done
+
+		${IIROOT}/usr/bin/sort /tmp/cards > /tmp/ii_cards
+		rm /tmp/cards
+
+		iinum=0
+		while read IINAME[iinum] IIFILE[iinum]
+		do
+			let iinum+=1
+		done < /tmp/ii_cards
+
+		unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY
+		unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+		unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+		II_HW_LIST_ONCE=1
+	}
+
+	open_radio -entry 'footer "${INETINST_HW_SEL_FOOTER}"' -fg $COMBO2_FG \
+		   -bg $COMBO2_BG 
+
+	typeset IIRID=$RID
+
+	iinum=0
+	iiindex=0
+	for iiname in ${IINAME[@]}
+	do
+		add_radio ${iiname} -help "helpwin ${IIFILE[$iinum]}" \
+			  -entry "iiindex=${iinum}; footer \"${INETINST_HW_SEL_FOOTER}\""
+		let iinum+=1
+	done
+	[ "${iinum}" -gt "18" ] && let iinum=18
+	radio_runparms $IIRID ${iinum}
+
+	typeset title_len
+	let title_len=${#INETINST_HW_SEL_TITLE}+4
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && let RADIO_WIN_WIDTH=title_len
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 -below 1 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_HW_SEL_TITLE}"
+	list_winid=${CURWIN}
+	set_hotkey 8 return_to_ii_hw_choose
+
+	run_radio $IIRID 0 ${iinum}
+	input_handler
+
+	CONFIG_DIR=${IIROOT}/config
+	echo "CONFIG_FILE=${IIFILE[iiindex]}" > /tmp/ii_config
+	destroy_radio $IIRID
+
+	ii_hw_parms
+
+	return $iiret
+
+} #end of ii_hw_list()
+
+function return_to_ii_hw_choose 
+{
+	wclose ${list_winid}
+	ii_hw_choose
+}
+
+function ii_hw_ihvnic
+{
+	echo "========== In ii_hw_ihvnic ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_ihvnic: "
+		input_handler
+	}
+
+	sh_umount ${MNTROOT}
+
+	wclose ${CURWIN}
+	display -w "$INETINST_INSERT_IHVNIC"
+	msg ""
+	footer "${WELCOME_FOOTER}"
+	input_handler
+
+	# Load in the dosfs module
+	[ -s /etc/conf/fsmod.d/dosfs ] && {
+		modreg 4 dosfs
+		sh_modadmin -l /etc/conf/fsmod.d/dosfs >/dev/null 2>&1
+		rm -f /etc/conf/fsmod.d/dosfs
+	}
+
+	msg ""
+	footer "${GENERIC_WAIT_FOOTER}"
+
+	sh_mount -r -F dosfs /dev/dsk/f0t ${MNTROOT} || 
+	sh_mount -r -F dosfs /dev/dsk/f1t ${MNTROOT} || 
+	sh_mount -r -F s5 /dev/dsk/f0t ${MNTROOT} ||
+	sh_mount -r -F s5 /dev/dsk/f1t ${MNTROOT} && {
+
+		[ ! -d ${MNTROOT}/unixware ] && {
+			wclose ${CURWIN}
+			display -w "${IHVNIC_INVALID}" -bg $MAGENTA -fg $WHITE
+			msg ""
+			footer "${WELCOME_FOOTER}"
+			input_handler
+
+			sh_umount ${MNTROOT}
+			ii_hw_choose
+			return $iiret
+		}
+
+		typeset -l LCLANG
+		LCLANG=${LANG}
+
+		[ ! -f ${MNTROOT}/unixware/*/locale/*.@(${LCLANG}|${LANG}) ] && {
+			[ "${LANG}" = "C" ] || 
+			[ ! -f ${MNTROOT}/unixware/*/locale/*.[cC] ] && {
+				wclose ${CURWIN}
+				display -w "${IHVNIC_NO_FILES}" -bg $MAGENTA -fg $WHITE
+				msg ""
+				footer "${WELCOME_FOOTER}"
+				input_handler
+
+				sh_umount ${MNTROOT}
+				ii_hw_choose
+				return $iiret
+			}
+			LCLANG="c"
+		}
+
+		[ ! -d ${IIROOT}/ihvnic_config ] && mkdir ${IIROOT}/ihvnic_config
+		cp ${MNTROOT}/unixware/*/locale/*.@(${LCLANG}|${LANG}) \
+		   ${IIROOT}/ihvnic_config
+
+		footer "${GENERIC_WAIT_FOOTER}"
+
+		> /tmp/cards
+		cd ${IIROOT}/ihvnic_config
+		for config_file in *
+		do
+			unset NAME BUS
+			. ${config_file}
+
+			for iibus in $BUSTYPES
+			do
+				[ ${BUS} = ${iibus} ] && {
+				echo "${NAME} ${config_file}" >> /tmp/cards
+				}
+			done
+		done
+
+		unset NAME DRIVER_NAME BUS ADDRM TOPOLOGY
+		unset DMA INT MEM PORT NUM_PORTS UNIT DLPI BOARD_IDS
+		unset EXTRA_FILES CONFIG_CMDS CUSTOM_NUM CUSTOM
+
+		${IIROOT}/usr/bin/sort /tmp/cards > /tmp/ii_cards
+		rm /tmp/cards
+
+		iinum=0
+		while read IHV_NAME[iinum] IHV_FILE[iinum]
+		do
+			let iinum+=1
+		done < /tmp/ii_cards
+
+		if [ "$iinum" = "0" ]
+		then
+			wclose ${CURWIN}
+			display -w "${IHVNIC_NO_DRIVERS}" -bg $MAGENTA -fg $WHITE
+			msg ""
+			footer "${WELCOME_FOOTER}"
+			input_handler
+
+			sh_umount ${MNTROOT}
+			ii_hw_choose
+			return $iiret
+		fi
+
+		wclose ${CURWIN}
+
+		open_radio -entry 'footer "${GENERIC_FOOTER}"' -fg $COMBO2_FG \
+			   -bg $COMBO2_BG
+
+		typeset IIRID=$RID
+
+		iinum=0
+		iiindex=0
+		for iiname in ${IHV_NAME[@]}
+		do
+			add_radio ${iiname} -help "helpwin ${IHV_FILE[$iinum]}" \
+				  -entry "iiindex=${iinum}; footer \"${GENERIC_FOOTER}\""
+			let iinum+=1
+		done
+		[ "${iinum}" -gt "18" ] && let iinum=18
+		radio_runparms $IIRID ${iinum}
+
+		typeset title_len
+		let title_len=${#INETINST_HW_SEL_TITLE}+4
+		[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && let RADIO_WIN_WIDTH=title_len
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -right 1 -below 1 \
+			     -fg $COMBO2_FG -bg $COMBO2_BG \
+			     -title "${INETINST_HW_SEL_TITLE}"
+
+		run_radio $IIRID 0 ${iinum}
+		input_handler
+
+		CONFIG_DIR=${IIROOT}/ihvnic_config
+		IHVNIC_USE=1
+		echo "CONFIG_FILE=${IHV_FILE[iiindex]}" > /tmp/ii_config
+		destroy_radio $IIRID
+
+		ii_hw_parms
+
+		return $iiret
+	}
+
+	wclose ${CURWIN}
+	display -w "${IHVNIC_NONE}" -bg $MAGENTA -fg $WHITE
+	msg ""
+	footer "${WELCOME_FOOTER}"
+	input_handler
+
+	ii_hw_choose
+
+	return $iiret
+
+} #end of ii_hw_ihvnic()
+
+function ii_hw_choose
+{
+	echo "========== In ii_hw_choose ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_choose: "
+		input_handler
+	}
+
+	CONFIG_DIR=${IIROOT}/config
+
+	if (( NUM_NICS_DETECT > 5 ))
+	then
+		display "$CHOICE_DISPLAY" -above 0 -fg $COMBO1_FG -bg $COMBO1_BG
+	else
+		display "$CHOICE_DISPLAY" -below 3 -fg $COMBO1_FG -bg $COMBO1_BG
+	fi
+	msg ""
+	footer "$GENERIC_FOOTER"
+	DIS_WIN=${CURWIN}
+
+	open_radio -entry 'footer "$GENERIC_FOOTER"' -fg $COMBO2_FG -bg $COMBO2_BG \
+		   -exit 'wclose ${DIS_WIN}; $call; iiret=$?'
+
+	integer IIRID=$RID
+
+	if (( NUM_NICS_DETECT > 0 ))
+	then
+		if (( NUM_NICS_DETECT == 1 ))
+		then
+			iiindex=0
+			add_radio "$II_SELECT_DETECT_ONE" -entry 'call=ii_hw_detect_one'
+		else
+			add_radio "$II_SELECT_DETECT_MORE" -entry 'call=ii_hw_detect_more'
+		fi
+		IIROW=3
+	fi
+		
+	add_radio "$II_SELECT_LIST" -entry 'call=ii_hw_list'
+	add_radio "$II_SELECT_IHVNIC" -entry 'call=ii_hw_ihvnic'
+
+	radio_runparms $IIRID $IIROW
+
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -below 0 \
+		     -fg $COMBO2_FG -bg $COMBO2_BG -title "$II_SELECT_TITLE"
+
+	run_radio $IIRID 0 $IIROW
+	input_handler
+
+	return $iiret
+
+} #end of ii_hw_choose()
+
+#
+#  Routine to generate a FORM for selecting networking Hardware
+#  for Network Install
+#
+function ii_hw_select
+{
+	echo "========== In ii_hw_select ==========" >> /tmp/ii_look
+
+	[ "${II_VERBOSE}" ] && set -x
+	[ "${II_DEBUG}" ] && {
+		wclose ${CURWIN}
+		display -w "In ii_hw_select: "
+		input_handler
+	}
+
+	[ "$II_HW_SELECT_ONCE" = 0 ] && {
+
+		typeset iibus
+
+		BUSTYPES=`${IIROOT}/etc/conf/bin/idkname -a`
+		# For now, always support PCCARD
+		BUSTYPES="${BUSTYPES} PCCARD"
+
+		footer "${GENERIC_WAIT_FOOTER}"
+
+		# If machine supports an autoconfigurable bustype, autodetect.
+		for iibus in $BUSTYPES
+		do
+			case $iibus in
+			EISA|MCA|PCI)
+				ii_find_ids
+				break
+				;;
+			esac
+		done
+
+		II_HW_SELECT_ONCE=1
+	}
+
+	ii_hw_choose
+	return $iiret
+
+} #end of ii_hw_select()

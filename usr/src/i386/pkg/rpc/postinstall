@@ -1,0 +1,200 @@
+#ident	"@(#)postinstall	1.4"
+#ident  "$Header$"
+
+TMP=/tmp/rpc.$$
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+# install a module.  $1 is the module name
+
+do_install() {
+	ERR=/tmp/${1}.err
+	IDCOMPS="Driver.o Driver_atup.o Driver_mp.o Master System Mfsys Sfsys Node"
+
+	if [ -f ${1}.Dr ]; then mv ${1}.Dr Driver.o; fi
+	if [ -f ${1}_atup.Dr ]; then mv ${1}_atup.Dr Driver_atup.o; fi
+	if [ -f ${1}_mp.Dr ]; then mv ${1}_mp.Dr Driver_mp.o; fi
+
+	if
+		[ -f ${1}.Sp ]
+	then
+		mv ${1}.Sp Space.c
+	fi
+	if
+		[ -f ${1}.Ma ]
+	then
+		grep -v "^[\*#]ident" ${1}.Ma > Master
+		rm -rf ${1}.Ma
+	fi
+	if
+		[ -f ${1}.Sy ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sy |
+			sed "${SEDCMD1}" >System
+		rm -rf ${1}.Sy
+	fi
+	if
+		[ -f ${1}.Mf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Mf > Mfsys
+		rm -rf ${1}.Mf
+	fi
+	if
+		[ -f ${1}.Sf ]
+	then
+		grep -v "^[\*#]ident" ${1}.Sf |
+			sed "${SEDCMD2}" >Sfsys
+		rm -rf ${1}.Sf
+	fi
+	if
+		[ -f ${1}.No ]
+	then
+		grep -v "^[\*#]ident" ${1}.No > Node
+		rm -rf ${1}.No
+	fi
+	if
+		[ -f ${1}.Mt ]
+	then
+		mv ${1}.Mt Mtune
+	fi
+	if
+		[ -f ${1}.Dt ]
+	then
+		mv ${1}.Dt Dtune
+	fi
+	${CONFBIN}/idcheck -p ${1} > ${ERR} 2>&1
+	if [ $? = 0 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+		RET=$?
+	else
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		RET=$?
+	fi
+	rm -rf ${IDCOMPS}
+	if [ ${RET} != 0 ]
+	then
+		message -d `pfmt -s nostd -g ${PKGMSG}:1 "The installation cannot be completed due to an error in the driver installation during the installation of the %s module of the %s.  The file %s contains the errors." ${1} ${NAME} ${ERR} 2>&1`
+		exit ${FAILURE}
+	fi
+	rm -rf ${ERR}
+}
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+VOLATILES=`echo /tmp/rpc/* /tmp/rpc`
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:2 " The Installable Driver feature has been removed. The %s cannot be installed." ${NAME} 2>&1`
+
+SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+SEDCMD2="s/[	 ]N/	Y/"
+
+cd /var/sadm/pkg/${PKG}/install
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall \
+			-o ! -x ${CONFBIN}/idcheck ]
+then
+	message -d ${NOTOOLS}
+	exit $FAILURE
+fi
+
+cd /tmp/rpc
+
+for MODULE in krpc ktli des
+do
+	do_install ${MODULE}
+done
+
+# Rename Driver.o to international version of DES
+
+# If we're upgrading or overlaying, Driver_i.o may already exist,
+# so we need to remove it first to guarantee we do it right.
+
+rm -f ${CONFDIR}/pack.d/des/Driver_i.o
+mv ${CONFDIR}/pack.d/des/Driver.o ${CONFDIR}/pack.d/des/Driver_i.o
+
+# Check if domestic version of DES installed
+if [ -f ${CONFDIR}/pack.d/des/Driver_d.o ]
+then
+	ln -f ${CONFDIR}/pack.d/des/Driver_d.o ${CONFDIR}/pack.d/des/Driver.o
+else
+	ln -f ${CONFDIR}/pack.d/des/Driver_i.o ${CONFDIR}/pack.d/des/Driver.o
+fi
+installf ${PKGINST} ${CONFDIR}/pack.d/des/Driver.o v ? ? ? ? ? ?
+
+# Remove volatile files from OAM data base
+rm -f ${TMP} 1>/dev/null 2>&1
+removef ${PKGINST} ${VOLATILES} 1>/dev/null 2>&1
+removef -f ${PKGINST} 1>/dev/null 2>&1
+cd /tmp
+rm -rf /tmp/rpc 1>/dev/null 2>&1
+
+# rebuild for changes to take effect
+${CONFBIN}/idbuild 2>>${TMP}
+if
+	[ "$?" -ne "0" ]
+then
+	pfmt -s nostd -g ${PKGMSG}:3 "An error has occurred during the rebuild of the UNIX System.\nErrors have been written to the file %s\n" ${TMP} 2>&1
+	exit ${FAILURE}
+fi
+
+installf -f $PKGINST
+
+# create the NET role; if it is already there, ignore error
+#/usr/bin/adminrole -n NET > /dev/null 2>&1
+
+#The following for-loop assigns the commands to the NET role.  Privileges
+#are gotten right from /etc/security/tcb/privs.
+#
+#while read cmd
+#do
+#	base=`basename $cmd`
+#	privs=`
+#	egrep ":${cmd}$" /etc/security/tcb/privs| #Find command in tcb database
+#	sed 's/^.*%inher,\(.*\):.*/\1/p' |	  # get the set of inher privs
+#	sed 's/^.*%fixed,\(.*\):.*//p' |	  # delete the fixed privs
+#	sed 's/,/:/gp'				  # changed ,'s to :'s
+#	`
+#	if [ -z "$privs" ]
+#	then
+#		if [ ! -f $cmd ]
+#			then	echo "Warning: $cmd not found on the system.\c"
+#				echo "	Not adding to TFM."
+#				continue
+#			else	adminrole -a $base:$cmd NET
+#		fi
+#	else
+#		adminrole -a $base:$cmd:$privs NET
+#	fi
+#done <<!
+#/usr/sbin/rpcbind
+#/usr/sbin/keyserv
+#/usr/lib/netsvc/rwall/rpc.rwalld
+#/usr/lib/netsvc/rusers/rpc.rusersd
+#/usr/lib/netsvc/spray/rpc.sprayd
+#/usr/sbin/spray
+#/usr/sbin/newkey
+#/usr/bin/rpcinfo
+#/usr/bin/rusers
+#/usr/bin/chkey
+#/usr/bin/domainname
+#/usr/bin/keylogin
+#/usr/bin/keylogout
+#!
+
+exit 10

@@ -1,0 +1,225 @@
+#!/usr/bin/wksh -openlook
+
+#	Copyright (c) 1991, 1992 UNIX System Laboratories, Inc.
+#	All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+#	UNIX System Laboratories, Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#ident	"@(#)wksh:olexamples/wkcmd	1.5.1.1"
+
+
+# This script provides a convenient way to interface with many simple
+# UNIX commands.  To use it, you name a "command description file"
+# on the command line.  For example:
+#
+#	wkcmd "Sort" /usr/wksh/examples/wkcmd/sort.opts <other options>
+#
+# This descriptor file has the following format:
+#
+# 	command /bin/sort "Sort A File"
+#	option "-r" "Reverse the sort order" boolean true
+#	option "-n" "Sort numerically" boolean true
+#	option "-d" "Field delimiter character" string : 1
+#	option ""   "Field to sort by" integer 1 'let k=option-1; echo "+$k -$option'
+#
+# This script can handle most commands that take one or more files as input
+# and output character data from it, such as sort, grep, wc, etc.
+
+export OPTIONS
+OPTIONS=""
+
+do_command() {
+	gv $FILE string:FILEPATHS
+
+	$COMMAND ${OPTIONS[@]} $MAINOPTS $FILEPATHS >/tmp/cmdout$$ 2>/tmp/cmderr$$
+	sv $TEXT string:"$(</tmp/cmdout$$)"
+
+	if [ -s /tmp/cmderr$$ ]
+	then warn "$(</tmp/cmderr$$)"
+	fi
+}
+
+command() {
+	COMMAND="$1"
+	TITLE="$2"
+}
+
+remove_changebars() {
+	for bar in "${BAR[@]}"
+	do
+		sv $bar changeBar:always
+	done
+}
+
+opt_reset() {
+	integer i=0
+
+	while (($i < NUMOPTS))
+	do
+		case "${OPTTYPE[$i]}" in
+		boolean)
+			sv ${OPTW[$i]} set:"${OPTVAL[$i]}"
+			;;
+		string|integer)
+			sv ${OPTW[$i]} string:"${OPTVAL[$i]}"
+			;;
+		esac
+		i=i+1
+	done
+	remove_changebars
+}
+
+opt_apply() {	# $1 = remove changebars
+	integer i=0
+
+	unset OPTIONS
+	MAINOPTS=""
+
+	while (($i < NUMOPTS))
+	do
+		case "${OPTTYPE[$i]}" in
+		boolean)
+			gv ${OPTW[$i]} set:OPTVAL[$i]
+			if [ "${OPTVAL[$i]}" = "true" ]
+			then OPTIONS[${#OPTIONS[@]}]="${OPT[$i]}"
+			fi
+			;;
+		string|integer|nospace)
+			gv ${OPTW[$i]} string:OPTVAL[$i]
+			if [ "${OPTVAL[$i]}" ]
+			then 
+				if [ X"${OPT[$i]}" != "X" ]
+				then
+				     if [ "${OPTTYPE[$i]}" = nospace ]
+				     then
+				           OPTIONS[${#OPTIONS[@]}]="${OPT[$i]}${OPTVAL[$i]}"
+				     else
+				           OPTIONS[${#OPTIONS[@]}]="${OPT[$i]}"
+				           OPTIONS[${#OPTIONS[@]}]="${OPTVAL[$i]}"
+				     fi
+				else MAINOPTS="${OPTVAL[$i]}"
+				fi
+			fi
+			;;
+		*)
+			continue;
+			;;
+		esac
+		if [ "${OPTFILTER[$i]}" ]
+		then option=${OPTVAL[$i]}
+		     if [ "${OPT[$i]}" ]
+		     then OPTIONS[$N]=`eval ${OPTFILTER[$i]}`
+		     else MAINOPTS=`eval ${OPTFILTER[$i]}`
+		     fi
+		fi
+		let i=i+1
+	done
+	if [ "$1" != false ]
+	then remove_changebars
+	fi
+}
+
+option() {	
+	# $1=option $2=label $3=type(integer/string/boolean) 
+	#		$4=defaultvalue [$5=args...]
+
+	OPT[$NUMOPTS]="$1"
+	OPTTYPE[$NUMOPTS]="$3"
+	case "$3" in
+	integer)
+		addfields $OPTPOP_UCA \
+			FLD "$2:" verify_integer 8
+		acb $FLD_TE postModifyNotification "sv $FLD_CAP changeBar:normal"
+		BAR[$NUMOPTS]=$FLD_CAP
+		if [ "$5" ]
+		then OPTFILTER[$NUMOPTS]="$5"
+		else OPTFILTER[$NUMOPTS]=""
+		fi
+		OPTW[$NUMOPTS]=$FLD
+		sv ${OPTW[$NUMOPTS]} string:"$4"
+		;;
+	string|nospace)
+		addfields $OPTPOP_UCA \
+			FLD "$2:" verify_string "$5"
+		acb $FLD_TE postModifyNotification "sv $FLD_CAP changeBar:normal"
+		BAR[$NUMOPTS]=$FLD_CAP
+		if [ "$6" ]
+		then OPTFILTER[$NUMOPTS]="$6"
+		else OPTFILTER[$NUMOPTS]=""
+		fi
+		OPTW[$NUMOPTS]=$FLD
+		sv ${OPTW[$NUMOPTS]} string:"$4"
+		;;
+	boolean)
+		cmw TMP cap caption $OPTPOP_UCA label:"$2:"
+		cmw OPTW[$NUMOPTS] cb checkBox $TMP label:""
+		acb ${OPTW[$NUMOPTS]} select "sv $TMP changeBar:normal"
+		acb ${OPTW[$NUMOPTS]} unselect "sv $TMP changeBar:normal"
+		BAR[$NUMOPTS]=$TMP
+		if [ "$5" ]
+		then OPTFILTER[$NUMOPTS]="$5"
+		else OPTFILTER[$NUMOPTS]=""
+		fi
+		sv ${OPTW[$NUMOPTS]} set:"$4"
+		OPTTYPE[$NUMOPTS]=boolean
+		;;
+	*)
+		echo "unknown option type: $3, option skipped\n"
+		return
+		;;
+	esac
+	OPTVAL[$NUMOPTS]="$4"
+	let NUMOPTS=NUMOPTS+1
+}
+
+create_options() {
+	cps OPTPOP Options popupWindowShell $TOPLEVEL \
+		apply:'opt_apply' \
+		reset:'opt_reset'
+	sv $OPTPOP_UCA alignCaptions:true sameSize:all allowChangeBars:true
+	unset OPTS OPTW OPTTYPE
+	NUMOPTS=0
+	. $1
+	opt_apply false
+}
+
+expand_files() {
+	gv $FILE string:UNEXPANDED
+	EXPAND=`eval "echo $UNEXPANDED"`
+	sv $FILE string:"$EXPAND"
+	sv $EXP label:"Unexpand" select:unexpand_files
+}
+
+unexpand_files() {
+	sv $FILE string:"$UNEXPANDED"
+	sv $EXP label:"Expand" select:expand_files
+}
+
+if [ $# -lt 2 ]
+then echo "Usage: $1 command-name option-file [openlook args...]"
+     exit 1
+fi
+
+oi TOPLEVEL $1 $1 "$@"
+
+cmw FORM form form $TOPLEVEL
+cmw CAP cap caption $FORM y:5 label:"Files:"
+cmw FILE tf textField $CAP charsVisible:32 verification:'do_command'
+cmw EXP Expand oblongButton $FORM `rightof $CAP 5` y:5 select:expand_files
+
+cmw WINDOW window scrolledWindow $FORM \
+	`under $CAP 5` \
+	viewHeight:200 viewWidth:300 \
+	recomputeHeight:false recomputeWidth:false
+cmw TEXT text staticText $WINDOW
+cmw CA ca controlArea $FORM `under $WINDOW 10` center:true
+
+create_options $2
+
+addbuttons $CA "Run" do_command  "Options..." "pu $OPTPOP"
+
+rw $TOPLEVEL
+ml

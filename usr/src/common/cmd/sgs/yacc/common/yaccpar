@@ -1,0 +1,489 @@
+#ident	"@(#)yacc:common/yaccpar	1.28"
+
+/*
+** Skeleton parser driver for yacc output
+*/
+
+#include <unistd.h> 	/* to get a definition for gettxt so C++ doesn't
+				complain */
+
+/*
+** yacc user known macros and defines
+*/
+#define YYERROR		goto $Perrlab
+#define YYACCEPT	return(0)
+#define YYABORT		return(1)
+#define YYBACKUP( newtoken, newvalue )\
+{\
+	if ( $Pchar >= 0 || ( $Pr2[ $Ptmp ] >> 1 ) != 1 )\
+	{\
+		$Perror( gettxt("uxlibc:78", "Syntax error - cannot backup") );\
+		goto $Perrlab;\
+	}\
+	$Pchar = newtoken;\
+	$Pstate = *$Pps;\
+	$Plval = newvalue;\
+	goto $Pnewstate;\
+}
+#define YYRECOVERING()	(!!$Perrflag)
+#define YYNEW(type)	(char *) malloc(sizeof(type) * $Pnewmax)
+#define YYCOPY(to, from, type) \
+	(type *) memcpy(to, (char *) from, $Pnewmax * sizeof(type))
+#define YYENLARGE( from, type) \
+	(type *) realloc((char *) from, $Pnewmax * sizeof(type))
+#ifndef YYDEBUG
+#	define YYDEBUG	1	/* make debugging available */
+#endif
+
+/*
+** user known globals
+*/
+int $Pdebug;			/* set to 1 to get debugging */
+
+/*
+** driver internal defines
+*/
+#define YYFLAG		(-10000000)
+
+/*
+** global variables used by the parser
+*/
+YYSTYPE *$Ppv;			/* top of value stack */
+int *$Pps;			/* top of state stack */
+
+int $Pstate;			/* current state */
+int $Ptmp;			/* extra var (lasts between blocks) */
+
+int $Pnerrs;			/* number of errors */
+int $Perrflag;			/* error recovery flag */
+int $Pchar;			/* current input token number */
+
+
+
+/*
+** $Pparse - return 0 if worked, 1 if syntax error not recovered from
+*/
+#if defined(__STDC__) || defined(__cplusplus)
+int $Pparse(void)
+#else
+int $Pparse()
+#endif
+{
+	register YYSTYPE *$Ppvt;	/* top of value stack for $vars */
+	int *$Ps_end;
+
+	/*
+	** Initialize externals - $Pparse may be called more than once
+	*/
+	$Ppv = &$Pv[-1];
+	$Pps = &$Ps[-1];
+	$Pstate = 0;
+	$Ptmp = 0;
+	$Pnerrs = 0;
+	$Perrflag = 0;
+	$Pchar = -1;
+
+#if YYMAXDEPTH <= 0
+	if ($Pmaxdepth <= 0)
+	{
+		if (($Pmaxdepth = YYEXPAND(0)) <= 0)
+		{
+			$Perror(gettxt("uxlibc:79", "Yacc initialization error"));
+			YYABORT;
+		}
+	}
+#endif
+	$Ps_end = &$Ps[$Pmaxdepth];
+
+	goto $Pstack;
+	{
+		register YYSTYPE *$P_pv;	/* top of value stack */
+		register int *$P_ps;		/* top of state stack */
+		register int $P_state;		/* current state */
+		register int  $P_n;		/* internal state number info */
+
+		/*
+		** get globals into registers.
+		** branch to here only if YYBACKUP was called.
+		*/
+	$Pnewstate:
+		$P_pv = $Ppv;
+		$P_ps = $Pps;
+		$P_state = $Pstate;
+		goto $P_newstate;
+
+		/*
+		** get globals into registers.
+		** either we just started, or we just finished a reduction
+		*/
+	$Pstack:
+		$P_pv = $Ppv;
+		$P_ps = $Pps;
+		$P_state = $Pstate;
+
+		/*
+		** top of for (;;) loop while no reductions done
+		*/
+	$P_stack:
+		/*
+		** put a state and value onto the stacks
+		*/
+#if YYDEBUG
+		/*
+		** if debugging, look up token value in list of value vs.
+		** name pairs.  0 and negative (-1) are special values.
+		** Note: linear search is used since time is not a real
+		** consideration while debugging.
+		*/
+		if ( $Pdebug )
+		{
+			register int $P_i;
+
+			printf( "State %d, token ", $P_state );
+			if ( $Pchar == 0 )
+				printf( "end-of-file\n" );
+			else if ( $Pchar < 0 )
+				printf( "-none-\n" );
+			else
+			{
+				for ( $P_i = 0; $Ptoks[$P_i].t_val >= 0;
+					$P_i++ )
+				{
+					if ( $Ptoks[$P_i].t_val == $Pchar )
+						break;
+				}
+				printf( "%s\n", $Ptoks[$P_i].t_name );
+			}
+		}
+#endif /* YYDEBUG */
+		if ( ++$P_ps >= $Ps_end )	/* room on stack? */
+		{
+			int $Pnewmax;
+			long byte_offset;
+			int *$Ps_base = $Ps;
+			YYSTYPE *$Pv_base = $Pv;
+#ifdef YYEXPAND
+			$Pnewmax = YYEXPAND($Pmaxdepth);
+#else
+			$Pnewmax = 2 * $Pmaxdepth;	/* double table size */
+			if ($Pmaxdepth == YYMAXDEPTH)	/* first time growth */
+			{
+				char *new$Ps = YYNEW(int);
+				char *new$Pv = YYNEW(YYSTYPE);
+				if (new$Ps != 0 && new$Pv != 0)
+				{
+					$Ps = YYCOPY(new$Ps, $Ps, int);
+					$Pv = YYCOPY(new$Pv, $Pv, YYSTYPE);
+				}
+				else
+					$Pnewmax = 0;	/* failed */
+			}
+			else				/* not first time */
+			{
+				$Ps = YYENLARGE($Ps, int);
+				$Pv = YYENLARGE($Pv, YYSTYPE);
+				if ($Ps == 0 || $Pv == 0)
+					$Pnewmax = 0;	/* failed */
+			}
+#endif
+			if ($Pnewmax <= $Pmaxdepth)	/* tables not expanded */
+			{
+				$Perror( gettxt("uxlibc:80", "Yacc stack overflow") );
+				YYABORT;
+			}
+			$Pmaxdepth = $Pnewmax;
+			$Ps_end = &$Ps[$Pmaxdepth];
+
+			/* reset pointers into $Ps */
+			byte_offset = (char *)$Ps - (char *)$Ps_base;
+			/*LINTED*/
+			$P_ps = (int *)(byte_offset + (char *)$P_ps);
+			/*LINTED*/
+			$Pps = (int *)(byte_offset + (char *)$Pps);
+
+			/* reset pointers into $Pv */
+			byte_offset = (char *)$Pv - (char *)$Pv_base;
+			/*LINTED*/
+			$Ppvt = (YYSTYPE *)(byte_offset + (char *)$Ppvt);
+			/*LINTED*/
+			$P_pv = (YYSTYPE *)(byte_offset + (char *)$P_pv);
+			/*LINTED*/
+			$Ppv = (YYSTYPE *)(byte_offset + (char *)$Ppv);
+		}
+		*$P_ps = $P_state;
+		*++$P_pv = $Pval;
+
+		/*
+		** we have a new state - find out what to do
+		*/
+	$P_newstate:
+		if ( ( $P_n = $Ppact[ $P_state ] ) <= YYFLAG )
+			goto $Pdefault;		/* simple state */
+#if YYDEBUG
+		/*
+		** if debugging, need to mark whether new token grabbed
+		*/
+		$Ptmp = $Pchar < 0;
+#endif
+		if ( ( $Pchar < 0 ) && ( ( $Pchar = $Plex() ) < 0 ) )
+			$Pchar = 0;		/* reached EOF */
+#if YYDEBUG
+		if ( $Pdebug && $Ptmp )
+		{
+			register int $P_i;
+
+			printf( "Received token " );
+			if ( $Pchar == 0 )
+				printf( "end-of-file\n" );
+			else if ( $Pchar < 0 )
+				printf( "-none-\n" );
+			else
+			{
+				for ( $P_i = 0; $Ptoks[$P_i].t_val >= 0;
+					$P_i++ )
+				{
+					if ( $Ptoks[$P_i].t_val == $Pchar )
+						break;
+				}
+				printf( "%s\n", $Ptoks[$P_i].t_name );
+			}
+		}
+#endif /* YYDEBUG */
+		if ( ( ( $P_n += $Pchar ) < 0 ) || ( $P_n >= YYLAST ) )
+			goto $Pdefault;
+		if ( $Pchk[ $P_n = $Pact[ $P_n ] ] == $Pchar )	/*valid shift*/
+		{
+			$Pchar = -1;
+			$Pval = $Plval;
+			$P_state = $P_n;
+			if ( $Perrflag > 0 )
+				$Perrflag--;
+			goto $P_stack;
+		}
+
+	$Pdefault:
+		if ( ( $P_n = $Pdef[ $P_state ] ) == -2 )
+		{
+#if YYDEBUG
+			$Ptmp = $Pchar < 0;
+#endif
+			if ( ( $Pchar < 0 ) && ( ( $Pchar = $Plex() ) < 0 ) )
+				$Pchar = 0;		/* reached EOF */
+#if YYDEBUG
+			if ( $Pdebug && $Ptmp )
+			{
+				register int $P_i;
+
+				printf( "Received token " );
+				if ( $Pchar == 0 )
+					printf( "end-of-file\n" );
+				else if ( $Pchar < 0 )
+					printf( "-none-\n" );
+				else
+				{
+					for ( $P_i = 0;
+						$Ptoks[$P_i].t_val >= 0;
+						$P_i++ )
+					{
+						if ( $Ptoks[$P_i].t_val
+							== $Pchar )
+						{
+							break;
+						}
+					}
+					printf( "%s\n", $Ptoks[$P_i].t_name );
+				}
+			}
+#endif /* YYDEBUG */
+			/*
+			** look through exception table
+			*/
+			{
+				register $Ptabelem *$Pxi = ($Ptabelem *)$Pexca;
+
+				while ( ( *$Pxi != -1 ) ||
+					( $Pxi[1] != $P_state ) )
+				{
+					$Pxi += 2;
+				}
+				while ( ( *($Pxi += 2) >= 0 ) &&
+					( *$Pxi != $Pchar ) )
+					;
+				if ( ( $P_n = $Pxi[1] ) < 0 )
+					YYACCEPT;
+			}
+		}
+
+		/*
+		** check for syntax error
+		*/
+		if ( $P_n == 0 )	/* have an error */
+		{
+			/* no worry about speed here! */
+			switch ( $Perrflag )
+			{
+			case 0:		/* new error */
+				$Perror( gettxt("uxlibc:81", "Syntax error") );
+				goto skip_init;
+			$Perrlab:
+				/*
+				** get globals into registers.
+				** we have a user generated syntax type error
+				*/
+				$P_pv = $Ppv;
+				$P_ps = $Pps;
+				$P_state = $Pstate;
+				$Pnerrs++;
+				/* FALLTHRU */
+			skip_init:
+			case 1:
+			case 2:		/* incompletely recovered error */
+					/* try again... */
+				$Perrflag = 3;
+				/*
+				** find state where "error" is a legal
+				** shift action
+				*/
+				while ( $P_ps >= $Ps )
+				{
+					$P_n = $Ppact[ *$P_ps ] + YYERRCODE;
+					if ( $P_n >= 0 && $P_n < YYLAST &&
+						$Pchk[$Pact[$P_n]] == YYERRCODE)					{
+						/*
+						** simulate shift of "error"
+						*/
+						$P_state = $Pact[ $P_n ];
+						goto $P_stack;
+					}
+					/*
+					** current state has no shift on
+					** "error", pop stack
+					*/
+#if YYDEBUG
+#	define _POP_ "Error recovery pops state %d, uncovers state %d\n"
+					if ( $Pdebug )
+						printf( _POP_, *$P_ps,
+							$P_ps[-1] );
+#	undef _POP_
+#endif
+					$P_ps--;
+					$P_pv--;
+				}
+				/*
+				** there is no state on stack with "error" as
+				** a valid shift.  give up.
+				*/
+				YYABORT;
+			case 3:		/* no shift yet; eat a token */
+#if YYDEBUG
+				/*
+				** if debugging, look up token in list of
+				** pairs.  0 and negative shouldn't occur,
+				** but since timing doesn't matter when
+				** debugging, it doesn't hurt to leave the
+				** tests here.
+				*/
+				if ( $Pdebug )
+				{
+					register int $P_i;
+
+					printf( "Error recovery discards " );
+					if ( $Pchar == 0 )
+						printf( "token end-of-file\n" );
+					else if ( $Pchar < 0 )
+						printf( "token -none-\n" );
+					else
+					{
+						for ( $P_i = 0;
+							$Ptoks[$P_i].t_val >= 0;
+							$P_i++ )
+						{
+							if ( $Ptoks[$P_i].t_val
+								== $Pchar )
+							{
+								break;
+							}
+						}
+						printf( "token %s\n",
+							$Ptoks[$P_i].t_name );
+					}
+				}
+#endif /* YYDEBUG */
+				if ( $Pchar == 0 )	/* reached EOF. quit */
+					YYABORT;
+				$Pchar = -1;
+				goto $P_newstate;
+			}
+		}/* end if ( $P_n == 0 ) */
+		/*
+		** reduction by production $P_n
+		** put stack tops, etc. so things right after switch
+		*/
+#if YYDEBUG
+		/*
+		** if debugging, print the string that is the user's
+		** specification of the reduction which is just about
+		** to be done.
+		*/
+		if ( $Pdebug )
+			printf( "Reduce by (%d) \"%s\"\n",
+				$P_n, $Preds[ $P_n ] );
+#endif
+		$Ptmp = $P_n;			/* value to switch over */
+		$Ppvt = $P_pv;			/* $vars top of value stack */
+		/*
+		** Look in goto table for next state
+		** Sorry about using $P_state here as temporary
+		** register variable, but why not, if it works...
+		** If $Pr2[ $P_n ] doesn't have the low order bit
+		** set, then there is no action to be done for
+		** this reduction.  So, no saving & unsaving of
+		** registers done.  The only difference between the
+		** code just after the if and the body of the if is
+		** the goto $P_stack in the body.  This way the test
+		** can be made before the choice of what to do is needed.
+		*/
+		{
+			/* length of production doubled with extra bit */
+			register int $P_len = $Pr2[ $P_n ];
+
+			if ( !( $P_len & 01 ) )
+			{
+				$P_len >>= 1;
+				$Pval = ( $P_pv -= $P_len )[1];	/* $$ = $1 */
+				$P_state = $Ppgo[ $P_n = $Pr1[ $P_n ] ] +
+					*( $P_ps -= $P_len ) + 1;
+				if ( $P_state >= YYLAST ||
+					$Pchk[ $P_state =
+					$Pact[ $P_state ] ] != -$P_n )
+				{
+					$P_state = $Pact[ $Ppgo[ $P_n ] ];
+				}
+				goto $P_stack;
+			}
+			$P_len >>= 1;
+			$Pval = ( $P_pv -= $P_len )[1];	/* $$ = $1 */
+			$P_state = $Ppgo[ $P_n = $Pr1[ $P_n ] ] +
+				*( $P_ps -= $P_len ) + 1;
+			if ( $P_state >= YYLAST ||
+				$Pchk[ $P_state = $Pact[ $P_state ] ] != -$P_n )
+			{
+				$P_state = $Pact[ $Ppgo[ $P_n ] ];
+			}
+		}
+					/* save until reenter driver code */
+		$Pstate = $P_state;
+		$Pps = $P_ps;
+		$Ppv = $P_pv;
+	}
+	/*
+	** code supplied by user is placed in this switch
+	*/
+	switch( $Ptmp )
+	{
+		$A
+	}
+	goto $Pstack;		/* reset registers in driver code */
+}
+
+#undef YYCONST

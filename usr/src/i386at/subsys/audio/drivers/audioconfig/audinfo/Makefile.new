@@ -1,0 +1,39 @@
+
+#
+#	@(#)Makefile.new	7.1	10/22/97	12:21:42
+#
+
+CC	= cc
+CFLAGS	= -belf -dy -s
+YACC	= yacc -d
+LEX	= flex -l
+
+all:	config.dat conflib.o reader lscards
+
+config.dat: parser config.asc Makefile
+	rm -f config config.dat config.gz config.Z
+	./parser config < config.asc
+	compress config
+	mv config.Z config.dat
+
+parser:	parser.o scan.o confdata.h
+	$(CC) -o parser parser.o scan.o 
+
+install:  config.dat
+
+clean:
+	rm -f parser core *.o y.tab.h *~ *.old *.orig x y z 
+	rm -f config config.gz config.tmp config.dat
+	rm -f reader lscards
+
+conflib.o: confdata.h
+
+reader: reader.o conflib.o
+	$(CC) -o reader reader.o conflib.o
+
+ossres.o: ossres.c confdata.h
+
+ossres: ossres.o conflib.o
+	$(CC) -o ossres ossres.o conflib.o
+
+lscards: lscards.o conflib.o

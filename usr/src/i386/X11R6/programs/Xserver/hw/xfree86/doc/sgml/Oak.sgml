@@ -1,0 +1,132 @@
+<!doctype linuxdoc system>
+ 
+<article>
+
+<!-- Title information -->
+<title> Information for Oak Technologies Inc. Chipset Users
+<author> Jorge F. Delgado Mendoza (<it>ernar@dit.upm.es</it>)
+<date> 18 January 1995
+
+<!-- Table of contents -->
+<toc>
+
+<sect> Supported chipsets <p>
+
+The driver is used in the 8-bit / 256-color SVGA server and the mono
+server. The following chipsets for Oak Tech. Inc. are supported:
+<descrip>
+<tag>OTI067</tag>
+	ISA SVGA chipset, up to 512Kbytes of DRAM (usually 70/80 ns).
+<tag>OTI077</tag>
+	Enhanced version of the 067, with support for 1Mbyte and
+	up to 65 Mhz dot-clock, this chipset supports up to
+	1024x768x256 colors in Non-Interlaced mode, and up to
+	1280x1024x16 colors Interlaced.
+<tag>OTI087</tag>
+	One of the first VLB chipsets available, it has a 16-bit
+	external data path, and a 32-bit internal
+	memory-controller data path, it also has register-based
+	color expansion, hardware cursor, a primitive BitBlt
+	engine, a 64 bit graphic latch and some other new (in its
+	time) features. Maximum BIOS resolutions are 1024x768x256
+	Non-Interlaced and 1280x1024x256 interlaced.  Maximum
+	Dot-Clock is 80Mhz, but usually is coupled with OTI068
+	clock generator whose highest frequency is 78Mhz.
+	Supports up to 2MBytes of 70ns DRAM.
+</descrip>
+
+All the chipsets are "Backwards compatible", in fact some early
+drivers for the OTI087 based chipsets were for the 077!!!!
+
+Accelerated support is included only for OTI087 chipsets, also Mono
+server is only included for 067/077 chipsets.
+
+<sect> XF86Config options <p>
+
+The following options are of particular interest to the Oak driver. Each
+of them must be specified in the 'svga' driver section of the
+<tt>XF86Config</tt> file, within the Screen subsections to which they are
+applicable (you can enable options for all depths by specifying them in the
+Device section).
+
+<descrip>
+<tag>
+Option &dquot;linear&dquot; (OTI087)
+</tag>
+	This option enables a linear framebuffer at 0xE00000 (14Mb) for
+	cards recognized as ISA by the probe.  Cards that are VLB will
+	map the framebuffer at 0x4E00000.  The aperture depends
+	on the VideoRam parameter in the <tt>XF86Config</tt> file or on
+	the probed value for the board. It will speed up performance by
+	about 15&percnt; on a VLB-based boards for a DX2-66 486.
+<tag>
+Option &dquot;fifo_aggressive&dquot; (OTI087)
+</tag>
+	This option will cause the command FIFO threshold of the
+	chipset to be set at 2 instructions, which should be optimal
+	for 16-bit data transfers, as empirical use of different
+	thresholds with xbench show. Expect a 5-10&percnt; of performance
+	boost on a DX2-66 486.
+<tag>
+Option &dquot;fifo_conservative&dquot; (OTI087)
+</tag>
+	This option will set the FIFO to a safe value of 14, slowing
+	the board by a 50&percnt;, use this only if you experience streaks or
+	anomalies on the screen.
+<tag>
+Option &dquot;favour_bitblt&dquot; (OTI087)
+</tag>
+	This option will enable an internal cache on the board that
+	will be used as a rudimentary bitblt engine. Performance boost
+	is more or less 100&percnt;, (double BlitStones on xbench). Most
+	OTI087 boards seem to have this feature broken, corrupting text
+	from xterms and leaving mouse droppings throughout the
+	screen. As a rule of thumb, enable it, if it works badly,
+	disable it ;).
+</descrip>
+
+
+<sect> Mode issues <p>
+
+    The use of very high dot-clocks has a REAL negative effect on the
+    performance of the boards, due to its limited 80Mbit/sec, higher
+    dot clocks limit its ability to draw data into the
+    framebuffer. Thus expect better performance of a 72Mhz based mode
+    than on a 78Mhz based one (for example) where more bandwidth is
+    required for screen refresh.
+  
+    It does not make much sense to use the highest clock (78 MHz) for
+    1024x768 at 76 Hz on a OTI087; the card will almost come to a
+    standstill. A 75 MHz dot clock results in 70 Hz which should be
+    acceptable. If you have a monitor that supports 1024x768 at 76 Hz
+    with a 78 MHz dot clock, a standard OTI087 based card is a poor
+    match anyway.
+
+<sect> Linear addressing<p>
+
+    Linear addressing is hardwired to 14 Mbytes for ISA boards and 78 Mbytes
+    for VLB boards, thus if you have more
+    than that on your board you shouldn't enable it.
+    The aperture is selected from the VideoRam
+    parameter of the XF86Config or from the amount of memory that is
+    detected if VideoRam is not found.
+
+    I hope (because I have not tested it very thoroughly) that linear
+    addressing will work on ISA boards, VLB ones are fine (I am
+    writing this stuff on mine).
+
+
+    GOOD LUCK!!!!
+
+<verb>
+$XFree86: xc/programs/Xserver/hw/xfree86/doc/sgml/Oak.sgml,v 3.5 1995/12/28 03:49:31 dawes Exp $
+
+
+
+
+
+$XConsortium: Oak.sgml /main/4 1995/12/29 15:59:12 kaleb $
+</verb>
+
+</article>
+

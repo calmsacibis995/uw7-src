@@ -1,0 +1,195 @@
+#!/usr/bin/ksh
+
+if [ ! -f /usr/local/ldap-tests/scripts/ldap-test-globals ]
+then
+	echo TEST PROG ERROR: Cannot not include /usr/local/scripts/ldap-tests/ldap-test-globals
+	exit 1
+fi
+
+. /usr/local/ldap-tests/scripts/ldap-test-globals
+
+# FUNCTIONS ###
+
+function interrogate_slapd_with_ldif { 
+	if [ $# -eq 1 ]
+	then
+		typeset ldiffile="$1"
+		typeset DNFILE=/tmp/dnfile
+		fgrep "dn:" $ldiffile | sed -e's/^dn: //' | \
+		awk '   BEGIN { errcount=0; testcount=0;}
+			{
+			DN=$0
+			print "==========================="
+			print "TEST "testcount" searching for: "$0
+			"/usr/bin/ldapsearch -s base -b \""DN"\" \"objectclass=*\" dn 2>&1" | getline RESULT
+			print "RESULT: "RESULT
+				testcount++;
+				if( RESULT != DN ) {
+					errcount++;
+					print ":TEST ERROR:"
+				}
+			close("/usr/bin/ldapsearch -s base -b \""DN"\" \"objectclass=*\" dn 2>&1")
+			}
+			END {
+			print "NUMBER OF TEST ERRORS = "errcount; 
+			print "NUMBER OF TESTS = "testcount; 
+			}
+		'
+		if [ $? != 0 ]
+		then
+			echo TEST PROGRAM ERROR: Error executing awk
+			exit 1
+		fi
+
+	fi
+}
+
+# MAIN ####
+
+# Check permissions
+UID=`id -u`
+if [ "$UID" != 0 ]
+then
+        echo TEST PROGRAM ERROR: You must be root to run this command
+        exit 1
+fi
+
+# Check that ldap is installed
+pkginfo ldap > /dev/null 2>&1
+if [ $? != 0 ]
+then
+	echo TEST PROGRAM ERROR: pkginfo ldap indicates that the ldap package is not installed
+	exit 1
+fi
+
+# Check command line parameters
+if [ $# -eq 0 ]
+then
+	echo TEST PROGRAM ERROR: no args to $0
+	exit 1
+fi
+
+ACTION=
+while [ $# != 0 ]
+do
+	case $1 in
+	-l)
+		# specify ldif files
+		shift
+		if [ $# -eq 0 ]
+		then
+			echo TEST PROGRAM ERROR: name of ldif file required
+			exit 1
+		fi
+
+		LDIFFILE=$1
+		if [ ! -a "$LDIFFILE" ]
+		then
+			echo TEST PROGRAM ERROR: Cannot access specified ldif file
+			exit 1
+		fi
+		ACTION=gen_from_ldif
+		;;
+	-d)
+		shift
+		if [ $# -lt 1 ]
+		then
+			echo TEST PROGRAM ERROR: directory name required
+			exit 1
+		fi
+		# specify 
+		DATABASEDIR=$1
+		if [ ! -d "$DATABASEDIR" ]
+		then
+			echo TEST PROGRAM ERROR: $DATABASEDIR is not a directory
+			exit 1
+		fi
+		ACTION=gen_from_existing
+		;;
+	-f)
+		shift
+		SLAPDFILE=$1
+		;;
+	*)
+		echo TEST PROGRAM ERROR: Unknown parameter: \"$1\"
+		exit 1
+		;;
+	esac
+	shift
+done
+
+# Determine slapd.conf file to use
+# - if a slapd.conf file is not specified at the command line then 
+#   use another one
+
+if [ -z "$SLAPDFILE" ]
+then
+	[ ! -f $CFGFILES/slapd.1.conf ] && {
+		echo TEST PROGRAM ERROR:
+		echo $CFGFILES/slapd.1.conf not found
+		echo This file is required to bring up a slapd daemon
+		exit 1
+	}
+	[ ! -d /tmp/ldap-tests ] && mkdir -p /tmp/ldap-tests
+	cp $CFGFILES/slapd.1.conf /tmp/ldap-tests
+	cp $CFGFILES/slapd.at.conf /tmp/ldap-tests
+	cp $CFGFILES/slapd.oc.conf /tmp/ldap-tests
+	cp $CFGFILES/slapd.acl.conf /tmp/ldap-tests
+	cp $CFGFILES/database1.conf /tmp/ldap-tests
+	SLAPDFILE=/tmp/ldap-tests/slapd.1.conf
+fi
+
+# Check that SLAPDFILE is readable
+if [ ! -a "$SLAPDFILE" ]
+then
+	echo TEST PROGRAM ERROR: Cannot access slapd.conf file: $SLAPDFILE
+	exit 1
+fi
+
+case $ACTION in
+gen_from_ldif)
+	# Generate database from ldif then interrogate it
+	echo SLAPD.CONF=$SLAPDFILE
+	${LDIF2LDBM} -i "$LDIFFILE" -f "$SLAPDFILE"
+	if [ $? != 0 ]
+	then
+		echo TEST PROGRAM ERROR: Problem executing ${LDIF2LDBM}
+		exit 1
+	fi
+	startSlapd
+	interrogate_slapd_with_ldif "$LDIFFILE"
+	stopSlapd
+	;;
+gen_from_existing)
+	# Must generate LDIF file
+	if [ ! -a ${DATABASEDIR}/id2entry.dbb ]
+	then
+		echo TEST PROGRAM ERROR: Cannot find ${DATABASEDIR}/id2entry.dbb
+		exit 1
+	fi
+
+	${LDBMCAT} -n ${DATABASEDIR}/id2entry.dbb > /tmp/ldif_file.1
+	if [ $? != 0 ]
+	then
+		echo TEST PROGRAM ERROR: Problem executing ${LDBMCAT}
+		exit 1
+	fi
+	awk '
+		/^[      ]*$/ { next; }
+		/^dn:/ { print ""; }
+		{ print $0; }
+	' /tmp/ldif_file.1 > /tmp/ldif_file.2
+
+	startSlapd
+
+	rm /tmp/ldif_file.1
+	interrogate_slapd_with_ldif /tmp/ldif_file.2
+	rm /tmp/ldif_file.2
+
+	stopSlapd
+	;;
+*)
+	;;
+esac
+exit 0
+# END OF SCRIPT ####

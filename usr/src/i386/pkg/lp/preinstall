@@ -1,0 +1,197 @@
+#ident	"@(#)preinstall	1.2"
+#ident  "$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+##########
+##
+## Make sure the user "lp" and group "lp" exist and are
+## consistent.
+##
+##########
+
+pfmt -s nostd -g ${PKGMSG}:1 "##checking that user \"lp\" and group \"lp\" exist. . .\n" 2>&1
+
+PATH=${PATH}:/usr/sadm/bin
+export PATH
+
+#chgflag=0
+if valgid lp
+then
+	entry=`grep '^lp:' /etc/group`
+	gid=`expr "${entry}" : "^lp:[^:]*:\([^:]*\):"`
+else
+	gid=7
+	until groupadd -g ${gid} lp >/dev/null 2>&1
+	do
+		gid=`expr ${gid} + 1`
+	done
+	#chgflag=1
+	pfmt -s nostd -g ${PKGMSG}:2 "\nThe group \"lp\" has been created with ID %s.\n\n" ${gid} 2>&1
+fi
+
+if valuid lp
+then
+	entry=`grep '^lp:' /etc/passwd`
+	cgid=`expr "${entry}" : "lp:[^:]*:[^:]*:\([^:]*\):"`
+	if [ ${cgid} -ne ${gid} ]
+	then
+		pfmt -s nostd -g ${PKGMSG}:3 "##Moving the login \"lp\" from group ID %s to $s . . .\n" ${cgid} ${gid} 2>&1
+		usermod -g ${gid} lp
+		#chgflag=1
+	fi
+else
+	uid=7
+	until useradd -g ${gid} -u ${uid} -d /var/spool/lp lp >/dev/null 2>&1
+	do
+		uid=`expr ${uid} + 1`
+	done
+	#chgflag=1
+	pfmt -s nostd -g ${PKGMSG}:4 "\nThe login \"lp\" has been created with ID %s.\n\n" ${uid} 2>&1
+fi
+
+##########
+##
+## Ensure that "lp" can use cron:
+##
+##########
+
+CRONALLOW=/etc/cron.d/cron.allow
+CRONDENY=/etc/cron.d/cron.deny
+
+if [ -f "${CRONDENY}" ] 
+then
+	if grep '^lp$' ${CRONDENY} 1>/dev/null 2>&1
+	then
+	ed -s ${CRONDENY} <<-'EOF'
+		/^lp$/d
+		w
+		q
+	EOF
+	pfmt -s nostd -g ${PKGMSG}:5 "\nThe login \"lp\" has been removed from the list of logins\n\tdenied access to the cron service.\n\n" 2>&1
+	fi
+fi
+
+if [ -f "${CRONALLOW}" ]
+then
+	if grep '^lp$' ${CRONALLOW} 1>/dev/null 2>&1
+	then
+		:
+	else
+		echo "lp" >>${CRONALLOW}
+		pfmt -s nostd -g ${PKGMSG}:6 "\nThe login \"lp\" has been added to the list of logins\n\tallowed to use the cron service.\n\n" 2>&1
+	fi
+fi
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && set -x
+
+#  The volatile files saved for ${PKGINST} will be listed in 
+#  /etc/inst/save.user/${PKGINST}.sav
+
+#  The initial V4 volatile files list for ${PKGINST} should be in 
+#  /etc/inst/up/patch/${PKGINST}.LIST
+
+[ "$PKGINSTALL_TYPE" = NEWINSTALL ] || {
+
+	#
+	# For an AUTOMATIC installation, PKGINSTALL_TYPE will not
+	# be set here.  Normally we could let pkgsavfiles deal with
+	# this case, but lp is special because for an upgrade, the
+	# the volatile files had to be saved before we installed
+	# the base.  So we need to determine the install type here
+	# using the generic tool chkpkgrel.  We're relying on the
+	# original pkginfo file (if any) to still be in place.
+	#
+
+	UPGFILE=/etc/inst/save.user/lp.env
+
+	[ ! "$PKGINSTALL_TYPE" ] && {
+
+		#This code is run in automatic mode.
+		#For overlay we must remember to rm /etc/inst/save.user/lp.env 
+		#created by chkpkgrel being run here.  Therefore, set rm_lp_env.
+		#This must be done for pkgsavfiles to work correctly.
+
+		rm_lp_env=1	
+
+		PKGINSTALL_TYPE=NEWINSTALL
+
+#chkpkgrel, returns a code, indicating which version of this pkg is installed.
+#Return code 2 indicates overlay of the same or older version. For overlay,
+#existence of the file $UPGRADE_STORE/$PKGINST.ver indicates presence of older
+#version. This file contains the old version.
+
+#	${SCRIPTS}/chkpkgrel returns    0 if pkg is not installed
+#					1 if pkg if unknown version
+#					2 if pkg is SVR4.2
+#					4 if pkg is SVR4.0 V4
+#					9 if newer pkg is installed
+		${SCRIPTS}/chkpkgrel
+		PKGVERSION=$?
+
+		case $PKGVERSION in
+			2)	PKGINSTALL_TYPE=OVERLAY ;;
+			4)	PKGINSTALL_TYPE=UPGRADE ;;
+			9)	#pkgrm newer pkg before older pkg is installed.
+				exit 3	;; 
+			*)	;;
+		esac
+
+		[ "$PKGINSTALL_TYPE" = NEWINSTALL ] && {
+
+			echo AUTOMERGE=NULL > $UPGFILE
+			echo PKGINSTALL_TYPE=NEWINSTALL >> $UPGFILE
+			# I want CUSTOM here !
+			echo INSTALL_MODE=CUSTOM >> $UPGFILE
+			exit 0
+		}
+	}
+
+	[ "$PKGINSTALL_TYPE" = UPGRADE ] && {
+
+        	# for upgrade the files have been saved already
+
+		cp /etc/inst/up/patch/lp.LIST /etc/inst/save.user/lp.sav
+
+		echo AUTOMERGE=Yes > $UPGFILE
+		echo PKGINSTALL_TYPE=UPGRADE >> $UPGFILE
+		# I want CUSTOM here !
+		echo INSTALL_MODE=CUSTOM >> $UPGFILE
+
+		[ "$UPDEBUG" = YES ] && goany
+
+		exit 0
+	}
+
+	#The following line of code is run in automatic mode.
+	#For overlay we must rm /etc/inst/save.user/lp.env 
+	#created by chkpkgrel run in preinstall.  rm_lp_env was set earlier.
+	#This must be done for pkgsavfiles to work correctly.
+
+	[ "$rm_lp_env" = "1" ] && rm -f /etc/inst/save.user/lp.env
+
+	[ "$UPDEBUG" = YES ] && goany
+
+	${SCRIPTS}/pkgsavfiles ${PKGINST}
+
+	[ "$UPDEBUG" = YES ] && goany
+}
+
+############# End  UPGRADE AND OVERLAY #######################
+
+exit 0

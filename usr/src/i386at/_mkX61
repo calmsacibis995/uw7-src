@@ -1,0 +1,85 @@
+#ident	"@(#):mkX61	11.1	10/22/97	15:44:43"
+#ident	"$Header$"
+#
+#	Build X11R6.1 Graphics Source (X11R6)
+#
+#	Sun May  4 12:08:08 PDT 1997	-	hiramc@sco.COM
+#	- add the make install and DESTDIR to OSR5 to get all the
+#	- libraries there, and the special make of libX11 with different
+#	- connection flags
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+# call is ./:mkX $ROOT $MACH $WORK $TOOLS $PFX
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Pfx=$5
+
+cd ${Root}/usr/src/${Work}/X11R6
+
+ROOT=${Root}
+MACH=${Mach}
+WORK=${Work}
+TOOLS=${Tools}
+PFX=${Pfx}
+export ROOT MACH WORK TOOLS PFX
+
+MFLAGS=-i
+export MFLAGS
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} install
+
+cd ${Root}/usr/src/${Work}/X11R6/lib/Ximposr5
+../../config/imake/imake -I../../config/cf   -DTOPDIR=../.. -DCURDIR=lib/Ximposr5
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} Makefiles
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} includes
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} depend
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} install DESTDIR=${Root}/${Mach}/OSR5/udk
+
+cd ${Root}/usr/src/${Work}/X11R6/programs/Xserver/hw/xfree86/SuperProbe
+
+${Tools}/usr/X11R6.1/bin/${Pfx}xmkmf -a
+${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make ${MFLAGS} install DESTDIR=${Root}/${Mach}
+
+#
+#	Build the graphic portion of the CCS debugger
+#	Chances are most was already made, but without
+#	graphics.  We don't care, we'll make all, anyhow.
+#	NOTE: :mknatccs MUST be executed before this.
+#
+#
+#echo "Building graphical debugger"
+#
+#cd ${Root}/usr/src/${Work}/cmd/debug
+#${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make -f debug.mk install
+#
+#
+#echo "Building graphical version of libserver.so"
+#
+#cd ${Root}/usr/src/${Work}/lib/libserver
+#${Tools}/usr/ccs/bin/${Pfx}osenv ${Pfx}make -f libserver.mk install_gui
+#
+#
+#echo "Rebuilding prtsetup to use X version of libserver.so"
+#
+#cd ${Root}/usr/src/${Work}/X11R6/nws/prtsetup
+#if [ -f prtsetup ]
+#then
+#	rm -f prtsetup
+#	${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make all install
+#fi
+#	
+#echo "Rebuilding SetupApp to use X version of libserver.so"
+#
+#cd ${Root}/usr/src/${Work}/X11R6/nws/SetupApp
+#if [ -f SetupApp ]
+#then
+#	rm -f SetupApp
+#	${Tools}/usr/ccs/bin/${Pfx}env ${Pfx}make all install
+#fi
+#
+echo "ENDED `basename $0` `date`"
+exit 0

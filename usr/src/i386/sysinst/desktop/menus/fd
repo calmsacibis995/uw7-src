@@ -1,0 +1,354 @@
+#ident	"@(#)fd	15.1"
+
+function fdcheck
+{
+	integer dsk=$WHICHDISK disk=dsk-1
+	if fdsize_chk $disk
+	then
+		if fdisk_chk $disk
+		then
+			if [ "${UNIX_PARTITION[$disk]}" = CHG ]
+			then
+				UNIX_PARTITION[$disk]=YES
+				[ -z "$FSFID" ] && fsinit
+			fi
+			return 0
+		else
+			return 1
+		fi
+	else
+		return 1
+	fi
+}
+
+function fd_recalc
+{
+	integer i usedcyls=0
+	integer dsk=$WHICHDISK disk=dsk-1
+	integer fdfid=${FDFID[dsk]}
+
+	for i in 1 2 3 4
+	do
+		if [ ! "${PARTTYPE[disk*4+i]}" = "$unused" -a -n "${PARTLENGTH[disk*4+i]}" ]
+		then
+			let "usedcyls+=PARTLENGTH[disk*4+i]"
+		fi
+	done
+	fld_pchange $fdfid ${USEDCYLINDERS[disk]} $usedcyls
+}
+
+function update_geom_pct
+{
+	integer dsk=$WHICHDISK disk=dsk-1
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+
+	case "${PARTPCT[disk*4+$1]}" in
+	[1-9]*([0-9]))
+		if (( PARTPCT[disk*4+$1] > 100 ))
+		then
+			errmsg "$FD_ERR_PCT"
+			return 1
+		fi
+		;;
+	*)
+		errmsg "$FD_ERR_PCT"
+		return 1
+	esac
+
+	integer fldstart=PARTFLD[disk*4+$1]+2
+	integer fldend=PARTFLD[disk*4+$1]+3
+	integer fldpct=PARTFLD[disk*4+$1]+4
+	integer fldlen=PARTFLD[disk*4+$1]+5
+	integer fldmb=PARTFLD[disk*4+$1]+6
+	integer prvslc=$1 prvslcend partpct partstart partend partmb
+	let partmb=DISK_SIZE[disk]*PARTPCT[disk*4+$1]/100
+	if (( partmb > 32 )) && [ "${PARTTYPE[disk*4+$1]}" = "$PRE5DOS" ]
+	then
+		errmsg "$FD_ERR_PRE5DOSPCT"
+		return 1
+	fi
+	prvslcend=-1
+	while (( (prvslc=prvslc-1) > 0 ))
+	do
+		if [  -n "${PARTEND[disk*4+prvslc]}" ]
+		then
+			let prvslcend=PARTEND[disk*4+prvslc]
+			break;
+		fi
+		
+	done
+	let partstart=prvslcend+1
+	let partlength=DISKCYLS[disk]*PARTPCT[disk*4+$1]/100
+	if (( DISKCYLS[disk]*PARTPCT[disk*4+$1]-(partlength*100) > 50 ))
+	then
+		(( partstart+partlength < DISKCYLS[disk] ))&&let partlength+=1
+	fi
+	let PARTMB[disk*4+$1]=partlength*DISK_CYLSIZE[disk]/1000
+	PARTSTART[disk*4+$1]=$partstart
+	fld_change "$fdfid" "$fldlen" "${partlength}"
+	let PARTEND[disk*4+$1]=PARTSTART[disk*4+$1]+PARTLENGTH[disk*4+$1]-1
+	if [ "${PARTEND[disk*4+$1]}" -lt "${PARTSTART[disk*4+$1]}" ]
+	then
+		PARTEND[disk*4+$1]="${PARTSTART[disk*4+$1]}"
+	fi
+        integer indent=FD_WIDTH[4]/2-${#PARTSTART[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldstart" "$buf${PARTSTART[disk*4+$1]}"
+        integer indent=FD_WIDTH[5]/2-${#PARTEND[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldend" "$buf${PARTEND[disk*4+$1]}"
+        integer indent=FD_WIDTH[8]/2-${#PARTMB[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldmb" "${buf}${PARTMB[disk*4+$1]}"
+	fld_change "$fdfid" "$fldpct" "${PARTPCT[disk*4+$1]}"
+	fd_recalc
+	[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" -a "${PARTSTATUS[disk*4+$1]}" = "$Boot" ] &&
+		UNIX_PARTITION[$disk]=CHG
+	return 0
+}
+
+function update_geom_cyl
+{
+	integer dsk=$WHICHDISK disk=dsk-1
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+	case "${PARTLENGTH[disk*4+$1]}" in
+	[1-9]*([0-9]))
+		if (( PARTLENGTH[disk*4+$1] > DISK_NUMCYL[disk] ))
+		then
+			eval errmsg "$FD_ERR_LENGTH"
+			return 1
+		fi
+		;;
+	*)
+		eval errmsg "$FD_ERR_LENGTH"
+		return 1
+	esac
+	integer fldstart=PARTFLD[disk*4+$1]+2
+	integer fldend=PARTFLD[disk*4+$1]+3
+	integer fldpct=PARTFLD[disk*4+$1]+4
+	integer fldlen=PARTFLD[disk*4+$1]+5
+	integer fldmb=PARTFLD[disk*4+$1]+6
+	integer prvslc=$1 prvslcend partpct partstart partend partmb
+	prvslcend=-1
+	while (( (prvslc=prvslc-1) > 0 ))
+	do
+		if [  -n "${PARTEND[disk*4+prvslc]}" ]
+		then
+			let prvslcend=PARTEND[disk*4+prvslc]
+			break;
+		fi
+	done
+	let partstart=prvslcend+1
+	if (( (partpct=PARTLENGTH[disk*4+$1]*100/DISKCYLS[disk]) == 0 ))
+	then
+		(( PARTLENGTH[disk*4+$1] > 0 )) && partpct=1
+	fi
+	let partend=partstart+PARTLENGTH[disk*4+$1]-1
+	let "partmb=PARTLENGTH[disk*4+$1]*DISK_CYLSIZE[disk]/1000"
+	if (( partmb > 32 )) && [ "${PARTTYPE[disk*4+$1]}" = "$PRE5DOS" ]
+	then
+		errmsg "$FD_ERR_PRE5DOSPCT"
+		return 1
+	fi
+	PARTSTART[disk*4+$1]=$partstart
+	fld_change "$fdfid" "$fldpct" "$partpct"
+	let PARTMB[disk*4+$1]=partmb
+	PARTEND[disk*4+$1]=$partend
+	if (( PARTEND[disk*4+$1] < PARTSTART[disk*4+$1] ))
+	then
+		let PARTEND[disk*4+$1]=PARTSTART[disk*4+$1]
+	fi
+        integer indent=FD_WIDTH[4]/2-${#PARTSTART[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldstart" "$buf${PARTSTART[disk*4+$1]}"
+        integer indent=FD_WIDTH[5]/2-${#PARTEND[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldend" "$buf${PARTEND[disk*4+$1]}"
+	fld_change "$fdfid" "$fldpct" "${PARTPCT[disk*4+$1]}"
+        integer indent=FD_WIDTH[8]/2-${#PARTMB[disk*4+$1]}/2
+        typeset -L$indent buf=
+	fld_pchange "$fdfid" "$fldmb" "${buf}${PARTMB[disk*4+$1]}"
+	fld_change "$fdfid" "$fldlen" "${PARTLENGTH[disk*4+$1]}"
+	fd_recalc
+	[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" -a "${PARTSTATUS[disk*4+$1]}" = "$Boot" ] &&
+		UNIX_PARTITION[$disk]=CHG
+	return 0
+}
+
+
+function choose_status
+{
+	integer dsk=$WHICHDISK disk=dsk-1
+	choose "${PARTSTATUS[disk*4+$1]}" "$Boot" "$NonBoot"
+}
+
+function check_status
+{
+	integer dsk=$WHICHDISK disk=dsk-1 i
+	integer fldstatus
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+	case "${PARTSTATUS[disk*4+$1]}"
+	in
+	"$NonBoot")
+		return 0
+		;;
+	"$Boot")
+		[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" ] && UNIX_PARTITION[$disk]=CHG
+		for i in 1 2 3 4
+		do
+			let "fldstatus=PARTFLD[disk*4+$i]+1"
+			[ "$i" != "$1" ] && fld_change "$fdfid" "$fldstatus" ""
+		done
+		return 0
+		;;
+	*)
+		errmsg "$FD_ERR_STATUS"
+		return 1
+		;;
+	esac
+}
+
+function choose_type
+{
+	integer dsk=$WHICHDISK disk=dsk-1
+	CHOOSE_TITLE="$PART_CHOOSE"
+	CHOOSE_FOOTER="$FD_PART_CHOOSE_FOOTER"
+	if (( $1 == 1 ))
+	then
+		choose -f "${PARTTYPE[disk*4+$1]}" "${FDchoicesP1[@]}"
+	else
+		choose -f "${PARTTYPE[disk*4+$1]}" "${FDchoices[@]}"
+	fi
+}
+
+function check_type
+{
+	errmsg ""
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+
+	integer dsk=$WHICHDISK disk=dsk-1
+	integer status=PARTFLD[disk*4+$1]+1 
+	integer fldstart=PARTFLD[disk*4+$1]+2
+	integer fldend=PARTFLD[disk*4+$1]+3
+	integer fldpct=PARTFLD[disk*4+$1]+4
+	integer fldlen=PARTFLD[disk*4+$1]+5 
+	integer fldmb=PARTFLD[disk*4+$1]+6
+	typeset OIFS="$IFS" IFS="$nl"
+	if (( $1 == 1 ))
+	then
+		case "$nl${FDchoicesP1[@]}$nl" in
+		*"$nl${PARTTYPE[disk*4+$1]}$nl"*)
+			;;
+		*)
+			errmsg "$FD_ERR_TYPE"
+			return 1
+		esac
+	else
+		case "$nl${FDchoices[@]}$nl" in
+		*"$nl${PARTTYPE[disk*4+$1]}$nl"*)
+			;;
+		*)
+			errmsg "$FD_ERR_TYPE"
+			return 1
+		esac
+	fi
+	IFS="$OIFS"
+	if [ "${PARTTYPE[disk*4+$1]}" = "$unused" ]
+	then
+		fld_gray $fdfid $fldpct 1
+		fld_gray $fdfid $fldlen 1
+		fld_gray $fdfid $status 1
+		if [ -n "${PARTPCT[disk*4+$1]}" ]
+		then
+			PARTSTART[disk*4+$1]=""
+			PARTEND[disk*4+$1]=""
+			fld_change $fdfid $status ""
+			fld_pchange $fdfid $fldstart ""
+			fld_pchange $fdfid $fldend ""
+			fld_change $fdfid $fldlen ""
+			fld_change $fdfid $fldpct 0
+			fld_pchange $fdfid $fldmb ""
+		fi
+	else
+		fld_gray $fdfid $fldpct 0
+		fld_gray $fdfid $fldlen 0
+		fld_gray $fdfid $status 0
+		if [ -z "${PARTPCT[disk*4+$1]}" ]
+		then
+			fld_pchange $fdfid $fldmb 0
+		fi
+	fi
+	fd_recalc
+	[ "${PARTTYPE[disk*4+$1]}" = "$UNIX" -a "${PARTSTATUS[disk*4+$1]}" = "$Boot" ] &&
+		UNIX_PARTITION[$disk]=CHG
+	return 0
+}
+
+function fd
+{
+	WHICHDISK=$1
+	integer dsk=$1 disk=dsk-1
+	integer i _a usedcyls
+	footer "$FD_FOOTER"
+	eval typeset title="\"\$FDISK_${dsk}_ENTRY \(${DISK_SIZE[disk]}MB\)\""
+	typeset CHOICE=
+	fdfid=${FDFID[dsk]}
+	_a=${2:-1}
+	if [ -z "$fdfid" ]
+	then
+		typeset gray=
+		open_form -exit fdcheck
+		let fdfid=$FID
+		let FDFID[dsk]=fdfid
+		setup_table -rows 4 -cols 8 -titles FD_TITLE -widths FD_WIDTH
+		for i in 1 2 3 4
+		do
+			next_field_prompt $i
+			let PARTFLD[disk*4+i]=$FIELDCNT
+			next_field -help 'helpwin parttype partdisk' -entry msgnoerr -exit "check_type $i" -choice "choose_type $i" "PARTTYPE[$disk*4+$i]"
+			if [ "${PARTTYPE[disk*4+i]}" = "$unused" ]
+			then 
+				gray=-gray
+			else
+				let "usedcyls+=PARTLENGTH[disk*4+i]"
+				gray=
+			fi
+			next_field $gray -help 'helpwin partstatus partdisk' -entry msgnoerr -exit "check_status $i" -choice "choose_status $i" "PARTSTATUS[$disk*4+$i]"
+			next_field_prompt "${PARTSTART[$disk*4+$i]}"
+			next_field_prompt "${PARTEND[$disk*4+$i]}"
+			next_field $gray -help 'helpwin partpercent partdisk' -entry msgnoerr -exit "update_geom_pct  $i" "PARTPCT[$disk*4+$i]"
+			next_field $gray -help 'helpwin partcyl partdisk' -entry msgnoerr -exit "update_geom_cyl  $i" "PARTLENGTH[$disk*4+$i]"
+			next_field_prompt "${PARTMB[disk*4+i]}"
+			next_row
+		done
+			next_row
+		i=14
+		add_field -p "$SAYCYLS" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=1+${#SAYCYLS}
+		add_field -p "${DISKCYLS[disk]}" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=3+${#DISKCYLS[disk]}
+		add_field -p "$SAYUSEDCYLS" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let i+=1+${#SAYUSEDCYLS}
+		let USEDCYLINDERS[disk]=$FIELDCNT
+		add_field -p "$usedcyls" -ilen 0 -py $TABLE_CUR_ROW+1 -px  $i
+		let FDTABLE_WIDTH=TABLE_WIDTH
+	fi
+	place_window -left 0 -above $_a $FDTABLE_WIDTH+2 8 -current "disk=$disk; dsk=$dsk; fdfid=$fdfid" -fg $COMBO2_FG -bg $COMBO2_BG -title "$title" -current 'footer "$GENERIC_FORM_FOOTER"'
+	typeset wid=$CURWIN
+	run_form $fdfid
+}

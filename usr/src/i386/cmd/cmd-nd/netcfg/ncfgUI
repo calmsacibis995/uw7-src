@@ -1,0 +1,2597 @@
+#!/bin/osavtcl
+#ident "@(#)ncfgUI	29.4"
+#ident "$Header$"
+#
+#  Based on OpenServer ncfgUI version 57.2
+#
+#	Copyright (C) 1993-1996 The Santa Cruz Operation, Inc.  
+#	    All Rights Reserved.
+#
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+
+#cmdtrace on [ open /tmp/ncfgUI.log a+ ]
+
+# Load the SCOAdmin library to get IntlLocalizeMsg
+loadlibindex /usr/lib/sysadm.tlib
+
+set NCFG_DIR /usr/lib/netcfg
+source $NCFG_DIR/bin/ncfgUI.msg.tcl
+source $NCFG_DIR/lib/libSCO.tcl
+
+set NCFGBE_PATH $NCFG_DIR/bin/ncfgBE
+set ICONS_PATH $NCFG_DIR/bin/icons
+set NETCFG_PATH "/usr/sbin/netcfg"
+set NCFG_LOG_PATH "$NCFG_DIR/tmp/ndcfg.log"
+set POP_LOG_PATH "$NCFG_DIR/tmp/pop.log"
+set NCFGWANSW_PATH $NCFG_DIR/wansw
+
+set RELINK_REQUIRED 0
+set REBOOT_REQUIRED 0
+
+proc InitializeGlobals {} \
+{
+	global CHARM COLOURS HWStack FrameStack env NCFG_LOG_PATH ErrorText
+
+	set CHARM [VtInfo -charm]
+	set COLOURS [VtInfo -colors]
+	set HWStack 0
+	set FrameStack ""
+	set ErrorText ""
+	set env(__NDCFG_LFLAG) $NCFG_LOG_PATH
+	#jaw - for charm
+	if { $CHARM } {
+		set env(CHARM_DISPLAY) [exec tty]
+		keylset VtVars CharmDisplay $env(CHARM_DISPLAY)
+	}
+
+}
+
+proc XXSet {name {widget ""}} \
+{
+	global WIDGET_IDS
+
+	if { $widget == "" } {
+		if [ keylget WIDGET_IDS $name ret ] {
+			return $ret
+		} else {
+			return 0
+		}
+	} else {
+		keylset WIDGET_IDS $name $widget
+	}
+}
+
+proc DoErrorDie {} \
+{
+	global ErrorText
+
+	set ErrorCode ""
+	if { [ catch { set nroot [ VtOpen netcfg ] } ErrorCode ] } {
+		puts stderr "DoErrorDie VtOpen <$ErrorCode>"
+		exit 1
+	}
+	
+	set wform [ VtErrorDialog $nroot.doerrordie \
+		-wmDecoration { TITLE RESIZE BORDER } \
+		-autoDestroy 0 \
+		-ok -okCallback DoErrorDieOK \
+		-message [ PresentString $ErrorText ] \
+	]
+	VtShowDialog $wform
+	VtMainLoop
+}
+
+proc DoErrorDieOK {cbs} \
+{
+	VtClose
+	exit 1
+}
+
+proc PopFrame {cbs} \
+{
+	global HWStack FrameStack
+
+	VtLock
+
+	set frame [ keylget cbs dialog ]
+	set pop [ lvarpop FrameStack ]
+
+	# we allow non-matches
+	#if { $pop != $frame } {
+		#DoErrorDie "Internal Frame Stack Error"
+	#}
+	VtDestroyDialog $pop
+
+	if { $HWStack != 0 } {
+		set HWStack [ expr $HWStack - 1 ]
+		if { $HWStack == 0 } {
+			SendRequest ADD_HW_END
+		}
+	}
+	VtUnLock
+}
+
+proc PopAll { } \
+{
+	global HWStack FrameStack
+
+	VtLock
+	while { $FrameStack != "" } {
+		keylset cbs dialog [ lindex $FrameStack 0 ]
+		PopFrame $cbs
+	}
+	VtUnLock
+}
+
+proc PushFrame {objName HWFlag} \
+{
+	global HWStack FrameStack
+
+	if { $FrameStack != "" } {
+		set FrameStack [ linsert $FrameStack 0 $objName ]
+	} else {
+		set FrameStack $objName
+	}
+	if { $HWFlag == 1 } {
+		set HWStack [ expr $HWStack + 1 ]
+	} else {
+		if { $HWStack != 0 } {
+			set HWStack [ expr $HWStack + 1 ]
+		}
+	}
+}
+
+proc GenericEnd {cbs} \
+{
+	VtClose 
+	exit 0
+}
+
+proc CheckAuth {} \
+{
+	global ErrorText wroot
+
+	set owner [id effective userid]
+	if { $owner != "0"} {
+		set owner [ catch {  exec /bin/adminuser [ id effective user ] | grep -q NETCFG } ] 
+	} 
+	if { $owner != "0" } {
+		set ErrorText "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_NOT_AUTH ]"
+		VtDestroy $wroot
+		DoErrorDie
+	}
+	return
+}
+
+
+
+#
+# this is a file system based check that allows only one version
+# of netconfig to run at a time.  Takes advantage of named pipe behavior
+# as they know if readers and writers exist.  A non blocking open
+# for read-only or write-only on a named pipe will fail if a corresponding
+# writer or reader does not exist (not a posted read, just opened read mode)
+# (just for complete info, the blocking calls block until someone
+# on the other side opens as well).  We leave the pipe open so all children
+# will inherit it and no new netconfig can start until all children have
+# died.  Consequently this should be called from the UI and not from the
+# command line interface.
+#
+proc CheckExcl {} \
+{
+	global NCFG_DIR wroot ErrorText
+
+	set fname "$NCFG_DIR/tmp/ExclPipe"
+	set fd ""
+
+	if { ! [ file exists $fname ] } {
+		TfadminUnlink $fname
+		system "/etc/mknod $fname p"
+	}
+	catch {
+		set fd [ open $fname { WRONLY NONBLOCK } ]
+	} ErrorCode
+	if { [ csubstr "$ErrorCode" 0 4 ] == "file" } {
+		close $fd
+		set fd ""
+	} else {
+		catch {
+			set fd [ open $fname RDWR ]
+		} ErrorCode
+	}
+	if { [ csubstr "$fd" 0 4 ] != "file" } {
+		set ErrorText "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_NOT_EXCL ]"
+		VtDestroy $wroot
+		DoErrorDie
+	}
+	return
+}
+
+proc SendRequest {request} \
+{
+	global BEstdin BEstdout MAINSCREEN_FORMWIDGET ErrorText
+
+#puts stderr "SendRequest ($request)"
+	puts $BEstdin $request
+	flush $BEstdin
+
+	if { [ gets $BEstdout message ] == -1 } {
+		set ErrorText "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_BE_DIED ]"
+		VtClose
+		return -code return
+	}
+	# returns a list, first element is error code, NOERROR is magic string
+	# error code should be an internationalized string name, if not just die
+	set ErrorCode [ lindex $message 0 ]
+	set message [ lrange $message 1 end ]
+	if { $ErrorCode != "NOERROR" } {
+		if { [ csubstr $ErrorCode 0 13 ] == "SCO_NETCONFIG" } {
+			set ErrorText "[ IntlLocalizeMsg $ErrorCode ]\n$message"
+			VtClose
+			return -code return
+		} else {
+			set ErrorText "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_BE_DIED ]\n$message"
+			VtClose
+			return -code return
+		}
+		set message ""
+	}
+#puts stderr "message <$message>"
+	return $message
+}
+
+proc CallPop {args title} \
+{
+	global POP_LOG_PATH
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	sleep 1
+	set cr [ system "$args >$POP_LOG_PATH 2>&1" ]
+
+	VtUnLock
+	if { $CHARM } {
+		VtControl -resume
+	} else {
+		VtUnLock
+	}
+
+	return $cr
+}
+
+proc CallNetconfig {action chain component} \
+{
+	global RELINK_REQUIRED REBOOT_REQUIRED
+	global NETCFG_PATH CHARM
+
+	set chain_s [ translit { } {#} $chain ]
+	set products [ SendRequest "LOOKUP CHAIN {$chain}" ]
+
+	case $action {
+	-a { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONFIGURE_TITLE ] }
+	-r { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DECONFIGURE_TITLE ] }
+	-c { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RECONFIGURE_TITLE ] }
+	-e { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_TITLE ] }
+	}
+	
+#	if { $CHARM } {
+#		VtControl -suspend
+#		VtLock
+#	}
+	set cr [ CallPop [ list $NETCFG_PATH $action $chain_s $component ] $title ]
+#	if { $CHARM } {
+#		VtUnLock
+#		VtControl -resume
+#	}
+
+#puts stderr "Return code:$cr"
+	if { $cr == 2 } {
+		set RELINK_REQUIRED 1
+		set cr 0
+	}
+	if { $cr == 4 } {
+		set REBOOT_REQUIRED 1
+		set cr 0
+	}
+	if { $cr == 0 && $action != "-r" } {
+		set products [ SendRequest "LOOKUP CHAIN {$chain}" ]
+	}
+	return [ list $cr $products ]
+}
+
+proc DispNetconfig {wroot action r complete_callback} \
+{
+#puts stderr "DispNetconfig: <$wroot> <$action> <$r> <$complete_callback>"
+	set retc [ lindex $r 0 ]
+	set products [ lindex $r 1 ]
+	set rep "\n"
+#puts stderr "products: $products"
+	case $action {
+	-a {
+		set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONFIGURE_TITLE ]
+		set rep "\n  "
+	}
+	-r {
+		set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DECONFIGURE_TITLE ]
+		set rep "\n  "
+	}
+	-c { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RECONFIGURE_TITLE ] }
+	-e { set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_TITLE ] }
+	}
+	set p ""
+	foreach desc $products {
+		append p [ PresentString $desc 72 "$rep" ] "\n"
+	}
+
+	case $retc {
+	0 {
+		set do_box 0
+		case $action {
+		-a {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONFIGURE_OK ]\n$p"
+			set do_box 1
+		}
+		-r {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DECONFIGURE_OK ]\n$p"
+			set do_box 1
+		}
+		-c {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RECONFIGURE_OK ]\n$p"
+			set do_box 1
+		} }
+
+		if { $do_box } {
+			set wib [ VtMessageDialog $wroot.addswok_info \
+				-title $title \
+				-wmDecoration { TITLE RESIZE BORDER } \
+				-message $message \
+				-ok -help \
+				-okCallback "$complete_callback 1" \
+				-defaultButton OK \
+			]
+			VtShowDialog $wib
+#			VtSetFocus [ VtGetValues $wib -ok ]
+		}
+	}
+	3 { 
+		PopAll
+		ReDrawMainScreen
+	}
+	default {
+		global POP_LOG_PATH
+
+		set do_box 0
+		set tail "\n[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_REVIEW_LOG ] ($POP_LOG_PATH)"
+		case $action {
+		-a {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_CONFIGURE ]\n$p$tail"
+			set do_box 1
+		}
+		-r {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_DECONFIGURE ]\n$p$tail"
+			set do_box 1
+		}
+		-c {
+			set message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_RECONFIGURE ]\n$p$tail"
+			set do_box 1
+		} }
+
+		if { $do_box } {
+			set wwb [ VtWarningDialog $wroot.addswerror_info \
+				-title $title \
+				-wmDecoration { TITLE RESIZE BORDER } \
+				-message $message \
+				-ok -help \
+				-okCallback "$complete_callback 0" \
+				-defaultButton OK \
+			]
+			VtShowDialog $wwb
+#			VtSetFocus [ VtGetValues $wwb -ok ]
+		}
+	} }
+}
+
+proc DrawChainTreeItem {widget index item} \
+{
+	global CHARM
+
+#puts stderr "DCTItem(<$widget> <$index> <$item>)"
+
+	set iconlist [ keylget item ICONLIST ]
+	set offset [ keylget item INDENT ]
+	set desc [ keylget item DESCRIPTION ]
+
+	if { $CHARM } {
+		set str_len 66
+	} else {
+		set str_len 100
+	}
+	VtDrawnListAddItem $widget \
+		-position [ expr $index+1 ] \
+		-formatList [ list [ list ICON [ expr $offset+1 ] ] \
+				   [ list STRING $str_len ] \
+		]\
+		-recordList [ list [ list $iconlist $desc ] \
+	]
+}
+
+proc ReDrawChainTree {widget_name new_tree old_tree {select_item SELECT_ONE} } \
+{
+#puts stderr "ReDrawChainTree(W<$widget_name> NT<$new_tree> OT<$old_tree> <$select_item>)"
+	set widget [ XXSet $widget_name ]
+	set old_select [ VtDrawnListGetSelectedItem $widget ]
+
+	set old_len [ llength $old_tree ]
+	set new_len [ llength $new_tree ]
+	if { $old_len > $new_len } {
+		set min_len $new_len
+	} else {
+		set min_len $old_len
+	}
+
+	set select_list ""
+	set first_changed ""
+	set trees_identical 1
+
+	set curr_pos 0
+	set old_inx 0
+
+	loop new_inx 0 $min_len {
+		incr curr_pos
+		set new_item [ lindex $new_tree $new_inx ]
+		set old_item [ lindex $old_tree $old_inx ]
+
+		set selectable [ keylget new_item SELECTABLE ]
+
+		if { $selectable } {
+			case "$select_item" {
+			SELECT_ONE {
+				if { $select_list == "" } {
+					set select_list $curr_pos
+				}
+			}
+			SELECT_ALL {
+					lappend select_list $curr_pos
+			}}
+		}
+
+		if { $new_item == $old_item } {
+			incr old_inx
+			continue
+		}
+
+		set trees_identical 0
+		case "$select_item" {
+		SELECT_ONE {
+			if { $first_changed == "" && $selectable } {
+				set first_changed $curr_pos
+			}
+		}}
+
+		set l ""
+		set found 0
+		set curr_pos2 $curr_pos
+		loop inx2 $old_inx $old_len {
+			set old_item [ lindex $old_tree $inx2 ]
+			if { $new_item == $old_item } {
+				set found $inx2
+				break
+			}
+			lappend l $curr_pos2
+			incr curr_pos2
+		}
+		if { $found != 0 } {
+			VtDrawnListDeleteItem $widget -positionList $l
+			set old_inx $found
+			incr old_inx
+		} else {
+			DrawChainTreeItem $widget $new_inx $new_item
+		}
+	}
+	if { $old_inx < $old_len } {
+		set trees_identical 0
+		set l ""
+		loop inx $old_inx $old_len {
+			incr curr_pos
+			lappend l $curr_pos
+		}
+		VtDrawnListDeleteItem $widget -positionList $l
+	}
+	if { $min_len < $new_len } {
+		set trees_identical 0
+		loop inx $min_len $new_len {
+			incr curr_pos
+			set new_item [ lindex $new_tree $inx ]
+			set selectable [ keylget new_item SELECTABLE ]
+
+			DrawChainTreeItem $widget $inx $new_item
+			if { $selectable } {
+				case "$select_item" {
+				SELECT_ONE {
+					if { $first_changed == "" } {
+						set first_changed $curr_pos
+					}
+				}}
+			}
+		}
+	}
+
+	if { $trees_identical } {
+		set select $old_select
+	} else {
+		if { $first_changed != "" } {
+			set select $first_changed
+		} else {
+			set select $select_list
+		}
+	}
+	if { $select != "" && $select > "0" } {
+		set rows [ VtGetValues $widget -rows ]
+		if { $select < $rows } {
+			set top 1
+		} else {
+			if { $select >= ( $new_len - $rows ) } {
+				set top [ expr $new_len-$rows+1 ]
+			} else {
+				set top [ expr $select-$rows/2 ]
+			}
+		}
+
+		VtSetValues $widget -topItemPosition $top
+		VtDrawnListSelectItem $widget -positionList $select
+		return $select
+	}
+	return ""
+}
+
+proc DrawChainTree2 {widget_name tree select_item} \
+{
+#puts stderr "DCT2(<$widget_name> <$tree> <$select_item>"
+	set widget [ XXSet $widget_name ]
+	set old_select [ VtDrawnListGetSelectedItem $widget ]
+	set new_len [ llength $tree ]
+
+	set select_list ""
+	loop inx 0 $new_len {
+		set new_item [ lindex $tree $inx ]
+		set selectable [ keylget new_item SELECTABLE ]
+
+		if { $selectable } {
+			case "$select_item" {
+			SELECT_ONE {
+				if { $select_list == "" } {
+					set select_list [ expr $inx+1 ]
+				}
+			}
+			SELECT_ALL {
+					lappend select_list [ expr $inx+1 ]
+			}}
+		}
+
+		DrawChainTreeItem $widget $inx $new_item
+
+		if { $selectable } {
+			case $select_item {
+			SELECT_ALL {
+				VtDrawnListSelectItem $widget -position [ expr $inx+1 ]
+			} }
+		}
+	}
+
+	if { $select_list != "" && $select_list > "0" } {
+		case $select_item {
+		SELECT_ONE {
+			set rows [ VtGetValues $widget -rows ]
+			if { $select_list < $rows } {
+				set top 1
+			} else {
+				if { $select_list >= ( $new_len - $rows ) } {
+					set top [ expr $new_len-$rows+1 ]
+				} else {
+					set top [ expr $select_list-$rows/2 ]
+				}
+			}
+			VtSetValues $widget -topItemPosition $top
+			VtDrawnListSelectItem $widget -position $select_list
+		}
+		SELECT_ALL {
+			VtDrawnListSelectItem $widget -positionList $select_list
+		}}
+	}
+
+	global DOUBLE_CLICK_OK
+	set DOUBLE_CLICK_OK 0
+
+#	if { $select_list != "" && $select_list > "0" } {
+#		return ""
+#	}
+
+	return $select_list
+}
+
+proc DrawChainTree {parent attach_top attach_bottom widget callback double_callback tree min_size draw_CHARM_hw_icons {select_item SELECT_ONE} } \
+{
+	global ICONS_PATH CHARM
+
+#puts stderr "DCT(P<$parent> AT<$attach_top> AB<$attach_bottom> W<$widget> CB<$callback> DCB<$double_callback> T<$tree>)"
+	set tree_len [ llength $tree ]
+	if { $tree_len < $min_size } {
+		set tree_len $min_size
+	}
+	if { $tree_len > 16 } {
+		set tree_len 16
+	}
+	if { $draw_CHARM_hw_icons } {
+		set CHARM_HW_iconL [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HWICON_L ]
+		set CHARM_HW_iconR [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HWICON_R ]
+	} else {
+		set CHARM_HW_iconL " "
+		set CHARM_HW_iconR " "
+	}
+
+	set wdl [ VtDrawnList $parent.$widget \
+		-autoSelect 1 \
+		-leftSide FORM \
+		-rightSide FORM \
+		-topSide $attach_top \
+		-bottomSide $attach_bottom \
+		-iconList [ list $ICONS_PATH/line0.px \
+				$ICONS_PATH/line1.px \
+				$ICONS_PATH/line2.px \
+				$ICONS_PATH/line3.px \
+				$ICONS_PATH/line4.px \
+				$ICONS_PATH/blank.px \
+				$ICONS_PATH/cardL.px \
+				$ICONS_PATH/dline0.px \
+				$ICONS_PATH/dline1.px \
+				$ICONS_PATH/dline2.px  \
+				$ICONS_PATH/dline3.px \
+				$ICONS_PATH/dline4.px \
+				$ICONS_PATH/dline1A.px  \
+				$ICONS_PATH/dline1B.px \
+				$ICONS_PATH/dline4A.px  \
+				$ICONS_PATH/line0end.px\
+				$ICONS_PATH/dline0end.px \
+				$ICONS_PATH/ghostcardL.px  \
+				$ICONS_PATH/serialL.px \
+				$ICONS_PATH/dline4B.px \
+				$ICONS_PATH/cardR.px \
+				$ICONS_PATH/serialR.px \
+				$ICONS_PATH/ghostcardR.px  \
+		] \
+		-CHARM_iconList [ list	" " \
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					$CHARM_HW_iconL	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					" " 	\
+					"-"	\
+					" "	\
+					$CHARM_HW_iconL	\
+					"S"	\
+					" " 	\
+					$CHARM_HW_iconR	\
+					"W"	\
+					$CHARM_HW_iconR	\
+		] \
+		-callback $callback \
+		-defaultCallback $double_callback \
+		-rows $tree_len \
+		-columns 40 \
+		-CHARM_columns 75 \
+		-MOTIF_horizontalScrollBar on \
+	]
+	XXSet $widget $wdl
+	VtSetFocus $wdl
+	return [ DrawChainTree2 $widget $tree $select_item ]
+}
+
+# Called when Exit is selected from the 'Action' pulldown menu
+proc ActionExit {cbs} \
+{
+	global RELINK_REQUIRED REBOOT_REQUIRED
+
+	if { $RELINK_REQUIRED } {
+		exec /etc/conf/bin/idbuild
+		set wform [ keylget cbs dialog ]
+		set wqb [ VtInformationDialog $wform.kernel_relink \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-message [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RELINK ] \
+			-ok \
+			-okCallback GenericEnd \
+		]
+		VtShowDialog $wqb
+#		VtSetFocus [ VtGetValues $wqb -ok ]
+	} elseif { $REBOOT_REQUIRED } {
+		set wform [ keylget cbs dialog ]
+		set wqb [ VtInformationDialog $wform.kernel_relink \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-message [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_REBOOT ] \
+			-ok \
+			-okCallback GenericEnd \
+		]
+		VtShowDialog $wqb
+#		VtSetFocus [ VtGetValues $wqb -ok ]
+	} else {
+		GenericEnd $cbs
+	}
+}
+
+proc GetSelectedChain {widget list} \
+{
+	set selected [ VtDrawnListGetSelectedItem [ XXSet $widget ] ]
+	if { $selected != "" } {
+		set s [ expr { $selected - 1 } ]
+		return [ lindex $list $s ]
+	}
+	return ""
+}
+
+proc DeleteChainComplete {parent ret cbs} \
+{
+#puts stderr "DeleteChainComplete $parent $ret $cbs"
+	PopAll
+	ReDrawMainScreen
+}
+
+proc DeleteOK {cbs} \
+{
+	global DeleteList statusBar
+#puts stderr "ncfgUI: DeleteOK(<$cbs>) DeleteList <$DeleteList>"
+
+	VtLock
+	set chains ""
+	set hwsw() ""
+	foreach item $DeleteList {
+		set nodeinfo [ keylget item NODEINFO ]
+		set chain [ keylget nodeinfo CHAIN ]
+		set index [ keylget nodeinfo INDEX ]
+		set hwsw([ lindex $chain $index ]) [ keylget nodeinfo HWSW ]
+		set delete [ expr { ! [ keylget nodeinfo CONFIGURED ] } ]
+
+		if { $delete && [ llength $chain ] > 1 } {
+			set found 0
+			foreach i $chains {
+				if { $i == $chain } {
+					set found 1
+					break
+				}
+			}
+			if {! $found} {
+				set chains [ linsert $chains 0 $chain ]
+			}
+		}
+	}
+
+	if { [ llength $DeleteList ] == 1 && [ llength $chains ] == 0 } {
+		set chains [ linsert $chains 0 $chain ]
+	}
+
+	SaStatusBarSet $statusBar [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DELETE ]
+	set products ""
+	set retc 0
+	foreach chain $chains {
+		set res [ CallNetconfig -r $chain "" ]
+#puts stderr "CN($chain) == $res"
+		set ret [ lindex $res 0 ]
+		set products [ concat $products [ lindex $res 1 ] ]
+		case $ret {
+		{1 3} {
+			set retc $ret
+			break
+		}}
+	}
+
+	set parent [ keylget cbs dialog ]
+	DispNetconfig $parent -r [ list $retc $products ] "DeleteChainComplete $parent"
+	VtUnLock
+}
+
+
+proc DeleteListSelect {cbs} \
+{
+	global DeleteCurrent
+	VtDrawnListSelectItem [ keylget cbs widget ] -positionList $DeleteCurrent
+}
+
+proc DeleteWanHW {cbs} \
+{
+	global MainList CHARM WANHWList lan_wan
+	global DeleteList DeleteCurrent
+# puts stderr "DeleteWanHW:$cbs"
+	set item [ GetSelectedChain wanhw_list $WANHWList ]
+
+	return [ Delete $cbs $item ]
+
+}
+proc Delete {cbs {item ""}} \
+{
+	global MainList CHARM WANHWList lan_wan
+	global DeleteList DeleteCurrent
+
+# puts stderr "Delete:$cbs $item"
+
+	VtLock
+	if { $item == "" } {
+		set item [ GetSelectedChain main_list $MainList ]
+	}
+# puts stderr "item:$item"
+
+	set nodeinfo [ keylget item NODEINFO ]
+
+	set wform [ VtFormDialog [keylget cbs dialog].delform \
+		-title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DECONFIGURE_TITLE ] \
+		-wmDecoration { TITLE RESIZE BORDER } \
+		-cancelLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO ] \
+		-cancelCallback PopFrame \
+		-cancelButton CANCEL \
+		-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_YES ] \
+		-okCallback DeleteOK \
+		-defaultButton CANCEL \
+		-help \
+	]
+	PushFrame $wform 0
+
+	set DeleteList [ SendRequest "DELETE_TREE {$nodeinfo}" ]
+
+	# TODO - probably the Motif pixmap will move to /usr/lib/X11
+	set wqmark [ VtLabel $wform.qmark \
+		-MOTIF_pixmap /usr/X11R6.1/include/X11/bitmaps/xm_question \
+		-CHARM_label "???" \
+		-topSide NONE \
+		-bottomSide FORM \
+		-leftSide FORM \
+		-leftOffset 20 \
+		-CHARM_leftOffset 0 \
+	]
+
+	set wlbl2 [ VtLabel $wform.del_label2 \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DECONFIGURE_CONFIRM ] \
+		-topSide NONE \
+		-leftSide $wqmark \
+		-bottomSide FORM \
+	]
+
+		
+	set DeleteCurrent [ DrawChainTree \
+		$wform FORM $wlbl2 \
+		del_list \
+		DeleteListSelect \
+		DeleteListSelect \
+		$DeleteList \
+		5 \
+		1 \
+		SELECT_ALL \
+	]
+	if { ! $CHARM } {
+		VtSetValues [ XXSet del_list ] -bottomOffset 20
+	}
+
+	VtShowDialog $wform
+	VtSetFocus [ VtGetValues $wform -cancel ]
+	VtUnLock
+}
+
+proc GenericListSelect {list_name current_select_name cbs} \
+{
+	global $list_name $current_select_name
+	
+
+#puts stderr "GenericListSelect:$list_name $current_select_name $cbs"
+	set widget [ keylget cbs widget ]
+	set list [ set $list_name ]
+	set curr [ set $current_select_name ]
+
+	set selected [ VtDrawnListGetSelectedItem $widget ]
+	set new_item [ lindex $list [ expr { $selected - 1 } ] ]
+#puts stderr "GLS ITEM($new_item)"
+	set selectable [ keylget new_item SELECTABLE ]
+	if { ! $selectable } {
+		if { $curr == "" } {
+			VtDrawnListDeselectItem $widget -position $selected
+		} else {
+			VtDrawnListSelectItem $widget -position $curr
+		}
+	} else {
+		set $current_select_name $selected
+	}
+	set DOUBLE_CLICK_OK $selectable
+}
+
+proc AddChainComplete {ret cbs} \
+{
+#puts stderr "AddChainComplete $ret $cbs"
+	PopAll
+	if { $ret } {
+		ReDrawMainScreen
+	}
+}
+
+proc AddSWOK {cbs} \
+{
+	global AddSWList
+
+#puts stderr "AddSWOK($cbs)"
+	VtLock
+	set item [ GetSelectedChain addsw_list $AddSWList ]
+	set nodeinfo [ keylget item NODEINFO ]
+	set chain [ keylget nodeinfo CHAIN ]
+
+	set res [ CallNetconfig -a $chain "" ]
+	DispNetconfig [ keylget cbs dialog ] -a $res AddChainComplete
+	VtUnLock
+}
+
+proc AddSW_DBL {cbs} \
+{
+	global DOUBLE_CLICK_OK
+
+#puts stderr "AddSW_DBL: $cbs"
+	if { $DOUBLE_CLICK_OK } {
+		AddSWOK $cbs
+	}
+}
+
+proc AddSWCancel {item cbs} \
+{
+#puts stderr "AddSWCancel(<$item> <$cbs>)"
+	VtLock
+	set nodeinfo [ keylget item NODEINFO ]
+	set elementname [ keylget nodeinfo CHAIN ]
+	set configured [ keylget nodeinfo CONFIGURED ]
+	if { ! $configured } {
+		SendRequest "REMOVE_HW $elementname"
+	}
+	VtUnLock
+	PopFrame $cbs
+}
+
+proc AddSWScreen {item} \
+{
+	global AddSWList AddSWCurrent MAINSCREEN_FORMWIDGET
+
+#puts stderr "AddSWScreen($item)"
+	set nodeinfo [ keylget item NODEINFO ]
+	set desc [ keylget item DESCRIPTION ]
+
+	set l [ SendRequest "ADD_SW_TREE {$nodeinfo}" ]
+	set head [ lindex $l 0 ]
+	keylset head SELECTABLE 0
+	keylset head DESCRIPTION $desc
+
+	set AddSWList [ concat [ list $head ] [ lrange $l 1 end ] ]
+
+	set selectable 0
+	set count 0
+	foreach el $AddSWList {
+		set selectable [ keylget el SELECTABLE ]
+		incr count
+		if { $selectable } {
+			break
+		}
+	}
+	
+	set AddSWCurrent $count
+	if { ! $selectable } {
+		# There is no protocol stack to add over this adapter
+		set wform [ VtErrorDialog $MAINSCREEN_FORMWIDGET.addswerror \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-autoDestroy 0 \
+			-okCallback PopFrame \
+			-ok -help \
+			-message [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_PROTOCOLS ] \
+		]
+	} else {
+		set wform [ VtFormDialog $MAINSCREEN_FORMWIDGET.addsw \
+			-title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_PROTOCOL ] \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD ] \
+			-okCallback AddSWOK \
+			-cancelCallback "AddSWCancel [ list $item ]" \
+			-cancelButton CANCEL \
+			-defaultButton OK \
+			-help \
+		]
+
+		set wlbl [ VtLabel $wform.add_label \
+			-labelLeft \
+			-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SELECT_ONE [ list [ PresentString $desc ] ] ] \
+		]
+
+		set AddSWCurrent [ DrawChainTree \
+			$wform $wlbl FORM \
+			addsw_list \
+			"GenericListSelect AddSWList AddSWCurrent" \
+			"AddSW_DBL" \
+			$AddSWList \
+			5 \
+			1 \
+		]
+	}
+	PushFrame $wform 1
+	VtShowDialog $wform
+	if { $selectable } {
+		VtSetFocus [ XXSet addsw_list ]
+	}
+}
+
+proc AddSW {cbs} \
+{
+	global MainList
+
+#puts stderr "AddSW:$cbs"
+	VtLock
+
+	set sel [ VtDrawnListGetSelectedItem [ XXSet main_list ] ]
+	set index [ expr $sel-1 ]
+	set item [ lindex $MainList $index ]
+	set nodeinfo [ keylget item NODEINFO ]
+	set chain [ keylget nodeinfo CHAIN ]
+	while { [ llength $chain ] != 1 && $index > 0} {
+		set index [ expr { $index - 1 } ]
+		set item [ lindex $MainList $index ]
+		set nodeinfo [ keylget item NODEINFO ]
+		set chain [ keylget nodeinfo CHAIN ]
+	}
+	AddSWScreen $item
+
+	VtUnLock
+}
+
+proc AddHWSW {hw_list hw_current cbs} \
+{
+	global $hw_list $hw_current
+	global lan_wan CHARM RELINK_REQUIRED statusBar TopoList TopoCurrent
+
+#puts stderr "AddHWSW ($hw_list $hw_current $cbs) hw_list <[ set $hw_list ]> hw_current <[ set $hw_current ]>"
+
+	if { [ set $hw_current ] == "" } {
+		set $hw_current 1
+	}
+	# jaw - for charm locking bug
+	VtLock
+	if { $CHARM } {
+		VtControl -suspend
+		VtLock
+	}
+	set s [ expr { [ set $hw_current ] - 1 } ]
+	set item [ lindex [ set $hw_list ] $s ]
+
+	SaStatusBarSet $statusBar [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_ADD ]
+	if [ info exists TopoList ] {
+		set TopoElement [ lindex $TopoList [expr $TopoCurrent - 1] ]
+		set topo [ keylget TopoElement TOPOLOGY ]
+	} else {	# autodetected
+		set topo [ keylget item GHOST.TOPOLOGIES ]
+	}
+	set result [ lindex [ SendRequest "ADD_HW_SELECT $lan_wan $topo $CHARM [ list $item ]" ] 0 ]
+	# jaw - for charm locking bug
+	if { $CHARM } {
+		VtUnLock
+		VtControl -resume
+	}
+	VtLock
+
+	if { ! [ keylget result STATUS status ] || $status == "IDINSTALL" } {
+		keylget result ARGS idinstallargs
+#puts stderr "ncfgUI idinstallargs=$idinstallargs"
+#		if { $CHARM } {
+#			VtControl -suspend
+#			VtLock
+#		}
+		set result [ lindex [ SendRequest "IDINSTALL [ list $idinstallargs ]" ] 0 ]
+#		if { $CHARM } {
+#			VtUnLock
+#			VtControl -resume
+#		}
+
+	}
+
+	if { ! [ keylget result STATUS status ] || $status != "success" } {
+		VtUnLock
+		return
+	}
+	keylget result REBOOTREQUIRED idbuild
+	keylget result FULLRELINKREQUIRED relink
+	if { $idbuild == "Y" || $relink == "Y" } {
+		set RELINK_REQUIRED 1
+	}
+	if { $lan_wan == "LAN" } {
+		VtUnLock
+		AddSWScreen $item
+	} else {
+		# TODO - may want modems in chain later so this function may be removed
+		set nodeinfo [ keylget item NODEINFO ]
+		set chain [ keylget nodeinfo CHAIN ]
+		set res [ CallNetconfig -a $chain "" ]
+		DispNetconfig [ keylget cbs dialog ] -a $res AddChainComplete
+	}
+	VtUnLock
+}
+
+proc AddTopo_DBL {cbs} \
+{
+	global TopoCurrent
+
+	set TopoCurrent [ keylget cbs itemPosition ]
+	VtLock
+	AddHWVendorList $cbs
+	VtUnLock
+}
+
+proc AddHWAD_DBL {cbs} \
+{
+	global DOUBLE_CLICK_OK
+
+	if { $DOUBLE_CLICK_OK } {
+		AddHWVendorSearchOK AddHWAutoList AddHWAutoCurrent $cbs
+	}
+}
+
+proc AddHWVendorSearchOK {List Current cbs {autoOK ""}} \
+{
+#puts stderr "AddHWVendorSearchOK: $List $Current $cbs"
+	PopFrame $cbs
+
+	AddHWSW $List $Current $cbs
+}
+
+proc AddHWVendorSearch {auto_on gparent cbs} \
+{
+	global AddHWVList AddHWVCurrent
+	global AddHWAutoList AddHWAutoCurrent
+	set wform ""
+
+#puts stderr "AddHWVendorSearch:$auto_on $gparent $cbs"
+
+	case $auto_on {
+	"0" {
+		AddHWVendorSearchOK AddHWVList AddHWVCurrent $cbs
+		return
+	}
+	"1" {
+		set item [ lindex $AddHWVList [ expr { $AddHWVCurrent - 1 } ] ]
+		set description [ keylget item DESCRIPTION ]
+		set AddHWAutoList [ SendRequest \
+			"ADD_HW_AUTODETECT [ list $item ] SAFE" \
+		]
+		if { $AddHWAutoList == "" } {
+			set wform [ VtQuestionDialog $gparent.addhwad_warn \
+				-message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_ADAPTER_DETECTED_REV_AHS52 [ list $description ] ]\n\n[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_ADAPTER_DETECTED_DANGER [ list $description ] ]" \
+				-wmDecoration { TITLE RESIZE BORDER } \
+				-cancel \
+				-cancelCallback PopFrame \
+				-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_YES ] \
+				-okCallback "AddHWVendorSearch 2 $gparent" \
+				-applyLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO ] \
+				-applyCallback "AddHWVendorSearchOK AddHWVList AddHWVCurrent" \
+				-defaultButton OK \
+				-help \
+			]
+		}
+	}
+	"2" {
+		set item [ lindex $AddHWVList [ expr { $AddHWVCurrent - 1 } ] ]
+		set description [ keylget item DESCRIPTION ]
+		set AddHWAutoList [ SendRequest \
+			"ADD_HW_AUTODETECT [ list $item ] DANGEROUS" \
+		]
+		if { $AddHWAutoList == "" } {
+			set wform [ VtWarningDialog $gparent.addhwad_warn \
+				-message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_ADAPTER_DETECTED_REV_AHS52 [ list $description ] ]" \
+				-wmDecoration { TITLE RESIZE BORDER } \
+				-cancel \
+				-cancelCallback "AddHWVendorSearchOK AddHWVList AddHWVCurrent" \
+				-ok \
+				-okCallback "AddHWVendorSearchOK AddHWVList AddHWVCurrent" \
+				-defaultButton OK \
+				-help \
+			]
+		}
+	} }
+
+#puts stderr "AddHWVendorSearch AddHWAutoList <$AddHWAutoList>"
+	VtLock
+	if { $AddHWAutoList == "" } {
+		VtShowDialog $wform
+	} else {
+		PopFrame $cbs
+		set wform [ VtFormDialog $gparent.addhwad \
+			-title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_DETECT_TITLE ] \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONTINUE ] \
+			-okCallback "AddHWVendorSearchOK AddHWAutoList AddHWAutoCurrent" \
+			-cancelCallback PopFrame \
+			-cancelButton CANCEL \
+			-defaultButton OK \
+			-help \
+		]
+		PushFrame $wform 0
+		set wlbl [ VtLabel $wform.addhw_auto_label \
+			-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADAPTER_DETECTED ] \
+		]
+		set AddHWAutoCurrent [ DrawChainTree \
+			$wform $wlbl FORM \
+			addhwad_list \
+			"GenericListSelect AddHWAutoList AddHWAutoCurrent" \
+			AddHWAD_DBL \
+			$AddHWAutoList \
+			5 \
+			0 \
+		]
+		VtShowDialog $wform
+		VtSetFocus [ XXSet addhwad_list ]
+	}
+	VtUnLock
+}
+
+proc AddHWVendorListOK {cbs} \
+{
+	global AddHWVList AddHWVCurrent
+
+#puts stderr "AddHWVendorListOK($cbs)\n AddHWVCurrent <$AddHWVCurrent>"
+	if { $AddHWVCurrent == "" } {		# default to first item in list
+		set AddHWVCurrent 1
+	}
+	VtLock
+
+	set s [ expr $AddHWVCurrent - 1 ]
+	set item [ lindex $AddHWVList $s ]
+	set description [ keylget item DESCRIPTION ]
+	set detectable [ keylget item DETECTABLE ]
+
+#puts stderr "AddHWVendorListOK: $description $detectable"
+
+	if { $detectable } {
+		set parent [ keylget cbs dialog ]
+
+		set wform [ VtFormDialog $parent.addhwv \
+			-title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SEARCH_TITLE ] \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_YES ] \
+			-okCallback "AddHWVendorSearch 1 $parent" \
+			-applyLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO ] \
+			-applyCallback "AddHWVendorSearch 0 $parent" \
+			-cancelCallback PopFrame \
+			-cancelButton CANCEL \
+			-defaultButton OK \
+			-help \
+		]
+		PushFrame $wform 0
+
+		set ErrorCode ""
+		catch {
+			set wlab2 [ VtLabel $wform.addhw_auto_label1 \
+				-leftSide FORM \
+				-labelLeft \
+			  	-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SEARCH_QUESTION [ list $description ] ] \
+			]
+		} ErrorCode
+		if { [ lindex $ErrorCode 0 ] == "VTcl" } {
+			VtUnLock
+			return
+		}
+		VtShowDialog $wform
+		VtSetFocus [ VtGetValues $wform -ok ]
+		VtUnLock
+	} else {
+		VtUnLock
+		AddHWSW AddHWVList AddHWVCurrent $cbs
+	}
+}
+
+proc AddHWVL_DBL {cbs} \
+{
+	global DOUBLE_CLICK_OK
+
+	if { $DOUBLE_CLICK_OK } {
+		AddHWVendorListOK $cbs
+	}
+}
+
+proc AddHWVendorList {parent} \
+{
+	global lan_wan AddHWVList AddHWVCurrent AddHW_root TopoList TopoCurrent
+
+	if { $TopoCurrent  == "" } {		# default to first item in list
+		set TopoCurrent 1
+	}
+	case $lan_wan {
+	LAN {
+		set TopoElement [ lindex $TopoList [expr $TopoCurrent - 1] ]
+		set Topo [ keylget TopoElement TOPOLOGY ]
+		set AddHWVList [ SendRequest "ADD_HW_VENDOR_LIST $Topo" ]
+		set titleText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_LAN ]
+		set labelText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SELECT_LAN ]
+		set errorText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_LANS ]
+		set errorText "No network adapters are installed on the system\nat the moment."
+		set formName addhwv
+	}
+	WAN {
+		set AddHWVList [ SendRequest ADD_HW_WAN_LIST ]
+		set titleText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN ]
+		set labelText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SELECT_WAN ]
+		set errorText [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_NO_WANS ]
+		set formName addwan
+	} }
+
+	if { [ llength $AddHWVList ] == 0 } {
+		# No LAN adapters/WAN connections
+		set wform [ VtErrorDialog $parent.${formName}error \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-autoDestroy 0 \
+			-okCallback PopFrame \
+			-ok -help \
+			-message $errorText
+		]
+		VtShowDialog $wform
+	} else {
+		set wform [ VtFormDialog $parent.$formName \
+			-title $titleText \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONTINUE ] \
+			-okCallback AddHWVendorListOK \
+			-cancelCallback PopFrame \
+			-cancelButton CANCEL \
+			-defaultButton OK \
+			-help \
+		]
+
+		set wlbl [ VtLabel $wform.selhw_label \
+			-label $labelText \
+		]
+		set AddHWVCurrent [ DrawChainTree \
+			$wform $wlbl FORM \
+			addhw_vlist \
+			"GenericListSelect AddHWVList AddHWVCurrent" \
+			AddHWVL_DBL \
+			$AddHWVList \
+			5 \
+			0 \
+		]
+		VtShowDialog $wform
+		VtSetFocus [ XXSet addhw_vlist ]
+	}
+	PushFrame $wform 1
+}
+
+proc AddHWSW_DBL {list current cbs} \
+{
+	global $list $current
+	global DOUBLE_CLICK_OK
+
+#puts stderr "AddHWSW_DBL($cbs)"
+	if { $DOUBLE_CLICK_OK } {
+		AddHWSW $list $current $cbs
+	}
+}
+
+proc AddHWTopo {wroot} \
+{
+	global TopoList TopoCurrent lan_wan
+#puts stderr "AddHWTopo:$wroot"
+
+	VtLock
+
+	set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_TOPO ]
+	set TopoList [ SendRequest "ADD_HW_TOPOLOGIES $lan_wan" ]
+
+	set wform [ VtFormDialog $wroot.topo \
+		-wmDecoration { TITLE RESIZE BORDER } \
+		-title $title \
+		-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONTINUE ] \
+		-okCallback "AddHWVendorList" \
+		-cancelCallback PopFrame \
+		-cancelButton CANCEL \
+		-defaultButton OK \
+		-help \
+	]
+	PushFrame $wform 1
+	set wlbl [ VtLabel $wform.topo_label \
+		-labelLeft \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_TOPO ] \
+	]
+
+	set TopoCurrent [ DrawChainTree \
+		$wform $wlbl NONE \
+		addtopo_list \
+		"GenericListSelect TopoList TopoCurrent" \
+		"AddTopo_DBL" \
+		$TopoList \
+		5 \
+		0 \
+	]
+
+#puts stderr "AddHWTopo: TopoCurrent <$TopoCurrent>"
+	VtShowDialog $wform
+	VtUnLock
+}
+
+
+
+proc AddHWSerial {cbs} \
+{
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	exec /usr/lib/scoadmin/serial/serialGUI
+	if { $CHARM } {
+		VtControl -resume
+	}
+	VtLock
+	ReDrawMainScreen
+	VtUnLock
+
+}
+
+proc AddHWModem {cbs} \
+{
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	exec /usr/lib/scoadmin/modem/modemGUI
+	if { $CHARM } {
+		VtControl -resume
+	}
+	VtLock
+	ReDrawMainScreen
+	VtUnLock
+
+}
+
+proc AddHW {cbs} \
+{
+	global lan_wan AddHWList AddHWCurrent AddHW_root TopoCurrent TopoList
+
+#puts stderr "AddHW:$cbs"
+
+	VtLock
+
+	set wroot [ keylget cbs dialog ]
+#puts stderr "AddHW wroot $wroot"
+	case $lan_wan {
+	LAN {
+		set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_LAN ]
+		set AddHWList [ SendRequest "ADD_HW_SAFE_DETECT LAN" ]
+	}
+	WAN {
+		set title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN ]
+		set AddHWList ""
+		set TopoCurrent ""
+		set TopoList [ SendRequest "ADD_HW_TOPOLOGIES WAN" ]
+		AddHWVendorList $wroot
+		VtUnLock
+		return
+	}
+	}
+
+	if { $AddHWList == "" } {
+		AddHWTopo $wroot
+	} else {
+		set wform [ VtFormDialog $wroot.add_newhw \
+			-wmDecoration { TITLE RESIZE BORDER } \
+			-title $title \
+			-okLabel [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONTINUE ] \
+			-okCallback "AddHWSW AddHWList AddHWCurrent" \
+			-cancelCallback PopFrame \
+			-cancelButton CANCEL \
+			-defaultButton OK \
+			-help \
+		]
+		PushFrame $wform 1
+
+		set wlbl [ VtLabel $wform.selhw_label \
+			-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADAPTER_DETECTED ] \
+		]
+		set AddHWCurrent [ DrawChainTree \
+			$wform $wlbl NONE \
+			addhw_list \
+			"GenericListSelect AddHWList AddHWCurrent" \
+			"AddHWSW_DBL AddHWList AddHWCurrent" \
+			$AddHWList \
+			5 \
+			0 \
+		]
+
+		set wpb [ VtPushButton $wform.not_in_list \
+			-topSide NONE \
+			-leftSide FORM \
+			-bottomSide FORM \
+			-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_CONFIGURE_OTHER_HW ] \
+			-callback AddHWTopo \
+		]
+
+		VtSetValues [ XXSet addhw_list ] -bottomSide $wpb
+		VtShowDialog $wform
+		VtSetFocus [ XXSet addhw_list ]
+	}
+	VtUnLock
+}
+
+proc View {lw cbs} \
+{
+
+	global lan_wan
+
+	if { $lw == $lan_wan } {
+		return
+	}
+
+	case $lw {
+	LAN {
+		set lan_wan LAN
+		ShowLANScreen
+	}
+	WAN {
+		set lan_wan WAN
+		ShowWANScreen
+		VtDrawnListDeselectItem [XXSet main_list] -all
+		# VtDrawnListDeselectItem [XXSet wanhw_list] -all
+	}
+	}
+}
+
+proc ListORReconfChainComplete {ret cbs} \
+{
+#puts stderr "ListORReconfChainComplete $ret $cbs"
+	ReDrawMainScreen
+}
+
+proc ListORReconf {action cbs} \
+{
+	global MainList WANHWList lan_wan CHARM RELINK_REQUIRED statusBar
+
+#puts stderr "ListORReconf(<$action> <$cbs>)"
+
+	if { !$CHARM } {
+		VtLock
+	}
+#  wan sw
+	if { $lan_wan == "LAN" } {
+#		set item [ lindex $MainList $inx ]
+		set item [ GetSelectedChain main_list $MainList ]
+	} else {
+#		set item [ lindex $WANHWList $inx ]
+		set item [ GetSelectedChain wanhw_list $WANHWList ]
+	}
+
+
+	set nodeinfo [ keylget item NODEINFO ]
+
+	if { [ lsearch -exact "[ keylkeys nodeinfo ]" CHAIN ] != -1 } {
+
+	set chain [ keylget nodeinfo CHAIN ]
+	set component [ lindex $chain [ keylget nodeinfo INDEX ] ]
+
+	set element [ SendRequest "LOOKUP ELEMENT {$nodeinfo}" ]
+	set hwsw [ keylget element HWSW ]
+	if { $hwsw == "HW" } {
+		case $action {
+		-c {
+			SaStatusBarSet $statusBar [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_RECONF ]
+			set request RECONF_HW
+		}
+		-e {
+			set request LIST_HW
+		} }
+
+		if { $CHARM } {
+			VtControl -suspend
+		}
+		set result [ lindex [ SendRequest "$request $component" ] 0 ]
+		if { $CHARM } {
+			VtControl -resume
+		}
+
+		# jaw - for charm locking bug
+		# VtLock
+
+		if { ! [ keylget result STATUS status ] || $status != "success" } {
+			VtUnLock
+			return
+		}
+		keylget result REBOOTREQUIRED idbuild
+		keylget result FULLRELINKREQUIRED relink
+		if { $idbuild == "Y" || $relink == "Y" } {
+			set RELINK_REQUIRED 1
+		}
+	}
+	} else {
+		set port [ keylget nodeinfo PORT ]
+		case [ keylget nodeinfo WHAT ] {
+			driver {
+			}
+			port {
+				if { $CHARM } {
+					VtControl -suspend
+				} else {
+					VtLock
+				}
+				exec /usr/lib/scoadmin/serial/serialGUI -t $port
+				if { $CHARM } {
+					VtControl -resume
+				} else {
+					VtUnLock
+				}
+			}
+			modem {
+				if { $CHARM } {
+					VtControl -suspend
+				} else {
+					VtLock
+				}
+				exec /usr/lib/scoadmin/modem/modemGUI -t $port
+				if { $CHARM } {
+					VtControl -resume
+				} else {
+					VtUnLock
+				}
+			}
+
+		}
+		ReDrawMainScreen
+		VtUnLock
+		return
+		
+	}
+
+	set res [ CallNetconfig $action $chain $component ]
+	DispNetconfig [ keylget cbs dialog ] $action $res ListORReconfChainComplete
+	VtUnLock
+}
+
+proc Reconf {cbs} \
+{
+	ListORReconf -c $cbs
+}
+
+proc List {cbs} \
+{
+	ListORReconf -e $cbs
+}
+
+proc Test {cbs} \
+{
+	global MainList lan_wan
+
+	VtLock
+	set item [ GetSelectedChain main_list $MainList ]
+	set nodeinfo [ keylget item NODEINFO ]
+	set desc [ keylget item DESCRIPTION ]
+	set element [ keylget nodeinfo CHAIN ]
+	set result [ lindex [ SendRequest "TEST_HW $element" ] 0 ]
+	set res [ keylget result STATUS ]
+	set wform [ keylget cbs dialog ]
+	set wqb [ VtInformationDialog $wform.test \
+		-wmDecoration { TITLE RESIZE BORDER } \
+		-message "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_TEST_HW_RESULT [ list [ PresentString $desc ] ] ]: $res" \
+		-autoDestroy 0 \
+		-ok \
+		-okCallback PopFrame \
+	]
+	PushFrame $wqb 1
+	VtShowDialog $wqb
+	VtUnLock
+}
+
+
+proc MainListSelect {{cbs ""}} \
+{
+	global MainList WANHWList lan_wan
+
+#puts stderr "MainListSelect $lan_wan: $cbs"
+
+
+	if { $cbs == "" } {
+		set inx ""
+	} else {
+		set inx [ expr {[ keylget cbs itemPosition ]-1} ]
+	}
+	if { $inx == "" } {
+		VtSetSensitive [ XXSet addsw ] 0
+		VtSetSensitive [ XXSet reconfhw ] 0
+		VtSetSensitive [ XXSet reconfsw ] 0
+		VtSetSensitive [ XXSet deletehw ] 0
+		VtSetSensitive [ XXSet testhw ] 0
+		VtSetSensitive [ XXSet deletesw ] 0
+		VtSetSensitive [ XXSet listsw ] 0
+		VtSetSensitive [ XXSet listhw ] 0
+
+		VtSetSensitive [ XXSet wanreconfhw ] 0
+		VtSetSensitive [ XXSet wandeletehw ] 0
+		VtSetSensitive [ XXSet wanlisthw ] 0
+		return
+	}
+
+	if { $lan_wan == "LAN" } {
+		set item [ lindex $MainList $inx ]
+		set nodeinfo [ keylget item NODEINFO ]
+		set element [ SendRequest "LOOKUP ELEMENT {$nodeinfo}" ]
+		set hwsw [ keylget element HWSW ]
+		set reconfok [ keylget element RECONFABLE ]
+		set listok [ keylget element LISTABLE ]
+		
+		if { $hwsw == "HW" } {
+			VtSetSensitive [ XXSet addsw ] 1
+			VtSetSensitive [ XXSet deletehw ] 1
+			VtSetSensitive [ XXSet testhw ] 1
+			VtSetSensitive [ XXSet deletesw ] 0
+			VtSetSensitive [ XXSet reconfsw ] 0
+			VtSetSensitive [ XXSet listsw ] 0
+			if { $reconfok } {
+				VtSetSensitive [ XXSet reconfhw ] 1
+			} else {
+				VtSetSensitive [ XXSet reconfhw ] 0
+			}
+			if { $listok } {
+				VtSetSensitive [ XXSet listhw ] 1
+			} else {
+				VtSetSensitive [ XXSet listhw ] 0
+			}
+		} else {
+			VtSetSensitive [ XXSet addsw ] 1
+			VtSetSensitive [ XXSet deletesw ] 1
+			VtSetSensitive [ XXSet deletehw ] 0
+			VtSetSensitive [ XXSet testhw ] 0
+			VtSetSensitive [ XXSet reconfhw ] 0
+			VtSetSensitive [ XXSet listhw ] 0
+			if { $reconfok } {
+				VtSetSensitive [ XXSet reconfsw ] 1
+			} else {
+				VtSetSensitive [ XXSet reconfsw ] 0
+			}
+			if { $listok } {
+				VtSetSensitive [ XXSet listsw ] 1
+			} else {
+				VtSetSensitive [ XXSet listsw ] 0
+			}
+		}
+
+	} else {
+		VtDrawnListDeselectItem [XXSet main_list] -all
+		set item [ lindex $WANHWList $inx ]
+		set nodeinfo [ keylget item NODEINFO ]
+
+# puts stderr "wanhwlist: $item $nodeinfo "
+
+		if { [ lsearch -exact "[ keylkeys nodeinfo ]" CHAIN ] != -1 } {
+
+			set element [ SendRequest "LOOKUP ELEMENT {$nodeinfo}" ]
+			set hwsw [ keylget element HWSW ]
+			set reconfok [ keylget element RECONFABLE ]
+			set listok [ keylget element LISTABLE ]
+
+# puts stderr "wanhwlist: $item $nodeinfo $element $hwsw $reconfok $listok"
+		
+			VtSetSensitive [ XXSet addsw ] 0
+			VtSetSensitive [ XXSet reconfhw ] 0
+			VtSetSensitive [ XXSet reconfsw ] 0
+			VtSetSensitive [ XXSet deletehw ] 0
+			VtSetSensitive [ XXSet testhw ] 0
+			VtSetSensitive [ XXSet deletesw ] 0
+			VtSetSensitive [ XXSet listsw ] 0
+			VtSetSensitive [ XXSet listhw ] 0
+					
+			VtSetSensitive [ XXSet wanreconfhw ] 0
+			VtSetSensitive [ XXSet wandeletehw ] 0
+			VtSetSensitive [ XXSet wanlisthw ] 0
+
+			if { $hwsw == "HW" } {
+#				VtSetSensitive [ XXSet wanaddsw ] 1
+				VtSetSensitive [ XXSet wandeletehw ] 1
+#				VtSetSensitive [ XXSet wandeletesw ] 0
+#						VtSetSensitive [ XXSet wanreconfsw ] 0
+#				VtSetSensitive [ XXSet wanlistsw ] 0
+				if { $reconfok } {
+# jaw (to fix)
+					VtSetSensitive [ XXSet wanreconfhw ] 1
+				} else {
+					VtSetSensitive [ XXSet wanreconfhw ] 0
+				}
+				if { $listok } {
+# jaw (to fix)
+					VtSetSensitive [ XXSet wanlisthw ] 1
+				} else {
+					VtSetSensitive [ XXSet wanlisthw ] 0
+				}
+			} else {
+				VtSetSensitive [ XXSet addsw ] 1
+				VtSetSensitive [ XXSet deletesw ] 1
+				VtSetSensitive [ XXSet deletehw ] 0
+				VtSetSensitive [ XXSet testhw ] 0
+				VtSetSensitive [ XXSet reconfhw ] 0
+				VtSetSensitive [ XXSet listhw ] 0
+				if { $reconfok } {
+					VtSetSensitive [ XXSet reconfsw ] 1
+				} else {
+					VtSetSensitive [ XXSet reconfsw ] 0
+				}
+				if { $listok } {
+					VtSetSensitive [ XXSet listsw ] 1
+				} else {
+					VtSetSensitive [ XXSet listsw ] 0
+				}
+			}
+		} else {
+			switch [ keylget nodeinfo WHAT ] {
+				driver {
+					VtSetSensitive [ XXSet addsw ] 0
+					VtSetSensitive [ XXSet deletesw ] 0
+					VtSetSensitive [ XXSet reconfsw ] 0
+					
+					VtSetSensitive [ XXSet wandeletehw ] 0
+					VtSetSensitive [ XXSet wanreconfhw ] 0
+					VtSetSensitive [ XXSet wanlisthw ] 0
+				}
+				port -
+				modem {
+					VtSetSensitive [ XXSet addsw ] 0
+					VtSetSensitive [ XXSet deletesw ] 0
+					VtSetSensitive [ XXSet reconfsw ] 0
+					
+					VtSetSensitive [ XXSet wandeletehw ] 0
+					VtSetSensitive [ XXSet wanreconfhw ] 1
+					VtSetSensitive [ XXSet wanlisthw ] 0
+				}   
+			}	
+		}
+	}
+}
+
+
+proc MainListDoubleSelect {cbs} \
+{
+#puts stderr "MainListDoubleSelect $cbs"
+	# do nothing
+}
+
+proc ReDrawMainScreen {} \
+{
+	global MainList WANHWList lan_wan
+
+#TODO puts stderr "ReDrawMainScreen MainList <$MainList>"
+	VtLock
+	set n [ SendRequest "MAIN_TREE $lan_wan" ]
+	set c [ ReDrawChainTree main_list $n $MainList ]
+	set MainList $n
+	if { $lan_wan == "WAN" } {
+		set w [ SendRequest "MAIN_TREE WAN_HW" ]
+		set h [ ReDrawChainTree wanhw_list $w $WANHWList ]
+		set WANHWList $w
+		if { $h != "" } {
+			keylset cbs itemPosition $h
+			MainListSelect $cbs
+		} else {
+			MainListSelect ""
+		}
+	} elseif { $c != "" } {
+		keylset cbs itemPosition $c
+		MainListSelect $cbs
+	} else {
+		MainListSelect ""
+	}
+	VtUnLock
+}
+
+proc lanwanHideShow {} {
+	global lan_wan lanwanWidgets
+
+#puts stderr "lanwanHideShow"
+	
+	VtLock
+
+	case $lan_wan {
+		LAN {
+			foreach widget $lanwanWidgets(lanhide) {
+				VtHide $widget
+			}
+			foreach widget $lanwanWidgets(lanshow) {
+				VtShow $widget
+			}
+		}
+		WAN {
+			foreach widget $lanwanWidgets(wanhide) {
+				VtHide $widget
+			}
+			foreach widget $lanwanWidgets(wanshow) {
+				VtShow $widget
+			}
+		}
+	}
+	VtUnLock -once
+}
+
+proc ListWANSWObjects { } {
+
+	global NCFGWANSW_PATH env
+
+	if {![file isdirectory $NCFGWANSW_PATH]} {
+		# ERROR
+	}
+
+	set objects [ lmatch -regexp [ readdir $NCFGWANSW_PATH ] ".*(.obj)$" ]
+
+	if {[info exists env(LANG)]} {
+		set LANG $env(LANG)
+	} else {
+		set LANG "C"
+	}
+
+	set objectlist ""
+	foreach object $objects {
+		set newobject ""
+		set oname $object
+		keylset newobject NAME [ ctoken oname "."  ]
+		if { [file exists $NCFGWANSW_PATH/$object/activate.scoadmin] } {
+			keylset newobject ACTIVATE $NCFGWANSW_PATH/$object/activate.scoadmin
+		} else {
+			continue
+		}
+		if { [file exists $NCFGWANSW_PATH/$object/$LANG/menulabel] } {
+			keylset newobject TITLE [ read_file -nonewline $NCFGWANSW_PATH/$object/$LANG/menulabel ]
+		} elseif { [file exists $NCFGWANSW_PATH/$object/C/menulabel] } {
+			keylset newobject TITLE [ read_file -nonewline $NCFGWANSW_PATH/$object/C/menulabel ]
+		} elseif { [file exists $NCFGWANSW_PATH/$object/$LANG/title] } {
+			keylset newobject TITLE [ read_file -nonewline $NCFGWANSW_PATH/$object/$LANG/title ]
+		} elseif { [file exists $NCFGWANSW_PATH/$object/C/title] } {
+			keylset newobject TITLE [ read_file -nonewline $NCFGWANSW_PATH/$object/C/title ]
+		} else {
+			continue
+		}
+		if { [file exists $NCFGWANSW_PATH/$object/$LANG/shorthelp] } {
+			keylset newobject SHORTHELP [ read_file -nonewline $NCFGWANSW_PATH/$object/$LANG/shorthelp ]
+		} elseif { [file exists $NCFGWANSW_PATH/$object/C/shorthelp] } {
+			keylset newobject SHORTHELP [ read_file -nonewline $NCFGWANSW_PATH/$object/C/shorthelp ]
+		} else {
+			keylset newobject SHORTHELP ""
+		}
+
+		lappend objectlist $newobject
+		set newobject ""
+
+	}
+	return $objectlist
+}
+
+proc WanSWCB { activate cbs } {
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	system $activate
+	VtUnLock
+	if { $CHARM } {
+		VtControl -resume
+	} else {
+		VtUnLock
+	}
+}
+
+proc BuildWanSWMenu { pulldown } {
+
+	foreach object [ ListWANSWObjects  ] {
+		set name [ keylget object NAME ]
+		set title [ keylget object TITLE ]
+		set shorthelp [ keylget object SHORTHELP ]
+		set activate [ keylget object ACTIVATE ]
+
+		VtPushButton $pulldown.$name \
+			-label "$title" \
+			-callback "WanSWCB $activate" \
+			-shortHelpCallback SaShortHelpCB \
+			-shortHelpString "$shorthelp"
+		
+	}
+}
+
+
+proc DrawMainScreenMenus {wdialog} \
+{
+#	global lan_wan waddhwl waddhww lanwanWidgets
+	global lan_wan lanwanWidgets
+
+	set wmenu [ VtMenuBar $wdialog.menu \
+		-helpMenuItemList { ON_WINDOW ON_CONTEXT ON_VERSION } \
+		-topSide FORM -rightSide FORM -leftSide FORM -bottomSide NONE ]
+
+# LAN HW --------------------------------------
+	set wpdhw [ VtPulldown $wmenu.pdhw \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_PULLDOWN ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HARDWARE_MNEMONIC ] \
+	]
+
+	set menuBtn [ VtGet $wpdhw -cascadeButton ]
+
+	VtSetValues $menuBtn  \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_PULLDOWN_HELP ]
+
+	lappend lanwanWidgets(wanhide) $menuBtn
+	lappend lanwanWidgets(lanshow) $menuBtn
+	VtHide $menuBtn
+
+
+	set waddhwl [ VtPushButton $wpdhw.addhw \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_LAN ]..." \
+		-callback "AddHW" \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_LAN_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_LAN_HELP ] \
+	]
+
+	set wdel [ VtPushButton $wpdhw.delete \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_HW ]..." \
+		-callback Delete \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_HW_HELP ] \
+	]
+	XXSet deletehw $wdel
+	VtSetSensitive $wdel 0
+
+	set wreconf [ VtPushButton $wpdhw.reconf \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW ]..." \
+		-callback Reconf \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW_HELP ] \
+	]
+	XXSet reconfhw $wreconf
+	VtSetSensitive $wreconf 0
+
+	set wlist [ VtPushButton $wpdhw.list \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW ]..." \
+		-callback List \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW_HELP ] \
+	]
+	XXSet listhw $wlist
+	VtSetSensitive $wlist 0
+
+	set wtest [ VtPushButton $wpdhw.test \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_TEST_HW_LABEL ]..." \
+		-callback Test \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_TEST_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_TEST_HW_HELP ] \
+	]
+	XXSet testhw $wtest
+	VtSetSensitive $wtest 0
+
+	set wsep [ VtSeparator $wpdhw.swsep ]
+
+	set wexit [ VtPushButton $wpdhw.exit \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT ] \
+		-callback ActionExit \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT_HELP ] \
+	]
+
+
+
+# LAN SW --------------------------------------
+
+	set wpdsw [ VtPulldown $wmenu.pdsw \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SW_PULLDOWN ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_PROTOCOL_MNEMONIC ] \
+	]
+	set menuBtn [ VtGet $wpdsw -cascadeButton ]
+	VtSetValues $menuBtn  \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SW_PULLDOWN_HELP ]
+
+	lappend lanwanWidgets(wanhide) $menuBtn
+	lappend lanwanWidgets(lanshow) $menuBtn
+	VtHide $menuBtn
+
+	set waddsw [ VtPushButton $wpdsw.addsw \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_PROTOCOL ]..." \
+		-callback AddSW \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_PROTOCOL_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_PROTOCOL_HELP ] \
+	]
+	XXSet addsw $waddsw
+	VtSetSensitive $waddsw 0
+
+	set wdel [ VtPushButton $wpdsw.delete \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_PROTOCOL ] ..." \
+		-callback Delete \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_PROTOCOL_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_PROTOCOL_HELP ] \
+	]
+	XXSet deletesw $wdel
+	VtSetSensitive $wdel 0
+
+	set wreconf [ VtPushButton $wpdsw.reconf \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_SW ]..." \
+		-callback Reconf \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_SW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_SW_HELP ] \
+	]
+	XXSet reconfsw $wreconf
+	VtSetSensitive $wreconf 0
+
+	set wlist [ VtPushButton $wpdsw.list \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_SW ]..." \
+		-callback List \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_SW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_SW_HELP ] \
+	]
+	XXSet listsw $wlist
+	VtSetSensitive $wlist 0
+
+
+# WAN HW -----------------------------------------
+	set wpdhww [ VtPulldown $wmenu.pdhww \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_PULLDOWN ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HARDWARE_MNEMONIC ] \
+	]
+
+	set menuBtn [ VtGet $wpdhww -cascadeButton ]
+
+	VtSetValues $menuBtn \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_HW_PULLDOWN_HELP ]
+	lappend lanwanWidgets(lanhide) $menuBtn
+	lappend lanwanWidgets(wanshow) $menuBtn
+	VtHide $menuBtn
+
+	set waddhww2 [ VtPulldown $wpdhww.addhw1 \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN_MNEMONIC ] \
+	]
+
+	set waddhww [ VtGet $waddhww2 -cascadeButton ]
+
+
+	set jawwaddhww [ VtPushButton $waddhww2.isdn \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN ]..." \
+		-callback "AddHW" \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_ADD_WAN_HELP ] \
+	]
+
+	set jawwadhww2 [ VtPushButton $waddhww2.serial \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SERIAL ] \
+		-callback AddHWSerial \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SERIAL_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SERIAL_HELP ] \
+	]
+
+	set jawwadhww3 [ VtPushButton $waddhww2.modem \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MODEM ] \
+		-callback AddHWModem \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MODEM_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MODEM_HELP ] \
+	]
+
+	set wdelw [ VtPushButton $wpdhww.delete \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_HW ]..." \
+		-callback DeleteWanHW \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_REMOVE_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RMV_HW_HELP ] \
+	]
+	XXSet wandeletehw $wdelw
+	VtSetSensitive $wdelw 0
+
+	set wreconfw [ VtPushButton $wpdhww.reconf \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW ]..." \
+		-callback Reconf \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_RCNF_HW_HELP ] \
+	]
+	XXSet wanreconfhw $wreconfw
+	VtSetSensitive $wreconfw 1
+
+	set wlistw [ VtPushButton $wpdhww.list \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW ]..." \
+		-callback List \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXAMINE_HW_HELP ] \
+	]
+	XXSet wanlisthw $wlistw
+	VtSetSensitive $wlistw 0
+
+
+
+	set wsep [ VtSeparator $wpdhww.swsep ]
+
+	set wexit [ VtPushButton $wpdhww.exit \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT ] \
+		-callback ActionExit \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_EXIT_HELP ] \
+	]
+
+# WAN CALL SERVICES  --------------------------------------
+	set wancallservices [ VtPulldown $wmenu.wancallservices \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_CALL_LABEL ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_CALL_MNEMONIC ] \
+	]
+
+	set menuBtn [ VtGet $wancallservices -cascadeButton ]
+	lappend lanwanWidgets(lanhide) $menuBtn
+	lappend lanwanWidgets(wanshow) $menuBtn
+	VtHide $menuBtn
+
+
+	set outbutton [ VtPushButton $wancallservices.out \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_OUTCALL_BUTTON ] \
+		-callback OutCallCB \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_OUTCALL_HELP ] \
+	]
+	set inbutton [ VtPushButton $wancallservices.in \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_INCALL_BUTTON ] \
+		-callback InCallCB \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_INCALL_HELP ] \
+	]
+
+
+
+
+
+# WAN SW --------------------------------------
+	if { [ ListWANSWObjects ] != "" } {
+		set wanswpd [ VtPulldown $wmenu.wanswpd \
+			-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WANSW_PULLDOWN ] \
+			-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_SOFTWARE_MNEMONIC ] \
+		]
+
+		set menuBtn [ VtGet $wanswpd -cascadeButton ]
+		lappend lanwanWidgets(lanhide) $menuBtn
+		lappend lanwanWidgets(wanshow) $menuBtn
+		VtHide $menuBtn
+
+		BuildWanSWMenu $wanswpd
+	}
+
+# VIEW --------------------------------------------
+
+	set wpdv [ VtPulldown $wmenu.view \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_PULLDOWN ] \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_MNEMONIC ] \
+	]
+	VtSetValues [ VtGetValues $wpdv -cascadeButton ]  \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_PULLDOWN_HELP ]
+	set wviewl [ VtPushButton $wpdv.lan \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_LAN ]..." \
+		-callback "View LAN" \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_LAN_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_LAN_HELP ] \
+	]
+	set wvieww [ VtPushButton $wpdv.wan \
+		-label "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_WAN ]..." \
+		-callback "View WAN" \
+		-mnemonic [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_WAN_MNEMONIC ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_VIEW_WAN_HELP ] \
+	]
+
+
+	lanwanHideShow
+
+
+	return $wmenu
+}
+
+proc InCallCB {cbs} \
+{
+#	puts stderr "InCallCB (<$cbs>)"
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	exec /usr/lib/scoadmin/incoming/incomingGUI -n
+	VtUnLock
+	if { $CHARM } {
+		VtControl -resume
+	} else {
+		VtUnLock
+	}
+
+}
+
+proc OutCallCB {cbs} \
+{
+#	puts stderr "OutCallCB (<$cbs>)"
+	global CHARM
+
+	if { $CHARM } {
+		VtControl -suspend
+	} else {
+		VtLock
+	}
+	exec /usr/lib/scoadmin/outgoing/outgoingGUI -n
+	VtUnLock
+	if { $CHARM } {
+		VtControl -resume
+	} else {
+		VtUnLock
+	}
+}
+
+proc ShowLANScreen {} \
+{
+	global MAINSCREEN_FORMWIDGET MainList swform wlbl wmenu
+	global wanhwform wanhwlabel wancs 
+
+	VtHide $wanhwform
+	VtHide $wanhwlabel
+#	VtHide $wancs
+	VtShow $swform
+	VtShow $wlbl
+
+	lanwanHideShow
+
+	VtSetValues $wlbl \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MAIN_FORM_LABEL ]
+
+	if { [ XXSet main_list ] != 0 } {
+		VtDestroy [ XXSet main_list ]
+	}
+	set MainList ""
+	DrawChainTree $swform $wlbl FORM main_list \
+		MainListSelect \
+		MainListDoubleSelect \
+		$MainList \
+		14 \
+		1
+	VtSetValues [ XXSet main_list ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MAIN_FORM_HELP ]
+
+	VtSetValues $swform -topSide $wmenu
+	# Set the correct sensitivities for the pulldown menu
+	if { $MainList != "" } {
+		keylset cbs itemPosition 1
+		MainListSelect $cbs
+	}
+
+	VtShowDialog $MAINSCREEN_FORMWIDGET
+	ReDrawMainScreen
+}
+
+
+
+proc ShowWANScreen {} \
+{
+	global wroot MainList WANHWList MAINSCREEN_FORMWIDGET
+	global wanhwform wanhwlabel wancs wlbl swform 
+
+#puts stderr "ShowWANScreen: MAINSCREEN_FORMWIDGET <$MAINSCREEN_FORMWIDGET> wanhwform <$wanhwform> wanhwlabel <$wanhwlabel>"
+
+	VtLock
+	VtShow $wanhwform
+	VtShow $wanhwlabel
+#	VtShow $wancs
+	VtHide $swform
+	VtHide $wlbl
+
+	lanwanHideShow
+
+#	VtSetValues $swform -topSide $wancs
+
+	if { [ XXSet wanhw_list ] != 0 } {
+		VtDestroy [ XXSet wanhw_list ]
+	}
+	# TODO - determine hardware list for WAN - wanhw_list or ???
+	set WANHWList ""
+	DrawChainTree $wanhwform $wanhwlabel FORM wanhw_list \
+		MainListSelect \
+		MainListDoubleSelect \
+		$WANHWList \
+		4 \
+		1
+
+	VtSetValues $wlbl \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_SW_FORM_LABEL ]
+
+	if { [ XXSet main_list ] != 0 } {
+		VtDestroy [ XXSet main_list ]
+	}
+	set MainList ""
+	DrawChainTree $swform $wlbl FORM main_list \
+		MainListSelect \
+		MainListDoubleSelect \
+		$MainList \
+		6 \
+		1
+
+	VtSetValues [ XXSet main_list ] \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_SW_FORM_HELP ]
+
+	# Set the correct sensitivities for the pulldown menu
+	if { $MainList != "" } {
+		keylset cbs itemPosition 1
+		MainListSelect $cbs
+	}
+
+	VtShowDialog $MAINSCREEN_FORMWIDGET
+	ReDrawMainScreen
+	VtUnLock
+}
+
+
+proc DrawMainScreen {} \
+{
+	global wroot MAINSCREEN_FORMWIDGET wlbl swform wmenu lan_wan
+	global wanhwform wanhwlabel wancs statusBar
+
+	VtLock
+	set wdialog [ VtFormDialog $wroot.main \
+		-title [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MAIN_FORM_TITLE ] \
+		-wmCloseCallback ActionExit \
+		-wmShadowThickness 0 \
+		-marginWidth 0 \
+		-marginHeight 0 \
+		-xmArgs "XmNresizable 0" \
+	]
+
+	SaCharmSetMaxFormDimensions $wdialog 0
+
+	set statusBar [ SaStatusBar $wdialog.sbar 1 ]
+	set MAINSCREEN_FORMWIDGET $wdialog
+
+	set wmenu [ DrawMainScreenMenus $wdialog ]
+
+	# create extra widgets for WAN main screen (but hide 'em)
+	set wanhwform [ VtForm $wdialog.hwform \
+		-leftSide FORM -rightSide FORM  \
+		-bottomSide $wdialog.sbar \
+		-bottomOffset 0 \
+		-shortHelpCallback SaShortHelpCB \
+		-shortHelpString [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_HW_FORM_HELP ] \
+	]
+
+	set wanhwlabel [ VtLabel $wanhwform.label \
+		-topSide FORM -leftSide FORM -rightSide NONE -bottomSide NONE \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_WAN_HW_FORM_LABEL ] \
+	]
+
+	set swform [ VtForm $wdialog.form \
+		-leftSide FORM \
+		-rightSide FORM \
+		-topOffset 0 \
+		-bottomOffset 0 \
+	]
+
+	lappend lanwanWidgets(lanshow) $swform
+	lappend lanwanWidgets(wanhide) $swform
+
+	set wlbl [ VtLabel $swform.label \
+		-topSide FORM \
+		-leftSide FORM \
+		-rightSide NONE \
+		-bottomSide NONE \
+		-label [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MAIN_FORM_LABEL ] \
+	]
+
+	lappend lanwanWidgets(lanshow) $wlbl
+	lappend lanwanWidgets(wanhide) $wlbl
+
+	SaStatusBarSet $statusBar [ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_STARTUP ]
+
+	if { [ SendRequest "LAN_WAN_COUNT WAN" ] } {
+		set lan_wan WAN
+		if { [ SendRequest "LAN_WAN_COUNT LAN" ] } {
+			set lan_wan LAN
+		}
+	}
+	case $lan_wan {
+	LAN {
+		ShowLANScreen
+	}
+	WAN {
+		ShowWANScreen
+	} }
+	SaStatusBarSet $statusBar ""
+	VtUnLock
+}
+
+# main Main MAIN
+
+ErrorTopLevelCatch {
+set ErrorCode ""
+if { [ catch { set wroot [ VtOpen netcfg netcfgGUI ] } ErrorCode ] } {
+	puts stderr "VtOpen <$ErrorCode>"
+	exit 1
+}
+
+set pkgnics [ exec pkginfo -l nics | grep VERSION ]
+regexp "VERSION: *(.*)" $pkgnics line ver
+
+VtSetAppValues $wroot -columnValue MAXIMUM -versionString "[ IntlLocalizeMsg SCO_NETCONFIG_UI_MSG_MAIN_FORM_TITLE ] $ver"
+
+InitializeGlobals
+
+CheckAuth
+CheckExcl
+
+pipe a BEstdin 
+pipe BEstdout b
+
+set childPid [ fork ]
+case $childPid {
+	-1 {
+		set ErrorText [ IntlLocalizeMsg SCO_NETCONFIG_UI_ERR_CANT_FORK ]
+		VtDestroy $wroot
+		DoErrorDie
+	}
+	0 {
+		close $BEstdin
+		close $BEstdout
+
+		dup $a stdin
+		close $a
+
+		dup $b stdout
+		close $b
+
+		signal ignore {SIGINT}
+		execl $NCFGBE_PATH $NCFGBE_PATH
+	}
+}
+
+close $a
+close $b
+
+# default to LAN screen if NO chains or some LAN chains configured
+set lan_wan LAN
+DrawMainScreen
+
+VtMainLoop
+} ncfgUI
+
+# only reached on error condition
+DoErrorDie

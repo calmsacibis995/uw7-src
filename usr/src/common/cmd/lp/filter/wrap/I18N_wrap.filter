@@ -1,0 +1,54 @@
+#!/usr/bin/sh
+#ident	"@(#)I18N_wrap.filter	1.3"
+#ident	"$Header$"
+
+####################
+# Shell to allow access to locale
+# dependent processing program
+# for regular printing
+####################
+
+# Extract the locale and other arguments, note that the locale string is now
+# always terminated by a space character or eol
+#
+
+localeopt=`expr "$*" : '.*\(-X.[^ ]*\)'`
+otheropts=`echo $@ | sed 's/-X.[^ ]*//p'`
+_LOCALE=
+
+if [ -n "$localeopt" ]
+then
+	while getopts X: c  $localeopt
+	do
+		case $c in
+		X)
+			_LOCALE=$OPTARG
+
+			break;;
+		?)
+			exit 1;;
+		esac
+	done
+fi
+
+if [ ! "$_LOCALE" ]
+then
+	_LOCALE="C"; # set default locale
+fi
+
+SCRIPT_name="/usr/lib/lp/locale/$_LOCALE/LCL_WRAP"
+
+if [ -x $SCRIPT_name ]  #check file status
+then
+	exec $SCRIPT_name $otheropts
+else
+	if [ x$_LOCALE = "xC" ]
+	then
+		exec /usr/bin/cat
+	else
+		pfmt -l UX:lp -s error -g uxlp:1227 "Filter - %s: Not found" $SCRIPT_name
+		pfmt -l UX:lp -s action -g uxlp:1228 "Contact your system administrator"
+		exit 2
+	fi
+fi
+

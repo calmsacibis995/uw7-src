@@ -1,0 +1,756 @@
+The porting of mailx to use the c-client interface requires
+a significant number of modifications. Some of the behavior 
+of mailx will be altered due to limitations of the c-client
+(and underlying IMAP) interfaces/protocols. This document
+describes the behavioral differences, identifies the functions
+that have been altered/added/removed, and describes any new
+features due to these changes.
+
+Notes on mailx and C-Client internals:
+
+	For conventions sake, the term "mailx" will refer to
+	the original mailx behavior, and "c-client" will refer
+	to the behavior due to the limitations/assumptions of
+	the c-client interface.
+
+	mailx assumes mail folders are local. It is a very 
+	host-centric user agent.
+
+	c-client was built with the IMAP interface in mind. The
+	features and functionality inherent in c-client are
+	derived from those of the IMAP interface. The details of
+	the behavioral differences due to c-client implementation
+	are described in the "Behavioral differences" section. (of
+	all places ;)
+
+	mailx handles all messages and mail folders as file
+	streams (FILE *). This way, messages can come from or
+	be going to pipes, files, stdin/stdout, sockets, etc.
+	using the same internal support routines. mailx relies
+	on Unix authentication and file permissions to determine
+	access privileges for the current user.
+
+	A connection to the IMAP server via the c-client interface
+	is known as a "mailstream". Each mailstream must be authenticated
+	before the MUA can use it to access messages in a folder.
+	Authentication is not integrated with the Unix authentication
+	on the client side. The user must issue a remote user name
+	and password for the connection to the server to be established.
+	Multiple mailstreams can be opened between the MUA and multiple
+	other servers, but each is individually authenticated. Some
+	operations can be performed using an already opened, authenticated
+	mailstream. This allows a MUA to perform certain operations
+	between the current open folder and another folder on the same
+	remote server without having to open another mailstream, thus
+	avoiding re-authentication. Handling this kind of scenario is
+	complicated, and may very well confuse the user if done improperly.
+	Details of how I handled this is described in the "Feature
+	enhancements" section below.
+
+	mailx doesn't manipulate the current open folder directly.
+	It copies the contents into a temporary file and periodically
+	checks the original for newly delivered messages. When processing
+	of the mailfolder is complete, the modifications stored in the
+	temporary file are merged back into the original folder. mailx
+	has evolved a complicated method of file locking and writeback
+	procedures to help avoid loosing data if system failures occur.
+
+	c-client assumes that it is manipulating the folder directly.
+	Modifications to the flags of a message are considered complete
+	when the call returns. A command to move or copy a message 
+	between folders is immediate. Downloading a message body (its
+	text) will mark the message as seen unless you use special
+	access flags.
+
+	mailx understands only its built in mail folder formats.
+	On UnixWare, messages are delimited within a mail folder
+	with the string "From " at the beginning of the line. This
+	is also known as the "sendmail" folder format. On OSr5,
+	messages can be delimited with the sendmail folder format,
+	or the "MMDF" folder format (a string of 4 ctrl-A's on a
+	line at the beginning and end of a message).
+
+	c-client doesn't care about the folder format. It relies
+	on the driver which accesses the folder on behalf of the
+	c-client interface to handle folder formats. For the time
+	being, the c-client library uses 3 different drivers to
+	access messages: the IMAP driver for remote IMAP folders,
+	the POP driver for remote POP folders, and the SCO Message
+	Store driver (SCOMS1) for local folders. The SCOMS1 driver
+	can understand both sendmail format and MMDF format. The
+	format used is governed by the current folder format and
+	user preference files.
+
+	mailx has direct control of the message flags and envelope
+	information. There are certain aspects of a mail message
+	that the mail user agent (MUA) shouldn't manipulate. mailx
+	breaks these conventions. I'll go over these in more detail
+	in the "Behavioral differences" section below.
+
+	Because mailx is host-centric, there are assumptions about
+	filenames and default locations of which it takes advantage.
+	In particular are those regarding $HOME, $MBOX, current
+	working directory, default inbox directory, default inbox
+	filename, and file access methodology. The details of how
+	I dealt with these assumptions can be found in the last 3
+	sections of this document.
+
+	mailx allows you to edit a message that is in your currently
+	open folder. Changes you make to the message are stored to
+	the folder when you switch folders, or quit the mailx 
+	session.
+
+	c-client doesn't have a simple way to edit the contents of the
+	message. You would have to download the original message,
+	edit the local copy, delete the original copy, then append
+	the edited version to the end of the current folder. If you
+	wish to preserve the position within the mailbox, you would
+	have to use a temporary folder and shuffle messages back and
+	forth.
+
+	The remote message protocol used by this implementation of 
+	c-client is IMAP4. It is possible to include a POP3 driver
+	to the c-client library, but this would confuse the mailx
+	user. The driver chosen to access the remote server is
+	based on the name of the folder passed through the c-client
+	interface. The service (or protocol) used when a network
+	folder name is provided without a service specifier is
+	IMAP4. The mail user agent would have to account for the
+	differences in the protocol by allowing or disallowing
+	certain types of operations. We have opted to only use
+	IMAP4 when accessing remote message store servers.
+
+
+Files modified:
+	Makefile
+	README
+	aux.c
+	cmd1.c
+	cmd2.c
+	cmd3.c
+	cmdtab.c
+	collect.c
+	edit.c
+	fio.c
+	hdr/def.h
+	hdr/glob.h
+	init.c
+	lex.c
+	libmailx/Makefile
+	libmailx/delempty.c
+	libmailx/libmail.h
+	libmailx/mgetenv.c
+	main.c
+	quit.c
+	receipt.c
+	send.c
+	temp.c
+	usg.local.c
+	vars.c
+	
+Modification descriptions:
+		added function retrieve_message() to manage downloading of
+		message data and updating of mailx internal structures.
+
+output from command "diff orig_file modified_file"
+
+	Makefile
+		Modified lines in support of IMAP C-CLIENT interface:
+			added -DCCLIENT to LOCALDEF line
+			added -lc-client to LIBS line
+			removed ../libmail/libmail.a from LIBS line
+		changed the VERSION line to indicate use of c-client
+		added the file callbacks.o to OBJS
+		added the file ioctl.o to OBJS
+
+	README
+		added some notes to indicate some of the porting issues.
+
+	aux.c
+		function touch():
+		    added call to function setflags() to make sure the
+		    message store flags were loaded before accessing
+		    the mailx m_flag structure element.
+
+		function hfield():
+		    The function hfield() is used to find header lines
+		    that match the header tags passwd in as arguments
+		    to this function. If I want the "Subject" lines from
+		    a message, I could call hfield with the tag "subject"
+		    and receive a pointer to a character array that contains
+		    all lines in the header that match that tag. The c-client
+		    interface provides functions that do this kind of search,
+		    so this routine has been modified to make use of these
+		    functions. Here's what was done to support this
+		    conversion:
+
+		        redefine local variable ibuf from a file stream
+		        pointer to a mail stream pointer. This variable
+		        is used to access the current open mail folder.
+
+		        turn the local variable linebuf from an array of
+		        characters LINESIZE long to a character pointer
+		        initialized to NIL.
+
+			remove local variable lc.
+
+			add new local variables:
+				unsigned long llen = LINESIZE - 1;
+				STRINGLIST hfield_stringlist;
+				register char *cp, *cp2;
+
+		function nameof():
+		    The nameof() function tries to find the name of the
+		    sender of this message from the lines of its header.
+		    There is an order of precedence if more than one 
+		    field exists in a message, which is important if the
+		    fields contain different information. This precedence 
+		    is defined in RFC 822. A bug in how mailx performed
+		    its precedence check was fixed here.
+		    
+		    The original mailx program used the message envelope
+		    ("From " notation) to help provide this information
+		    in case there was a problem with missing headers.
+		    Since the c-client interface doesn't return the envelope
+		    info, this code has been removed rather than ported to
+		    use the new functions and structures.
+
+
+	cmd1.c
+		global declarations:
+		    added external reference to function statusput().
+
+		function doheaders():
+		    commented out call to sreset(), which frees up internal
+		    memory buffers managed within the mailx program. I did
+		    this because there was some memory corruption that seemed
+		    to be coming from invalid pointers. Not freeing up these
+		    internal buffers in several key spots seemed to eliminate
+		    these problems.
+
+		function showheaders():
+		    This function returns the lines of the header requested
+		    by the "showheaders" command from the mailx interactive
+		    prompt. Some work was needed for this routine to get the
+		    information through the c-client interface.
+
+		    A memory corruption bug was fixed by allocating the
+		    correct amount of data space to hold an array of
+		    character pointers.
+
+		    added local variables to help parse header information:
+	 		char *p, *hp, *headp;
+
+		    removed previous local variables no longer needed:
+ 			FILE *ibuf = setinput(mp);
+ 			int gfrom = strcmp(*q, ">From") == 0;
+
+		    removed special envelope line handling. envelope
+		    information is no longer available in the header
+		    text.
+
+		    altered the text handling according to the data
+		    presentation from the c-client interface.
+
+		function from():
+		    commented out call to sreset(), which frees up internal
+		    memory buffers managed within the mailx program. I did
+		    this because there was some memory corruption that seemed
+		    to be coming from invalid pointers. Not freeing up these
+		    internal buffers in several key spots seemed to eliminate
+		    these problems.
+
+		function printhead():
+		    This function constructs a summary line to print when
+		    showing a list of messages in a folder. It's had to be
+		    altered to use the c-client interface.
+
+		    changed local variable ibuf from a file stream pointer
+		    to a mail stream pointer.
+
+		    added local variables:
+			MESSAGECACHE *elt = NIL;
+			char tmpdate[LINESIZE];
+
+		    create a phony envelope header line so we can used the
+		    parse mechanism to extract the original send date and
+		    time stamp.
+
+		function dispname():
+		    Return the full name from an RFC-822 header line
+		    or the last two (or one) component of the address.
+
+		    fixed a bug where the name wasn't displayed if there
+		    wasn't anything between the parentheses.
+
+		function nontext():
+		    add call to setinput() to make sure the message had been
+		    downloaded and is in cache before dereferencing message
+		    data.
+
+		function type1():
+		    add call to setinput() to make sure the message had been
+		    downloaded and is in cache before dereferencing message
+		    data.
+
+		function top1():
+		    add call to setinput() to make sure the message had been
+		    downloaded and is in cache before dereferencing message
+		    data.
+
+		    changed a little of the logic to make use of the c-client
+		    convenience functions.
+
+		function stouch():
+		    add call to setflags() to make sure the message flags had
+		    been downloaded and is in cache before dereferencing
+		    message flag data.
+
+		function New():
+		    add call to setflags() to make sure the message flags had
+		    been downloaded and is in cache before dereferencing
+		    message flag data.
+
+		function mboxit():
+		    add call to setflags() to make sure the message flags had
+		    been downloaded and is in cache before dereferencing
+		    message flag data.
+
+	cmd2.c
+		function save1():
+		    added code to reject folder names that contained c-client
+		    network name syntax.
+
+		function savemsglist():
+		    removed local variable no longer needed:
+			FILE *obuf;
+			struct stat statb;
+		
+		    added local variable for network name construction:
+			char *tmpfname;
+		
+		    stat of folder through c-client is not possible, so
+		    the mail_create, or mail_status functions are used
+		    to detect existence, or error conditions.
+
+		    since messages are now managed through c-client,
+		    the c-client mail stream routines are used instead
+		    of the file stream routines.
+
+	cmd3.c
+
+		function preserve():
+		    add call to setflags() to make sure the message flags had
+		    been downloaded and is in cache before dereferencing
+		    message flag data.
+
+		function messize():
+		    add call to setinput() to make sure the message had been
+		    downloaded and is in cache before dereferencing message
+		    data.
+
+		function getfilename():
+		    getfilename takes the filename passed in and determines
+		    the real filename. Certain special characters mean
+		    something special. The '%' character means the INBOX,
+		    the '#' character means the previous folder, etc.
+		    This function has been altered to know about c-client
+		    specifics. The global flag "edit" is set depending on
+		    whether or not you have your INBOX open. Most of the
+		    mods in this routine are checking for these types of
+		    things.
+
+		    I also added a check to refuse c-client network folder
+		    names specified by the user.
+
+		    Finally, you cannot specify an alternate user name
+		    and get their INBOX. This is because several config
+		    files are used to determine where this folder might
+		    be. If the folder is remote, you don't have access
+		    to the config files that specify what folder to open.
+
+	cmdtab.c
+		There is a conflict between c-client header file definitions
+		and some of the defines in the mailx code. In particular,
+		the c-client header file "mail.h" defines "T" to be 1,
+		and NIL to be 0. These aren't required, but the designer 
+		of c-client did this anyways.
+
+		Turns out "T" is a flag in mailx indicating the command
+		from the user is a transparent command. I've had to modify
+		the mailx code to use "TX" instead of "T" for this flag.
+
+		This affects the "file", "folder", and "folders" commands
+		as specified in the cmdtab command table.
+
+	collect.c
+		There is still need to process data through file stream
+		pointers. Because of this, some of the routines used on
+		the data from a file stream pointer needed to be left alone.
+		In these cases, a new routine was added to perform the
+		same task on data retrieved through a mail stream pointer.
+		getline2() is one of these routines.
+
+	edit.c
+		function edit1():
+		    This routine is used to pass message data to an editor
+		    for modification purposes. I've had to use the setinput()
+		    function to make sure the message has been loaded through
+		    the c-client interface. This routine has been massively
+		    cut down. I left the original code within ifndef's so that
+		    diff wouldn't show us too much detail.
+		 
+	hdr/def.h
+		This header file defines many of the mailx internal
+		functions, flags, and so on. I've added the c-client
+		header file include line here because it then gets
+		included just about everywhere else in mailx. Of
+		course, the c-client header file doesn't include
+		the header files it requires to resolve structures
+		it references, so I've had to put in the include
+		of <pwd.h>, too.
+
+		It is in this file that the mailx transparent command
+		flag "T" is redefined to "TX".
+
+		It is in this file that the mailx NIL value is defined.
+		I've commented it out because of conflicts with the
+		definition of NIL in the c-client/mail.h file.
+
+		A few new external references are prototyped here, as
+		well as any alterations needed to existing function
+		prototypes. In particular are:
+			retrieve_message ()
+			delempty ()
+
+	hdr/glob.h
+		global variables that were modified or newly added are
+		declared here. In particular are:
+			extern MAILSTREAM	*itf;
+			extern char		*remotehost;
+			extern unsigned long	ulgMsgCnt,
+						ulgNewMsgCnt,
+						ulgUnseenMsgCnt;
+
+	init.c
+		altered the definition of these variables to:
+			MAILSTREAM	*itf;
+			char	tempEdit[PATHSIZE];
+			char	tempMail[PATHSIZE];
+			char	tempMesg[PATHSIZE];
+			char	tempQuit[PATHSIZE];
+			char	tempSet[PATHSIZE];
+			char	tempZedit[PATHSIZE];
+
+		removed the definition of these variables:
+			off_t	mailsize;
+
+		added the definition of these variables:
+			char	*remotehost;
+			unsigned long ulgMsgCnt;
+			unsigned long ulgNewMsgCnt;
+			unsigned long ulgUnseenMsgCnt;
+
+	lex.c
+		function setfile():
+		    altered to use mail streams instead of file streams.
+		    calls c-client routines.
+		    removed mail folder locking code, relies on c-client for
+			this.
+		    builds c-client network names where necessary using the
+			REMOTEHOST mailx variable.
+		    added new local variables:
+			char *fname;
+			unsigned long oMsgCnt,
+				      oNewMsgCnt,
+				      oUnseenMsgCnt,
+				      newfileMsgCnt;
+
+		function Passeren():
+		    This function has been altered so that it doesn't
+		    call the libmail locking functions. They are rather
+		    meaningless now, but I kept them here so the original
+		    mailx program logic didn't have to change elsewhere.
+
+		function Verhogen():
+		    This function has been altered so that it doesn't
+		    call the libmail locking functions. They are rather
+		    meaningless now, but I kept them here so the original
+		    mailx program logic didn't have to change elsewhere.
+
+		function newmail():
+		    This function was altered to call the c-client
+		    routines to determine if new mail has arrived.
+
+		function execute():
+		    This function is altered to use the new mailx 
+		    transparent command flag "TX".
+
+		function stop():
+		    This function no longer treats the global variable
+		    "itf" as a file stream pointer. It no longer deals
+		    with the global variable otf, because it is no longer
+		    used.
+
+		function newfileinfo():
+		    This function calculates information about the open
+		    folder using the c-client routines.
+
+
+	libmailx/Makefile
+		change LOCALDEFS to LOCALDEF, per the CMDRULES file.
+
+	libmailx/delempty.c
+		function delempty():
+		    use mail_delete() instead of unlink() to remove mail
+		    folders.
+
+	libmailx/libmail.h
+		added include of c-client/mail.h and <pwd.h>.
+		removed include of ../../libmail/mail.h, no longer needed.
+
+	libmailx/mail.h (now symlink to libmailx/libmailx.h to avoid
+		conflict with c-client "mail.h")
+
+
+	libmailx/mgetenv.c
+		changed include of mail.h found in libmailx directory to
+		include libmailx.h instead.
+
+	main.c
+		function main():
+		    add c-client initialization include.
+
+		    add support for the "-R hostname" command line option.
+
+		    change the semantics of the -u flag.
+
+		    add support to recognize c-client network folder names 
+		    and filter them out.
+
+		    add support for the mailx variable REMOTEHOST.
+
+		    add special handling when using cwd. cwd is not meaningful
+		    when accessing remote mail folders.
+
+		function ismbox():
+		    This routine was removed because it relied on the
+		    directory /var/mail/:saved to exist to determine if
+		    the folder we are trying to open is the users inbox.
+		    This is no longer a valid check.
+
+	quit.c
+		function delmsgseq():
+		    this is a new function. It takes a string of message
+		    numbers, converts them into an internal msgvec, and
+		    marks each one as deleted in the m_flag element of
+		    the message structure.
+		
+		function quit():
+		    alter to use the mail stream pointer instead of the
+		    file stream pointers.
+
+		    added/modified local variables:
+			MAILSTREAM *ibuf, *obuf, *fbuf;
+			char *seq = (char *)salloc(LINESIZE + 1);
+			int seqsz = LINESIZE;
+			char *tmpmbox, *mboxname;
+
+		    added support to recognize c-client network folder names.
+
+		    this function has been altered dramatically to support
+		    the closing of the users inbox and maintain mailx style
+		    behavior. This needs to be tested thoroughly.
+
+		function writeback():
+		    this function now uses the c-client interface to return
+		    messages to the inbox in their current state. Significant
+		    alterations happen in this routine.
+
+		function lockmail():
+		    removed, no longer needed.
+
+		function unlockmail():
+		    removed, no longer needed.
+
+	receipt.c
+		function receipt():
+		    this routine generates return receipt messages when a
+		    message containing mailx special strings is read. This
+		    isn't conformant to the return receipt protocols I'm
+		    aware of, so it's no yet compiled in. In order to keep
+		    this functionality, it will have to be ported to use
+		    the c-client functions to read the mail message.
+
+		    For now, this just issues a warning.
+
+	send.c
+		function statusput():
+		    this function was changed to be non-static so that it 
+		    could be used in another module.
+		
+		function send():
+		    this function now uses mail stream pointers instead of
+		    file stream pointers.
+
+		    it makes use of the new routines:
+			retrieve_message()
+			getline2()
+		
+		    I tried to keep the logic the same, but some significant
+		    changes happened in this routine.
+
+	temp.c
+		function tinit():
+		    add hostname to the temporary files being created. This
+		    may help in determining which host may have created temp
+		    files on the message store server.
+
+	usg.local.c
+		function findmail():
+		    this function now returns "INBOX" as the users inbox
+		    folder name.
+
+	vars.c
+		function assign():
+		    modified to only allow the variable REMOTEHOST to be
+		    set one time.
+
+		function deassign():
+		    modified to never allow the variable REMOTEHOST to be
+		    unset.
+		
+		function vcopy():
+		    modified to support testing a variable pointer set to
+		    NULL. This is support for the REMOTEHOST mailx variable.
+
+		function value_noenv():
+		    this is a new function that returns the value of a
+		    variable without looking at the environment. Other
+		    mailx variables can be set from environment variables.
+		    This is support for the REMOTEHOST mailx variable.
+
+Behavioral differences:
+
+	On close, c-client will alter the flags of all messages in
+	a folder to reflect that the messages contained within are
+	no longer new. mailx allows the user to close a folder and
+	leave the state of newly arrived messages as "New".
+
+	mailx allows you to save a "New" message into a different
+	folder and remain "New". c-client doesn't allow this.
+
+	mailx used to have access to the envelope information of
+	a message (the first line of the message in a folder, must
+	begin with "From "). This is because mailx manipulated the
+	mail folder itself. c-client doesn't give access to the
+	entire envelope information. In particular, the originating
+	sender info contained in the envelope isn't presented through
+	the c-client interface. The exact data stored there is lost
+	to the MUA. The delivery time is, however, preserved and
+	accessible.
+
+	A users default mail folder is known as the "inbox". As such,
+	the path to that folder is not available to the MUA via the
+	c-client interface. It is referred to only as inbox. Any file
+	referred to by pathname is not the inbox, even if this is the
+	name to which inbox resolves. This is an important distinction
+	for mailx, because using the "quit" command within mailx to
+	save the state of the currently opened folder will have slightly
+	different behavior if it is the default folder. Using the
+	"folder" command to switch between folders invokes the "quit"
+	command and saves state of the current open folder. Special
+	character arguments to the "folder" command will switch you to 
+	your inbox, or "MBOX". If you use these characters to specify
+	the inbox, or start mailx on your default folder, the name
+	of the folder appears as "INBOX" on the file information line
+	(see the "file" command in the mailx(1) man page for more details).
+
+	You can no longer specify another users default folder using
+	the command-line "-u user" options, or the "folder %user"
+	interactive command. The reason for this is that the c-client
+	library uses your uid to find out where to look for configuration
+	information which might contain the location and name of the 
+	default folder. In order to specify another users default folder,
+	you'll have to know its location by path. The "-u user"
+	command-line option has been changed to be "-u folder", and
+	is equivalent to the "-f folder" option.
+
+	The "write" command always saves message body data to local files,
+	while all other folder commands manipulate folders on the same
+	system where the current open folder exists. You cannot alter
+	the system to which you are currently connected. It is set at
+	the beginning of the session, and attempts to change it are
+	ignored.
+
+Feature enhancements:
+
+	You can specify the format of the folder in your personal
+	configuration files. These files are described in the 
+	"Additional configuration options" section below.
+
+	You can specify the default mail directory in your personal
+	configuration files. These files are described in the
+	"Additional configuration options" section below.
+
+	You can specify the default mail folder name in your personal
+	configuration files. These files are described in the
+	"Additional configuration options" section below.
+
+	You can specify the default message store server in your
+	personal configuration files. The "REMOTEHOST" variable
+	has been added to the mailx special variables and can be
+	set in your .mailrc, or from the command-line using the
+	"-R hostname" option. You cannot set this behavior with
+	a shell environment variable. By default the value of
+	REMOTEHOST is NULL. The REMOTEHOST variable is always
+	set and cannot be altered from the mailx interactive
+	command prompt. All folder manipulation commands will
+	take place on REMOTEHOST. If REMOTEHOST is NULL, the
+	folders are expected to be local.
+
+Additional configuration options:
+
+	Your start-up configuration is governed by 2 new files;
+	/etc/default/mail, and $HOME/.maildef. /etc/default/mail
+	overrides internal c-client defaults. $HOME/.maildef
+	overrides the /etc/default/mail settings. There are a
+	variety of variables that can set certain behaviors, but
+	the most significant of these are:
+
+		MS1_MMDF	set to "true" means that each
+				messages is encapsulated within
+				the "^A^A^A^A" delimiter. Set to
+				"false" means that each message 
+				begins with the string "From "
+				at the beginning of a line.
+
+				MS1_MMDF is set to "false" by
+				default.
+
+				We are considering changing this
+				variable name to something like
+				MS1_FORMAT, and its values would
+				contain a string that indicates
+				the message delimiter format. For
+				starters, values would include
+				"mmdf" and "sendmail".
+		
+		MS1_INBOX_DIR	The value of this variable indicates
+				which directory c-client looks in for
+				your inbox.
+
+				MS1_INBOX_DIR is set to NULL by default.
+				This indicates /var/mail should be the
+				directory path to your inbox.
+
+		MS1_INBOX_NAME	The value of this variable indicates
+				which filename c-client uses as your
+				inbox. The file will be searched for
+				in the directory specified by the
+				MS1_INBOX_DIR variable.
+
+				MS1_INBOX_DIR is set to NULL by default.
+				This indicates your user name should be
+				the filename of your inbox.
+

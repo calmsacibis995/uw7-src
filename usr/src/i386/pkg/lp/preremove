@@ -1,0 +1,76 @@
+#ident	"@(#)preremove	1.2"
+##########
+#
+# The lp service must be down to be removed!
+##########
+/usr/sbin/lpshut >/dev/null 2>&1
+
+##########
+#
+# Remove lp commands from TFM database for roles OP, SOP, & SSO
+##########
+#adminrole -r lpstat,accept OP >/dev/null 2>&1
+#adminrole -r lpstat,lpfilter,lpforms,accept,reject,lpmove SOP >/dev/null 2>&1
+#adminrole -r lpstat,lpfilter,lpforms,accept,reject,lpmove SSO >/dev/null 2>&1
+
+# remove filter table stuff
+
+ETCLP=/etc/lp
+USRSBIN=/usr/sbin
+LPADMIN=${USRSBIN}/lpadmin
+LPFILTER=${USRSBIN}/lpfilter
+LPSCHED=${USRLIB}/lp/lpsched
+LPSHUT=${USRSBIN}/lpshut
+ACCEPT=${USRSBIN}/accept
+REJECT=${USRSBIN}/reject
+LPSTAT=${USRBIN}/lpstat
+DUMPOLP=${USRSBIN}/dumpolp
+ENABLE=${USRBIN}/enable
+DISABLE=${USRBIN}/disable
+TMP=/tmp/lp.err
+
+FILTERTABLE=${ETCLP}/filter.table
+FILTERTABLE_I=${ETCLP}/filter.table.i
+FILTERTABLE_TMP=/var/tmp/flt.tbl$$
+
+rm -f /tmp/FDLIST
+for filter in \
+	download \
+	postio \
+	postio_b \
+	postio_br \
+	postio_r \
+	postior \
+	postmd \
+	postprint \
+	postreverse \
+	pcl \
+	wrap
+do
+	echo "${filter}" >> /tmp/FDLIST
+done
+
+while read filter
+do
+	${LPFILTER} -f ${filter} -x 2>>${TMP}
+done < /tmp/FDLIST
+
+#####
+#
+# The ``factory installed'' filter table:
+#####
+mv ${FILTERTABLE} ${FILTERTABLE_TMP}
+mv ${FILTERTABLE_I} ${FILTERTABLE} 2>/dev/null
+
+while read filter
+do
+	${LPFILTER} -f ${filter} -x  2>>${TMP}
+done < /tmp/FDLIST
+
+mv ${FILTERTABLE} ${FILTERTABLE_I}
+mv ${FILTERTABLE_TMP} ${FILTERTABLE}
+
+rm -f /tmp/FDLIST
+
+exit 0
+

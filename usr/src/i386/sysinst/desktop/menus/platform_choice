@@ -1,0 +1,55 @@
+#ident	"@(#)platform_choice	1.2"
+
+function platform_check
+{
+	case $PLATFORM in
+	"none")
+		platform=0
+		;;
+	*)
+		;;
+	esac
+}
+
+function platform_choice
+{
+	typeset PLATFORM_RID title_len
+	typeset DEFAULT=1
+	$BACK_END_MANUAL && DEFAULT=0
+
+	let title_len=${#Platform_Title}+4
+
+	open_radio -fg $COMBO2_FG -bg $COMBO2_BG -entry 'footer "$Msg_Platform"' -exit 'platform_check'
+	PLATFORM_RID=$RID
+	add_radio "$Choice_Compaq" -entry 'PLATFORM=compaq;msg $Msg_Compaq' -help 'helpwin compaq'
+	#add_radio "$Choice_Tricord" -entry 'PLATFORM=tricord;msg $Msg_Tricord' -help 'helpwin tricord'
+	#add_radio "$Choice_Ast" -entry 'PLATFORM=ast;msg $Msg_Ast' -help 'helpwin ast'
+	add_radio "$Choice_None" -entry 'PLATFORM=none;msg $Msg_None' -help 'helpwin platform'
+	radio_runparms $PLATFORM_RID 8
+	[ "$RADIO_WIN_WIDTH" -lt "${title_len}" ] && let RADIO_WIN_WIDTH=title_len
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -current 'footer "$Msg_Platform"' -title "$Platform_Title"
+	run_radio $RID $DEFAULT $RADIO_ROWS
+	input_handler $CURWIN
+}
+
+#
+#	Allow further specification of platform-specific options for Compaq
+#
+#compaq()
+#{
+#	typeset COMPAQ_FID
+#
+#	INSTALL_CIMAGENTS=${INSTALL_CIMAGENTS:-No}
+#	UPSPORT=${UPSPORT:-1}
+#	OS_SHUTDOWN_TIME=${OS_SHUTDOWN_TIME:-5}
+#
+#	place_window 70 10 -title "$Compaq_Title"
+#	open_form
+#	COMPAQ_FID=$FID
+#	add_field INSTALL_CIMAGENTS  -p "$CPQ_CIM_PROMPT" -ifg $BLUE -ibg $CYAN -ix 50 -ilen 3 -choice 'choose $INSTALL_CIMAGENTS Yes No' -entry 'msg "$Msg_CIM"'
+#	add_field UPSPORT  -p "$CPQ_PORT_PROMPT" -ifg $BLUE -ibg $CYAN -ix 50 -ilen 3 -choice 'choose $UPSPORT 1 2' -entry 'msg "$Msg_UPSPORT"'
+#	add_field OS_SHUTDOWN_TIME  -p "$CPQ_TIME_PROMPT" -ifg $BLUE -ibg $CYAN -ix 50 -ilen 3 -choice 'numrange $OS_SHUTDOWN_TIME 1 30' -exit 'numrange $OS_SHUTDOWN_TIME 1 30' -entry 'msg "$Msg_UPSTIME"'
+#	run_form $COMPAQ_FID
+#	input_handler $CURWIN
+#	destroy_form
+#}

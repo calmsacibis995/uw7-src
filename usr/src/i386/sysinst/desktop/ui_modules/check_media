@@ -1,0 +1,251 @@
+#!/sbin/sh
+#ident  "@(#)check_media	15.1    98/03/04
+
+
+. /isl/ui_modules/common.rc
+[ "$direction" = PREV ] && ii_exit PREV  # only check media when going fwd
+
+typeset -x SET_NAME="UnixWare"
+
+keys="$CHECK_MEDIA_KEYS"
+
+#
+# arg 1 is the message to display.
+#
+function media_funcs_err
+{
+[ -n "$debug" ] && set -x
+	display -w "$1
+ ($2)" -bg $ERROR_BG -fg $ERROR_FG -above 5 -below 1
+	footer "$keys"
+set_hotkey 2 "exit 42"
+set_hotkey 3 "ii_exit NEXT"
+ 	set_hotkey 1 "ivar set help_topic check_media; ii_exit HELP"
+	set_hotkey 9 "ii_exit PREV"
+	set_hotkey 10 ""
+	input_handler
+	footer
+}
+
+#
+# arg 1 is the full name of a CD-ROM device (like /dev/cdrom1)
+#
+function check_for_cdrom
+{
+[ -n "$debug" ] && set -x
+	#
+	# If this is the first CD-ROM, then it might still be spinning up.
+	# Unfortunately, there's no way to tell the difference between an empty
+	# CD-ROM and one that's in the process of spinning up.  So, if the
+	# check_devs fails, try again after ten seconds.
+	#
+	# If this is *not* the first CD-ROM, then we've already slept for ten
+	# seconds (in a previous call), so don't sleep again.
+	case "$1" in
+	*cdrom1)
+		if check_devs -g $1
+		then
+			return 0
+		else
+			call sleep 10
+		fi
+		;;
+	esac
+	check_devs -g $1
+	return $?
+}
+
+function retension_tape
+{
+[ -n "$debug" ] && set -x
+	if [ "$SEC_MEDIUM_TYPE" != tape ] || [ -f /tmp/retension_done ]
+	then
+		return 1
+	fi
+	display "$CHECK_MEDIA_RETENSION_WAIT"
+	footer "$CHECK_MEDIA_WAIT_FOOTER"
+	/sbin/tapeop -t $SEC_MEDIUM
+	footer
+	wclose
+	> /tmp/retension_done
+	return 0
+}
+
+function get_cdrom
+{
+[ -n "$debug" ] && set -x
+	ismount /cd-rom && return 0
+	typeset cdrom_win i FOUND FIRST
+#	$SILENT_INSTALL || {
+#		display "$CDROM_MSG"
+#		cdrom_win=$CURWIN
+#	}
+	FIRST=true
+	while :
+	do
+		FOUND=false
+		for i in /dev/cdrom?
+		do
+			check_for_cdrom ${i} && {
+				SEC_MEDIUM=$i
+				FOUND=true
+				break
+			}
+		done
+		$FOUND || {
+			$FIRST && {
+				FIRST=false
+				display -w "$CHECK_MEDIA_cdrom_prompt" \
+					-above 5 -below 1
+				footer "$keys"
+				set_hotkey 1 "ivar set help_topic check_media; ii_exit HELP"
+set_hotkey 2 "exit 42"
+set_hotkey 3 "ii_exit NEXT"
+				set_hotkey 9 "ii_exit PREV"
+				set_hotkey 10 ""
+				input_handler
+				footer
+				continue
+			}
+			media_funcs_err "$CHECK_MEDIA_CDROM_OPEN_ERROR" "$NO_CD"
+			continue
+		}
+		sh_mount -r -F cdfs $SEC_MEDIUM /cd-rom 
+		rc=$?
+		if (( rc != 0 ))
+		then
+			media_funcs_err "$CHECK_MEDIA_CDROM_MOUNT_ERROR" "$NO_MOUNT"
+			continue
+		fi
+		[ -s /cd-rom/${SET_NAME}.image ]
+		rc=$?
+		if (( rc != 0 ))
+		then
+			sh_umount /cd-rom
+			media_funcs_err "$CHECK_MEDIA_CDROM_ERROR" "$WRONG_CD"
+			continue
+		fi
+		break
+	done
+	$SILENT_INSTALL || wclose $cdrom_win
+	return 0
+}
+
+function get_tape
+{
+[ -n "$debug" ] && set -x
+	typeset tape_win i FOUND FIRST
+#	display "$TAPE_MSG"
+#	tape_win=$CURWIN
+	FIRST=true
+	while :
+	do
+		FOUND=false
+		for i in /dev/rmt/tape?
+		do
+			check_devs -g ${i} && {
+				SEC_MEDIUM=$i
+				FOUND=true
+				break
+			}
+		done
+		$FOUND || {
+			$FIRST && {
+				FIRST=false
+				display -w "$CHECK_MEDIA_tape_prompt" \
+					-above 5 -below 1
+				footer "$keys"
+				set_hotkey 1 "ivar set help_topic check_media; ii_exit HELP"
+set_hotkey 2 "exit 42"
+set_hotkey 3 "ii_exit NEXT"
+				set_hotkey 9 "ii_exit PREV"
+				set_hotkey 10 ""
+				input_handler
+				footer
+				continue
+			}
+			media_funcs_err "$CHECK_MEDIA_TAPE_OPEN_ERROR" "$NO_TAPE"
+			continue
+		}
+		cdecl "char [512]" tape_hdr=
+		call -c read 0 tape_hdr 512 < $SEC_MEDIUM
+		(( _RETD == 512 )) || {
+			media_funcs_err "$CHECK_MEDIA_TAPE_READ_ERROR" "$_RETD $TAPE_BYTES"
+			continue
+		}
+		# The newline in the string below is intentional.
+		call -c strncmp tape_hdr "# PaCkAgE DaTaStReAm:zip
+${SET_NAME}" 27
+		(( _RETD == 0 )) || {
+			media_funcs_err "$CHECK_MEDIA_TAPE_ERROR" "$WRONG_TAPE"
+			continue
+		}
+		break
+	done
+#	wclose $tape_win
+	return 0
+}
+
+
+
+#--------------------------------------------------------
+
+
+
+
+#
+# Main
+#
+# This module is responsible for making sure we can see valid install
+# media in the device chosen. If we can't, make them go back. Don't
+# let them by until we can see valid media. (In the sense that we are
+# a gatekeeper, we are similar to the check_hw module).
+
+#
+# Get the media choice
+#
+media=`ivar get SEC_MEDIUM_TYPE`
+SEC_MEDIUM=`ivar get SEC_MEDIUM`
+if [ -z "$media" ]
+then
+	display -w "$NO_MEDIA"
+	input_handler
+	ii_exit DIE
+fi
+
+#
+# Put up a "please wait..."
+#
+display "$PLEASE_WAIT ($media) $IS_VERIFIED" -above 1 -below 5
+wait_window=$CURWIN
+
+#
+# Examine the devices
+#
+case $media in
+	cancel)	ii_exit DIE;;
+	tcp)	display -w "no net yet"
+		input_handler
+		ii_exit PREV;;
+	spx)	display -w "no net yet"
+		input_handler
+		ii_exit PREV;;
+	cdrom)	get_cdrom;;
+	tape)	get_tape;;
+	*)	display -w "
+ Illegal media type \"$media\" 
+"
+		input_handler
+		ii_exit DIE;;
+esac
+
+#
+# Save the pathname of the device file to install from
+#
+ivar set SEC_MEDIUM "$SEC_MEDIUM"
+
+#
+# Done. If we got here it is ok.
+#
+ii_exit NEXT
+

@@ -1,0 +1,79 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3","tp4","tp5","tp6","tp7","tp8");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api ptest1-1");
+	&verify(grep(/ptest1: startup/,@output));
+}
+
+
+sub tp2 {
+	$tp=tp2;
+	&verify(grep(/ptest1: ic1 tp1/,@output));
+}
+
+sub tp3 {
+	$tp=tp3;
+	&verify(grep(/ptest1: cleanup/,@output));
+}
+
+
+sub tp4 {
+	$tp=tp4;
+	@infolines=grep(/^$TEST_CASE_INFORMATION/,@journal);
+	$_=$infolines[0];
+	&breakup_infoline($_);
+
+#	print "a=$activity, t=$tpnumber, b=$block, s=$sequence, m='$message'\n";
+	&verify($activity==0 && $tpnumber==0 && $block==1 &&
+		$sequence==1 && $message eq "ptest1: startup");
+}
+
+sub tp5 {
+	$tp=tp5;
+	@infolines=grep(/^$TEST_CASE_INFORMATION/,@journal);
+	foreach(@infolines) {
+		&breakup_infoline($_);
+		if ($tpnumber==1 && $sequence==1) {
+			&verify(/ptest1: ic1 tp1/);
+			return;
+		}
+	}
+	&fail;
+}
+
+sub tp6 {
+	$tp=tp6;
+	&verify($block==1 && $sequence==1);
+}
+
+sub tp7 {
+	$tp=tp7;
+	$next=0;
+	foreach(@infolines) {
+#		print "line=$_";
+		&breakup_infoline($_);
+#		print "tpnum=$tpnumber, seq=$sequence, block=$block, next=$next\n";
+		if ($next==1) {
+			&verify($block==1 && $sequence==2);
+			return;
+		}
+		if ($tpnumber==1 && $sequence==1 && $block==1) {
+			$next=1;
+		}
+	}
+	&fail;
+}
+
+sub tp8 {
+	$tp=tp8;
+	@activity=grep(/^$TEST_PURPOSE_RESULT/,@journal);
+	&breakup_result($activity[0]);
+	&verify($result==0 && $result_text eq "PASS");
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

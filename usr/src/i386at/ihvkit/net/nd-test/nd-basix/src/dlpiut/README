@@ -1,0 +1,117 @@
+#
+#       @(#) README 4.1 94/05/16 SCOINC
+#
+#	Copyright (C) The Santa Cruz Operation, 1994
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+
+dlpiut - README
+M. Syben 5/6/94
+
+These are the steps apparently required to add a new test command to dlpiut 
+(changing the srmode (source routing mode) from its default value is 
+used as an instance)
+
+1) create the procedure that will perform the actual work, including any
+explicit parameters that will be required (there are other parameters that
+are (implicitly) set when invoking the command from the shell script, which
+may be required for the successful execution of the command).  Select the
+appropriate file(s) for the command - dlpi, mdi, or both.  The following 
+example is dlpi only:
+
+api_dlpi.c:dlpi_srmode(fd, srmode)
+
+
+2) add the new parameter(s) to
+
+	"typedef struct cmddef" in dlpiut.h, e.g. 
+
+dlpiut.h:       uchar   c_srmode;                   /* source routing mode */
+
+
+3) add the command - prepended by "c_" - to the switch in execute:
+
+execute.c:      case C_SRMODE:
+	              ret = c_srmode();
+
+"C_SRMODE" is described below
+
+
+4) add the function invoked by the switch, e.g.
+ 
+execute.c:c_srmode()
+
+
+5) add the call to the procedure(s) that actually execute the command.  The 
+real parameters are passed at this time.  There may be two procedures if 
+separate versions for mdi and dlpi are required.  The current example is 
+for dlpi only:
+
+execute.c:      ret = dlpi_srmode(fp->f_fd, cmd.c_srmode);
+
+
+6) add the new argument description to "arg_t parg[]", e.g.
+
+parse.c:        { "srmode=",  (uchar *)"source routine mode is non/auto/stack",
+                  T_SRMODE,(uchar *)&cmd.c_srmode },
+
+Note the required named constant T_SRMODE (see below).
+
+
+7) add the new function description to "parse_t pcmd[]", e.g.
+
+parse.c:        { "srmode",  (uchar *)"set source routine mode",
+                  I_DLPI, { A_FD,A_SRMODE }, {0} },
+
+Note that the list of passed parameters must be specified here - in a 
+certain format that gives the correct (?!) table offset.  "A_SRMODE"
+is explained below.
+
+Also note that the passed parameters (from the shell script) could be a 
+superset of the parameters required by the procedure performing the 
+actual work - they may be required by other functions called during the'
+command execution.  In fact, all the required parameters could be gotten 
+by the procedure from the "global" parameter table.  Procedures may use
+any parameter from that table at any time - whether set or not (the default
+value, when not set, is 0).  However, formally passed parameters may be 
+checked by compilers and lint - a safer way to program.
+
+ 
+8) add parameter entry (?) to "switch (argp->a_type)" in usage()
+
+parse.c:                        case T_SRMODE:  lprf(11, "<srmode>"); break;
+
+
+9) add the "allowable command type" - really the correct (?!) table offset
+to dlpiut.h, e.g.
+ 
+dlpiut.h:#define        C_SRMODE        19
+
+
+10) add the "allowable argument type"  - really the correct (?!) table offset
+ 
+dlpiut.h:#define        T_SRMODE        9    /* source routing mode specifier */
+
+
+11) add entry to the "indexes into the parg structure" (this time it's
+parse.c where the addition needs to be made), e.g.
+
+parse.c:#define A_SRMODE        18
+
+
+12) last, but not least, add the parameter evaluation to the "singlearg"
+function (???) in parse.c:
+ 
+parse.c: case T_SRMODE:
+               if (strcmp(str, "non") == 0)
+                        i = SR_NON;
+                else if (strcmp(str, "auto") == 0)
+                        i = SR_AUTO;
+                else if (strcmp(str, "stack") == 0)
+                        i = SR_STACK;
+                else {
+                        error("Unrecognized media type: %s", str);
+                        return(0);
+                }
+
+

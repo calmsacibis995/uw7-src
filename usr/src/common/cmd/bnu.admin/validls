@@ -1,0 +1,28 @@
+#!/sbin/sh
+#ident	"@(#)validls	1.2"
+#ident  "$Header$"
+
+################################################################################
+#	Module Name: validls.sh
+#	Description: Validation for listing functions
+#
+###############################################################################
+
+if [ ! -f $2 ]
+then
+ 	exit 1
+fi
+if [ -z $1 ]
+then
+	exit 1
+fi
+
+$TFADMIN /usr/bin/cat $2 | sed -n -e '/^[ #	]/!p' | sed -n -e '/^$/!p' >/tmp/net.$VPID
+
+if [ ! -s /tmp/net.$VPID ]
+then
+	exit 1
+fi
+
+$TFADMIN /usr/bin/cat /tmp/net.$VPID | /usr/bin/grep "$1" || [ $1 = "All" ]
+rm -f /tmp/net.$VPID

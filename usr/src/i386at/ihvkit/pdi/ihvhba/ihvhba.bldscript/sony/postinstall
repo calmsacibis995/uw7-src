@@ -1,0 +1,43 @@
+#ident	"@(#)ihvkit:pdi/ihvhba/ihvhba.bldscript/sony/postinstall	1.1"
+do_install () {
+
+	${CONFBIN}/idinstall -P ${PKGINST} -a ${1} > ${ERR} 2>&1
+	RET=$?
+	if [ ${RET} != 0 ]
+	then
+		${CONFBIN}/idinstall -P ${PKGINST} -u ${1} > ${ERR} 2>&1
+		RET=$?
+	fi
+
+	if [ ${RET} != 0 ]
+	then
+		message "The installation cannot be completed due to \
+an error in the driver installation during the installation of the ${1} \
+module of the ${NAME}.  The file ${ERR} contains the errors."
+			exit ${FAILURE}
+	fi
+	cp disk.cfg /etc/conf/pack.d/${1}
+}
+
+FAILURE=1       # fatal error
+DRIVER=sony
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+ERR=/tmp/err.out
+
+for MODULE in ${DRIVER}
+do
+	cd /tmp/${MODULE}
+	do_install ${MODULE}
+done
+
+cp /tmp/${DRIVER}/sony.h /usr/include/sys
+
+cat /tmp/${DRIVER}/loadmods >> /etc/loadmods
+
+installf -f $PKGINST 
+
+removef ${PKGINST} /tmp/${DRIVER} >/dev/null 2>&1
+removef -f ${PKGINST} >/dev/null 2>&1
+
+${CONFBIN}/idbuild

@@ -1,0 +1,206 @@
+#!/sbin/sh
+#ident "@(#)help	15.1	97/12/19"
+
+
+
+#cd $nss; asroot /usr/sbin/chroot `pwd` /sbin/sh step1rc
+
+. /isl/ui_modules/common.rc
+
+
+. /globals.sh
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Clear out the help topic
+	#
+	ivar set help_topic ""
+	#
+	ii_exit PREV
+}
+
+function noop
+{
+	:
+}
+
+function show_help
+{
+[ -n "$debug" ] && set -x
+	helpwin $*
+}
+
+function old_show_help
+{
+[ -n "$debug" ] && set -x
+	if [ -f /isl/ui_help/$LANG/$1 ]
+	then
+		text=`cat /isl/ui_help/$LANG/$1`
+	else
+		text="Error - no help found"
+	fi
+	display -w "$text"
+	footer $keys
+	set_hotkey 1 noop
+	set_hotkey 10 noop
+}
+
+################################################################################
+
+
+function clean_helps
+{
+[ -n "$debug" ] && set -x
+	typeset i
+
+	[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+		cd $LANGDEP_SCRIPTS/help
+		for i
+		do
+			call unlink  "$i"
+		done
+		cd ~-
+	}
+}
+
+function putfoot
+{
+[ -n "$debug" ] && set -x
+	footer "$EVERY_PAGE_FOOTER"
+	return
+
+	cdecl longp 'page=&pg'
+	cprint -v PAGE page
+ppp=$PAGE
+
+	if (( HELP_PAGES == 1 ))
+	then
+		footer "$ONLY_PAGE_FOOTER"
+	elif (( PAGE == 1 ))
+	then
+		footer "$FIRST_PAGE_FOOTER"
+	elif (( PAGE == HELP_PAGES ))
+	then
+		footer "$LAST_PAGE_FOOTER"
+	else
+		footer "$MIDDLE_PAGE_FOOTER"
+	fi
+}
+
+function helpwin
+{
+[ -n "$debug" ] && set -x
+zzz=1234
+	typeset basefil=$1 fil=$LANGDEP_SCRIPTS/help/$1.hcf 
+	typeset line a OIFS="$IFS" IFS="$IFS" page
+
+	[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+		cd $LANGDEP_SCRIPTS/help
+		cpio -icDZ < $LANGDEP_SCRIPTS/help/locale_hcf.z $1.hcf >/dev/null 2>&1
+		cd ~-
+	}
+
+	if [ ! -f "$fil" ]
+	then
+		print -u2 Cannot open $fil
+		return 1
+	fi
+	typeset IFS=
+	{
+		read title
+		read related
+		read line
+	} <$fil
+	typeset IFS="$OIFS"
+	set -- $line
+	HELP_PAGES=$1
+	set -- $related ${RELATED_HELPS}
+	open_help -help "wclose \$WCURRENT; helphelp $basefil $*" -page "putfoot" "$fil"
+	cdecl longp 'height=&Help_height' 'width=&Help_width'
+	cprint -v HELP_HEIGHT height
+	cprint -v HELP_WIDTH width
+	#place_window -below 0 $HELP_WIDTH $HELP_HEIGHT -fg $HELP_FG -bg $HELP_BG -title "$title" -border_fg $HELP_FG -current 'msg; putfoot'
+zzz=456
+	#place_window $HELP_WIDTH $HELP_HEIGHT -fg $HELP_FG -bg $HELP_BG -title "$title" -border_fg $HELP_FG -current 'msg; putfoot'
+w=$HELP_WIDTH h=$HELP_HEIGHT
+	place_window 70 19  -fg $HELP_FG -bg $HELP_BG -title "$title" -border_fg $HELP_FG -current 'msg; putfoot'
+	run_help "$fil"
+	#[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && call unlink  "$fil"
+	#call unlink  "$fil"   # maybe this is quicker than rm $fil?  why quoted?
+}
+
+function helphelp
+{
+[ -n "$debug" ] && set -x
+	typeset i titles
+	typeset basefil=$1 fil
+	shift
+	integer max=${#MOREHELP_TITLE} j=0
+	typeset args=
+	for i
+	do
+		case " $args " in
+		*" $i "*)
+			;;
+		*)
+			args="$args $i"
+		esac
+	done
+	set -- $args
+	for i
+	do
+		[ -s $LANGDEP_SCRIPTS/help/locale_hcf.z ] && {
+			cd $LANGDEP_SCRIPTS/help
+			cpio -icDZ < $LANGDEP_SCRIPTS/help/locale_hcf.z $i.hcf >/dev/null 2>&1 
+			cd ~-
+		}
+		fil="$fil $i.hcf"
+		{
+			read titles[j] 
+		} <$LANGDEP_SCRIPTS/help/$i.hcf
+		if (( max < ${#titles[j]} ))
+		then
+			max=${#titles[j]}
+		fi
+		j=j+1
+	done
+	place_window -left 0 $max+2 $# -fg $HELP_FG -bg $HELP_BG -border_fg $HELP_FG -title "$MOREHELP_TITLE" -current 'footer "$MOREHELP_FOOTER"'
+	typeset wid=$CURWIN
+	open_menu -exit "wclose $wid; clean_helps $fil; destroy_menu $mid"
+	typeset mid=$MID
+	typeset open=1
+	typeset use
+	j=0
+	for i
+	do
+		add_menu_item -select "wclose $wid; clean_helps $fil; destroy_menu $mid; helpwin $i $basefil" "${titles[j]}"
+		j=j+1
+	done
+	run_menu $mid 0
+}
+
+################################################################################
+
+#
+# Main
+#
+#LANGDEP_SCRIPTS=/isl/ui_help/$LANG
+[ -n "$debug" ] && set -x
+LANGDEP_SCRIPTS=/etc/inst/locale/$LANG/menus
+HELP_TOPIC=`ivar get help_topic`
+
+show_help "$HELP_TOPIC"
+input_handler
+
+#
+# Done. From this help module, you can only go back (to where you
+# pressed F1). Otherwise, when the user went back they would re-visit
+# all the help screens they had gone to. Clear out the help topic.
+#
+clean_helps "${HELP_TOPIC}.hcf"
+ivar set help_topic ""
+ii_exit PREV
+
+

@@ -1,0 +1,531 @@
+
+#ident  "@(#)allinit	15.1	98/03/04"
+
+function clockinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	call time
+	CLOCK=$_RETD
+	cdecl 'int *' time=$_RETX
+	call -c localtime time
+	# This is permanent because localtime returns a static buffer
+	cdecl -g tm tm=p$_RETX
+	cprint -v YEAR tm.tm_year
+	cprint -v MONTH tm.tm_mon
+	let MONTH=MONTH+1
+	cprint -v DAY tm.tm_mday
+	cprint -v HOUR tm.tm_hour
+	cprint -v MINUTE tm.tm_min
+	cprint -v DST tm.tm_isdst
+}
+
+function dateinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	setclk >/dev/null 2>&1
+	clockinit
+	TIMEZONE_AREA=$NASAname
+	set -- $NASAtz
+	TIMEZONE_ID="$1"
+}
+
+function get_max_fs
+# Arg 1 is the name of a file system type
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset default_max=2047 fs=$1 OIFS="$IFS" variable value
+
+	[ -s /etc/default/$fs ] || {
+		print $default_max
+		return
+	}
+	IFS='='
+	while read variable value
+	do
+		[ "$variable" = "MAXSIZE" ] && {
+			# NOTE: The MAXSIZE now stands for number of blocks.
+			#
+			# It would be nice just to calculate the value, but the
+			# ksh stores integers as signed 32-bit longs.  So we
+			# look for 2^31 (1T) and 2^32 (2T) as special cases.
+			# All other answers we calculate.
+
+			case $value in
+			2147483648)
+				print 1048576
+				;;
+			4294967296)
+				print 2097152
+				;;
+			*)
+				print $(( value / 2048 ))
+				;;
+			esac
+			IFS="$OIFS"
+			return
+		}
+	done < /etc/default/$fs
+	print $default_max
+	IFS="$OIFS"
+	return
+}
+
+function fsinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	[ "${UNIX_PARTITION[0]}" != YES ] && return
+	autoload fdinit
+	typeset W_slices
+	integer d=0 i=0 j=0 W_total=0 available=0 memfstot
+	integer dsk=0 disk SL roundmem MAX_FS_SIZE
+	SLCHOICES[10]="\"bfs\""
+	SLCHOICES[1]="\"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[2]="\"$slice\""
+	SLCHOICES[3]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[4]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[6]="\"$off\" \"$slice\""
+	SLCHOICES[8]="\"$slice\""
+	SLCHOICES[11]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[12]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[13]="\"$off\" \"memfs\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[14]="\"$off\" \"memfs\""
+	SLCHOICES[15]="\"$off\" \"$slice\""
+	SLCHOICES[16]="\"$off\" \"memfs\""
+	SLCHOICES[17]="\"$off\" \"$slice\""
+	TOTAL_USABLE_SIZE=0
+	while (( (i=i+1) <= NDISKS ))
+	do
+		let j=$i-1
+		if fdsize_chk $j
+		then
+			let TOTAL_USABLE_SIZE+=USABLE_SIZE[$j]
+		else
+			UNIX_PARTITION[$j]=NO
+			(( j == 0 )) && return
+		fi
+	done
+	let 'roundmem=((1048575+MEMSIZE)/1048576)'
+	# SILENT_INSTALL uses slice 5 for /SYS. For redbox, 
+	# it must be initialized to "off".
+	for SL in $VTOC_SLICES 5
+	do
+		SLTYPE[SL]="$off"
+	done
+	OLDIFS=$IFS
+	typeset IFS="${tab}"
+	while read line
+	do
+		case "$line" in
+		\#*) 
+			;;
+		*)
+			set -- $line
+			SL=$6
+			if [ "$3" != R ]
+			then
+				SLSIZE[$SL]=
+				_SLSIZE[$SL]=0
+				let SLMIN[$SL]=$9
+				eval SLNAME[$SL]=\"\$$2\"
+				SLFS[$SL]="$1"
+				SLTYPE[$SL]="$off"
+				_SLTYPE[$SL]="$off"
+			else
+				if [ "$SL" = 8 -a "$5" = Yes ]
+				then
+					if (( NDISKS == 1 ))
+					then
+						SLFS[17]=""
+						continue
+					else
+						d=1
+						SL=17
+					fi
+				fi
+				let SLMIN[$SL]=$9
+				eval SLNAME[$SL]=\"\$$2\"
+				SLFS[$SL]="$1"
+				case "${10}" in
+				*memfs*)
+					SLTYPE[$SL]=memfs
+					_SLTYPE[$SL]=memfs
+					SLSIZE[$SL]=${7%M}
+					_SLSIZE[$SL]=${7%M}
+					let "memfstot+=${7%M}"
+					;;
+				*slice*)
+					SLTYPE[$SL]="$slice"
+					_SLTYPE[$SL]="$slice"
+					case ${7##*[0-9]}
+					in
+					m)
+						let SLSIZE[$SL]=${7%m}*roundmem-4
+						let _SLSIZE[$SL]=${7%m}*roundmem-4
+						;;
+					K)
+						let SLSIZE[$SL]=${7}
+						let _SLSIZE[$SL]=${7}
+						;;
+					D)
+						(( (SLSIZE[$SL]=USABLE_SIZE[$d]*${7%D}/100) == 0 )) && SLSIZE[$SL]=1
+						let "_SLSIZE[$SL]=${SLSIZE[$SL]}"
+						
+						;;
+					M)
+						let SLSIZE[$SL]=${7%%M}
+						let _SLSIZE[$SL]=${7%%M}
+						;;
+					esac
+					if [ "$SL" = 17 -a "$5" = Yes ]
+					then
+						ALTS1=${7%D}
+						SLTYPE[$SL]="$off"
+						SLSIZE[$SL]=
+					fi
+					;;
+					
+				*)
+					SLTYPE[$SL]=${10%%,*}
+					_SLTYPE[$SL]=${10%%,*}
+					case "$8" in
+					W)
+						SLSIZE[$SL]=$7
+						_SLSIZE[$SL]=$7
+						let W_total+=$7
+						W_slices="$W_slices $SL"
+						;;
+					*)
+						SLSIZE[$SL]=${7%M}
+						_SLSIZE[$SL]=${7%M};;
+					esac
+					case "${SLTYPE[$SL]}" in
+					bfs)
+						SLBLKSIZE[$SL]=512
+						SLINODES[$SL]="$No"
+						;;
+					s5)
+						SLBLKSIZE[$SL]=1024
+						SLINODES[$SL]="$Yes"
+						;;
+					ufs)
+						SLBLKSIZE[$SL]=4096
+						SLINODES[$SL]="$Yes"
+						;;
+					vxfs)
+						SLBLKSIZE[$SL]=1024
+						SLINODES[$SL]="$Yes"
+						;;
+					*)
+						SLBLKSIZE[$SL]=4096
+						;;
+					esac
+					;;
+				esac
+			fi
+
+			SLDISK[$SL]=1
+			_SLDISK[$SL]=1
+
+			if [ "$5" = Yes ] && (( NDISKS > 1 ))
+			then
+				let SLDISK2[$SL]=1
+				(( $SL == 17 )) && {
+					SLDISK[$SL]=2
+					_SLDISK[$SL]=2
+					SLDISK2[$SL]=0
+				}
+				
+			else
+				let SLDISK2[$SL]=0
+			fi
+			;;
+		esac
+	done < /etc/disk.ele
+	if (( $memfstot >= 8 ))
+	then
+		let memfstot-=8
+	fi
+	IFS=$OLDIFS
+	let  'i=USABLE_SIZE[0]*16/100'
+	if [ "$i" -lt "${SLSIZE[2]}" ]
+	then
+		let "SLSIZE[2]=i"
+	fi
+	if [ "${SLSIZE[2]}" -lt 12 ]
+	then
+		let "SLSIZE[2]=12"
+	fi
+	let SLSIZE[2]+=memfstot
+	let 'available=USABLE_SIZE[0]-SLSIZE[10]-SLSIZE[2]-SLSIZE[8]-SLSIZE[15]'
+	for SL in $W_slices
+	do
+		MAX_FS_SIZE=$(get_max_fs ${SLTYPE[SL]})
+		(( SLSIZE[SL] = SLSIZE[SL] * available / W_total ))
+		(( SLSIZE[SL] > MAX_FS_SIZE )) && (( SLSIZE[SL] = MAX_FS_SIZE ))
+	done
+	while (( (dsk=dsk+1) <= NDISKS ))
+	do
+		disk=dsk-1
+		FSTOT[dsk]=0
+		for SL in $VTOC_SLICES 5
+		do
+			if [ "${SLTYPE[SL]}" != "$off" -a "${SLTYPE[SL]}" != "memfs" ]
+			then
+				if [ "${SLDISK[SL]}" = "$dsk" ]
+				then
+					let FSTOT[dsk]+=SLSIZE[SL]
+				fi
+			fi
+		done
+	done
+	> /tmp/fsinit_done
+}
+
+function nodeinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	[ -z "$NODE" ] || return
+	typeset tmp
+	struct utsname sysname:'char [257]' nodename:'char [257]' release:'char [257]' version:'char [257]' machine:'char [257]'
+	cdecl utsname uts={}
+	call -c nuname uts
+	cprint -v tmp uts.nodename
+	tmp=${tmp%?}
+	tmp=${tmp#?}
+	if [ -n "$tmp" -a "$tmp" != unix ]
+	then
+		NODE=$tmp
+	elif [ -f /mnt/etc/nodename ]
+	then
+		NODE=$(</mnt/etc/nodename)
+	fi
+}
+
+# This function (intlinit) is not used.
+function intlinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset IFS="$nl"
+	IFS="$nl"
+	set -A LCLS ${LOCALES}
+	LOCALENAME="${LCLS[0]}"
+	KEYBOARD="U.S. ASCII"
+	RELATED="$None"
+}
+
+function pkginit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+
+	# Setup variables for defining displayed packages.
+	LANGSUP=ls
+	UWDOCS_TITLE=UWDOCS
+	[ "$LANG" = C ] || [ -z "$LANG" ] || {
+		LANGSUP="$LANGSUP ${LANG}le"
+		UWDOCS_TITLE="${LANG}UWDOCS"
+	}
+# for Gemini BL08 we don't need UWdocs any more
+#	DOCS="BLANK $UWDOCS_TITLE handbooks alldocs"
+	DOCS="BLANK $UWDOCS_TITLE"
+
+	# Setup variables for defining all available packages.
+	LANG_UWPKGS=""
+	if [ "$NOND" = "no" ]
+	then
+		[ "$LANG" = C ] || [ "$LANG" = "ja" ] || [ -z "$LANG" ] || {
+			LANG_UWPKGS="${LANG}le ${LANG}UWdocs"
+		}
+	else
+		[ "$LANG" = "ja" ] || {
+			LANG_UWPKGS="frle itle dele esle frUWdocs itUWdocs \
+deUWdocs esUWdocs"
+		}
+	fi
+	[ "$LANG" = "ja" ] && {
+		LANG_UWPKGS="jale jaUWdocs"
+	}
+
+# The below list of short package names needs to be kept in sync in
+# several places.
+#
+#1) desktop/menus/pkgs:
+#	If a package is removed or added that other packages have dependencies
+#	on, the "desktop/menus/pkgs" script needs to be updated with the new
+#	dependencies.  If a package name changes, make sure that any
+#	dependency on that package is also changed to reflect the new name.
+#
+#2) locale/C/menus/txtstrings:
+#	Given a package whose short name is "xyz", the file
+#	"locale/C/menus/txtstrings" contains an entry for that package of the
+#	form xyz_name="Long Name of Package XYZ"  Such lines need to be added,
+#	deleted, or updated whenever a package is added, deleted, or changes
+#	its short or long name.
+#
+#3) desktop/menus/size_chk:
+#	The file "desktop/menus/size_chk" contains a size array for each
+#	package.  Keep all those size arrays up-to-date with respect to the
+#	list of packages, as well as the size of each package.  These size
+#	arrays are generated with the help of desktop/buildscripts/sizer.sh.
+#	See the comments in that file.
+#
+#4) locale/C/menus/help/help.mk:
+#   	If you add a package, you must add its help file to locale/C/menus/help,
+#   	and add the corresponding entry to locale/C/menus/help/help.mk.  If you
+#   	delete a package, or change its name, you must make the corresponding
+#   	changes to locale/C/menus/help and locale/C/menus/help/help.mk.
+#
+#5) desktop/files/ramdfs.proto:
+#   	You must keep this file in sync with the help file changes mentioned in
+#   	part 4 above.
+#
+#6) cmd/pick.set.sh
+#	If you are adding/removing or changing the name for a relocatable
+#	package, update the list DEFREL.
+#
+#7) adding a new platform-specific package
+#	Add it like any other new package with the following exceptions.
+#	Add it to the platform_choice menu. Also add its name to the 
+#	conditional expression in desktop/menus/pkgs so it is not 
+#	automatically turned on - follow the examples for ast, compaq and 
+#	tricord. Finally, add the package name to the UWPKGS list. Do not 
+#	add the package name to UW_DISP because "platform", not each 
+#	platform-specific package, is displayed by UW_DISP.
+#
+# Package names in the UWPKGS list must be in the same order
+# as they are in the setinfo files for UW. Keeping them in
+# setinfo order not only insures dependency order but also reduces 
+# pkgchk errors.
+#
+# The UW_DISP variable should contain the same list of packages
+# as its UWPKGS counterpart, but in the order in which they
+# are to be displayed, and with pseudo-packages for readability.
+
+	UWPKGS="base lp tclrun expect vtclrun kdb nsu acp scoadmin basex xserver xdrivers xclients xcontrib xfonts scohelp audio TEDlogin TEDbase TEDdocs TEDhelp TEDman osmp nics netmgt inet server nsnav nshttpd dfs rpc nfs nis nwnet nuc nwsup terminf cmds bsdcompat audit acl vxvm vxva mtfrun ccs ls compaq BASEdoc $LANG_UWPKGS"
+	UW_DISP="BASIC base platform acp scoadmin tclrun vtclrun expect audio kdb $LANGSUP osmp lp BLANK NETWORK nsu nics netmgt server nwnet nuc nwsup inet dfs rpc nfs nis nsnav nshttpd $DOCS BASEdoc scohelp BLANK GRAPHICS TEDlogin TEDbase TEDdocs TEDhelp TEDman basex xserver xdrivers xclients xcontrib xfonts mtfrun BLANK ADVANCED acl cmds audit bsdcompat ccs terminf vxvm vxva"
+
+# This case statement was needed when we had more than one set.
+# It was kept to facitate adding more sets in the future.
+	case $SET_NAME in
+	UnixWare)
+		ALLPKGS=$UWPKGS
+		ALL_DISP=$UW_DISP
+		;;
+	esac
+#
+# The -1 indicates that these are pseudo-packages - for display only.
+#
+	BLANK=-1
+	ADVANCED=-1
+	BASIC=-1
+	UWDOCS=-1
+	frUWDOCS=-1
+	itUWDOCS=-1
+	deUWDOCS=-1
+	esUWDOCS=-1
+	jaUWDOCS=-1
+	GRAPHICS=-1
+	NETWORK=-1
+	base=1
+	lp=1
+	tclrun=1
+	expect=0
+	vtclrun=1
+	kdb=0
+	nsu=1
+	acp=1
+	scoadmin=1
+        basex=1
+	xserver=1
+	xdrivers=1
+	xclients=0
+	xcontrib=0
+	xfonts=1
+	scohelp=1
+	dtxt=0
+	display=0
+	audio=0
+	desktop=1
+	TEDlogin=0
+	TEDbase=0
+	TEDdocs=0
+	TEDhelp=0
+	TEDman=0
+#	TEDfixes=0
+	nics=1
+	netmgt=1
+	nwnet=1
+	nuc=1
+	ls=1
+	mele=1
+	frle=1
+	itle=1
+	dele=1
+	esle=1
+	jale=1
+	inet=1
+	terminf=0
+	ccs=0
+	cmds=1
+	bsdcompat=0
+	audit=0
+	acl=0
+	vxvm=0
+	vxva=0
+	dtclients=0
+	dtxtfonts=0
+	mtfrun=1
+	dynatext=0
+	dtext_icon=0
+	nsnav=0
+	nshttpd=0
+	# UWdocs package split into two selections (handbooks,alldocs) 
+	# for display.
+	handbooks=0
+	alldocs=0
+	UWdocs=0
+	BASEdoc=0
+ 	frUWdocs=0
+ 	itUWdocs=0
+ 	deUWdocs=0
+ 	esUWdocs=0
+ 	jaUWdocs=0
+
+	# For J/FIGS handbooks, English UWdocs are still required since
+	# there are links from the ${LANG} handbooks to the English ones.
+	[ "$LANG" = C ] || [ -z "$LANG" ] || let ${LANG}UWdocs=1
+	UWDOC_SELECT="handbooks"
+
+	server=0
+	dfs=0
+	rpc=0
+	nfs=0
+	nis=0
+	nwsup=0
+	osmp=0
+	platform=0
+	$BACK_END_MANUAL && platform=1
+	compaq=0
+}
+
+function tuneinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	PTNUM=16
+	ACP_PTNUM=16
+	NSU_PTNUM=16
+}
+
+function allinit
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	fdinit
+	nond_init
+	dateinit
+	fsinit
+	nodeinit
+	pkginit
+	tuneinit
+	nond_space_check
+}
+
+

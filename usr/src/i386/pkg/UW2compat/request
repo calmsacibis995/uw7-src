@@ -1,0 +1,58 @@
+#!/usr/bin/sh
+#ident	"@(#)udk-uwcompat:i386/pkg/UW2compat/request	1.7"
+
+# UDK request script
+
+FAILURE=1
+EXITCODE=3		# User termination request exit code
+
+trap 'exit $EXITCODE' 2 3 15
+
+ALLOW_REINSTALL=YES
+PKGSAV=/var/sadm/pkg/$PKGINST/save
+PTFVARS=$PKGSAV/ptfvars
+
+# Set up localized messaging
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then 
+	if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+		-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+		/usr/lib/locale/${LOCALE}/LC_MESSAGES
+		
+		installf ${PKGINST} /usr/lib/locale/${LOCALE}/LC_MESSAGES
+	fi
+fi
+
+MENU_RESP=$1
+
+urel=`uname -r`
+if [ $urel = "4.2MP" ]
+then
+	# UnixWare - pre-Gemini
+	uvers=`uname -v`
+	vers21=`expr "$uvers" : '2\.1.*'`
+	if [ $vers21 = "0" ]
+	then
+		message -d `pfmt -s error -g ${PGKMSG}:1 "Installation of the %s package requires UnixWare version 2.1.x\n" ${PKGINST} 2>&1`
+		exit $FAILURE
+	fi
+elif [ $urel = "3.2" ]
+then
+	echo "Installation of the UW2compat package requires UnixWare version 2.1.x"
+	exit $FAILURE
+else
+	message -d `pfmt -s error -g ${PGKMSG}:1 "Installation of the %s package requires UnixWare version 2.1.x\n" ${PKGINST} 2>&1`
+	exit $FAILURE
+fi
+
+
+cat > ${MENU_RESP} <<!
+PTFVARS=$PTFVARS
+!
+
+exit 0

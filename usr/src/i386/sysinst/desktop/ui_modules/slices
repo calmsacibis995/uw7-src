@@ -1,0 +1,843 @@
+#!/sbin/sh 
+#ident "@(#)slices	15.1	97/12/19"
+
+###### JAY please search for "JAY" for cleanup
+
+# slices -- ISL UI module: user enters slice info
+#
+#
+# The sd01 man page describes how disks are used by UNIX.
+# Each disk is divided into a maximum of 4 partitions.
+# Each UNIX partition contains a VTOC (Volume Table Of Contents); 
+# non-UNIX partitions do not.
+# A VTOC describes a maximum of 184 slices.
+# Each slice can contain a file system, or be a raw area for use
+# as swap or by a database application, etc.
+# All very nice.
+# But here in the slices module, we are concerned with a very specific
+# set of slices numbered 1 thru 17.
+# Information about our 17 slices are contained array variables.
+# The following array variables are initialized by module 'check_preserve'
+# using the table in file 'disk.ele' on boot floppy:
+# 	SLBLKSIZE[x]
+# 	SLDISK[x]	the # of the disk on which slice x resides
+# 	_SLDISK[x]	previous value of SLDISK[x]
+# 	SLDISK2[x]	always 0 in my testing
+# 	SLFS[x]		the path to slice x, e.g.:  /, /dev/swap, /usr, /home
+# 	SLINODES[x]	"yes" or "no", depending on SLTYPE[x]
+# 	SLMIN[x]	minimum size of slice x
+# 	SLNAME[x]	"Description", e.g.: Swap Slice, Root File System
+#				SLNAME[1]="Root File System"	i.e.  /
+#				SLNAME[2]="Swap Slice"
+#				SLNAME[3]="usr File System"	i.e.  /usr
+#				SLNAME[4]="User File System"    i.e.  /home
+#				SLNAME[5]=""
+#				SLNAME[6]="Dump Slice"
+#				SLNAME[7]=""
+#				SLNAME[8]="Alt/Sector Slice"
+#				SLNAME[9]=""
+#				SLNAME[10]="Boot File System"
+#				SLNAME[11]="Add-ons File System"
+#				SLNAME[12]="2nd User File System"	/home2
+#				SLNAME[13]="Temporary File System"	/tmp
+#				SLNAME[14]=""
+#				SLNAME[15]="Private Volume"	/dev/volprivate
+#				SLNAME[16]="Temporary File System"	/var/tmp
+#				SLNAME[17]="Alt/Sector Slice"
+# 	SLSIZE[x]	size of slice x in blocks
+# 	_SLSIZE[x]	previous value of SLSIZE[x]
+# 	SLTYPE[x]	one of: "vxfs", "slice", "off", "bfs", "memfs"
+# 	_SLTYPE[x]	previous value of SLTYPE[x]
+#    The index x takes values 1 thru 17, but this index is NOT within a 
+#    given partition as described by the sd01 man page.  For example, SLDISK[x]
+#    tells which physical drive on which one of our 17 slices resides.
+# The following array variables are used only in this "slices" module
+# to keep facilitate changing values automatically:
+# 	SLCHOICES[x]	legitimate SLTYPE values for slice x
+# 	SLFLD[x]	the # of the field on the screen for slice x
+# All this shows that the slice scheme used is rather predetermined by the
+# 'disk.ele' file on the boot floppy.
+# The meaning of the arrays prefixed with an underscore escape
+# my investigation so far.
+
+# Functions beginning with check_ are -exit handlers for fields in each
+# column of the table presented to the user.
+
+
+. /globals.sh
+. /isl/ui_modules/common.rc
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /isl/ui_modules/disk.rc
+[ -n "$debug" ] && set -x
+
+#set -u
+
+
+#----------------------------------------------------------- from menus/allinit.
+
+function choice_init
+{
+[ -n "$debug" ] && set -x
+	
+	# For beta S5 and ufs are disabled
+
+	SLCHOICES[10]="\"bfs\""
+	#SLCHOICES[1]="\"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[1]="\"vxfs\" \"ufs\""
+	#SLCHOICES[1]="\"vxfs\""
+	SLCHOICES[2]="\"$slice\""
+	#SLCHOICES[3]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[3]="\"$off\" \"vxfs\" \"ufs\""
+	#SLCHOICES[4]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[4]="\"$off\" \"vxfs\" \"ufs\""
+	SLCHOICES[6]="\"$off\" \"$slice\""
+	SLCHOICES[8]="\"$slice\""
+	#SLCHOICES[11]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[11]="\"$off\" \"vxfs\" \"ufs\""
+	#SLCHOICES[12]="\"$off\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[12]="\"$off\" \"vxfs\" \"ufs\""
+	#SLCHOICES[13]="\"$off\" \"memfs\" \"vxfs\" \"s5\" \"ufs\""
+	SLCHOICES[13]="\"$off\" \"memfs\" \"vxfs\" \"ufs\""
+	SLCHOICES[14]="\"$off\" \"memfs\""
+	SLCHOICES[15]="\"$off\" \"$slice\""
+	SLCHOICES[16]="\"$off\" \"memfs\""
+	SLCHOICES[17]="\"$off\" \"$slice\""
+}
+
+#---------------------------------------------------------------- from menus/fs.
+
+function fs_recalc
+{
+[ -n "$debug" ] && set -x
+	integer fstot=0 i n
+	integer dsk=$1
+
+	for i in $VTOC_SLICES
+	do
+		if [ "${SLDISK[i]}" = "$dsk" ]
+		then
+			if [ "${SLTYPE[i]}" != "$off" -a "${SLTYPE[i]}" != "memfs" ]
+			then
+				let fstot+=SLSIZE[i]
+			fi
+		fi
+	done
+	# turn alt-slice off if disk 2 no longer used.
+	if [ ! "${SLTYPE[17]}" = "$off" -a "$dsk" = 2 ]
+	then
+		if [ "$fstot" -eq "${SLSIZE[17]}" ]
+		then
+			integer type=SLFLD[17]
+			integer size=SLFLD[17]+1
+			let fstot-=SLSIZE[17]
+			fld_change $FSFID $type "$off"
+			fld_change $FSFID $size ""
+			fld_gray $FSFID $size 1
+		fi
+	fi
+	let i=$FSTOT_DISPLAY+2
+	let n=SLFLD[i]+dsk-1 
+	fld_pchange $FSFID $n "$fstot"
+	(( fstot > USABLE_SIZE[dsk-1] )) && return 1		# checked in save_exit
+	return 0
+}
+
+function inodechk
+{
+[ -n "$debug" ] && set -x
+	return 0
+}
+
+function blkschk
+{
+[ -n "$debug" ] && set -x
+	integer i=$1
+	case "${SLTYPE[i]}" in
+	bfs)
+		case "${SLBLKSIZE[i]}" in
+		512)
+			;;
+		*)
+			errmsg $FS_BLKSIZE_ERR
+			return 1 ;;
+		esac
+		;;
+	s5)
+		case "${SLBLKSIZE[i]}" in
+		512 | 1024 | 2048)
+			;;
+		*)
+			errmsg $FS_BLKSIZE_ERR
+			return 1 ;;
+		esac
+		;;
+	ufs | sfs)
+		case "${SLBLKSIZE[i]}" in
+		4096 | 8192)
+			;;
+		*)
+			errmsg $FS_BLKSIZE_ERR
+			return 1 ;;
+		esac
+		;;
+	vxfs)
+		case "${SLBLKSIZE[i]}" in
+		1024 | 2048 | 4096 | 8192)
+			;;
+		*)
+			errmsg $FS_BLKSIZE_ERR
+			return 1 ;;
+		esac
+		;;
+	esac
+	msgnoerr
+	return 0
+}
+
+function choose_inodes
+{ 
+[ -n "$debug" ] && set -x
+	integer i=$1
+	choose  -help "helpwin fsadvopts" "${lim_inode[i]}" "$No" "$Yes"
+}
+
+function check_inodes
+{
+[ -n "$debug" ] && set -x
+integer i=$1
+typeset -l arg1=${lim_inode[i]}
+case $arg1 in
+	$Yes | $Y)
+		SLINODES[i]="$Yes"
+#footer "$
+		return 0;
+		;;
+	$No | $N)
+		SLINODES[i]="$No"
+		return 0;
+		;;
+	*)
+		msg $Enter_yesno
+		return 1;
+		;;
+esac
+}
+function choose_blksize
+{
+[ -n "$debug" ] && set -x
+	integer i=$ATTRSLC
+	typeset line
+
+	if [ -f /etc/default/${SLTYPE[i]} ]
+	then
+		line=`grep ^BLKSIZE= /etc/default/${SLTYPE[i]}`
+		eval $line
+	else
+		line="512"
+	fi
+
+	OIFS=$IFS
+	IFS=,
+	echo $BLKSIZE | read blksizes
+	IFS=$OIFS
+
+	CHOOSE_TITLE="$BLKTYPE_CHOOSE"
+	CHOOSE_FOOTER="$BLKTYPE_FOOTER"
+	case " $blksizes " in
+	*" ${SLBLKSIZE[i]} "*)
+		choose  -f -help "helpwin fsadvopts" "${SLBLKSIZE[i]}" $blksizes
+		;;
+	*)
+		choose  -f -help "helpwin fsadvopts" "${blksizes%% *}" $blksizes
+		;;
+	esac
+}
+
+function choose_attrs
+{
+[ -n "$debug" ] && set -x
+zzz="choose_attrs $1"
+	integer i=$ATTRSLC
+	if [ "${SLTYPE[i]}" = "$off" -o "${SLTYPE[i]}" = memfs -o "${SLTYPE[i]}" = "$slice" -o "$CHOOSING_FSTYPE" -eq 1 ]
+	then
+		return 0
+	fi
+
+	open_form
+	CUR_FSFIDX=$FID
+	let FSFIDX[i]=$FID
+	setup_table -offset 1 -rows 2 -cols 2 -titles FSX_TITLE -widths FSX_WIDTH
+	next_field_prompt -l "$blocksDESC"
+	let FSFIDXFLD[i]=$FIELDCNT
+	next_field -entry msgnoerr  -exit "blkschk $i" -help "helpwin fsadvopts" -choice "choose_blksize $i" SLBLKSIZE[i]
+	next_row
+	next_field_prompt -l "$inodesDESC"
+	lim_inode[i]=${SLINODES[i]}
+	next_field -entry msgnoerr -exit "check_inodes $i" -help "helpwin fsadvopts" -choice "choose_inodes $i" lim_inode[i]
+	next_row
+	let FSXTABLE_WIDTH=TABLE_WIDTH
+	place_window -left 15 -above 15 $FSXTABLE_WIDTH 4 -fg $COMBO2_FG -bg $COMBO2_BG -title "$FSCONF_ENTRY" -current 'footer "$ATTR_FOOTER_SIZING"' 
+# JAY running footer in -noncurrent didn't work because this window is
+# destroyed, rather than losing focus.
+# -noncurrent 'footer "$ATTR_FOOTER_SIZE".XXXXX'
+	typeset widX=$CURWIN
+	run_form $CUR_FSFIDX
+	return 0
+}
+
+function set_attrchoose
+{
+[ -n "$debug" ] && set -x
+zzz="set_attrchoose $1"
+	integer i=$1
+	ATTRSLC=$i
+	#if [ "${SLTYPE[i]}" = "$off" -o "${SLTYPE[i]}" = memfs -o "${SLTYPE[i]}" = "$slice" ]
+	#then
+	#	footer "$GENERIC_SUBFORM_FOOTER"
+	#else
+	#	footer "$ATTR_FOOTER"
+	#fi
+	if [ "$CHOOSING_FSTYPE" -eq 1 ]
+	then
+		footer "$ATTR_FOOTER_TYPE"
+	else
+		footer "$ATTR_FOOTER_SIZE"
+	fi
+	set_hotkey 6 choose_attrs
+	return 0
+}
+
+function choose_fstype
+{
+[ -n "$debug" ] && set -x
+	CHOOSING_FSTYPE=1
+	CHOOSE_TITLE="$FSTYPE_CHOOSE"
+	CHOOSE_FOOTER="$FD_FS_CHOOSE_FOOTER"
+	eval choose  -f \"${SLTYPE[$1]}\" ${SLCHOICES[$1]}
+
+	# Recalc: when /tmp is toggled from memfs to vxfs,
+	# we want to immediately reflect change in size of /dev/swap.
+	fs_recalc ${SLDISK[i]}
+	# Unfortunately, recalc does not see the new value
+	# because the user hasn't yet -exit'd the field (tabbed out of it).
+	# When the user tabs out of the field,
+	# check_fstype (the -exit handler) calls fs_recalc.
+	# JAY, maybe get hops to change 'choose' to actually set the field value.
+	# I can't think of an occassion when you'd want otherwise.
+}
+
+function check_fstype
+{
+[ -n "$debug" ] && set -x
+	integer i=$1 t
+	typeset _blksize _inodes
+	integer size=SLFLD[i]+1
+
+	if [ -n "${FSFIDX[i]}" ]
+	then
+		destroy_form ${FSFIDX[i]}
+		FSFIDX[i]=
+	fi
+	CHOOSING_FSTYPE=0
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+	case " ${SLCHOICES[i]} " in
+	*" \"${SLTYPE[i]}\" "*)
+		;;
+	*)
+		errmsg "$FS_ERR_TYPE"
+		return 1
+	esac
+	if [ "${SLTYPE[i]}" = "$off" ]
+	then
+
+		if [ "${_SLTYPE[i]}" =  memfs ]
+		then
+			(( t=SLSIZE[2]-SLSIZE[i] ))
+			if [ "${SLTYPE[6]}" = "off" ] && (( t < SLMIN[6] ))
+			then
+				(( t=SLMIN[6] ))
+			fi	
+			fld_change $FSFID ${SLFLD[2]}+1 "$t"
+		fi
+
+		if [ "${SLFS[i]}" = "/dev/dump" ]
+		then
+			if (( SLSIZE[2] < SLMIN[6] ))
+			then
+				fld_change $FSFID ${SLFLD[2]}+1 ${SLMIN[6]}
+			fi
+		fi
+
+		fs_recalc ${SLDISK[i]}
+		fld_change $FSFID $size ''
+		fld_gray $FSFID $size 1
+		_SLTYPE[i]="$off"
+		if (( NDISKS > 1 ))
+		then	
+			case $i
+			in
+			8|15|17)
+				;;
+			*)
+				integer disk=SLFLD[i]+2
+				fld_change $FSFID $disk '1'
+				fld_gray $FSFID $disk 1
+				_SLDISK[i]=${SLDISK[i]}
+				;;
+			esac
+		fi
+	else
+
+		fld_gray $FSFID $size 0
+
+# Activate dump and provide new default size.
+# RD - 7/18/97
+		if [ "${SLFS[$i]}" = "/dev/dump" ]
+		then
+			_SLSIZE[i]=0
+			fld_change $FSFID $size "${SLMIN[$i]}"
+		fi	
+## End additions
+
+		if [ -z "${SLSIZE[i]}" ]
+		then
+			_SLSIZE[i]=0
+			fld_change $FSFID $size "${SLMIN[$i]}"
+		fi
+		if [ "${_SLTYPE[i]}" =  memfs ]
+		then
+			let 't=SLSIZE[2]-SLSIZE[i]'
+			fld_change $FSFID ${SLFLD[2]}+1 "$t"
+		fi
+		if [ "${SLTYPE[i]}" =  memfs ]
+		then
+			let 't=SLSIZE[2]+SLSIZE[i]'
+			fld_change $FSFID ${SLFLD[2]}+1 "$t"
+		fi
+		_SLTYPE[i]="${SLTYPE[i]}"
+		fs_recalc ${SLDISK[i]}
+		if [ ! "${SLTYPE[i]}" =  "$slice" ]
+		then
+			case "${SLTYPE[i]}" in
+			bfs)
+				_blksize=512
+				_inodes=no
+				;;
+			s5)
+				_blksize=1024
+				_inodes=yes
+				;;
+			ufs)
+				_blksize=4096
+				_inodes=yes
+				;;
+			sfs)
+				_blksize=4096
+				_inodes=yes
+				;;
+			vxfs)
+				_blksize=1024
+				_inodes=yes
+				;;
+			esac
+			SLBLKSIZE[i]=$_blksize
+			SLINODES[i]=$_inodes
+			if (( NDISKS > 1 ))
+			then
+				integer disk=SLFLD[i]+2
+					if [ -z "${SLDISK[i]}" ]
+					then
+						fld_change $FSFID $disk 1
+					fi
+					if [ "${SLTYPE[i]}" =  memfs ]
+					then
+						fld_change $FSFID $disk 1
+						fld_gray $FSFID $disk 1
+					else
+						fld_gray $FSFID $disk 0
+					fi
+			fi
+		fi
+	fi
+	return 0
+}
+
+# check_diskno
+# If NDISKS>1, the last field on each row will be the disk# for the slice.
+# check_diskno is called as the -exit handler for that field.
+function check_diskno
+{
+[ -n "$debug" ] && set -x
+	if (( !FLD_CHANGED ))
+	then
+		return 0
+	fi
+	case "${SLDISK[$1]}" in
+	[0-9]*([0-9]))
+		if (( SLDISK[$1] <= NDISKS ))
+		then
+			integer i=${SLDISK[$1]}-1
+			INSTDISKS="$INSTDISKS $i"
+			if [ "${SLDISK[$1]}" = 2 ]
+			then
+				if [ "${SLTYPE[17]}" = "$off" ]
+				then
+					integer type=SLFLD[17]
+					integer size=SLFLD[17]+1
+					integer alts
+					(( (alts=USABLE_SIZE[1]*ALTS1/100) == 0 )) && alts=1
+					fld_change $FSFID $type "$slice"
+					fld_gray $FSFID $size 0
+					fld_change $FSFID $size "$alts"
+				fi
+			fi
+			if (( SLSIZE[$1] > 0 ))
+			then
+				fs_recalc 1
+				fs_recalc 2
+			fi
+			_SLDISK[$1]=${SLDISK[$1]}
+			return 0
+		fi
+		;;
+	esac
+	errmsg "$FS_ERR_DISKNUM"
+	return 1
+}
+
+
+
+function check_fssize
+{
+[ -n "$debug" ] && set -x
+	integer i min=${SLMIN[$1]} MAX_FS_SIZE
+
+	(( !FLD_CHANGED ))		&& return 0
+	[ "${SLTYPE[$1]}" = "$off" ]	&& return 0
+
+	[ -z "${SLMIN[$1]}" ] && SLMIN[$1]=0
+
+	case "${SLSIZE[$1]}" in
+	[0-9]*([0-9]))
+		if (( SLSIZE[$1] < SLMIN[$1] ))
+		then
+			errmsg "${SLFS[$1]}: $FS_ERR_TOOSMALL ${SLMIN[$1]}"
+			return 1
+		fi
+		MAX_FS_SIZE=$(get_max_fs ${SLTYPE[$1]})
+		if (( SLSIZE[$1] > MAX_FS_SIZE ))
+		then
+			errmsg "${SLFS[$1]}: $FS_ERR_HUGE $MAX_FS_SIZE"
+			return 1
+		fi
+		
+# Added - RD 06/30/97. Check if size of slice exceeds total space available
+# on disk
+		if (( SLSIZE[$1] > USABLE_SIZE[${SLDISK[$1]}-1] ))
+		then
+			errmsg "${SLFS[$1]}: $FS_ERR_EXCEEDS_TOTAL"
+			return 1
+		fi
+		
+
+# Added - RD 06/30/97. Check if total of memfs's is greater than size of
+# /dev/swap. If so then flag error
+
+		if [ "${SLFS[$1]}" = "/dev/swap" ]
+		then
+
+# Added - RD 07/18/97. Check if swap is atleast minimum dump size
+			if [ "${SLTYPE[6]}" = "off" ]
+			then
+				if (( SLSIZE[$1] < SLMIN[6] ))
+				then
+					errmsg "$FS_ERR_SWAP_LT_DUMP: ${SLMIN[6]}Mb"
+					return 1
+				fi
+			fi
+# End additions
+
+			let i=SLSIZE[16]
+			[ "${SLTYPE[13]}" = "memfs" ] && let i+=SLSIZE[13]
+			if ((SLSIZE[$1] < i ))
+			then
+				errmsg "$FS_ERR_SWAP"
+				return 1
+			fi
+		fi			
+
+# End Additions - RD
+
+		if [ "${SLTYPE[$1]}" =  memfs ]
+		then
+			let "i=SLSIZE[2]+(SLSIZE[$1]-_SLSIZE[$1])"
+			fld_change $FSFID ${SLFLD[2]}+1 "$i"
+		fi
+		
+		if (( SLSIZE[$1] > 0 ))
+		then
+			fs_recalc ${SLDISK[$1]}
+		fi
+		_SLSIZE[$1]=${SLSIZE[$1]}
+		if [ "$1" = 10 ] && check_stand
+		then
+			footer "$FOOTER_HIGHCYLS"
+			call sleep 3
+		fi
+		return 0
+		;;
+	*)
+		errmsg "${SLFS[$1]}: $FS_ERR_TOOSMALL ${SLMIN[$1]}"
+		return 1
+		;;
+	esac
+}
+
+function fscheck
+{
+[ -n "$debug" ] && set -x
+zzz=fscheck
+	typeset i
+	integer dsk=0 disk
+	while (( (dsk=dsk+1) <= NDISKS ))
+	do
+		disk=dsk-1
+		let FSTOT[dsk]=0
+
+		for i in $VTOC_SLICES
+		do
+			if [ "${SLDISK[i]}" = "$dsk" ]
+			then
+				if [ "${SLTYPE[i]}" != "$off" -a "${SLTYPE[i]}" != "memfs" ]
+				then
+					FLD_CHANGED=1
+					if  check_fssize $i 
+					then
+					:
+					else
+						return 1
+					fi
+					if  inodechk $i 
+					then
+					:
+					else
+						return 1
+					fi
+					if  blkschk $i 
+					then
+					:
+					else
+						return 1
+					fi
+					[ -n "${SLSIZE[i]}" ] && let FSTOT[dsk]+=SLSIZE[i]
+				fi
+			fi
+		done
+	done
+	# JAY do we want FSTOT[2] ??
+	if [ "${FSTOT[2]}" -gt 0 -a  -z "${SLSIZE[17]}" ]
+	then
+		eval errmsg "$FS_ERR_NOALTS"
+		return 1
+	fi
+
+	FLD_CHANGED=0
+	let i=1
+	while (( i  <= NDISKS ))
+	do
+        	fs_recalc $i
+        	if (( $? == 1 ))
+        	then
+                	errmsg "$OVER_AVAILABLE"
+			return 1
+		fi
+		(( i+=1 ))
+	done
+}
+
+
+function fs
+{
+[ -n "$debug" ] && set -x
+	integer i tx
+
+# This should never be executed since partition makes this check
+# - Ranjit Deshpande 06/25/97
+#
+#	if [ "${UNIX_PARTITION[0]}" = NO ]
+#	then
+#		footer "$DISK0WARN"
+#		display -w "$DISK0warn" -bg $MAGENTA -fg $WHITE
+#		return
+#	fi
+
+	FSTOT[0]=0
+	FSTOT[1]=0
+	FSTOT[2]=0
+
+	if [ -z "$FSFID" ]
+	then
+		typeset gray=
+
+		open_form -exit fscheck
+		FSFID=$FID
+
+# Added - RD 06/25/97 #################
+		integer rows=17+NDISKS
+#######################################
+		if (( NDISKS > 1 ))
+		then
+			setup_table -offset 1 -rows 19 -cols 5 -titles FS_TITLE -widths FS_WIDTH
+		else
+			setup_table -offset 1 -rows $rows -cols 4 -titles FS_TITLE -widths FS_WIDTH
+		fi
+		#for i in 1 2 10 3 4 5 6 7 9 11 12 13 14 15 16 8 17
+		#for i in 1 2 10 4 5 6 7 9 11 12 13 14 15 16 8 17
+		for i in 1 10 2 6 4 12 5 7 9 11 13 16 14 15 8 17
+		do
+			if [ -n "${SLFS[i]}" ]
+			then
+				next_field_prompt -l "${SLFS[i]}"
+				let SLFLD[i]=$FIELDCNT+1
+				next_field_prompt -l "${SLNAME[i]}"
+				gray=
+				[ "${SLTYPE[i]}" = "$off" ] && gray=-gray
+				case "${SLCHOICES[i]}" in
+				*'" "'*)
+					next_field -help "helpwin fs${i} fstype diskconf" -entry "SLIDX=$i; CHOOSING_FSTYPE=1; set_attrchoose $i; msgnoerr" -exit "msgnoerr; check_fstype $i" -choice "choose_fstype $i; footer \"$ATTR_FOOTER_TYPE\"" SLTYPE[$i]
+					;;
+				*)
+					next_field_prompt -l "${SLTYPE[i]}"
+				esac
+
+				next_field $gray -help "helpwin fs${i} fssize diskconf" -entry "SLIDX=$i; CHOOSING_FSTYPE=0; set_attrchoose $i; msgnoerr" -exit "msgnoerr; check_fssize $i" SLSIZE[$i]
+
+
+				[ "${SLTYPE[i]}" = "memfs" ] && gray=-gray
+
+				if (( NDISKS > 1 ))
+				then
+					if (( SLDISK2[i] ))
+					then
+						next_field $gray -exit "check_diskno $i" -entry msgnoerr SLDISK[$i]
+					else
+						next_field_prompt -l ${SLDISK[$i]}
+					fi
+				fi
+				[ "${SLTYPE[i]}" != "$off" -a "${SLTYPE[i]}" != "memfs" -a "${SLSIZE[i]}" != "" ] && 
+					(( FSTOT[SLDISK[i]-1]+=SLSIZE[i] ))
+				next_row
+			fi
+		done
+		next_row
+		#next_row
+		(( tx=TABLE_WIDTH - ${#NOT_INCLUDE_MEMFS} ))
+		(( tx = tx / 2 ))
+		add_field -p "$NOT_INCLUDE_MEMFS" -ilen 0 -px tx -py $TABLE_CUR_ROW
+		next_row
+		next_row
+
+# Display the Available/Current totals at bottom of window
+		let FSTOT_DISPLAY=19
+		i=1
+		tx=12
+
+		while (( i <= NDISKS )) && (( i < 6 ))
+		do
+			add_field -p "Disk $i" -ilen 0 -px $((tx+i*8)) -py $TABLE_CUR_ROW
+			(( i+=1 ))
+		done
+		next_row
+
+		add_field -p "$FS_AVAIL" -ilen 0 -px 1 -py $TABLE_CUR_ROW
+
+		# SLFLD[21] is start of available disk space list
+		let SLFLD[FSTOT_DISPLAY+1]=$FIELDCNT
+
+		i=1
+		while (( i <= NDISKS )) && (( i < 6 ))
+		do
+			add_field -p "${USABLE_SIZE[i-1]}" -ilen 0 -px $((tx+i*8)) -py $TABLE_CUR_ROW
+			(( i+=1 ))
+		done
+		next_row
+
+		add_field -p "$FS_USED" -ilen 0 -px 1 -py $TABLE_CUR_ROW
+
+		# SLFLD[22] is start of used disk space list
+		let SLFLD[FSTOT_DISPLAY+2]=$FIELDCNT
+
+		i=1
+		while (( i <= NDISKS )) && (( i < 6 ))
+		do
+			add_field -p "${FSTOT[i-1]}" -ilen 0 -px $((tx+i*8)) -py $TABLE_CUR_ROW
+			(( i+=1 ))
+		done
+		next_row
+
+		let FSTABLE_WIDTH=TABLE_WIDTH
+	fi
+	typeset wid=$CURWIN
+	place_window -above 0 $FSTABLE_WIDTH+1 19 -fg $COMBO2_FG -bg $COMBO2_BG -title "$FSCONF_ENTRY" -current set_footer
+	run_form $FSFID
+}
+
+function set_footer
+{
+        if [ "$CHOOSING_FSTYPE" -eq 1 ]
+        then
+                footer "$ATTR_FOOTER_TYPE"
+        else
+                footer "$ATTR_FOOTER_SIZE"
+        fi
+}
+
+#-------------------------------------------------------------------------------
+
+function save_exit
+{
+	# Since the Help screen must return to this screen, no need to recalc.
+	# If NEXT or PREV, recalc determines if user is over-budget on disk space.
+	
+	if [ "$1" = "PREV" ]
+	then
+		FLD_CHANGED=1
+		if [ "$CHOOSING_FSTYPE" = "0" ]
+		then
+			check_fssize $SLIDX
+		else
+			check_fstype $SLIDX
+		fi
+	fi
+
+	integer i=1
+	while (( i <= NDISKS ))
+	do
+		fs_recalc $i
+		(( i+=1 ))	
+	done
+	#if [ "$1" = HELP ] || fs_recalc 1
+	#then
+	save_disk_info $1
+	#else
+	#errmsg "$OVER_AVAILABLE"
+	#fi
+}
+
+#
+# Main
+#
+load_disk_info
+
+#
+# Let the user alter the slices.
+#
+choice_init
+fs
+set_hotkey  9 'save_exit PREV'
+set_hotkey  1 'ivar set help_topic slices; save_disk_info HELP'
+input_handler
+save_disk_info NEXT

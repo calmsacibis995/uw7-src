@@ -1,0 +1,96 @@
+#!/bin/sh
+
+# extract the c-client source pieces from the imap distribution
+# builds our new source tree suitable to be built with our makefile
+# run from the top of the imap distribution tree
+
+if [ "$1" = "" ] 
+then
+	echo usage: extract destdir
+	exit
+fi
+
+DEST=$1
+
+cp src/osdep/unix/auth_log.c $DEST
+cp src/osdep/tops-20/auths.c $DEST
+cp src/osdep/unix/bezerk.c $DEST
+cp src/osdep/unix/bezerk.h $DEST
+cp src/osdep/unix/dummy.c $DEST
+cp src/osdep/unix/dummy.h $DEST
+cp src/osdep/unix/env_unix.c $DEST
+cp src/osdep/unix/env_unix.h $DEST
+cp src/c-client/env.h $DEST
+cp src/osdep/unix/flock.c $DEST
+cp src/c-client/fs.h $DEST
+cp src/osdep/unix/fs_unix.c $DEST
+cp src/c-client/ftl.h $DEST
+cp src/osdep/unix/ftl_unix.c $DEST
+cp src/osdep/unix/gethstid.c $DEST
+cp src/osdep/unix/gr_waitp.c $DEST
+
+cat << DONE > $DEST/linkage.c
+  /*mail_link (&mbxdriver);		/* link in the mbx driver */
+  /*mail_link (&imapdriver);		/* link in the imap driver */
+  /*mail_link (&nntpdriver);		/* link in the nntp driver */
+  /*mail_link (&pop3driver);		/* link in the pop3 driver */
+  /*mail_link (&mhdriver);		/* link in the mh driver */
+  /*mail_link (&tenexdriver);		/* link in the tenex driver */
+  /*mail_link (&mtxdriver);		/* link in the mtx driver */
+  /*mail_link (&mmdfdriver);		/* link in the mmdf driver */
+  mail_link (&bezerkdriver);		/* link in the bezerk driver */
+  mail_link (&newsdriver);		/* link in the news driver */
+  /*mail_link (&philedriver);		/* link in the phile driver */
+  mail_link (&dummydriver);		/* link in the dummy driver */
+  auth_link (&auth_log);		/* link in the log authenticator */
+DONE
+
+cat << DONE > $DEST/linkage.h
+extern DRIVER mbxdriver;
+extern DRIVER imapdriver;
+extern DRIVER nntpdriver;
+extern DRIVER pop3driver;
+extern DRIVER mhdriver;
+extern DRIVER tenexdriver;
+extern DRIVER mtxdriver;
+extern DRIVER mmdfdriver;
+extern DRIVER bezerkdriver;
+extern DRIVER newsdriver;
+extern DRIVER philedriver;
+extern DRIVER dummydriver;
+extern AUTHENTICATOR auth_log;
+DONE
+
+cp src/osdep/unix/log_sv4.c $DEST
+cp src/c-client/mail.c $DEST
+cp src/c-client/mail.h $DEST
+cp src/c-client/misc.c $DEST
+cp src/c-client/misc.h $DEST
+cp src/osdep/unix/news.c $DEST
+cp src/osdep/unix/news.h $DEST
+cp src/c-client/newsrc.c $DEST
+cp src/c-client/newsrc.h $DEST
+cp src/c-client/nl.h $DEST
+cp src/osdep/unix/nl_unix.c $DEST
+cp src/osdep/unix/os_sv4.c $DEST
+cp src/osdep/unix/os_sv4.h $DEST/osdep.h
+cp src/c-client/rfc822.c $DEST
+cp src/c-client/rfc822.h $DEST
+cp src/osdep/unix/scandir.c $DEST
+cp src/osdep/unix/setpgrp.c $DEST
+cp src/c-client/smanager.c $DEST
+cp src/c-client/tcp.h $DEST
+cp src/osdep/unix/tcp_unix.c $DEST
+cp src/osdep/unix/tcp_unix.h $DEST
+cp src/osdep/unix/tz_sv4.c $DEST
+cp src/osdep/unix/write.c $DEST
+cp src/c-client/imap4.c $DEST
+cp src/c-client/imap4.h $DEST
+cp src/c-client/netmsg.c $DEST
+cp src/c-client/netmsg.h $DEST
+cp src/c-client/nntp.c $DEST
+cp src/c-client/nntp.h $DEST
+cp src/c-client/pop3.c $DEST
+cp src/c-client/pop3.h $DEST
+cp src/c-client/imap4.c $DEST
+cp src/c-client/imap4.h $DEST

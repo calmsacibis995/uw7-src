@@ -1,0 +1,248 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxreattach.sh	1.2 3/3/97 03:16:39 - cmd.vxvm:common/support/vxreattach.sh
+#ident	"@(#)cmd.vxvm:common/support/vxreattach.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+# vxreattach - reattach drives that have become accessible
+#
+# If a disk has a transient failure, or if the volume manager is started
+# with some disk drivers unloaded and unloadable, then some disks will
+# enter the failed state.  If the problem is fixed, then it may be
+# possible to reattach the disks without plexes being flagged as stale,
+# as long as the reattach happens before any volumes on the disk are
+# started.
+#
+# volreattach should be called after loadable drivers are registered,
+# and before volrecover is called to start volumes.  It can also be
+# called at any time to reattach particular drives.
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+exec 3>&2
+
+progname=vxreattach
+tmp1=/tmp/vxvm-$$a
+
+quit()
+{
+	rm -f $tmp1
+	exit $1
+}
+trap "quit 1" INT HUP TERM
+
+# usage - print a short usage message
+usage()
+{
+	cat <<! >&2
+`progname="$progname" egettxt "\
+Usage: $progname [-rb] [daname ...]
+       $progname -c daname
+
+For detailed help use: $progname -h
+" vxvmshm:527`
+!
+}
+
+# fullusage - print a verbose usage message
+fullusage()
+{
+	cat <<! >&2
+`progname="$progname" egettxt "\
+$progname - reattach drives that have become accessible
+
+Usage: $progname [-rb] [daname ...]
+       $progname -c daname
+
+Options:
+    -c	Check whether a reattach may be possible.
+    -r	Call vxrecover to reattach stale plexes as necessary.
+    -b	Perform recoveries in background.
+" vxvmshm:61`
+!
+}
+
+# doit - execute a command, printing the command in verbose mode
+doit()
+{
+	[ "$verbose" ] && cat <<-% >&3
+			! $*
+			%
+	"$@"
+}
+
+# errmsg - print an error message
+errmsg()
+{
+	cat <<-! >&2
+	$progname: $*
+	!
+}
+
+xerrmsg() {
+	if [ "$1" = "-M" ]
+	then
+		_err_cat="$2"
+		_err_def="$3"
+		shift 3
+		_err_msg="`egettxt \"$_err_def\" \"$_err_cat\" \"$@\"`"
+	else
+		_err_msg="$*"
+	fi
+	errmsg "$_err_msg"
+}
+
+#
+# argument processing
+#
+
+check=
+recover=
+verbose=
+v_opt=
+b_opt=
+
+while getopts :crbvh c
+do
+	case $c in
+	c)	check=true;;
+	r)	recover=true;;
+	b)	b_opt=-b;;
+	v)	verbose=true; v_opt=-v;;
+	h)	fullusage; exit 1;;
+	?)	usage; exit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ -n "$check" ] && [ $# -ne 1 ]
+then
+	xerrmsg -M vxvmshm:232 \
+		 "Exactly one device name argument is required with -c"
+	exit 1
+fi
+
+exitcode=0
+[ -n "$check" ] && exitcode=2
+alldisks=
+if [ $# -eq 0 ]
+then
+	alldisks=true
+fi
+
+# list all disk scan information to a file so that we can look for
+# disks that might be reattachable.
+
+vxdisk -s list "$@" > $tmp1
+echo "" >> $tmp1
+
+# get the system host ID so that we can check for disks stamped with
+# our host ID.  The system host ID can be clear if specific disks are
+# listed on the command line.  Otherwise, a matching host ID is required.
+
+system_hostid=
+system_hostid=`vxdctl list | grep '^hostid:' |
+		{ read key hostid; echo "$hostid"; }`
+if [ -z "$system_hostid" ]
+then
+	xerrmsg -M vxvmshm:134 "Cannot get the system's hostid"
+	quit 1
+fi
+
+# search for disks that should be in disk groups but that are not
+# currently attached.
+
+exec < $tmp1
+newdaname=
+while true
+do
+	key=
+	value=
+	read key value || break
+
+	case $key in
+	Disk:)	 newdaname=$value; flags=; diskid=; dgid=; hostid=; continue;;
+	flags:)	 flags=$value; continue;;
+	diskid:) diskid=$value; continue;;
+	dgname:) dgname=$value; continue;;
+	dgid:)	 dgid=$value; continue;;
+	hostid:) hostid=$value; continue;;
+	"")	 :;;
+	*)	 continue;;
+	esac
+
+	# we should have all output for a disk, validate it and see
+	# if we have a candidate for reattaching.
+
+	daname=$newdaname
+	newdaname=
+
+	[ -z "$daname" ] && continue
+	[ -z "$diskid" ] && continue
+	[ -z "$dgid" ] && continue
+	[ -z "$hostid" ] && [ -n "$alldisks" ] && continue
+	[ -n "$hostid" ] && [ "X$hostid" != "X$system_hostid" ] && continue
+	list_member imported $flags && continue
+
+	# see if there is a DM record in the disk group with a matching
+	# diskid
+
+	dmname=`vxprint -d -g "$dgid" -F "%name %nodarec %diskid" \
+			2> /dev/null |
+		while read dm_name dm_failed dm_diskid
+		do
+			[ "X$dm_failed" = Xon ] || continue
+			[ "X$diskid" = "X$dm_diskid" ] && echo "$dm_name"
+		done`
+	[ `list_count $dmname` -eq 0 ] && continue
+	if [ `list_count $dmname` -gt 1 ]
+	then
+		export daname dmname; xerrmsg -M vxvmshm:157 \
+			"Device $daname: Duplicate for disk ID on disks $dmname"
+		exitcode=3
+		continue
+	fi
+
+	if [ -n "$check" ]
+	then
+		echo $dgname $dmname
+		quit 0
+	fi
+
+	# reattach the disk; if -r was specified, also reattach stale
+	# plexes
+
+	doit vxdg -g "$dgid" -k adddisk "$dmname=$daname"
+	if [ $? -ne 0 ]
+	then
+		exitcode=4
+	elif [ -n "$recover" ]
+	then
+		doit vxrecover $v_opt $b_opt -s -g "$dgid" -- "$dmname"
+		[ $? -ne 0 ] && exitcode=5
+	fi
+done
+
+if [ -n "$check" -a -n "$daname" -a $exitcode = 2 ] ; then
+	export daname; xerrmsg -M vxvmshm:292 \
+	"No matching Volume Manager disk and device IDs found for $daname"
+fi
+
+quit $exitcode

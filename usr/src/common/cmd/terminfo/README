@@ -1,0 +1,96 @@
+#ident	"@(#)terminfo:common/cmd/terminfo/README	1.7.2.2"
+	
+
+1	The files in this directory with the .ti suffix are terminfo sources.
+	They should be compiled (separately or by catting them together into
+	terminfo.src) with tic, placing the results in /usr/share/lib/terminfo.
+	Please send any updates to UNIX System Laboratories, via e-mail to
+	terminfo@usl.com .
+	
+
+
+2.	There are other robust tools to convert termcap entries into terminfo
+	entries. They are captoinfo and infocmp. The cvt files here are
+	provided only for those possible cases, where a user has the terminfo
+	component (source) without the captoinfo and infocmp tools.
+
+ 	The cvt files are useful tools for converting termcap to terminfo.
+	They are not 100% accurate, but do most of the conversion for you.
+	cvt.ex is an ex script to convert a termcap description into a
+	terminfo description.  Note that it will not convert padding 
+	specifications, so they must be done by hand.  Note also that typical 
+	termcap entries do not give as much information as terminfo, so the 
+	resulting terminfo entry is often incomplete (e.g. won't tell you the 
+	terminal uses xon/xoff handshaking, or what extra function keys send).
+	You are urged to read the list of terminfo capabilities and augment 
+	you terminfo descriptions accordingly.
+	
+	The cvt.h file is useful for a quick hack at converting termcap 
+	program which use uppercase 2 letter names for capabilities to use 
+	terminfo. Since tget* are provided anyway, this is of questionable
+	value unless your program barely fits on a pdp-11.
+	
+	The cvt.sed script is useful for actually editing the source of the 
+	same class of programs.  It requires a sed that understands \< and \>,
+	the mod is trivial to make if you look at the corresponding code in 
+	ex or grep.
+	
+
+
+3	There are other incompatibilities at the user level between termcap and
+	terminfo.  A program which creates a termcap description and then
+	passes it to tgetent (e.g. vi used to do this if no TERM was set) or
+	which puts such a description in the environment for a child cannot
+	possibly work, since terminfo puts the parser into the compiler, not
+	the user program.  If you want to give a child a smaller window, set
+	up the LINES and COLUMNS environment variables or implement the 
+	JWINSIZE ioctl.
+	
+
+
+4	If you want to edit your own personal terminfo descriptions (and are 
+	not a super user on your system) the method is different.  Set
+	TERMINFO=$HOME/term (or wherever you want to put the compiled tree) in 
+	your environment, then compile your source with tic.  Tic and user 
+	programs will check in $TERMINFO before looking in 
+	/usr/share/lib/terminfo/*/*
+	
+
+
+5	Philosophy in adding new terminfo capabilities:
+	
+	Capabilities were cheap in termcap, since no code supported them
+	and they need only be documented.  In terminfo, they add size to
+	the structure and the binaries, so don't add them in mass quantities.
+	
+	Add a capability only if there is an application that wants to use it.
+	Lots of terminals have a half duplex forms editing mode, but no UNIX
+	applications use it, so we don't include it.
+	
+	Before you add a capability, try to hold off until there are at least
+	2 or 3 different terminals implementing similar features.  That way,
+	you can get a better idea of the general model that the capability
+	should have, rather than coming up with something that only works
+	on one kind of terminal.  For example, the status line capabilities
+	were added after we had seen the h19, the tvi950, and the vt100 run
+	sysline.  The original program, called h19sys, only worked on an h19
+	and addressed the cursor to line 25.  This model doesn't fit other
+	terminals with a status line.
+	
+	Note that capabilities must be added at the end of ../screen/caps.
+	Furthermore, if you add a private capability, you should check with
+	someone to make sure your capability goes into the master file, 
+	otherwise someone else will add a different capability and 
+	compatibility between two systems is destroyed.  There must be one 
+	master set of capabilities. This list is maintained at UNIX System
+	Laboratories. Comments should be sent to terminfo@usl.com .
+	
+
+
+6	Additional modules:
+	
+	   ckout	shell script, analyzes file errs for diagnostics
+			and displays number of entries built
+	
+	   Doc.sed	sed script to be run on ti files.
+			prints documentation of ti files.

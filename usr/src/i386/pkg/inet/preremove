@@ -1,0 +1,221 @@
+#ident        "@(#)preremove	1.21"
+#ident	"$Header$"
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+#	
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#	
+#
+# Issue a warning message if inet is running.
+#
+TMP=/tmp/tcp.err
+ERROR1=`pfmt -s nostd -g ${PKGMSG}:101 "An error was encountered removing the %s package. The file %s contains errors reported by the system." ${NAME} ${TMP} 2>&1`
+ERROR2=`pfmt -s nostd -g ${PKGMSG}:102 "The kernel rebuild failed.  However all software dealing with the %s package has been removed." ${NAME} 2>&1`
+
+if [ ! -z "`ps -ef | grep slink | grep -v grep`" ]
+then
+	pfmt -s warn -g ${PKGMSG}:103 " inet (slink) is still running.\n" 2>&1
+
+fi
+
+#
+# remove the "/dev/inet	MF" entry from /etc/ttysrch.
+#
+grep -v "/dev/inet	MF" /etc/ttysrch >/tmp/$$.a1
+cp /tmp/$$.a1 /etc/ttysrch
+rm -f /tmp/$$.a1
+
+#
+# remove the "/dev/_tcp" entry from vfstab.
+#
+grep -v "/dev/_tcp" /etc/vfstab >/tmp/$$.a1
+cp /tmp/$$.a1 /etc/vfstab
+rm -f /tmp/$$.a1
+
+# unconfigure inet protocols for multiple boards.
+/etc/confnet.d/configure -r -pinet
+
+#
+# Deinstall INET
+#
+for MODULE in arp icmp igmp incf inet ip ipip llcloop rip route slip tcp udp 
+do
+	/etc/conf/bin/idcheck -p ${MODULE} 2> /dev/null
+	RES="$?"
+	if [ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		/etc/conf/bin/idinstall -P ${PKGINST} -d ${MODULE} 2>> $TMP
+		if [ $? != 0 ]
+		then
+			message $ERROR1
+			exit 1
+		fi
+		REBUILD=1
+	fi
+done
+
+
+#remove entries added to the device database
+for DEVICE in arp icmp igmp incf ip ipip llcloop rip tcp udp tcp_subdev
+do
+	# Error may only indicate we are not running an ES system
+	# or entry does not exist.
+	MSG="`putdev -d ${DEVICE} 2>&1`"
+	RETURN=$?
+	if	[ "$RETURN" = 1 -o "$RETURN" = 2 -o "$RETURN" = 5 ]
+		# there's a fatal error that will affect the other devices, too.
+		# so print error and abort the loop
+	then	pfmt -s nostd -g ${PKGMSG}:104 "Device Database Error %s when deleting %s\n" $RETURN $DEVICE 2>&1
+		echo $MSG
+		break
+	elif	[ "$RETURN" != 0 -a "$RETURN" != 3 ]
+		# return 0: everything worked.
+		# return 3: entry was not there to delete
+		#when none of the above, error gets printed and we loop
+	then	pfmt -s nostd -g ${PKGMSG}:104 "Device Database Error %s when deleting %s\n" $RETURN $DEVICE 2>&1
+		echo $MSG
+	fi
+done
+
+rm -f /dev/arp /dev/icmp /dev/igmp /dev/incfg /dev/ipip \
+      /dev/ip /dev/loop /dev/rawip /dev/rip /dev/tcp /dev/udp \
+      /dev/icmpv6 /dev/ipv6 /dev/rawipv6 /dev/ripv6 /dev/tcpipv6 /dev/udpipv6 \
+      /dev/inet/arp /dev/inet/icmp /dev/inet/igmp /dev/inet/cfg \
+      /dev/inet/ip /dev/inet/ipip /dev/inet/loop /dev/inet/rawip /dev/inet/rip \
+      /dev/inet/icmpv6 /dev/inet/ipv6 /dev/inet/rawipv6 /dev/inet/ripv6 \
+      /dev/inet/udp /dev/inet/udpipv6 || exit 1
+rm -f /dev/inet/tcp*  || exit 1
+
+#
+# Remove the entries from /etc/netconfig
+#
+
+grep -v '[ 	]inet6*[ 	][ 	]*tcp[ 	][ 	]*/dev/tcp[ipv6]*[ 	]' /etc/netconfig 2>/dev/null >/tmp/$$.1
+grep -v '[ 	]inet6*[ 	][ 	]*udp[ 	][ 	]*/dev/udp[ipv6]*[ 	]' /tmp/$$.1 2>/dev/null >/tmp/$$.2
+grep -v '[ 	]inet6*[ 	][ 	]*icmp[ 	][ 	]*/dev/icmp[v6]*[ 	]' /tmp/$$.2 2>/dev/null >/tmp/$$.3
+grep -v '[ 	]inet6*[ 	][ 	]*igmp[ 	][ 	]*/dev/igmp[ 	]' /tmp/$$.3 2>/dev/null >/tmp/$$.1
+grep -v '[ 	]inet6*[ 	][ 	]*-[ 	][ 	]*/dev/rawip[v6]*[ 	]' /tmp/$$.1 2>/dev/null >/etc/netconfig
+
+rm -f /tmp/$$.1 /tmp/$$.2 /tmp/$$.3
+
+#
+# Remove *.tcp entries from /etc/uucp/Sysfiles
+#
+
+if [ -s /etc/uucp/Sysfiles ]
+then
+	grep -v "\.tcp" /etc/uucp/Sysfiles 2>/dev/null >/tmp/Sys.$$
+	cp /tmp/Sys.$$ /etc/uucp/Sysfiles
+fi
+
+#
+#	Remove ourself from the OAM Scripts...
+#
+
+#grep -v 'inet^Internet Protocols (TCP and UDP)^inet/Menu.inet' /usr/sadm/sysadm/menu/netservices/name_to_addr/map.menu 2>/dev/null >/tmp/$$.1
+#cp /tmp/$$.1 /usr/sadm/sysadm/menu/netservices/name_to_addr/map.menu
+
+
+#
+#	Remove SCOadmin managers
+#
+
+CLASSCONF=/sbin/classconf
+OSACONF=/sbin/osaconf
+
+/usr/bin/scoadmin -p Networking -d dns.obj
+/usr/bin/scoadmin -p Networking -d ncm.obj
+/usr/bin/scoadmin -p Networking -d ftp.obj
+/usr/bin/scoadmin -p Networking -d pic.obj
+/usr/bin/scoadmin -p Networking -d aas.obj
+/usr/bin/scoadmin -p Networking -d dhcp.obj
+/usr/bin/scoadmin -H /usr/lib/netcfg/wansw -d slip.obj
+
+${CLASSCONF} -D sco inconfig inconfigOsa
+${OSACONF} -D sco inconfigOsa
+
+${CLASSCONF} -D sco netInterface netInterfaceOsa
+${OSACONF} -D sco netInterfaceOsa
+
+${CLASSCONF} -D sco ftp ftpOsa
+${CLASSCONF} -D sco ftpDenyHost ftpOsa
+${CLASSCONF} -D sco ftpDenyUser ftpOsa
+${CLASSCONF} -D sco ftpAccess ftpOsa
+${CLASSCONF} -D sco ftpMessage ftpOsa
+${CLASSCONF} -D sco ftpClass ftpOsa
+${CLASSCONF} -D sco ftpLimit ftpOsa
+${CLASSCONF} -D sco ftpLog ftpOsa
+${CLASSCONF} -D sco ftpShutdown ftpOsa
+${CLASSCONF} -D sco ftpVirtual ftpOsa
+${CLASSCONF} -D sco ftpAnon ftpOsa
+${CLASSCONF} -D sco ftpAnonHome ftpOsa
+${OSACONF} -D sco ftpOsa
+
+${CLASSCONF} -D sco dNSystem dnsOsa
+${CLASSCONF} -D sco dNSPrimary dnsOsa
+${CLASSCONF} -D sco dNSSecondary dnsOsa
+${CLASSCONF} -D sco dNSStub dnsOsa
+${CLASSCONF} -D sco dNSHint dnsOsa
+${CLASSCONF} -D sco hostTabs dnsOsa
+${CLASSCONF} -D sco hostTab dnsOsa
+${CLASSCONF} -D sco hostTabEntry dnsOsa
+${OSACONF} -D sco dnsOsa
+
+${CLASSCONF} -D sco nis ncmOsa
+${CLASSCONF} -D sco ntp ncmOsa
+${CLASSCONF} -D sco netconfig ncmOsa
+${OSACONF} -D sco ncmOsa
+
+${CLASSCONF} -D sco aasPool aasOsa
+${CLASSCONF} -D sco aasServer aasOsa
+${CLASSCONF} -D sco aasDatabase aasOsa
+${CLASSCONF} -D sco aasLocation aasOsa
+${OSACONF} -D sco aasOsa
+
+${CLASSCONF} -D sco dhcpSubnet dhcpOsa
+${CLASSCONF} -D sco dhcpClient dhcpOsa
+${CLASSCONF} -D sco dhcpUserClass dhcpOsa
+${CLASSCONF} -D sco dhcpVendorClass dhcpOsa
+${CLASSCONF} -D sco dhcpOption dhcpOsa
+${CLASSCONF} -D sco dhcpGlobal dhcpOsa
+${CLASSCONF} -D sco dhcpStandard dhcpOsa
+${CLASSCONF} -D sco dhcpServer dhcpOsa
+${OSACONF} -D sco dhcpOsa
+
+#
+# Remove the port monitor entry
+#
+
+sacadm -r -p inetd >/dev/null 2>&1
+sacadm -r -p tcp >/dev/null 2>&1
+adminuser -r inetd root >/dev/null 2>&1
+#/usr/bin/adminrole -r \
+#   nslookup,rdate,ifconfig,in.routed,route,nslookup,slink,arp,ruptime,rwho,in.rwhod,in.named \
+#   NET >/dev/null 2>&1
+
+if	[ "${REBUILD}" = "1" ]
+then
+	/etc/conf/bin/idbuild 2>> $TMP
+	if [ $? != 0 ]
+	then
+		message $ERROR2
+		exit 1
+	fi
+	exit 10
+fi
+
+exit 0
+

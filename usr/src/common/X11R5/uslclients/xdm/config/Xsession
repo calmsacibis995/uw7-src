@@ -1,0 +1,32 @@
+#!/bin/sh
+#ident	"@(#)xdm:config/Xsession	1.11"
+
+errfile=$HOME/.xsession-errors
+
+if [ -f $errfile ]; then
+	/bin/rm $errfile
+fi
+
+exec > $errfile 2>&1
+
+XGUI=MOTIF export XGUI
+CONSEM=no export CONSEM
+XWINHOME=/usr/X export XWINHOME
+LD_LIBRARY_PATH=$LD_LIBARY_PATH:$XWINHOME/lib export LD_LIBRARY_PATH
+
+startup=$HOME/.xsession
+resources=$HOME/.Xdefaults
+olsetup=$HOME/.olsetup
+
+if [ -f $startup ]; then
+	exec $startup
+elif [ -f $olsetup ]; then
+        exec /usr/bin/shserv
+else
+	if [ -f $resources ]; then
+		xrdb -load $resources
+	fi
+        
+	$XWINHOME/bin/nondesktop -motif ;
+	exit $?
+fi

@@ -1,0 +1,41 @@
+#ident	"@(#)ihvkit:pdi/ihvhba/ihvhba.bldscript/etc/HBAINST	1.1"
+/usr/bin/cat /install/etc/loadmods | /usr/bin/cut -d: -f3 >/tmp/ihvhba.list.$$
+/sbin/modadmin -s | cut -d: -f3 >/tmp/modloaded.$$
+for driver in `cat /tmp/ihvhba.list.$$`
+do
+	/usr/bin/grep $driver /tmp/modloaded.$$ >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+			echo $driver >> /tmp/hbas.loaded.$$
+	fi
+done
+/usr/bin/rm -f /tmp/modloaded.$$ >/dev/null 2>&1
+/usr/bin/rm -f /tmp/ihvhba.list.$$ >/dev/null 2>&1
+if [ -f /tmp/hbas.loaded.$$ ]
+then
+
+	for hba in `cat /tmp/hbas.loaded.$$`
+	do
+		for pkg in `cat /install/etc/pkglist`
+		do
+			/usr/bin/grep $hba /install/$pkg/pkgmap >/dev/null 2>&1
+			if [ $? -eq 0 ]
+			then
+				echo "$pkg" >>/tmp/pkg.add.$$    
+				break;
+			fi
+		done
+	done	
+fi
+/usr/bin/rm -f /tmp/hbas.loaded.$$
+PKGARG=""
+[ -f /tmp/pkg.add.$$ ] && {
+
+	for i in `cat /tmp/pkg.add.$$`
+	do
+		PKG=$i
+		PKGARG="$PKGARG $PKG"
+	done
+	echo $PKGARG
+	/usr/bin/rm -f /tmp/pkg.add.$$ >/dev/null 2>&1
+}

@@ -1,0 +1,24 @@
+#!/sbin/sh
+#ident	"@(#)validsys	1.2"
+#ident  "$Header$"
+
+########################################################################
+#	Module Name: validsys.sh
+#	
+#	Inputs:
+#		$1 - system name to add to Poll database 
+#	
+#	Description: Verify system name is in Systems database file but
+#                    not in the Poll database file.
+#
+#	Exit values:
+#			0 - everything is ok 
+#			1 - empty name
+#			2 - name not in Systems file
+#			3 - name already in Poll file
+#
+########################################################################
+test -z "$1" && exit 1
+$TFADMIN /usr/bin/cat /etc/uucp/Systems | /usr/bin/grep "^$1" 2>/dev/null 1>&2 || exit 2
+$TFADMIN /usr/bin/cat /etc/uucp/Poll | /usr/bin/grep "^$1" 2>/dev/null 1>&2 && exit 3
+exit 0 

@@ -1,0 +1,26 @@
+#ident	"@(#)ihvkit:pdi/ihvhba/ihvhba.bldscript/sony/preremove	1.1"
+do_remove () {
+
+	${CONFBIN}/idinstall -d ${1} > ${ERR} 2>&1
+
+	cp /etc/loadmods /tmp
+	sed -e /${1}/d /tmp/loadmods > /etc/loadmods
+}
+
+FAILURE=1       # fatal error
+DRIVER=sony
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+ERR=/tmp/err.out
+
+rm -rf /etc/conf/pack.d/${DRIVER}/disk.cfg
+for MODULE in ${DRIVER}
+do
+	do_remove ${MODULE}
+done
+
+rm /usr/include/sys/sony.h
+
+rm /tmp/loadmods
+
+${CONFBIN}/idbuild

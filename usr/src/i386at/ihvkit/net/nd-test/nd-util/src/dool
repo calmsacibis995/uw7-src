@@ -1,0 +1,75 @@
+#ident "@(#)dool	10.1"
+#ident "$Header$"
+
+#
+#	Copyright (C) The Santa Cruz Operation, 1996-1997
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+# dool
+# create a file of a given size, and push it to a given remote
+# site, then get it back
+#
+# (in case you were wondering, the name of this command is an oblique
+# reference to Dr. Doolittle, and his Pushme-Pullyou.)
+#
+
+USAGE="Usage: $0 host size user"
+
+if [ $# -ne 3 ]
+then
+	echo $USAGE
+	exit 1
+fi
+
+host=$1
+size=$2
+user=$3
+tfile=/bhf/dool$$
+echo $tfile
+echo $size
+echo $host
+trap "rm -f $tfile; exit 0" 0 1 2 3 14 15
+
+echo "Please enter passwd for $user (will not be echod on screen): \c"
+stty -echo
+read passwd
+stty echo
+
+case $size in
+
+	*[mM])
+		size=`expr \`expr "$size" : "\(.*\)[Mm]"\` \* 1048576`
+		echo size is now $size
+		;;
+	*[bB]|*[kK])
+		;;
+	*)
+esac
+
+echo $size
+if dd if=/dev/zero of=$tfile bs=$size count=1
+then
+	:;
+else
+	echo $USAGE
+	exit 2
+fi
+
+while :
+do
+	echo $host: \\c
+	ftp -in $host <<-! | grep second
+		user $user $passwd
+		verbose
+		put $tfile $tfile
+		quit
+	!
+	echo $host: \\c
+	ftp -in $host <<-! | grep second
+		user $user $passwd
+		verbose
+		get $tfile /dev/null
+		quit
+	!
+done

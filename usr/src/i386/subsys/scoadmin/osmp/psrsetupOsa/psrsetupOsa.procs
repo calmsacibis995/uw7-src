@@ -1,0 +1,206 @@
+#===================================================================== XXX ===
+# @(#)psrsetupOsa.procs	1.2
+# All these procedures return a list, whose values and meaning depend on
+# whether an error is returned or not:
+#
+# [list returnvalue data]
+#
+# In case of NO errors:
+#
+# returnvalue 		0
+# data			any data returned by the procedure
+#
+# In case of an error condition:
+#
+# returnvalue		any number greater than 0
+# data			This will generally be an error message unless
+#			otherwise stated.
+#------------------------------------------------------------------------------
+set localhost [SaHostGetLocalName]
+
+#===================================================================== XXX ===
+# psr:GetAllProcessorInfo
+#-----------------------------------------------------------------------------
+proc psr:GetAllProcessorInfo {} {
+	set result [misc:ExecCommand /sbin/psrinfo "" 1]
+	if { [ lindex $result 0 ] != 0 } { 
+		return [list 1 [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOINFO ]]
+	}
+	return $result
+}
+
+#===================================================================== XXX ===
+# psr:GetProcessorInfo
+#-----------------------------------------------------------------------------
+proc psr:GetProcessorInfo { data } {
+	set psrno [lindex $data 0]
+	set result [misc:ExecCommand /sbin/psrinfo "-v $psrno" 1]
+	if { [ lindex $result 0 ] != 0 } {
+		return [list 1  [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOPROC $psrno] ]
+	} else {
+		set info ""
+		foreach i [lindex $result 1] {
+			append info $i
+			append info \n
+		}
+		return [list 0 $info]
+	}
+}
+
+#===================================================================== XXX ===
+# psr:StartStopProcessor
+#-----------------------------------------------------------------------------
+proc psr:StartStopProcessor { data } {
+	set psrno [lindex $data 0]
+	set result [misc:ExecCommand /sbin/psrinfo "-s $psrno"]
+	if { [ lindex $result 0 ] != 0 } { 
+		return [list 1 [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOSTATE $psrno] ]
+	}
+	set online [lindex $result 1]
+	if { $online } {
+		set result [misc:ExecCommand /sbin/psradm "-f $psrno"]
+		if { [ lindex $result 0 ] != 0 } { 
+			return [list 1 [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOOFFLN $psrno] ]
+		}
+	} else {
+		set result [misc:ExecCommand /sbin/psradm "-n $psrno"]
+		if { [ lindex $result 0 ] != 0 } { 
+			return [list 1 [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOONLN $psrno] ]
+		}
+	}
+	return $result
+}
+
+
+#===================================================================== XXX ===
+# misc:ExecCommand
+#
+# args:
+#	prog	- prog to by executed
+#	args	- args to the prog
+#	multi
+#	exitval		- exit value returned by the program
+#	results file 	- file containing results
+#
+# Returns:
+#	0 - ok
+#	1 - problems executing system command, this could be:
+#		could not open temporary file
+#		could not fork process
+#		could not execl command
+#	n - other error occured (value of errcode in 3rd list el)
+#	
+#-----------------------------------------------------------------------------
+proc misc:ExecCommand { prog arguments args } {
+	set l [llength $args]
+
+	set multi 0
+	set resultsfile ""
+	switch -exact -- $l {
+	1	{
+		set multi [lindex $args 0]
+		}
+	2	{
+		set multi [lindex $args 0]
+		upvar [lindex $args 1] exitcode
+		}
+	3	{
+		set multi [lindex $args 0]
+		upvar [lindex $args 1] exitcode
+		set resultsfile [lindex $args 2]
+		}
+	}
+
+	if { [cequal $resultsfile "" ] } {
+		set tmpfile "/tmp/.execCommand.out"
+	} else {
+		set tmpfile $resultsfile
+	}
+
+	if { [catch "open $tmpfile w" catchres] } {
+                set msg "Could not open $tmpfile"
+                return [ list 1 $msg ]
+        }
+	set fdout $catchres
+
+        set processID [fork]
+	if { $processID == 0 } {
+		dup $fdout stdout
+		dup $fdout stderr
+		catch {execl "$prog" "$arguments"} catchres
+		exit 255
+	} elseif { $processID == -1 } {
+                return [ list 1 [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOFORK] ]
+                exit 1
+        }
+	set pidinfo [wait $processID]
+	set exitcode [lindex $pidinfo 2]
+	close $fdout
+
+	
+	switch -exact -- $exitcode {
+	255	{
+		set retVal 1
+		set retMsg [IntlLocalizeMsg SCO_PSRSETUPOSA_ERR_NOEXEC $prog]
+		}
+	default	{
+		set fd [ open $tmpfile r ]
+		if { $multi } {
+			set retMsg [list]
+			while { ![ eof $fd ] } {
+				set foo [gets $fd]
+				if { ! [ cequal $foo "" ] } {
+					lappend retMsg $foo
+				}
+			}
+		} else {
+			set retMsg [gets $fd]
+		}
+		close $fd
+		set retVal $exitcode
+		}
+	} 
+	if { [cequal $resultsfile "" ] && [ file exists $tmpfile ] } {
+                unlink -nocomplain $tmpfile
+        }
+	return [list $retVal $retMsg]
+}
+
+#===================================================================== XXX ===
+#
+# Action procedure for the class sco psrsetup
+# Arguments:
+#   class:      The class of the object being operated on. If this procedure
+#               handles more than one class, use this parameter to 
+#               find out the class of the current object.
+#   object:     The name of the object being operated on.
+#   refObject:  Ignored.
+#   op:         Name of the operation being performed, which will always be
+#               "action" unless you use this procedure to handle multiple 
+#               operations, in which case you can use this parameter to 
+#               find out the operation currently requested.
+#   subOp:      The specific action to be performed.
+#   data:       Data to be used in the performing of the action operation.
+#   attr:       Ignored.
+#   attr-
+#   ValueList:  Ignored.
+#   osaData:    Contains any extra data associated with the class in the 
+#               osaData section of the CDT (currently not supported by the 
+#               OSA builder).
+#------------------------------------------------------------------------------
+
+proc psrsetup_action {class object refObject op subOp data attr attrValueList osaData} {
+	switch $subOp {
+		GetAllProcessorInfo {
+			return [psr:GetAllProcessorInfo]
+		}
+		GetProcessorInfo {
+			return [psr:GetProcessorInfo $data]
+		}
+		StartStopProcessor {
+			return [psr:StartStopProcessor $data]
+		}
+		default     { ErrorPush {} 1 SCO_OSA_ERR_NO_SUCH_ACTION $subOp }	}
+	return
+}
+OFBinding sco_psrsetup_CDT

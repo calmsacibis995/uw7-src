@@ -1,0 +1,134 @@
+#!/sbin/sh
+#ident	"@(#)dead	15.1	97/12/19"
+
+. /isl/ui_modules/common.rc
+
+keys="Press any key to reboot    F3=Write data    F4=Shell"
+
+
+#--------------------------------------------
+
+
+function noop
+{
+	:
+}
+
+#
+# Write it to the disk.
+# Don't save the dead_info variable, so that if there is another
+# fatal error later, they won't get a bogus message.
+#
+function write_data
+{
+[ -n "$debug" ] && set -x
+	wclose $main_window
+	display -w "Insert a disk to write your data to"
+	msg
+	footer "Press any key to write to disk"
+	input_handler
+	
+	#
+	# Delete the dead_info variable.
+	#
+	ivar set dead_info ""
+	#
+	# Write the ifile to the floppy
+	#
+	echo "/isl/ifile" | cpio -o >/dev/rdsk/f0t 2>/dev/null
+	if [ $? -eq 0 ]
+	then
+		display -w "When you reboot, type F3 at the welcome screen."
+	else
+		display -w "Error writing to disk."
+	fi
+	input_handler
+	main
+}
+
+
+function be_a_shell
+{
+[ -n "$debug" ] && set -x
+	msg
+	wclose $main_window
+	old_settings=`stty -g`
+	stty sane
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo ""
+	echo "Type \"exit\" when done."
+	echo ""
+
+	PS1="Debug shell> "
+	export PS1
+	/sbin/sh -s -i
+
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+	stty $old_settings
+	. /etc/inst/scripts/winrc
+	. /etc/inst/scripts/scr_init
+	msg
+	footer
+	main
+	return
+}
+
+
+
+
+#
+# Display the welcome screen
+#
+function main 
+{
+[ -n "$debug" ] && set -x
+	display -w "$oh_well" -bg 1 -fg 0
+	main_window=$CURWIN
+	footer "$keys"
+	set_hotkey 1 noop
+	set_hotkey 2 noop
+	set_hotkey 3 write_data
+	set_hotkey 4 be_a_shell
+	set_hotkey 5 noop
+	set_hotkey 6 noop
+	set_hotkey 7 noop
+	set_hotkey 8 noop
+	set_hotkey 9 noop
+	set_hotkey 11 noop
+	set_hotkey 12 noop
+	input_handler
+}
+
+
+extra=`ivar get dead_info`
+oh_well="
+ An error occured and I can't install ! 
+
+  $extra
+
+ Press any key to reboot.
+ Press F3 to save your answers to a floppy. 
+ Press F4 to run a shell.
+ "
+main
+
+
+#
+# Done
+#
+call uadmin 2 1
+
+#
+# Just in case...
+#
+exit 1
+

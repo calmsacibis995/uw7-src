@@ -1,0 +1,93 @@
+#ident	"%W%"
+
+#	Perform the "never have been run before" checks.
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	# if catalogs aren't under /usr/lib/locale, check /etc/inst/locale
+	if [ -d /usr/lib/locale/$LANG ] 
+	then LC_MESSAGES=$LANG
+	else LC_MESSAGES=/etc/inst/locale/$LANG
+	fi
+	export LANG LC_MESSAGES
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+# Clear all working privileges.
+priv -allprivs work
+
+set `LC_ALL=C /sbin/who -r`
+if [ $9 != "S" -a $9 != "1" ]
+then
+	exit
+fi
+
+pfmt -l $LABEL -s info -g $CAT:19 "This machine has not been used as a customer machine yet.  The messages that\nfollow are from checking the built-in file systems for damage that might have\noccurred during shipment.  As long as you do not see either of the messages\n                                BOOT UNIX\nor                      FILE SYSTEM WAS MODIFIED\nall is well.  If either message does come out, call your service representative.\nHowever, the machine is still usable unless you are told otherwise.\n"
+pfmt -s nostd -g $CAT:20 "\nHit <CR> to continue: "
+read foo
+
+pfmt -l $LABEL -s info -g $CAT:21 "\nChecking file systems:\n\n"
+exec < /etc/vfstab
+error=0
+while read special fsckdev mountp fstype fsckpass automnt mntflgs
+do
+	# ignore comments and empty lines
+	case $special in
+        '#'* | '')	continue;;
+	esac 
+
+	if [ "$automnt" != "yes" -o "$fstype" = "rfs" -o "$fstype" = "nfs" ]
+	then
+		continue
+	fi 
+
+	msg=`/sbin/fsck -m -F $fstype $special 2>&1`
+	case $? in
+	0)	# file system is sane
+		pfmt -l $LABEL -s info -g $CAT:22 "%s is sane\n" $special
+		continue
+		;;
+
+	33)	# already mounted
+		pfmt -l $LABEL -s info -g $CAT:23 "%s is already mounted\n" $special
+		continue
+		;;
+
+	32)	# needs checking
+		echo "$msg\n" 1>&2
+		pfmt -s nostd -g $CAT:24 "\t %s is being checked\n" $fsckdev
+		if [ "$fstype" != "s5" ]
+		then
+			/sbin/fsck -F $fstype -y $fsckdev
+		else
+			/sbin/fsck -F $fstype -y -t /var/tmp/firstcheck -D $fsckdev
+		fi
+
+		if [ $? = 0 ]
+		then
+			error=0
+		else
+			error=1
+		fi
+		;;
+	esac
+
+done
+
+if [ $error -eq 0 ]
+then
+	echo '\n'
+else
+	echo ''
+	pfmt -l $LABEL -s warn -g $CAT:25 "The file system check has identified serious problems.\nWe strongly recommend that you contact your service representative\nbefore using the machine.\n\nThe power will now be turned off.\n\n"
+	/sbin/uadmin 2 0
+fi

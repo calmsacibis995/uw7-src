@@ -1,0 +1,76 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/init.d/vxvm-sysboot.sh	1.2 3/3/97 03:26:29 - cmd.vxvm:unixware/init.d/vxvm-sysboot.sh
+#ident	"@(#)cmd.vxvm:unixware/init.d/vxvm-sysboot.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+PATH=/sbin:/etc/vx/sbin
+#PATH=/sbin:/usr/sbin:/usr/bin:/usr/lib/vxvm/bin
+
+# This file contains commands to be executed BEFORE the root fsck during
+# the boot process.
+eval `vxparms 2> /dev/null`
+if [ -z "$VOLCMAJOR" ]
+then
+	# Volume Manager doesn't appear to be pre-loaded, so it can't
+	# be rootable
+	exit 0
+fi
+
+eval `vxparms -s /dev/rroot`
+if [ "X$STAT_FTYPE" != Xchar ]
+then
+	egettxt "\
+
+/dev/rroot is not a character special device, the boot of your system
+cannot continue.
+" vxvmshm:607
+
+	uadmin 2 0
+fi
+
+if [ "X$VOLCMAJOR" = "X$STAT_MAJOR" ]
+then
+	#LD_LIBRARY_PATH=/etc/lib vxiod set 2
+	LD_LIBRARY_PATH=/etc/lib vxconfigd -m boot
+	ret=$?
+	if [ $ret = 0 ] ; then
+		exit 0
+	fi
+	if [ $ret -ne 9 ]
+	then
+		egettxt "\
+
+Errors were encountered in starting the root disk group, as a result
+the Volume Manager is unable to configure the root volume, which
+contains your root file system.  The system will be halted because
+the Volume Manager cannot continue.
+
+You will need to do one of the following:
+
+a)  Boot to a floppy and fix your /dev/rroot to no longer be a volume,
+    and then boot a kernel that was not configured to use a volume for
+    the root file system.
+
+b)  Re-install your system from the original operating system package.
+" vxvmshm:609
+	fi
+	uadmin 2 0
+fi

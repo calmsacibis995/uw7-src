@@ -1,0 +1,164 @@
+#ident	"@(#)pkg4.i386:i386/pkg/uccs/postinstall	1.16"
+#-------
+# This edits /etc/profile.
+#
+# During installation, it appends a line which will make
+# the new compilation system the default.
+#
+# PKGINST should be provided by the installation service.
+#-------
+#Set up localized messaging
+PKMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+MENU_OUT=/tmp/out$$
+
+trap "rm -f /tmp/*$$ 2>/dev/null; exit" 0 2
+#-------
+
+urel=`uname -r`
+#-------
+# Take care of libcrypt.a; also on uw2 get right version of ld
+#-------
+if [ $urel = "5" ]
+then
+	if	[ ! -f /usr/lib/libcrypt_d.a ]
+	then
+		rm -f /usr/lib/libcrypt.a
+		ln /usr/lib/libcrypt_i.a /usr/lib/libcrypt.a
+	fi
+else
+	# add on
+	if	[ ! -f /udk/usr/lib/libcrypt_d.a ]
+	then
+		rm -f /udk/usr/lib/libcrypt.a
+		ln /udk/usr/lib/libcrypt_i.a /udk/usr/lib/libcrypt.a
+	fi
+	if [ $urel = "4.2MP" ]
+	then
+		if [ -f /udk/usr/ccs/lib/libp/libc.so.1.uw2 ]
+		then
+			/usr/bin/mv /udk/usr/ccs/lib/libp/libc.so.1.uw2 /udk/usr/ccs/lib/libp/libc.so.1
+			removef ${PKGINST} /udk/usr/ccs/lib/libp/libc.so.1.uw2 > /dev/null 2>&1
+			installf ${PKGINST} /udk/usr/ccs/lib/libp/libc.so.1 f 0755 bin bin > /dev/null 2>&1
+		fi
+		if [ -f /udk/usr/ccs/bin/ld.uw2 ]
+		then
+			/usr/bin/mv /udk/usr/ccs/bin/ld.uw2 /udk/usr/ccs/bin/ld
+			removef ${PKGINST} /udk/usr/ccs/bin/ld.uw2 > /dev/null 2>&1
+			installf ${PKGINST} /udk/usr/ccs/bin/ld f 0755 bin bin > /dev/null 2>&1
+		fi
+		installf -f $PKGINST
+	fi
+	if [ -f /udk/usr/ccs/lib/libp/libc.so.1 ]
+	then
+		if [ ! -d /usr/ccs/lib/libp ]
+		then
+			mkdir -p /usr/ccs/lib/libp
+		fi
+		ln -s /udk/usr/ccs/lib/libp/libc.so.1 /usr/ccs/lib/libp/libc.so.1
+	fi
+fi
+
+if [ $urel = "4.2MP" ]
+then
+	exit 0
+fi
+
+if [ $urel = "3.2" ]
+then
+	MENU_DIR=/usr/adm/pkg/uccs/install
+fi
+
+no_license() {
+	#  Set up to use menu_colors; default to C-locale
+	# if ${LOCALE}'s dir has no menu_colors.sh
+	#
+	menu_colors warn
+	/udk/bin/menu -f ${MENU_DIR}/set.12 -o ${MENU_OUT} < /dev/tty > /dev/tty 2>/dev/null
+	menu_colors regular
+}
+
+
+# On OpensServer, prompt for licensing information
+if [ $urel = "3.2" ]
+then
+	TERM=${TERM:-minansiterm} 
+	LINES=${LINES:-24} 
+	COLUMNS=${COLUMNS:-80} 
+	export TERM LINES COLUMNS
+	if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+	then
+		. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+	else
+		. /etc/inst/locale/C/menus/menu_colors.sh
+	fi
+	alldone=0
+	while [ $alldone = "0" ]
+	do
+		/udk/bin/menu -f ${MENU_DIR}/set.11 -o ${MENU_OUT} < /dev/tty > /dev/tty 2>/dev/null
+		. ${MENU_OUT}
+		if [ "${LICNUMBER}" -a "${LICCODE}" ]
+		then
+			if [ "${LICDATA}" ]
+			then
+				/etc/brand -g -q  -a "${LICDATA}" "${LICNUMBER}" "${LICCODE}" >/dev/null 2>&1
+			else
+				/etc/brand -g -q "${LICNUMBER}" "${LICCODE}" >/dev/null 2>&1
+			fi
+			if [ $? -ne 0 ]
+			then
+				no_license
+			else
+				alldone=1
+			fi
+		else
+			no_license
+			alldone=1
+		fi
+	done
+	exit 0
+fi
+
+# after this, Gemini only
+PROFILE=/etc/profile
+
+#-------
+# Add /usr/ccs/bin to path in /etc/profile
+#-------
+echo 'PATH=$PATH:/usr/ccs/bin  #**UNIXWARE CCS** Installed by pkginst' $PKGINST>>/etc/profile
+#-------
+
+#-------
+# Take care of /usr/lib/cpp.
+#-------
+
+if	[ ! -f /usr/lib/cpp -a ! -h /usr/lib/cpp -a -f /usr/ccs/lib/cpp ]
+then	ln -s /usr/ccs/lib/cpp /usr/lib/cpp
+fi
+
+#-------
+# Take care of symbolic links for files in /usr/ccs/bin
+#-------
+if [ ! -f /bin/cc ]
+then
+a=`pwd`
+cd /usr/ccs/bin
+for i in *
+do
+if [ ! -f /usr/bin/$i -a ! -h /usr/bin/$i ]
+then	ln -s /usr/ccs/bin/$i /usr/bin/$i
+fi
+done
+cd $a
+fi
+
+## link /usr/ccs/bin/ld and /usr/bin/idld if the system is Destiny
+## (pkg=base; version=1 or higher)
+
+version=`pkgparam base VERSION 2>/dev/null`
+[ "$version" -ge 1 ] && [ -x /usr/bin/idld ] && {
+	rm -f /usr/bin/idld
+	ln /usr/ccs/bin/ld /usr/bin/idld
+}
+
+exit 0

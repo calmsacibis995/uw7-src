@@ -1,0 +1,232 @@
+#!/sbin/sh
+
+#ident	"@(#)whole_disk	15.1	98/03/04"
+
+#-------------------------------------------------------
+
+function skip_func	# common.rc invokes this if skip_whole_disk is True
+{
+	#
+	# If we got here by going back, keep going back. 
+	#
+	# If we got here by going forward, keep going forward. 
+	# (look at the value of whole_disk to decide where to go).
+	#
+	if [ "$direction" = NEXT ]
+	then
+		#
+		# If we should use the whole disk, exit NEXT, otherwise
+		# the user wants to partition the disk, so exit PART.
+		#
+		if ivar check whole_disk
+		then
+			fdinit 1
+			one_unix_partition 0
+			#XX_one_unix_partition
+			#save_partitions
+			#ii_exit NEXT
+			save_disk_info NEXT
+		else
+			# in case the var is not set
+			ivar set whole_disk false
+			ii_exit PARTITION
+		fi
+	fi
+}
+
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /globals.sh
+. /isl/ui_modules/disk.rc
+. /isl/ui_modules/common.rc
+
+
+
+#
+# Ask the user if they want to use the whole disk for unix, or if they
+# want to customize the partations.
+#
+function get_choice
+{
+[ -n "$debug" ] && set -x
+	msg
+	footer "$foot1"
+	display "$ask_nuke" -above 1 -below 6
+	main_wid=$CURWIN
+	open_radio -exit choice_done 
+	radio_wid=$RID
+	add_radio -help "foo" -entry "set_choice true" "$use_whole"
+	add_radio -help "bar" -entry "set_choice false" "$cust_layout"
+	if $nuke_it
+	then
+		current=0
+	else
+		current=1
+	fi
+	radio_runparms $radio_wid 2
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		 -above 6 -below 1 -title "$choose1"
+	run_radio $radio_wid $current 2
+	main_window=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	set_hotkey 10 go_next
+	input_handler	
+}
+
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	if [ "$1" = true ]
+	then
+		nuke_it=true
+		msg "$reformats_disk"
+	else
+		nuke_it=false
+		msg "$allows_preserve"
+	fi
+}
+
+function choice_done
+{
+[ -n "$debug" ] && set -x
+	wclose $main_wid
+}
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set whole_disk "$nuke_it"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set whole_disk "$nuke_it"
+	#
+	# Tell the sequencer to go back
+	#
+	if $nuke_it
+	then
+		#XX_one_unix_partition
+		#save_partitions
+		#ii_exit NEXT
+		fdinit 1						# re-init HDOPT, BOOTSECTOR, DISK_SIZE
+		one_unix_partition 0		# replace PART[] settings 
+		fdsize_chk 0				# recompute USABLE_SIZE
+		save_disk_info NEXT
+	else
+		ii_exit PARTITION
+	fi
+}
+
+
+# JAY 
+# this version differs from that in disk.rc
+# it deals only with disk 0.
+# it does stuff the other doesn't.
+# reconcile them.
+#
+function XX_one_unix_partition
+{
+# create single unix partition for disk $1
+[ -n "$debug" ] && set -x
+        integer i partition disk=$1
+	typeset junk heads cyls secs secsz
+
+	footer "$comp_part_sizes"
+	# What is the device node for disk 0?
+	main_disk=`ivar get CHAR_DISK_NODES[0]`
+
+	# Read geometry of disk 0
+	partsize -d $main_disk 2>/dev/null | {
+		read junk
+		read junk heads cyls secs secsz
+	} 
+	DISK_CYLSIZE[0]=$(getcylsize $secs $heads $secsz)
+	DISKCYLS[0]=$cyls
+
+	# Read the disk size
+	eval "$(fdisk -L ${CHAR_DISK_NODES[disk]} </dev/null)"
+	DISK_SIZE[0]="${NUMMB%.*}"
+	DISK_NUMCYL[0]=$NUMCYL	
+	
+        PARTSTATUS[0*4+1]="$Boot"
+        PARTTYPE[0*4+1]=$UNIX
+        PARTPCT[0*4+1]=100
+        PARTMB[0*4+1]=${DISK_SIZE[0]}
+        PARTSTART[0*4+1]=0
+        let "PARTEND[0*4+1]=DISK_NUMCYL[0]-1"
+        PARTLENGTH[0*4+1]=${DISK_NUMCYL[0]}
+        UNIX_PARTITION[0]=YES
+        UNIX_PARTITION_SIZE[0]=${PARTMB[0*4+1]}
+
+        for partition in 2 3 4
+        do
+		PARTSTATUS[0*4+partition]=
+		PARTTYPE[0*4+partition]="$unused"
+		PARTPCT[0*4+partition]=0
+		PARTMB[0*4+partition]=
+		PARTSTART[0*4+partition]=
+		PARTEND[0*4+partition]=
+		PARTLENGTH[0*4+partition]=
+        done
+	footer
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set whole_disk "$nuke_it"
+	#
+	ivar set help_topic whole_disk
+	ii_exit HELP
+}
+
+#
+# Main
+#
+#
+# Get the initial choice (if any).
+#
+#JAY [ -f /tmp/fsinit_done ] && rm /tmp/fsinit_done
+
+nuke_it=`ivar get whole_disk`
+[ -z "$nuke_it" ] && nuke_it=true
+
+#
+# Let the user decide.
+#
+load_disk_info
+get_choice
+input_handler
+
+#
+# Save their choice
+#
+ivar set whole_disk "$nuke_it"
+
+#
+# Done
+#
+go_next
+

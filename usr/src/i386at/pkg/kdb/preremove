@@ -1,0 +1,36 @@
+#ident	"@(#)pkg.kdb:preremove	1.8.2.1"
+#ident	"$Header$"
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+ERR=/tmp/$1.err
+
+exitstat=0
+
+for MODULE in kdb kdb_util scodb
+do
+	${CONFBIN}/idcheck -p ${MODULE}
+	RES="$?"
+	if
+		[ "${RES}" -ne "100" -a "${RES}" -ne "0" ]
+	then
+		${CONFBIN}/idinstall -gs  ${MODULE} |/usr/bin/sed -e 's/Y/N/' > System 2> ${ERR}
+		${CONFBIN}/idinstall -us  ${MODULE} > ${ERR} 2>&1
+		${CONFBIN}/idinstall -P ${PKGINST} -dop  ${MODULE} > ${ERR} 2>&1
+
+	fi
+done
+
+${CONFBIN}/idbuild
+if
+	[ "$?" -ne "0" ]
+then
+	exit ${FAILURE}
+else
+	exitstat=10
+fi
+
+exit ${exitstat}

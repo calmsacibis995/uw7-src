@@ -1,0 +1,187 @@
+# ip_math.rc
+#ident	"@(#)ip_math.rc	15.1	98/03/04"
+
+# winxksh library for manipulating numbers (designed for IP addresses)
+# Jeremy Boulton
+# May 8, 1997
+
+function to_chex
+{
+	[[ $1 = 0x* ]] && hex_to_chex "$1" || dd_to_chex "$1"
+}
+
+# dotted decimal string to chex string converter
+# Arguments: 1: dotted decimal string (1.2.3.4....)
+
+function dd_to_chex
+{
+	typeset tempnum
+	typeset tempstr
+	typeset -Z8 tempnumb
+	typeset outstr
+	typeset -i16 decnum
+	
+	OIFS="$IFS"
+	IFS="."
+	for tempnum in ${1}
+	do
+		decnum="$tempnum"
+		tempstr="$decnum"
+		outstr="${tempstr} ${outstr}"
+	done
+	IFS="$OIFS"
+
+	print $outstr
+}
+
+# chex string to dotted decimal string converter
+# Arguments: 1: chex string (16#01 16#A3 ...)
+
+function chex_to_dd
+{
+	typeset -i10 decnum
+	typeset tempnum
+	typeset outstr
+
+	for tempnum in ${1}
+	do
+		decnum="$tempnum"
+		outstr="${decnum}.${outstr}"
+	done
+
+	outstr=${outstr%.}
+
+	print $outstr
+}
+
+# hex string to chex string converter
+# Arguments: 1: hex string (0x1234...)
+
+function hex_to_chex
+{
+	source="${1#0x}"
+	typeset -L2 twochar
+	typeset tohex
+	typeset outstr
+
+	while [[ ${#source} -gt 0 ]]
+	do
+		twochar=${source}
+		source=${source#??}
+		tohex="16#$twochar"
+		outstr="${tohex} ${outstr}"
+	done
+
+	outstr=${outstr% }
+
+	print $outstr
+}
+
+# chex string to hex string converter
+# Arguments: 1: chex string (16#01 16#A3 ...)
+
+function chex_to_hex
+{
+	typeset tempnum
+	typeset -Z2 hexnum
+	typeset outstr
+
+	for tempnum in ${1}
+	do
+		hexnum="${tempnum#16#}"
+		outstr="${hexnum}${outstr}"
+	done
+
+	outstr="0x${outstr}"
+
+	print $outstr
+}
+
+function chex_and
+{
+	eval set -A first_arg $1	# eval to make it an array from
+	eval set -A second_arg $2	# the single argument $1 (or $2)
+	size_first=${#first_arg[*]}
+	size_second=${#second_arg[*]}
+
+	[[ size_first -lt size_second ]] && {
+		set -A result $1
+		size_result=${size_first}
+	} || {
+		set -A result $2
+		size_result=${size_second}
+	}
+
+	typeset -i16 tempresult
+
+	integer index=0
+	while (( index < size_result ))
+	do
+		tempresult="$(( first_arg[index] & second_arg[index] ))"
+		result[$index]=${tempresult}
+		(( index += 1 ))
+	done
+
+	print ${result[@]}
+}
+
+
+function chex_or
+{
+	eval set -A first_arg $1	# eval to make it an array from
+	eval set -A second_arg $2	# the single argument $1 (or $2)
+	size_first=${#first_arg[*]}
+	size_second=${#second_arg[*]}
+
+	[[ size_first -gt size_second ]] && {
+		set -A result $1
+		size_result=${size_first}
+	} || {
+		set -A result $2
+		size_result=${size_second}
+	}
+
+	typeset -i16 tempresult
+
+	integer index=0
+	while (( index < size_result ))
+	do
+		tempresult="$(( first_arg[index] | second_arg[index] ))"
+		result[$index]=${tempresult}
+		(( index += 1 ))
+	done
+
+	print ${result[@]}
+}
+
+function chex_not
+{
+	eval set -A first_arg $1	# eval to make it an array
+	size=${#first_arg[*]}
+
+	typeset -i16 tempresult
+
+	integer index=0
+	while (( index < size ))
+	do
+		tempresult="$(( ( ~ first_arg[index] ) & 16#FF ))"
+		result[$index]=${tempresult}
+		(( index += 1 ))
+	done
+
+	print ${result[@]}
+}
+
+#ip=$( dd_to_chex 131.215.134.23 )
+#net=$( dd_to_chex 255.255.0.0 )
+#tnet=$( chex_not "$net" )
+#bcast=$( chex_or "$tnet" "$ip" )
+#ddbcast=$( chex_to_dd "$bcast" )
+
+#dd_to_chex "1.2.3.4"
+#chex_to_hex "$( dd_to_chex "1.2.3.4" )"
+
+#out="$( chex_not "$( dd_to_chex "1.2.0.0" )" )"
+#print $out
+#out="$( chex_to_hex "$out" )"
+#print $out

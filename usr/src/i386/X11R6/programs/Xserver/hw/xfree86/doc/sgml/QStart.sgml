@@ -1,0 +1,386 @@
+<!doctype linuxdoc system>
+
+ <article>
+
+ <title>	Quick-Start Guide to XFree86 Setup
+
+ <author> Joe Moss
+ <date> 13 November 1995
+
+ <abstract>
+	Current releases of XFree86 include several tools that can help
+to automate the process of server configuration. Much of the existing
+documentation, however, describes how to do the job manually, including
+many technical details.
+
+	For those users with esoteric hardware or with the desire to
+get their hands dirty under the hood, this is great, but many users are
+using common hardware and just want to get X up and running quickly.
+This guide is for them.
+
+ </abstract>
+
+<toc>
+
+<sect>  Before You Start
+<p>
+	There are a few bits of information that you will need to have
+	before you can setup the server:
+	<descrip>
+	 <tag> The model name of your video card </tag> 
+	  Make sure you know the exact model name of the card.  It
+	  may help to also know the graphics chipset, RAMDAC, and
+	  clock chip used on your card.
+	 <tag> The amount of memory on your video card </tag>
+	  Find out how many megabytes of RAM are on your video card.
+	 <tag> Your monitor's specifications </tag> 
+	  Specifically, you need to know the horizontal sync rate(s),
+	  and vertical refresh rate(s).  These are <bf>important</bf>!
+	  Consult your monitor's manual.
+	 <tag> The protocol your mouse uses </tag> 
+	  Different mice use different methods to communicate their
+	  movements to the computer.  Some mice may use more than
+	  one (for example, they may have a switch on them to select
+	  between two options).  If you can't find this out, you
+	  can try assuming it uses a common protocol, such as that
+	  used by <tt>Microsoft</tt> mice.
+	</descrip>
+
+<sect>  What to Do - An Overview
+<p>
+	Okay, now that you have the necessary information (you do
+	have it don't you? the previous section is a necessary step),
+	you basically have three steps you need to do:
+	<itemize>
+	 <item>Run <tt>xf86config</tt> and answer the questions
+	 <item>Fix up the generated XF86Config
+	</itemize>
+	Why did I list only two steps, after I said there were three?
+	Well, that's because after doing the first two (and step two
+	might not even be needed, if you're lucky) you should be able
+	to run the X server, it just might not display as well as it
+	could.  If by chance, you can't get the server working after
+	performing the above steps, see the troubleshooting section.
+
+	To get things looking just right, you'll want to do step three:
+	<itemize>
+	 <item>Use <tt>xvidtune</tt> to improve the display
+	</itemize>
+
+	All of these steps are explained in detail in the following
+	sections.  If you're in a real hurry you can probably skip the
+	section explaining <tt>xf86config</tt>, because it's pretty
+	good about explaining itself when you run it.
+
+<sect>  Running <tt>xf86config</tt>
+<p>
+	From a text screen, run the <tt/xf86config/ program.  This
+	program should be run as <it/root/ (although not absolutely
+	necessary, it will allow xf86config to do more of the work
+	for you).  You can press your interrupt character (usually
+	Control-C or perhaps Delete), at any time to stop the program,
+	if you need to.  You can just start it over again.
+
+	The <tt/xf86config/ program provides instructions on screen
+	as to what you need to do.  Following are some notes that
+	document the various stages in the process. They should help
+	you get through the process quickly and provide some
+	documentation for those people who like to know what they're
+	getting themselves into, before running a program.
+
+<sect1>	The intro screen
+<p>
+	First, <tt/xf86config/ begins by telling you a few things like
+	the fact that it can help you setup an XF86Config file or that
+	you can do the job yourself with an editor.  Just read what
+	it says and press <sf/Enter/ when done.
+	
+<sect1>	Getting your <tt>PATH</tt> right
+<p>
+	The program will next check that you have the directory
+	<tt>/usr/X11R6</tt> (the standard installation directory)
+	on your system and tell you that it needs to be in your
+	<tt/PATH/ environment variable.
+
+	It will also check if you have the
+	<tt>/usr/X386</tt> directory as used by older (pre 3.0)
+	versions of XFree86.  If by chance you do, it will warn you
+	that <tt>/usr/X11R6</tt> must be before <tt>/usr/X386</tt>
+	in your <tt/PATH/.
+
+	If everything is okay, just press Enter and go on, otherwise
+	press Control-C to exit and make any necessary changes and
+	restart <tt/xf86config/.
+	
+<sect1>	Mouse setup
+<p>
+	Pick the mouse type from the menu and enter the name of the
+	device to which mouse is connected, as directed.
+
+	If you are using an OS (e.g. SVR4, SCO) that has a built in
+	mouse driver that the Xserver could use, you'll need to edit
+	the XF86Config file to setup your mouse, so just pick any
+	mouse from the list and press enter when asked for the device.
+
+	If you don't know which protocol your mouse uses, you'll just
+	have to guess (the xf86config program will give you some hints
+	as to which might be most likely) and then see the
+	troubleshooting section if it doesn't work when you run the
+	server.
+	
+<sect1>	Keyboard setup
+<p>
+	Simply answer yes to the question regarding keyboard setup.
+	
+	If there is some reason you need to use the right-alt and
+	control keys for something else, you can enter no.
+
+<sect1>	Monitor setup
+<p>
+	Setting up a monitor consists of entering the specifications
+	of your monitor and a description of the model and manufacturer.
+
+	You are first asked for the horizontal sync rate.  It is
+	<bf/VERY/ important to enter the correct value(s) from the
+	manual. If one of the ranges given matches the rate of your
+	monitor, then pick it, otherwise pick <tt/custom/ and enter
+	the values from your manual.
+
+	Next is the vertical refresh rate. Again, it is <bf/VERY/
+	important that this parameter be specified correctly.
+	Enter it in a manner similar to the horizontal sync rate.
+	
+	<it>If either rate is mis-specified, it can result in damage
+	to your monitor.</it>
+
+	Finally, you are asked for an "identifier", your monitor
+	manufacturer, and model.  You can just press enter to
+	get through these quickly.
+	
+<sect1>	Selecting your card
+<p>
+	You are next asked if you would like to view the database of
+	cards.  Picking your card from the list will cause the answers
+	to the questions in the next two sections to be filled in for
+	you and so can save a little time.
+
+	If your card does not appear in the list, just press <tt/q/
+	and enter to skip on to the next step - where you'll have to
+	answer the questions yourself.
+	
+<sect1>	Server selection
+<p>
+	If you selected your card in the previous step, then server
+	selection is easy - just use the recommendation from the
+	database.
+
+	If you have a card which uses one of the chipsets for which a
+	specific server exists (Mach8, Mach32, Mach64, AGX/XGA,
+	8514/A, S3, ET4000/W32, I128, P9000) you'll want to pick the
+	<tt/accel/ option.
+
+	Otherwise you'll probably want to use the SVGA server.
+
+	Next, answer yes when the program asks if you want it to
+	set the symbolic link for you.  If you picked the <tt/accel/
+	option, you'll also need to indicate which particular
+	accelerated server to link to.
+	
+<sect1>	Screen/Video configuration
+<p>
+	Pick the appropriate option from the list to indicate the
+	amount of memory on your video card.
+
+	Then you are asked to provide and identifier, the manufacturer,
+	and the model of your card.  You can just press enter to skip
+	through these, if you wish.
+
+	Next, the program will ask for the type of RAMDAC and Clockchip
+	on your card.  If your card was in the database, you should
+	just to tell it to use the values from the database.
+
+	If you don't have one of the listed RAMDACs or Clockchips
+	on your card, just press enter when asked what type you have.
+	If you do not have a programmable clock chip, the program will
+	next attempt to probe to find out what clock rates are
+	supported by your clock chip.
+	
+<sect1>	Mode Selection
+<p>
+	Now you get to tell the program which video modes you would
+	like to be able to run. 
+
+	The program will show you the common modes that should work
+	with your card (some might not work with your monitor, but
+	if you've correctly specified the monitor's sync rates, the
+	X server will just ignore them when it runs).
+
+	You could just accept the settings as they are given, but
+	you'll probably wish to reverse the order.  For example, if
+	you have a card with 1 Meg RAM, it will list the modes
+	<tscreen><verb>
+		"640x480" "800x600" "1024x768" for 8bpp
+	</verb></tscreen>
+
+	Select <tt/1/ to change the settings for 8bpp and the type
+	<tt/432/ to select the reverse order.
+
+	When you've select the modes, in the order you wish, select
+	option <tt/4/ to continue.
+	
+<sect1>	Creating the <tt>XF86Config</tt> file
+<p>
+	The program will now ask if you would like to write the
+	configuration settings you've selected to the file
+	<tt/XF86Config/. Answer yes.
+	
+<sect1>	Some final notes
+<p>
+	Lastly, the program tells you that it's finished its part
+	of this process and counsels you to check the file before
+	using it.  The next section covers the changes that are most
+	likely to be needed.
+	
+<sect>  Fixing the XF86Config file
+<p>
+	Use an editor to look at the <tt/XF86Config/ file. Here are
+	some things that may need to be changed:
+	<itemize>
+	 <item>If you are running an operating system which has
+	       built-in mouse support, you'll want to change the
+	       <tt/Pointer/ section.  Specifically, you should set
+	       the <tt/Protocol/ to <tt/OSMouse/ (SCO) or <tt/Xqueue/
+	       (SVR4, some SVR3) and you should remove the <tt/Device/
+	       line.
+	 <item>If you are running a system with the Xqueue event driver
+	       and would like to use it, change the <tt/Protocol/
+	       setting in the <tt/Keyboard/ section to <tt/Xqueue/.
+<!--  What else should be added here?  -->
+	</itemize>
+
+	Once you are satisfied that the configuration is correct, copy
+	the XF86Config file to <tt>/usr/X11R6/lib/X11</tt> and run
+	the 'startx' command.
+
+	You should now have a running X server.  If it's running but
+	the display doesn't look as good as you think it should (i.e.
+	it doesn't fill the whole screen, it's off-center, it's wrapping
+	around on one side, etc.) see the section on <tt/xvidtune/.
+	If there is some other problem, see the troubleshooting section.
+
+<sect>  Running <tt>xvidtune</tt>
+<p>
+	If you need to make adjustments to the video display,
+	<tt/xvidtune/ is the tool to use.
+
+	Simply enter the command <tt/xvidtune/ from a shell prompt
+	within an xterm.  Read the warning and click on <tt/OK/.
+	Next click on the <tt/Auto/ button.
+
+	Now click on whatever combination of <tt>Up/Down/Left/Right</tt>
+	<tt>Shorter/Taller/Wider/Narrower</tt> is need to adjust
+	the display to your liking.
+
+	If you are using a recent S3-based card there will be some
+	extra buttons and entries at the bottom (InvertVCLK, EarlySC,
+	and Blank Delays). These can help solve problems of the
+	display wrapping around a few pixels.
+
+	Once the display has been adjusted properly, press the <tt/show/
+	button to printout the correct <tt/ModeLine/ to put in the
+	<tt/XF86Config/ to make the server always use the current
+	display settings.  To aid in copying this information to your
+	XF86Config file, the modeline is also made the current
+	selection allowing you to just paste it into your editor.
+
+	If you would like to adjust your other modes, you can click
+	on the <tt/Next/ and <tt/Prev/ buttons to switch modes.
+
+	When you are through using <tt/xvidtune/ simply press on the
+	<tt/Quit/ button.
+
+<sect>  Troubleshooting
+<p>
+	Since you're reading this, something must not have gone
+	the way you had hoped (or else you just really enjoy reading).
+
+	Below are listed some common problems that may occur
+	during configuration and some hints for solving them.
+	However, there are just too many different combinations
+	of hardware and software configurations, and, well, just
+	too many things that can go wrong, for this document
+	and the tools it documents, to cover every case.
+
+	If after trying the steps in the previous sections and
+	checking the hints in this section, you still are unable
+	to get your system working, you'll have to read the full
+	documentation.  Read the README file for your card and
+	OS (if they exist), the XFree86 Configuration Guide
+	(README.Config), and the XF86Config man page.
+
+	You should also look at
+        <url name="the XFree86 FAQ" url="http://www.XFree86.org/FAQ">
+	for more up-to-date information,
+	especially if you are trying to configure a fairly new card.
+
+	If all else fails, you can try posting a message to
+	comp.windows.x.i386unix or comp.os.linux.x or send email
+	to XFree86@XFree86.org.
+
+<sect1>	The mouse doesn't move correctly, it stays in one area of the screen
+<p>
+	You've selected the wrong protocol for your mouse. Try a
+	different one.
+
+<sect1>	The server doesn't start, it says the mouse is busy.
+<p>
+	Well, it's probably right.  This most often happens on
+	Linux systems that have <tt/gpm/ running.  Kill the <tt/gpm/
+	process and try <tt/startx/ again.
+
+<sect1>	The middle button doesn't work.
+<p>
+	There's no easy answer to this one.  It's a lot of trial
+	and error.  You need to make sure you're running the right
+	protocol for your mouse.
+
+	Many three button mice are "dual protocol" which means that
+	they have both a 2-button and 3-button mode. The way to get
+	the mouse to switch into 3-button mode (which usually then
+	uses MouseSystems protocol) varies between different models.
+
+	You may need to slide a switch on the mouse or hold down the
+	middle button when starting the server.  Other methods of
+	switching modes can be done by the server, you just have to
+	find the right combination of settings for your mouse.  See
+	the Pointer section of the XF86Config man page for a complete
+	list of settings.
+
+<sect1>	The display is shifted to the left/right/top/bottom
+<p>
+	See the section on xvidtune.
+
+<sect1>	I don't appear to have xf86config or xvidtune on my system
+<p>
+	Hmmm. Three possibilities:
+	<enum>
+	 <item>You have a version of XFree86 that is older than 3.1.2.
+	       If this is the case then you probably aren't reading
+	       this document either, because it wasn't included in
+	       3.1.2 and earlier releases.  Please upgrade to the
+	       latest version.
+	 <item>Your <tt/PATH/ is not set correctly. Make sure it includes
+	       the bin directory for the XFree86 binaries (usually,
+	       <tt>/usr/X11R6/bin</tt>
+	 <item>You don't have a complete installation of XFree86.
+	       Go back to wherever you got XFree86 and get the missing
+	       pieces.
+	</enum>
+
+<!-- Lots of things still need to be added -->
+
+<verb>
+$XFree86: xc/programs/Xserver/hw/xfree86/doc/sgml/QStart.sgml,v 3.1 1995/12/28 03:49:32 dawes Exp $
+</verb>
+
+</article>

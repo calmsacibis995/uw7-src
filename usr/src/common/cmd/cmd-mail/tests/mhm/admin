@@ -1,0 +1,373 @@
+#!/bin/sh
+#ident "@(#)admin	11.2"
+#
+# Semi-automated test suite for GUI parts of multihome.
+#
+# Attempts to achieve complete branch coverage
+# of the front end files.
+# This script expects the test version (multihomet) to be installed
+# in /etc/mail/admin/multihome.
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+
+		retry=y
+		while [ "$retry" = "y" ]
+		do
+			${name}$i
+			code=$?
+			if [ $code -ne 0 ]
+			then
+				echo "Failed: retry (y/n) [y]: \c"
+				retry=`line`
+			else
+				retry=n
+			fi
+		done
+		passfail $code
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+        rm -fr /tmp/out /tmp/out1 /tmp/out2 /tmp/out1.db
+        rm -fr /var/internet/ip
+}
+
+main_1() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+        echo "$virt1 $virt1ip" > /tmp/out1
+        /etc/mail/makemap hash /tmp/out1 < /tmp/out1
+        cmp /tmp/out1.db $virtdomains.db
+
+	return $?
+}
+
+main_2() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_3() \
+{
+	cleanup
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_4() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm -test main_4 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_5() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "bad_syntax" > $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_6() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm -test main_6 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_7() \
+{
+	cleanup
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_8() \
+{
+	cleanup
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_9() \
+{
+	cleanup
+
+	$pgm -test main_9 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_10() \
+{
+	cleanup
+
+	$pgm -test main_10 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_11() \
+{
+	cleanup
+
+	$pgm -test main_11 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_12() \
+{
+	cleanup
+
+	$pgm -test main_12 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+main_13() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+edit_1() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+edit_2() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+edit_3() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+edit_4() \
+{
+	cleanup
+        mkdir -p /var/internet/ip/127.0.0.1/mail
+        echo "user1@$virt2 root" > $virtusers
+        echo "user2@$virt2 bin" >> $virtusers
+        /etc/mail/makemap hash $virtusers < $virtusers
+
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+
+	return $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+ cleanup
+TEST=""
+pgm=/etc/mail/admin/multihome
+
+# configuration variables:
+# our main machine
+host=eclipse.pdev.sco.com
+# our first virtual domain should be in DNS and be aliased.
+virt1=lunar.pdev.sco.com
+virt1ip=132.147.193.228
+# our second virtual domain should not be in DNS or have an alias.
+# it should also sort after virt1 in case-insensitive comparisons.
+virt2=yohoho.pdev.sco.com
+
+# the virtusers file to reduce some typing
+virtusers=/var/internet/ip/127.0.0.1/virtusers
+# the virtdomains file to reduce some typing
+virtdomains=/var/internet/ip/127.0.0.1/mail/virtdomains
+
+main="1 2 3 4 5 6 7 8 9 10 11 12 13"
+edit="1 2 3 4"
+
+testlist edit_ 4
+exit
+
+testlist main_ $main
+testlist edit_ $edit

@@ -1,0 +1,618 @@
+#ident	"@(#)floppy2	15.1"
+
+function need_hba
+{
+# need_hba(module)
+if [ -f "/etc/conf/drvmap.d/$1" ]
+then
+	grep "^$1|*|V" /etc/conf/drvmap.d/$1 >/dev/null 2>&1
+	return $?
+else
+	return 1
+fi
+}
+
+function badhba
+{
+integer _t _ocurwin
+typeset hbaname=$1
+
+if $SILENT_INSTALL 
+then
+	eval print "\"${HBA_NOROOM}\n${INSTERR}\""
+	read junk #wait for user to press "enter"
+	halt
+else
+	_ocurwin=$CURWIN
+	footer
+	eval display "\"$HBA_NOROOM\"" -bg $ERROR_BG -fg $ERROR_FG
+	_t=$CURWIN
+	minhba_choice
+	input_handler
+	wclose $_t
+	$DO_REBOOT && halt
+	rm -f /etc/conf/*/$hbaname
+	CURWIN=$_ocurwin
+fi
+}
+
+function minhba_choice
+{
+typeset minhba
+
+if [ -z "${MINHBA_OPT}" ]
+then
+	typeset OIFS="$IFS"
+	IFS="$nl"
+	set -A MINHBA_OPT ${MINHBA_CHOOSE}
+	IFS="$OIFS"
+fi
+minhbaopt=$MINHBA_OPT
+CHOOSE_FOOTER="$FDFS_FOOTER"
+choose -f -e -exit minhba_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$minhbaopt" "${MINHBA_OPT[@]}"
+}
+
+function minhba_exit
+{
+	case $CHOICE in
+	${MINHBA_OPT[0]})
+		DO_REBOOT=false
+		;;
+	${MINHBA_OPT[1]})
+		DO_REBOOT=true
+		;;
+	esac
+}
+
+function ihvresadd
+{
+# ihvresadd( module_name)
+# add drvmap, system, and master files to /etc/conf/*
+
+set -- ${1} ${FLPY}/*/root/tmp/${1}
+typeset _dir=$2
+
+if [ -f ${_dir}/Drvmap ]
+then
+	uncompress <${_dir}/Drvmap >/etc/conf/drvmap.d/${1} 2>/dev/null || cp ${_dir}/Drvmap /etc/conf/drvmap.d/${1} >/dev/null 2>&1
+else
+	rm -f /etc/conf/drvmap.d/${1}
+fi
+[ -f ${_dir}/System ] && {
+uncompress <${_dir}/System >/etc/conf/sdevice.d/${1} 2>/dev/null|| cp ${_dir}/System /etc/conf/sdevice.d/${1} >/dev/null 2>&1
+}
+[ -f ${_dir}/Master ] && {
+uncompress <${_dir}/Master >/etc/conf/mdevice.d/${1} 2>/dev/null|| cp ${_dir}/Master /etc/conf/mdevice.d/${1} >/dev/null 2>&1
+}
+}
+
+function ihvisloaded
+{
+# ihvisloaded (module_name)
+#
+# return 0 on false
+
+[ -n "$SH_VERBOSE" ] && set -x
+integer indx=1
+while [ "${IHVHBAS[indx]}" != END ]
+do
+
+	[ "${IHVHBAS[indx]}" = "$1" ] && break
+	let indx+=1
+done
+return $indx
+}
+
+function drv_xbus
+{
+# drv_xbus( abs_drvmap )
+typeset bus
+
+if [ -f "$1" ]
+then
+	case $(get_xbus) in
+	0|1)
+		bus=\|*ISA\|
+		;;
+	2)
+		bus=\|MCA\|
+		;;
+	esac
+	{ uncompress <$1 2>/dev/null || cat $1; } | grep $bus >/dev/null 2>&1
+	if (( $? ))
+	then
+		{ uncompress <$1 2>/dev/null || cat $1; } | grep \|PCI\| >/dev/null 2>&1
+		return $?
+	fi
+fi
+return 0
+}
+
+function copy_hba
+{
+# copy_hba( from_abs_dir, module)
+
+integer modsize=0 total_hba_mem=0 _rc=0
+typeset junk mod
+
+drv_xbus ${FLPY}/*/root/tmp/${2}/Drvmap || return 1
+
+ihvresadd $2
+
+if [ -f /etc/conf/mod.d/${2} ]
+then
+	rm -f /etc/conf/mod.d/${2}
+	(( HBA_MEM_LIMIT < 0 )) && let HBA_MEM_LIMIT*=-1
+fi
+
+(( HBA_MEM_LIMIT > 0 )) && {
+	ls -1 /etc/conf/mod.d | while read mod
+	do
+		ls -lL /etc/conf/mod.d/$mod | read junk junk junk junk modsize junk
+		let total_hba_mem+=modsize
+	done
+
+	ls -lL ${1}/${2} | read junk junk junk junk modsize junk
+
+	if (( (total_hba_mem+modsize) < HBA_MEM_LIMIT ))
+	then
+		cp ${1}/${2} /etc/conf/mod.d
+	else
+		need_hba $2 && badhba $2
+		let HBA_MEM_LIMIT*=-1
+		_rc=1
+	fi
+}
+return $_rc
+}
+
+function getfloppy
+{
+# getfloppy ( NEWIHV|LOAD_MOD|FORCE_LOAD, ...arg(s) )
+#	LOAD_MOD indx mod(s)
+# 
+
+[ -n "$SH_VERBOSE" ] && set -x
+
+typeset mod_name module modules line fn
+integer n m=0 _cpyerr=2 _rtn=1
+typeset mounted=NO cmd=$1
+typeset -L20 ffn
+
+while read line 
+do
+	fn=${line#*:*:}	# delete the first two fields
+	fn=${fn%%:*}	# delete all but the first field
+	modules="$modules $fn"
+done < ${FLPY}/etc/loadmods
+
+case $cmd in
+NEWIHV|FORCE_LOAD)
+	n=$2
+	;;
+LOAD_MOD)
+	n=$2
+	modules="$3"
+	;;
+esac
+
+cd /
+
+###
+# For each (selected) entry in $modules
+###
+for module in $modules
+do
+	ffn=$module
+	wprintf $CURWIN "\r%s $ffn"
+	if [ -f ${FLPY}/etc/conf/mod.d/${module} ]
+	then
+		if [ ! -f /etc/conf/mod.d/${module} ] || [ "$cmd" = FORCE_LOAD ]
+		then
+			copy_hba ${FLPY}/etc/conf/mod.d ${module}
+			_cpyerr=$?
+		fi
+	else
+		# This is a compressed archive of a module
+		if [ $mounted = NO ]
+		then
+			[ -d /.extra.d ] || mkdir /.extra.d
+			sh_mount -F memfs -o swapmax=2000000,rootmode=01777,sfp=65535 \
+				/memfs /.extra.d >/dev/null 2>&1
+			mounted=YES
+			cp ${FLPY}/etc/modules /.extra.d/modules
+		fi
+
+		cd /.extra.d
+		# Unwind module archive into tmp/$module directory
+		cpio -icdDZ -I ${FLPY}/${module}/root/tmp/${module}/mod*cpio.z \
+			>/dev/null 2>&1
+
+		# copy module
+		if [ ! -f /etc/conf/mod.d/${module} ] || [ $cmd = FORCE_LOAD ]
+		then
+			copy_hba /.extra.d/tmp/${module} ${module}
+			_cpyerr=$?
+			# If the module was not a stub module, mark that 
+			# we've succeeded in loading at least one module 
+			# off this HBA floppy. 
+			grep ${module} /.extra.d/modules >/dev/null 2>&1
+			if [ "$?" -gt 0 -a ! "$cmd" = LOAD_MOD ]
+			then
+				IHVHBASTUBS[n]="${IHVHBASTUBS[n]} ${module}"
+			fi
+		fi
+		# Clean up - we'll need the space
+		sh_rm -fr /.extra.d/tmp
+	fi
+	if [ $_cpyerr = 0 ]
+	then
+		[ ! "$cmd" = LOAD_MOD ] && {
+			IHVHBAMODS[n]="${IHVHBAMODS[n]} ${module}"
+			_rtn=0
+		}
+	else
+		[ "$cmd" = LOAD_MOD ] && break
+	fi
+done
+cd /
+# Unmount memfs if mounted
+[ $mounted = YES ] && sh_umount /.extra.d
+
+
+return $_rtn
+
+}
+
+function hba_done
+{
+case "$1" in
+0)
+	footer "$REMOVE_FLOPPY_FOOTER"
+	;;
+2)
+	footer "$FLOPPY_ERROR_FOOTER"
+	;;
+esac
+call sleep 5
+}
+
+function loadihv
+{
+# loadihv (args)
+# where args:
+#	NEWIHV
+#	MOD_LOAD, module_name(s)
+#	SID 
+#
+
+[ -n "$SH_VERBOSE" ] && set -x
+LDHBAWAITWIN=
+integer _indx=0 _j _t
+typeset reason=$1 loadname modules m
+
+if [ -z "$DCUCNFGIHV" ]
+then
+	integer HBADISKETTE=0
+fi
+
+case $reason in
+NEWIHV)
+	place_window $IHVwaitCols $IHVwaitLines 
+	_j=$CURWIN
+	wprintf $CURWIN "$IHVwait"
+	footer "$FLOPPY_MOUNT_FOOTER"
+	;;
+LOAD_MOD)
+	place_window $HBAwaitCols $HBAwaitLines 
+	_j=$CURWIN
+	wprintf $CURWIN "$HBAwait"
+	footer "Reloading $HBA_PROMPT "
+	;;
+SID)
+	place_window $SIDwaitCols $SIDwaitLines 
+	_j=$CURWIN
+	wprintf $CURWIN "$SIDwait"
+	footer "$FLOPPY_MOUNT_FOOTER"
+	;;
+esac
+
+if sh_mount -Fs5 -r /dev/dsk/f0t ${FLPY} || sh_mount -Fdosfs -r /dev/dsk/f0t ${FLPY} || sh_mount -Fs5 -r /dev/dsk/f1t ${FLPY} || sh_mount -Fdosfs -r /dev/dsk/f1t ${FLPY}
+then
+	# first check for SID diskette
+	if [ "$reason" = SID -o -f ${FLPY}/signature ]
+	then
+		if [ ! -f ${FLPY}/signature ]
+		then
+			footer "$SID_ERROR_FOOTER"
+			call sleep 5
+		else
+			grep -v '^$' ${FLPY}/signature | read SID_NAME
+			[ -n "$SID_NAME" ] && {
+				SID_MODE=true
+				eval footer "$SIDLOADFOOTER"
+				. ${FLPY}/sbin/sidrc
+			}
+		fi
+		wclose $_j
+	elif [ ! -f ${FLPY}/etc/load.name ]
+	then
+		footer "$FLOPPY_ERROR_FOOTER"
+		call sleep 5
+		wclose $_j
+		_indx=1
+	else
+		grep -v '^$' ${FLPY}/etc/load.name | read loadname
+		ihvisloaded "$loadname"
+		_indx=$?
+		if [ "${IHVHBAS[$_indx]}" = "$loadname" ]
+		then
+			if [ "$reason" = LOAD_MOD ]
+			then
+				set -A args $_indx "$2"
+			else
+				wclose $_j
+				display "$DUPIHVS" -bg $MAGENTA -fg $WHITE
+				_t=$CURWIN
+				HBAERROR_choice
+				input_handler
+				wclose $_t
+				if $DO_DISKETTE
+				then
+					IHVHBAMODS[$_indx]=""
+					set -A args $_indx
+					reason=FORCE_LOAD
+					_indx=0
+					place_window $IHVwaitCols $IHVwaitLines 
+					_j=$CURWIN
+					wprintf $CURWIN "$IHVwait"
+				else
+					sh_umount ${FLPY}
+					return 1
+				fi
+			fi
+		else
+			set -A args $_indx
+		fi
+		eval footer "$IHVLOADFOOTER"
+		call sleep 2
+		getfloppy $reason "${args[0]}" "${args[1]}"
+		if [ $? = 0 -a "$reason" = NEWIHV ]
+		then
+			IHVHBAS[_indx]="$loadname"
+			IHVHBAS[_indx+1]="END"
+			IHVHBAMEDIA[_indx]="diskette"
+		fi
+		wclose $_j
+	fi
+	sh_umount ${FLPY}
+else
+	wclose $_j
+	footer "$WELCOME_FOOTER"
+	display -w "$HBA_EMSG3" -bg $ERROR_BG -fg $ERROR_FG
+	msg "$FLOPPY_MOUNT_ERROR"
+	input_handler
+	msg ""
+	
+fi
+}
+
+function promptfloppy
+{
+# promptfloppy ()
+# ask user to insert next floppy
+
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset _t
+	wclose 
+	loadihv NEWIHV
+	display "$HBAFLOP_MORE" -below 4
+	_t=$CURWIN
+	DISKETTE_choice hba_more
+	input_handler
+	wclose $_t
+	$DO_DISKETTE && promptfloppy
+	footer "$GENERIC_WAIT_FOOTER"
+}
+
+function floppy2
+{
+# floppy2()
+# driver for IHVHBA floppy processing
+
+
+	typeset _mod m
+
+	[ -n "$SH_VERBOSE" ] && set -x
+	(( ${MEMSIZE} < (10*ONEMEG) )) && HBA_MEM_LIMIT=${MEMSIZE}*5/100
+	$SILENT_INSTALL || {
+		IHVKEY=0
+		typeset _t
+		while  $SID_MODE && [ -z "$SID_NAME" ]
+		do
+			display "$SID_EXPLAIN" -below 4
+			_t=$CURWIN
+			DISKETTE_choice sid
+			input_handler
+			wclose $_t
+			if $DO_DISKETTE
+			then
+				[ -s /etc/conf/fsmod.d/s5 ] && {
+					modreg 4 s5
+					sh_modadmin -l /etc/conf/fsmod.d/s5 >/dev/null 2>&1
+					rm -f /etc/conf/fsmod.d/s5
+				}
+				[ -s /etc/conf/fsmod.d/dosfs ] && {
+					modreg 4 dosfs
+					sh_modadmin -l /etc/conf/fsmod.d/dosfs >/dev/null 2>&1
+					rm -f /etc/conf/fsmod.d/dosfs
+				}
+				loadihv SID
+			else
+				SID_MODE=false
+			fi
+		done
+		display "$HBAFLOP_EXPLAIN" -below 4
+		_t=$CURWIN
+		DISKETTE_choice hba_first
+		input_handler
+		wclose $_t
+		$DO_DISKETTE && {
+			[ -s /etc/conf/fsmod.d/s5 ] && {
+				modreg 4 s5
+				sh_modadmin -l /etc/conf/fsmod.d/s5 >/dev/null 2>&1
+				rm -f /etc/conf/fsmod.d/s5
+			}
+			[ -s /etc/conf/fsmod.d/dosfs ] && {
+				modreg 4 dosfs
+				sh_modadmin -l /etc/conf/fsmod.d/dosfs >/dev/null 2>&1
+				rm -f /etc/conf/fsmod.d/dosfs
+			}
+			promptfloppy
+		}
+	}
+
+ 	[ "${IHVHBAS[0]}" = END ] && {
+		for _mod in /etc/conf/hbamod.d/*
+		do
+			if [ ! -f /etc/conf/mod.d/${_mod##*/} ]
+			then
+				if drv_xbus /etc/conf/drvmap.d/${_mod##*/}
+				then
+					ln -s /etc/conf/hbamod.d/${_mod##*/} /etc/conf/mod.d/${_mod##*/}
+				else
+					rm -f /etc/conf/hbamod.d/${_mod##*/}
+				fi
+			else
+				rm -f /etc/conf/hbamod.d/${_mod##*/}
+			fi
+		done
+		while read _mod
+		do
+			_mod=${_mod#*:*:} # delete the first two fields
+			_mod=${_mod%%:*}  # delete all but the first field
+			[ ! -f /etc/conf/hbamod.d/$_mod ] && continue
+			m="$m $_mod"
+		done < /etc/loadmods
+		IHVHBAMODS[0]="$m"
+		IHVHBAS[0]="SBF base HBAs"
+		IHVHBAMEDIA[0]="basemedia"
+	}
+
+	$BACK_END_MANUAL || dcuprompt 0
+}
+
+function DISKETTE_choice
+{
+	typeset OIFS="$IFS" hfile=hba.select
+	IFS="$nl"
+	case $1 in
+	sid)
+		set -A FLOP_OPT ${SIDFLOP_CHOOSE}
+		hfile=sid.select
+		;;
+	hba_more)
+		set -A FLOP_OPT ${HBAFLOP_CHOOSE_MORE}
+		;;
+	hba_first)
+		set -A FLOP_OPT ${HBAFLOP_CHOOSE}
+		;;
+	esac
+	IFS="$OIFS"
+	HBAFLOP=$FLOP_OPT
+	CHOOSE_FOOTER="$FDFS_FOOTER"
+	choose -f -e -help "helpwin $hfile" -exit HBA_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$HBAFLOP" "${FLOP_OPT[@]}"
+}
+
+function HBA_exit
+{
+	case $CHOICE in
+	${FLOP_OPT[0]})
+		DO_DISKETTE=true
+		;;
+	${FLOP_OPT[1]})
+		DO_DISKETTE=false
+		;;
+	esac
+}
+
+function HBAERROR_choice
+{
+	typeset OIFS="$IFS"
+	IFS="$nl"
+	set -A FLOP_OPT ${HBAERROR_CHOOSE}
+	IFS="$OIFS"
+	HBAFLOP=$FLOP_OPT
+	CHOOSE_FOOTER="$GENERIC_CHOOSE_FOOTER"
+	choose -f -e -exit HBA_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$HBAFLOP" "${FLOP_OPT[@]}"
+}
+
+function load_CD_hbaflop
+{
+	typeset CDROOT="/cd-rom/.hba.flop"
+	typeset loadname OFLPY=$FLPY
+	integer index
+
+	[ ! -f ${CDROOT}/etc/load.name ] && return 0
+	grep -v '^$' ${CDROOT}/etc/load.name | read loadname
+	ihvisloaded $loadname
+	index=$?
+	[ "${IHVHBAS[index]}" = "$loadname" ] && return 0
+
+	FLPY=$CDROOT
+	getfloppy "NEWIHV" $index  && {
+		IHVHBAS[index]=$loadname
+		IHVHBAS[index+1]="END"
+		IHVHBAMEDIA[index]="cdrom"
+	}
+	FLPY=$OFLPY
+	return 0
+}
+
+function load_CD_hbaboot
+{
+	typeset CDROOT="/cd-rom/.hba.boot"
+	typeset x mod mlist=""
+	typeset -L20 ffn
+	integer total_hba_mem=0 modsize=0
+
+	ls -1 /etc/conf/mod.d | while read mod
+	do
+		ls -lL /etc/conf/mod.d/$mod  | read x x x x modsize x
+		let total_hba_mem+=modsize
+	done
+ 
+	for mod in ${CDROOT}/etc/conf/hbamod.d/*
+	do
+		mod=${mod##*/}
+ 		[ -f /etc/conf/mod.d/$mod ] && continue # Skip if added from floppy
+		drv_xbus ${CDROOT}/etc/conf/drvmap.d/$mod || continue
+		ls -lL ${CDROOT}/etc/conf/hbamod.d/$mod | read x x x x modsize x
+		let total_hba_mem+=modsize
+		if (( total_hba_mem >= HBA_MEM_LIMIT ))
+		then
+			need_hba $mod && badhba $mod
+			let HBA_MEM_LIMIT*=-1
+			return 0
+		fi
+		ffn=$mod
+		wprintf $CURWIN "\r%s $ffn"
+		for dir in hbamod.d drvmap.d mdevice.d sdevice.d
+		do
+			ln -s ${CDROOT}/etc/conf/${dir}/${mod} /etc/conf/${dir}/${mod}
+		done > /dev/null 2>&1
+		ln -s /etc/conf/hbamod.d/$mod /etc/conf/mod.d > /dev/null 2>&1
+	done
+ 
+	# This is how floppy2 handles base HBA's
+	while read mod
+	do
+		mod=${mod#*:*:} # delete the first two fields
+		mod=${mod%%:*}  # delete all but the first field
+		[ -f /etc/conf/mod.d/$mod ] && [ -f ${CDROOT}/etc/conf/hbamod.d/$mod ] && mlist="$mlist $mod"
+	done < /etc/loadmods
+
+	IHVHBAMODS[0]="${IHVHBAMODS[0]} $mlist"
+ 
+	return 0
+}

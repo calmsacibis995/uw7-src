@@ -1,0 +1,23 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-t 10 -be contrib/api parallel-test-1");
+
+	&verify((grep(/PASS/,@journal)==0) &&
+		grep(/TC End, Test Case terminated by signal 15/, @journal)==1);
+	
+}
+
+sub tp2{
+	$tp=tp2;
+	&run("-b contrib/api parallel-test-2");
+	&run("-t 15 -x $ENV{TET_ROOT}/contrib/api/altexec.cfg -be contrib/api parallel-test-2");
+	&verify((grep(/PASS/,@journal)==1));
+}
+	
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

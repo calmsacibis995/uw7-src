@@ -1,0 +1,383 @@
+#******************************************************************************
+#                                globals
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)globals	11.1	10/22/97	12:38:58
+#
+# Copyright (C) 1995-1996 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+loadlibindex /usr/lib/sysadm.tlib
+
+## string defines
+#################
+#
+set PROGNAME	"[file tail $argv0]"
+set VIDPATH	"/usr/X11R6.1/lib/vidconf"
+set SSOVIDPATH	$VIDPATH
+set DEVICES	"$VIDPATH/devices"
+set SCRIPTS	"$VIDPATH/scripts"
+set ICON_PATH	"$SSOVIDPATH/icons"
+set GRAFINFO	"/usr/X11R6.1/lib/grafinfo"
+set TESTMODE	"/usr/X/bin/TestMode"
+set MONINFO	"$GRAFINFO/moninfo"
+set GRAFDEV	"$GRAFINFO/grafdev"
+set GRAFMON	"$GRAFINFO/grafmon"
+set DOCHOOK	"$GRAFINFO/dochook"
+set GRAFPARSE	"$SSOVIDPATH/grafparse"
+set NDSCRIPT	"$SSOVIDPATH/AOF/bin/ndscript"
+set NDSTOP	"QUIT"
+set NDSAFE	"SAFE_DETECT"
+set NDUNSAFE	"UNSAFE_DETECT"
+set XGI		".xgi"
+set MON		".mon"
+set HELPDIR	"/usr/lib/scohelp/hooks"
+set HELPBOOK	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_HELPBOOK]
+set HOOK	".hk"
+set TMPL	".tmpl"
+set HOOKFILE	"$HELPBOOK$HOOK"
+set HOOKTMPL	"$HELPBOOK$TMPL"
+set DUMMYFILES	"appian/reniii imagraph/imaitx microfield/mfgi8 numbernine/n9gxi"
+
+set EMULATOR	"/usr/bin/X11/scoterm"
+# turn off menu bar, set icon and menu title,
+# disable close (only), execute command (must be last)
+set EM_OPTS	"-menu -n \"%s\" -title \"%s\" -xrm *mwmFunctions:30 -e %s"
+
+set TMP		"/tmp"
+set UTMPDIR	"/usr/tmp"
+set CLASSFILE	"class.h"
+set NEWUNIX	"$VIDPATH/.new_unix"
+set CLASS_DIR	"/etc/conf/pack.d/cn"
+set LINK_DIR	"/etc/conf/cf.d"
+set LINK_CMD	"link_unix"
+set LINK_WRAPPER "$SSOVIDPATH/enter.sh"
+set SHUTDOWN_CMD "/etc/shutdown -i0"
+set VIDPARSE	"$VIDPATH/vidparse"
+
+# .sig 
+set AOFDIR	"/usr/X11R6.1/lib/vidconf/AOF"
+set AOFBIN	"${AOFDIR}/bin"
+set AOFSIG	"${AOFDIR}/.sig"
+set AWK		"/usr/bin/awk"
+set SUM		"/usr/bin/sum"
+set VESA_P	"${AOFBIN}/vesa"
+set VROM	"${AOFBIN}/vrom"
+
+set TMP_FILE "$TMP/class[id process]"
+set VIDSETUP_ERR	"$TMP/vidsetup.err[id process]"
+set SIGLIST "1 2 3 15"
+set SIGSAVE {}
+
+#
+## global defines
+###################
+
+# default to Motif, not on charm
+set CHARM 0
+set INTERACTIVE 1
+set RELOAD 0
+
+set IBMVGA $GRAFINFO/ibm/vga.xgi
+set DEFADAPTER ibm.vga.vga.640x480-16
+set DEFMONITOR ibm.vga:misc.standard
+
+# drawn list rows and columns
+# maximum limits for both CHARM and MOTIF are
+# console screen size and 640x480 graphical screen size
+
+# rows and columns for charm are static
+set CHARM_LIST_ROWS 5
+set CHARM_ADDLIST_COLS 53
+set CHARM_DEVLIST_COLS 48
+set CHARM_MAINLIST_COLS 56
+set CHARM_MAINDEVLIST_COLS 56
+set CHARM_MODLIST_COLS 47
+set CHARM_REMLIST_COLS 56
+
+#XXX - drawnlist rows are off by one
+set MOTIF_MINLIST_ROWS 6
+set MOTIF_MAXLIST_ROWS 10
+set MOTIF_MINLIST_COLS 20
+set MOTIF_MAXLIST_COLS 33
+
+set MOTIF_ADDLIST_COLS 30
+set MOTIF_DEVLIST_COLS 40
+set MOTIF_MODLIST_COLS 28
+set MOTIF_REMLIST_COLS 35
+
+
+# Overall width/height of screens.  Lowest common 
+# denominators are MOTIF (using IBM VGA 640x480)
+# CHARM.
+#
+# MOTIF settings must be set smaller to account for 
+# pmwm decoration, FormDialog button size and allow
+# a few more pixels in case a larger font is used.
+# If any changes are made - retest on CHARM and on 
+# MOTIF at IBM VGA 640x480.  Review all screens that 
+# use these settings.
+set CHARMWIDTH 78
+set CHARMHEIGHT 21
+set MOTIFWIDTH 618
+set MOTIFHEIGHT 384
+
+
+# point N pick list (ppl) window size defines
+set MOTIFMAXPPLCOLS 100
+set CHARMMAXPPLCOLS 70
+set MINPPLCOLS 40
+set MAXPPLROWS 9
+set MINPPLROWS 4
+
+# Fudge factor
+# columnValue size adjustment for MOTIF
+set MOTIFCOLVALOFFSET 6
+# '*' marker and space by vertical scrollbar take up 2 extra spaces
+set CHARMCOLVALOFFSET 2
+
+# return values
+set OK 0
+set FAIL 1
+set RELINK 5
+
+#
+## global variables
+###################
+#------------------------------------------------------------------------------
+# Fundamental Globals: appvals array
+#
+# To reduce global name space pollution, a handful of variables that are
+# global for convenience are collected under one name, appvals, which is
+# a tcl array. See the other files for possible additions to appvals.
+#------------------------------------------------------------------------------
+set appvals(localhost) {}	;# this local host name
+set appvals(managedhost) {}	;# managedhost will change if requested
+set appvals(openhost) 1		;# enable SaOpenHost services
+
+# current selection holding the card (index=0), monitor (index=1)
+# and resolution(s) (index=2(,3,4 ...)). This list holds only one 
+# card configuration at a time.  It has the same format as 'screenList'.
+set curList {}
+# current index into curList
+set curIndex 0
+
+# main dialog id
+set DIALOGID ""
+
+# main screen list holding cards, monitors and resolution(s)
+# same format as 'curList'
+# screenList \
+# { {ICONLIST xxx} {TYPE CARD|MONITOR|RESOLUTION} {DESCRIPTION desc} \
+#   {VENDOR vendor} {MODEL model} {CLASS class} {MODE mode} \
+#   {MONVENDOR monvendor} {MONMODEL monmodel} \
+#   {TTYSHEAD {{tty1 head#} {tty2 head#} ...} } \
+#   ...}
+#
+# screenList indexes usually have the type field set to:
+# CARD, MONITOR, RESOLUTION, RESOLUTION, ... then repeat with CARD again.
+#
+# Index=0 TYPE==CARD, Index=1 TYPE==MONITOR, Index=2 TYPE=RESOLUTION,
+# Index=4 TYPE==RESOLUTION|CARD
+#
+# screenList \
+# { {ICONLIST {5 6 11}} {TYPE CARD} {DESCRIPTION {IBM VGA}} \
+#   {VENDOR ibm} {MODEL vga} {CLASS {}} {MODE {}} \
+#   {MONVENDOR {}} {MONMODEL {}} {TTYSHEAD {{}}}} \
+# { {ICONLIST {3 4 1 9 11}} {TYPE MONITOR} {DESCRIPTION {Standard VGA}} \
+#   {VENDOR ibm} {MODEL vga} {CLASS {}} {MODE {{}}} \
+#   {MONVENDOR misc} {MONMODEL standard} {TTYSHEAD {{}}}} \
+# { {ICONLIST {4 0 1 10 11}} {TYPE RESOLUTION} \
+#	{DESCRIPTION {VGA 640x480 16-color}} \
+#   {VENDOR ibm} {MODEL vga} {CLASS vga} {MODE 640x480-16} \
+#   {MONVENDOR misc} {MONMODEL standard} {TTYSHEAD {{/dev/tty10 0}}}}
+#
+set screenList {}
+# current index into screenList
+set screenIndex 0
+
+# videoListMap index counter, start at 1000 to make copying easier
+set vlMapCnt 1000
+# monitorListMap index counter, start at 1000 to make copying easier
+set mlMapCnt 1000
+
+# total number of cards configured in screenList
+set TOTALCARDS 0
+
+# track whether to save
+set SAVE 0
+
+# flag to determine if video adapters and monitors were already loaded
+set VLOADED 0
+set MLOADED 0
+
+# allow access to view only depending on user (default to regular user)
+set VIEWONLY 1
+
+
+#
+## icon list definitions
+###################
+set VID_ICON	"5 6 11"
+set VID_ICON_G	"7 8 11"
+
+set MON_ICON	"3 4 1 9 11"
+set MON_ICON_G	""
+
+set RES_ICON_LEG "2 0 1 10 11"
+set RES_ICON	"4 0 1 10 11"
+set RES_ICON_G 	""
+
+set AUTO_SINGLE	"5 6 1 11"
+set AUTO_FIRST	"5 6 12 11"
+set AUTO_MIDDLE	"11 11 2 11"
+set AUTO_LAST	"11 11 13 11"
+
+
+#
+## data structures
+################## 
+# ttyList - array of keyed lists indexed by tty devices.  
+#	Holds each line found in the grafdev file.  Valid flag
+#	is normally 1 except during updating.  Repeats for 
+#	multiheaded entries.
+# ttyList(tty) {{VALID boolean} \
+#	{VENDOR vendor} {MODEL model} {CLASS class} {MODE mode}} ...
+# ttyList(/dev/tty01) {{VALID 1} \
+#	{VENDOR ibm} {MODEL vga} {CLASS vga} {MODE 640x480-16}}
+catch {unset ttyList}
+set ttyList(x) {}
+unset ttyList(x)
+
+# ttyString - array indexed by tty devices mapping to strings
+# ttyString(tty) ttystring
+#
+# ttyString(/dev/tty01) F1
+catch {unset ttyString}
+set ttyString(x) {}
+unset ttyString(x)
+
+catch {unset tmpttyList}
+set tmpttyList(x) {}
+unset tmpttyList(x)
+
+# videoList - array of keyed lists indexed by a count that corresponds
+#	to the sorting of all VENDOR and MODELs during grafinfo file 
+#	parsing.  Holds specific video adapter information.
+# videoList(index) \
+# {VENDOR vendor} {VENDORPR vendorpr} {MODEL model} {MODELPR modelpr} \
+# {VIDSCRIPT scriptpath} {RESOLUTIONS {
+# {{CLASS class} {CLASSPR classpr} {MODE mode} {MODEPR {modepr}} \
+#  {COMMENT {}}} ... }}
+#
+# videoList(  59) \
+# {VENDOR ibm} {VENDORPR IBM} {MODEL vga} {MODELPR VGA} \
+# {VIDSCRIPT {}} {RESOLUTIONS { \
+# {{CLASS vga} {CLASSPR VGA} {MODE 640x480-16} {MODEPR {640x480 16-color}} \
+# {COMMENT {}}} ... }}
+catch {unset videoList}
+set videoList(x) {}
+unset videoList(x)
+
+# videoListMap - array indexed by vendor and model. Contains 
+#	a position count that maps to a videoList index.
+# videoListMap(vendor.model) index
+# videoListMap(ibm.vga) 59
+catch {unset videoListMap}
+set videoListMap(x) {}
+unset videoListMap(x)
+
+# videoVendorList - array indexed by vendor. Contains models
+#	that correspond to a specific vendor.
+# videoVendorList(vendor) model1 model2 ...
+# videoVendorList(ibm) 8514a vga
+catch {unset videoVendorList}
+set videoVendorList(x) {}
+unset videoVendorList(x)
+
+# resPos - array indexed by a position count that corresponds 
+#	to each line in the resolution form.  Mapping used to 
+#	hold the class and mode of the selected resolution.
+# resPos(pos) class mode
+# resPos(   1) vga 640x480-16
+catch {unset resPos}
+set resPos(x) {}
+unset resPos(x)
+
+# monitorList - array of keyed lists indexed by a count that 
+#	corresponds to the sorting of all MONVENDOR and MONMODELs
+#	during moninfo file parsing.  Holds monitor information.
+# monitorList(index) MONVENDOR monvendor MONMODEL monmodel DESCRIPTION desc
+# monitorList(  78) MONVENDOR misc MONMODEL standard DESCRIPTION Standard VGA
+catch {unset monitorList}
+set monitorList(x) {}
+unset monitorList(x)
+
+# monitorListMap - array indexed by monvendor and monmodel. 
+#	Contains a position count that maps to a monitorList
+#	index.
+# monitorListMap(monvendor.monmodel) index
+# monitorListMap(misc.standard) 78
+catch {unset monitorListMap}
+set monitorListMap(x) {}
+unset monitorListMap(x)
+
+# monList - array indexed by vendor and model.  Holds the monvendor
+#	and monmodel which corresponds to a monitorListMap index.
+# monList(vendor.model) monvendor monmodel
+# monList(ibm.vga) misc standard
+catch {unset monList}
+set monList(x) {}
+unset monList(x)
+
+# Traversing lists example.
+# tty device:	 /dev/tty01
+# video adapter: ibm.vga.vga.640x480-16 
+# monitor:       misc.standard
+# 
+# ttyList(/dev/tty01): VALID 1 VENDOR ibm MODEL vga CLASS vga MODE 640x480-16
+#                                     ^^^       ^^^
+#                                      |         |
+#                 +--------------------+---------+---------------------------+
+#                 |                                                          |
+#              ---+---                                                       |
+# videoListMap(ibm.vga): 59                                                  |
+#                        ^^                                                  |
+#                         |                                                  |
+#             vv----------+                                                  |
+# videoList(  59): \                                                         |
+# {VENDOR ibm} {VENDORPR IBM} {MODEL vga} {MODELPR VGA} \                    |
+# {RESOLUTIONS { \                                                           |
+# {{CLASS vga} {CLASSPR VGA} {MODE 640x480-16} {MODEPR {640x480 16-color}} \ |
+# {COMMENT {}}} ... }}                                                       |
+#                                                                            |
+#            +---------------------------------------------------------------+
+#            |
+#         ---+---
+# monList(ibm.vga): misc standard
+#                   ^^^^-^^^^^^^^
+#                               |
+#                vvvv+vvvvvvvv--+
+# monitorListMap(misc.standard): 78
+#                                ^^
+#                                 |
+#               vv----------------+
+# monitorList(  78) MONVENDOR misc MONMODEL standard DESCRIPTION Standard VGA
+
+set OptionDescs [list \
+{"-grafdev" "grafdev" "optionSepArg" "" "/usr/X11R6.1/lib/grafinfo/grafdev"} \
+{"-grafmon" "grafmon" "optionSepArg" "" "/usr/X11R6.1/lib/grafinfo/grafmon"} \
+{"-help" "help" "optionNoArg" "1" "0"} \
+{"-novidparse" "novidparse" "optionNoArg" "1" "0"} \
+{"-rc" "rc" "optionNoArg" "1" "0"} \
+{"-silent" "silent" "optionNoArg" "1" "0"} \
+{"-update" "update" "optionNoArg" "1" "0"}]
+

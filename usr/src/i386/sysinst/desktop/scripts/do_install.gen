@@ -1,0 +1,347 @@
+#ident	"@(#)do_install.gen	15.1	97/12/19"
+
+#
+# Define the shell linked-in functions
+#
+. /funcrc
+#
+# Clear the screen to blue?
+#
+print -n "\033[0m\033[=0E\033[=7F\033[=1G\033[0m\033[J\033[7m\033[m\033[H\033[J"
+
+#
+# Remove old files. emulator is for floating point?
+#
+call unlink /sbin/wsinit
+call unlink /etc/emulator
+
+#
+# Set up env vars
+#
+export SERIALCONS TERM SH_VERBOSE SH_DEBUG
+export PATH=:/usr/bin:/sbin:/etc:/usr/sbin
+export FPATH=/etc/inst/scripts
+export SHELL=/usr/bin/ksh
+export ENV=/funcrc
+export LANG=C
+
+export SHADOW_BOXES=1
+#
+# These will be filled in by cmd/pick.set.sh, creating the real
+# do_install. 
+#
+typeset -x REL_FULLNAME="XXX"
+typeset -x RELEASE="XXX"
+typeset -x VERSION="XXX"
+typeset -x FULL_SET_NAME="XXX"
+typeset -x SET_NAME="XXX"
+typeset -x LANG="XXX"
+typeset -x LC_CTYPE="XXX"
+typeset -x RELPKGS="XXX"
+
+
+# Screw the pick.set.sh, Use LC_CTYPE=en for i10n
+if [ "$LANG" != "ja" ]
+then
+        export TERM=AT386-ie
+        /usr/bin/kb_remap -f 88591
+        export LANG=en
+        export LC_CTYPE=en
+fi 
+
+#
+# Save some of this data to ivar. boot2 will need REL_FULLNAME to tell
+# which is the correct boot 2 disk, for example.
+#
+. /isl/ivar.ksh
+ivar source /isl/ifile
+
+if [ -x /usr/bin/bootparam ]
+then
+	bootparamlist=""
+	paramline=$(bootparam | grep "^BUSTYPES=")
+	[[ "$paramline" = "BUSTYPES="* ]] && {
+		tmp=${paramline#BUSTYPES=}
+		OIFS="$IFS"
+		IFS=","
+		for i in $tmp
+		do
+			i=${i%%[0-9]*}
+			bootparamlist="$bootparamlist $i"
+		done
+		IFS="$OIFS"
+		svar set BUSTYPES "$bootparamlist"
+	}
+	bootparamlist=""
+		
+	paramline=$(bootparam | grep "^USERPARAMS=")
+	[[ $paramline = USERPARAMS=* ]] && {
+		tmp=${paramline#USERPARAMS=}
+		OIFS="$IFS"
+		IFS=","
+		for i in $tmp
+		do
+			bootparamlist="$bootparamlist $i"
+		done
+		IFS="$OIFS"
+	}
+
+	for param in $bootparamlist
+        do
+                case "$param" in
+                INITSTATE) ;;
+                IVAR_*)
+                        # Strip off the ivar_ part of the param name.
+                        varname=${param#IVAR_}
+                        # Get the value.
+                        temp=$(bootparam | grep "^$param=")
+			eval $temp
+                        eval ivar set \$varname \"\$$param\"
+			;;
+                *)
+                        bootparam | grep "^$param="
+			;;
+                esac
+        done >/stand/boot.append
+        rm -f /usr/bin/bootparam
+	cat /stand/boot.append >>/stand/boot
+fi
+
+if ivar check DEBUG_ALL
+then
+	exec 2>> /tmp/do_install
+	set -x
+	for mod in `list_all_modules`
+	do
+		[[ $mod != *[!-A-Za-z0-9_]* ]] &&
+			ivar set debug_$mod true
+	done
+else
+	exec 2> /dev/null
+	set +x
+fi
+
+ivar set REL_FULLNAME 	"$REL_FULLNAME"
+ivar set RELEASE 	"$RELEASE"
+ivar set VERSION 	"$VERSION"
+ivar set FULL_SET_NAME 	"$FULL_SET_NAME"
+ivar set SET_NAME 	"$SET_NAME"
+ivar set RELPKGS 	"$RELPKGS"
+
+call sysconf 11
+pagesize=16#${RET#0x}			# size of memory page
+((pagesize=pagesize))
+call sysconf 40
+pages=16#${RET#0x}			# number of memory pages
+((pages=pages))
+#(( mem = pagesize * pages ))
+
+mem=`long_mul $pagesize $pages`
+ivar set MEMSIZE $mem
+
+(( ppm = 1048576 / pagesize ))		# hope pagesize < 1 MB
+(( mem = (pages+ppm-1) / ppm ))		# round up
+ivar set MEMSIZEMB $mem
+
+stty erase '^h' kill '^u' intr '^?' cs8 -istrip -parenb
+
+#
+# the old transition between step1rc and step2rc
+#
+#export ENV=/step2rc
+#exec /sbin/sh -i -o vi
+#
+
+
+#function step2fatal
+#{
+#faultvt "Internal error: /inst should never exit\n" "$GenericFatalErr"
+#halt
+#}
+#
+# the install didn't use to return to here, now it does
+# trap "step2fatal" 0
+#
+
+#
+# Turn on vi-like command line editing
+#
+set -o vi
+
+#
+# Mount the proc filesystem
+#
+mkdir /proc
+sh_mount -Fproc /proc /proc
+
+#
+#-----------------------------------------------------------------------
+#
+
+
+#
+# Pretend we have translations
+#
+cd /etc/inst/locale
+# Stop linking stuff, we are going international
+#[ -d fr ] || ln -s C fr
+#[ -d de ] || ln -s C de
+#[ -d it ] || ln -s C it
+#[ -d es ] || ln -s C es
+#[ -d ja ] || ln -s C ja
+[ -d C ] && ln -s C en
+cd /
+
+
+#
+# TEMPORARY DEBUGGING HACK
+#
+#if [ "$INITSTATE" = "" ]
+#then
+#	INITSTATE=all 
+#	export INITSTATE
+#fi
+
+
+#
+# Decode the INITSTATE debugging
+#
+do_kshells=false
+do_ivar=false
+#for word in $INITSTATE
+#do
+#	case $word in
+#		ksh)	do_kshells=true
+#			ivar set debug_ksh true;;
+#		ivar)	do_ivar=true;;
+#		all)	for mod in `list_all_modules`
+#			do
+#				[[ $mod != *[!-A-Za-z_]* ]] &&
+#					ivar set debug_$mod true
+#			done
+#			do_ivar=true;;
+#		*)	ivar set debug_$word true;;
+#	esac
+#done
+
+#
+# Should we do ivar logging? We can't use ivar, so use an enviornment
+# variable.
+#
+export DEBUG_IVAR=$do_ivar
+
+
+#
+# Save a copy in ivar. Might want to delete this later, so modules can't
+# create their own initstate syntax.
+ivar set INITSTATE "$INITSTATE"
+
+#
+# Delete it. All input to modules goes through ivar.
+#
+INITSTATE=""
+export INITSTATE
+
+
+#
+# Replace this with a real execution of a korn shell, when we figure
+# out how to get it to run in interactive mode...
+#
+function do_a_kshell
+{
+	(
+	stty sane
+	echo
+	echo "Type exit to contine...."
+	echo
+	while true
+	do
+		echo -n "$1"
+		read line
+		[ "$line" = exit ] && break
+		eval $line
+		rc=$?
+		[ $rc -eq 0 ] || echo "  (rc = $rc)"
+	done
+	)
+}
+
+
+#
+# Pre debugging?
+#
+$do_kshells && do_a_kshell "Pre ui> "
+
+#
+# Do the user interface
+#
+ivar comment "Starting sequencer with $ui_mapfile"
+ivar stop
+/isl/sequencer $ui_mapfile
+retval=$?
+ivar resume
+
+LANG=`ivar get LANG`
+LANG=${LANG:-C}
+. /etc/inst/locale/$LANG/menus/global.txtstrings
+if [ $retval -ne 0 ]
+then
+	faultvt "$SEQ_ERROR"
+	halt
+fi
+ivar comment "Done with first sequencer call"
+
+#
+# Mid debugging?
+#
+$do_kshells && do_a_kshell "Midpoint> "
+
+#
+# Do the install
+#
+ivar comment "Starting sequencer with $install_mapfile"
+ivar stop
+#/isl/sequencer $install_mapfile
+
+exec /isl/install_modules/inst
+
+if [ $? -ne 0 ]
+then
+	faultvt "$INST_ERROR"
+	halt
+fi
+ivar resume
+ivar comment "Done with second sequencer call"
+ivar stop
+
+#
+# Post debugging?
+#
+$do_kshells && do_a_kshell "Post install> "
+
+#
+# We made it!
+#
+# Reboot the computer
+#
+call uadmin 2 1
+
+
+#
+# You can do this instead, for debugging
+#stty sane
+#echo
+#echo "SEQUENCERS EXITED. INSTALL IS OVER."
+#echo
+#while true
+#do
+#        echo -n "all done> "
+#        read line
+#        eval $line
+#        rc=$?
+#        [ $rc -eq 0 ] || echo "  (rc = $rc)"
+#done
+#
+
+
+	

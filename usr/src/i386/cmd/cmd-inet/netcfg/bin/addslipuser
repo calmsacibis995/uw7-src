@@ -1,0 +1,40 @@
+#!/bin/sh
+#ident	"@(#)addslipuser	1.2
+#
+# Copyrighted as an unpublished work.
+# (c) Copyright 1987-1993 Lachman Technology, Inc.
+# All rights reserved.
+#
+#      SCCS IDENTIFICATION
+#
+# unique finds a unique user id searching upward from a given number
+#
+unique() {
+	userid=$1
+	while grep :${userid}: /etc/passwd > /dev/null 2>&1
+	do
+		userid=`expr $userid + 1`
+	done
+	echo $userid
+}
+
+# main()
+
+if [ ! "$1" ] || [ ! "$2" ] ; then
+	echo "Usage: $0 login_name slip_shell"
+	exit 1
+fi
+ 
+who=`who am i | awk '{ print $1 }'`
+[ "$who" = "" ] && who=root
+[ "$who" != "root" ] && {
+	echo "You are not logged in as root.
+Please log in as root to run $0."
+	exit 1
+}
+
+grep "^$1:" /etc/passwd >/dev/null || {
+	userid=`unique 200`
+	useradd -u $userid -d /usr/lib/slip -c "SLIP Login Account" -m -s $2 $1
+	echo "You must set the password for $1 before using the account."
+}

@@ -1,0 +1,65 @@
+#!/sbin/sh
+#******************************************************************************
+# preremove
+#------------------------------------------------------------------------------
+# Postinstall script for the SCO Audio Subsystem
+#------------------------------------------------------------------------------
+# @(#)preremove	6.1	97/09/05
+# 
+# Copyright (C) The Santa Cruz Operation, 1996-1997.
+# This Module contains Proprietary Information of
+# The Santa Cruz Operation, and should be treated as Confidential.
+#------------------------------------------------------------------------------
+# Revision History:
+# 1997-Jan-18, shawnm, created
+#===============================================================================
+
+CLASSCONF=/sbin/classconf
+OSACONF=/sbin/osaconf
+AUCFGDIR=/usr/lib/audio/audioconfig
+MODADMIN=/sbin/modadmin
+MODDIRS="/etc/conf/node.d /etc/conf/pack.d /etc/conf/sdevice.d /etc/conf/.sdevice.d /etc/conf/modnew.d /etc/conf/mod.d"
+IDINSTALL=/etc/conf/bin/idinstall
+IDCONFUPDATE=/etc/conf/bin/idconfupdate
+
+if [ -x ${AUCFGDIR}/cleanup ]; then \
+        ${AUCFGDIR}/cleanup; \
+fi
+
+mv ${AUCFGDIR}/audinfo/config.dat ${AUCFGDIR}/audinfo/config.Z
+
+echo "Removing soundon.log"
+rm -f /usr/lib/audio/drivers/soundon.log
+
+${IDINSTALL} -d oss
+
+# Unload the PnP driver
+echo "Unloading PnP driver"
+${MODADMIN} -U PnP
+${IDINSTALL} -d PnP
+# Have to do this manually
+rm -f /dev/pnp
+
+${IDCONFUPDATE}
+
+# Remove PnP and OSS module files
+echo "Remove PnP and OSS module files"
+for i in ${MODDIRS} ; \
+do \
+	rm -f $$i/PnP $$i/oss; \
+done
+rm -f /etc/rc2.d/S96soundon
+
+# unregister the audiocard and audioconfig classes
+echo "Unregistering object classes with the scoadmin framework"
+${CLASSCONF} -D sco audiocard audioconfig.osa
+${CLASSCONF} -D sco audioconfig audioconfig.osa
+${OSACONF} -D sco audioconfig.osa LOOP_BACK sco_Tcl_osa ${AUCFGDIR}/audioconfig.osa
+echo "Done registering object classes with the scoadmin framework"
+
+# unregister objects with the scoadmin launchpad
+echo "Unregistering the SCOadmin Audio Config Manager object"
+/usr/bin/scoadmin -f -d ${AUCFGDIR}/audioconfig.obj
+rm -f /usr/lib/PnP.tndx
+echo "Done unregistering the SCOadmin Audio Config Manager object"
+

@@ -1,0 +1,408 @@
+#ident	"@(#)ii_hw_config	15.1"
+
+#
+#  Write the configuration parms out to disk for the other scripts' use.
+#
+function ii_hw_update
+{
+	echo "========== in ii_hw_update ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+	
+	#
+	#  Make sure form is completely filled in with valid values
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	[ -f /tmp/${ETH_HW}.irq ] && {
+		chk_irq
+		[ $? != 0 ] && {
+			II_FLD[${II_ERR}]="${INETINST_IRQ_PROMPT}"
+			let II_ERR+=1
+		}
+	}
+	[ -f /tmp/${ETH_HW}.ioaddr ] && {
+		chk_io
+		[ $? != 0 ] && {
+			II_FLD[${II_ERR}]="${INETINST_IO_PROMPT}"
+			let II_ERR+=1
+		}
+	}
+	[ -f /tmp/${ETH_HW}.ramaddr ] && {
+		chk_ram
+		[ $? != 0 ] && {
+			II_FLD[${II_ERR}]="${INETINST_RAM_PROMPT}"
+			let II_ERR+=1
+		}
+	}
+	[ -f /tmp/${ETH_HW}.dma ] && {
+		chk_dma 
+		[ $? != 0 ] && {
+			II_FLD[${II_ERR}]="${INETINST_DMA_PROMPT}"
+			let II_ERR+=1
+		}
+	}
+
+	[ -n "$CUSTOM_NUM" ] && {
+		typeset param_cnt=1
+		while [ "$param_cnt" -le "$CUSTOM_NUM" ]
+		do
+			check_custom ${param_cnt}
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${display[$param_cnt]}"
+				let II_ERR+=1
+			}
+			let param_cnt+=1
+		done
+	}
+
+        if [ ${II_ERR} != 0 ]
+        then
+                eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+                return 1
+	fi
+
+	#
+	#  Addresses of the form 'xxx-xxx' need to be converted
+	#  to 'xxx xxx' for resmgr.
+	#
+	typeset START END
+	[ ! -z "${MY_IO}" ] && {
+		OIFS=${IFS}
+		IFS="-"
+		echo "${MY_IO}" | read START END
+		echo "IO=\"${START} ${END}\"" >> /tmp/ii_parms
+		IFS=${OIFS}
+	}
+	[ ! -z "${MY_RAM}" ] && {
+		OIFS=${IFS}
+		IFS="-"
+		echo "${MY_RAM}" | read START END
+		echo "RAM=\"${START} ${END}\"" >> /tmp/ii_parms
+		IFS=${OIFS}
+	}
+
+	[ ! -z "${MY_UNAME}" ] && echo "MY_UNAME=\"$MY_UNAME\"" >> /tmp/ii_parms
+	[ ! -z "${ETH_HW}" ] && echo "ETH_HW=\"$ETH_HW\"" >> /tmp/ii_parms
+	[ ! -z "${ETH_ARCH}" ] && echo "ETH_ARCH=\"$ETH_ARCH\"" >> /tmp/ii_parms
+	[ ! -z "${MY_IRQ}" ] && echo "IRQ=\"$MY_IRQ\"" >> /tmp/ii_parms
+	[ ! -z "${MY_DMA}" ] && echo "II_DMA=\"$MY_DMA\"" >> /tmp/ii_parms
+	[ ! -z "${II_POST_CMD}" ] && echo "II_POST_CMD=\"$II_POST_CMD\"" >> /tmp/ii_parms
+
+	#
+	#  If we have one or more CUSTOM keywords, add to the parms file.
+	#
+	typeset loc_param PARAM_STRING XTRA_PARAMS
+	typeset param_cnt=1
+	[ ! -z "${CUSTOM_NUM}" ] && echo "CUSTOM_NUM=\"${CUSTOM_NUM}\"" >> /tmp/ii_parms
+       	while [ "$param_cnt" -le "$CUSTOM_NUM" ]
+	do
+	XTRA_PARAMS=${param_vals[$param_cnt]}
+        for i in ${param_names[$param_cnt]}
+        do
+		echo ${XTRA_PARAMS} | read PARAM_STRING XTRA_PARAMS
+                if [ "$i" = "${param[$param_cnt]}" ]
+                then
+			echo "II_CUST_VAL[${param_cnt}]=\"$PARAM_STRING\"" >> /tmp/ii_parms
+			echo "II_CUSTOM[${param_cnt}]=\"$i\"" >> /tmp/ii_parms
+# add parameter name 
+			echo "II_CUST_PNAME[${param_cnt}]=\"${rm_param[${param_cnt}]}\"" >> /tmp/ii_parms
+                        break
+                fi
+        done
+	let param_cnt+=1
+	done
+
+# lastly, if BUS= is set to ISA then write that information too
+	if [ "${BUS}" = "ISA" ]
+	then
+		echo "NIC_IS_ISA=\"1\"" >>/tmp/ii_parms
+	fi
+
+	return 0
+}
+
+#
+# do_param - supply the customized parameter choices
+#
+function do_param
+{
+        typeset loc=$1
+        CHOOSE_TITLE="${title[$loc]}"
+        choose -f "" ${param_names[$loc]}
+}
+
+#
+#  Radio box to select IRQ
+#
+function do_irq
+{
+	IRQ_CHOICES=`cat /tmp/$ETH_HW.irq`
+	if [ -z "${IRQS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A IRQS ${IRQ_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_IRQ_PROMPT"
+	CHOOSE_FOOTER="$INETINST_IRQ_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_IRQ}" ] && DFLT_IRQ=${MY_IRQ}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_IRQ" "${IRQS[@]}"
+}
+
+
+#
+#  Radio box to select I/O Address Range (port)
+#
+function do_io
+{
+	IO_CHOICES=`cat /tmp/$ETH_HW.ioaddr`
+	if [ -z "${IOS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A IOS ${IO_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_IO_PROMPT"
+	CHOOSE_FOOTER="$INETINST_IO_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_IO}" ] && DFLT_IO=${MY_IO}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_IO" "${IOS[@]}"
+}
+
+
+#
+#  Radio box to select RAM Address Range (memory)
+#
+function do_ram
+{
+	RAM_CHOICES=`cat /tmp/$ETH_HW.ramaddr`
+	if [ -z "${RAMS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A RAMS ${RAM_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_RAM_PROMPT"
+	CHOOSE_FOOTER="$INETINST_RAM_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_RAM}" ] && DFLT_RAM=${MY_RAM}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_RAM" "${RAMS[@]}"
+}
+
+#
+#  Radio box to select DMA for Bus Mastering cards
+#
+function do_dma
+{
+	DMA_CHOICES=`cat /tmp/$ETH_HW.dma`
+	if [ -z "${DMAS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A DMAS ${DMA_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_DMA_PROMPT"
+	CHOOSE_FOOTER="$INETINST_SDMA_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_DMA}" ] && DFLT_DMA=${MY_DMA}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_DMA" "${DMAS[@]}"
+}
+
+#
+#  Exit function to check validity of RAM Address selection
+#
+function chk_ram
+{
+	typeset chk_ret=0
+	grep -i "^${MY_RAM}$" /tmp/${ETH_HW}.ramaddr > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_RAM}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of I/O Address selection
+#
+function chk_io
+{
+	typeset chk_ret=0
+	grep -i "^${MY_IO}$" /tmp/${ETH_HW}.ioaddr > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_IO}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of IRQ selection
+#
+function chk_irq
+{
+	typeset chk_ret=0
+	grep -i "^${MY_IRQ}$" /tmp/${ETH_HW}.irq > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_IRQ}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of DMA selection
+#
+function chk_dma
+{
+	typeset chk_ret=0
+	grep -i "^${MY_DMA}$" /tmp/${ETH_HW}.dma > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_DMA}"
+	fi
+	return $chk_ret
+}
+
+#
+#  We just came from ii_hw_select, which wrote our selected
+#  board's config data to disk.  Now we generate menus from that
+#  info so the user can select the parms for their board.
+#
+function ii_hw_config
+{
+	exec 2>> /tmp/ii_look
+
+	echo "========== in ii_hw_config ==========" >> /tmp/ii_look
+	[ "${II_VERBOSE}" ] && set -x
+
+	. /tmp/ii_parms
+
+	[ "${OLD_CONFIG_FILE}" != "${CONFIG_FILE}" ] && {
+		unset MY_DMA MY_RAM MY_IO MY_IRQ MY_BUS
+		unset DMAS RAMS IOS IRQS BUSES
+	}
+
+	. ${CONFIG_DIR}/${CONFIG_FILE}
+
+	typeset wid=$CURWIN
+
+	integer II_HW_LEN=2
+	[ -f /tmp/${ETH_HW}.dma ] && let II_HW_LEN+=1
+	[ -f /tmp/${ETH_HW}.ramaddr ] && let II_HW_LEN+=1
+	[ -f /tmp/${ETH_HW}.ioaddr ] && let II_HW_LEN+=1
+	[ -f /tmp/${ETH_HW}.irq ] && let II_HW_LEN+=1
+	[ -n "$CUSTOM_NUM" ] && let II_HW_LEN+=${CUSTOM_NUM}
+
+
+	#
+	# Determine width of this menu
+	#
+	integer II_WIDTH=18		# Width of RAM Address input field
+	integer II_WIDTH_MAX=0
+
+	(( ${#INETINST_IRQ_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_IRQ_PROMPT} ))
+	(( ${#INETINST_IO_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_IO_PROMPT} ))
+	(( ${#INETINST_RAM_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_RAM_PROMPT} ))
+	(( ${#INETINST_DMA_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_DMA_PROMPT} ))
+	(( ${#INETINST_CABLE_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_CABLE_PROMPT} ))
+	(( II_WIDTH += II_WIDTH_MAX ))
+
+	#This is in case the title is the widest piece of the form.
+	(( ${#INETINST_HW_CONF_TITLE} + ${#ETH_HW} + 5 > II_WIDTH )) &&
+		(( II_WIDTH = ${#INETINST_HW_CONF_TITLE} + ${#ETH_HW} + 5 ))
+
+	place_window -right 1 ${II_WIDTH} ${II_HW_LEN} -current 'footer "$GENERIC_FORM_FOOTER"' -fg $COMBO2_FG -bg $COMBO2_BG -title "${INETINST_HW_CONF_TITLE} - ${ETH_HW}"
+	open_form -exit ii_hw_update
+	typeset HWFID=$FID
+
+	# if the board can have IRQ selected, add that field.
+	[ -f /tmp/${ETH_HW}.irq ] && {
+		add_field -ix ${II_WIDTH_MAX}+2 -help 'helpwin net.inter' -exit 'chk_irq' -entry 'msgnoerr $INETINST_IRQ_PROMPT' -p "${INETINST_IRQ_PROMPT}" -choice "do_irq" -ilen 3 MY_IRQ
+	}
+
+	# if the board can have I/O Address selected, add that field.
+	[ -f /tmp/${ETH_HW}.ioaddr ] && {
+		add_field -ix ${II_WIDTH_MAX}+2 -help 'helpwin net.ioadd' -exit 'chk_io' -entry 'msgnoerr $INETINST_IO_PROMPT' -p "${INETINST_IO_PROMPT}" -choice "do_io" -ilen 14 MY_IO
+	}
+
+	# if the board can have RAM Address selected, add that field.
+	[ -f /tmp/${ETH_HW}.ramaddr ] && {
+		add_field -ix ${II_WIDTH_MAX}+2 -help 'helpwin net.ramadd' -exit 'chk_ram' -entry 'msgnoerr $INETINST_RAM_PROMPT' -p "${INETINST_RAM_PROMPT}" -choice "do_ram" -ilen 14 MY_RAM
+	}
+
+	# if the board can have DMA Channel selected, add that field.
+	[ -f /tmp/${ETH_HW}.dma ] && {
+		add_field -ix ${II_WIDTH_MAX}+2 -help 'helpwin net.dma' -exit 'chk_dma' -entry 'msgnoerr $INETINST_DMA_PROMPT' -p "${INETINST_DMA_PROMPT}" -choice "do_dma" -ilen 3 MY_DMA
+	}
+
+	# snarfed from nics pkg request script for CUSTOM keywords.
+	# first, parse all the stuff in CUSTOM
+	if [ -n "$CUSTOM_NUM" ]
+	then
+                tmp=1
+                while [ "$tmp" -le "$CUSTOM_NUM" ]
+                do
+		    OIFS=${IFS}
+		    IFS=${nl}
+		    set ${CUSTOM[$tmp]}
+		    rm_param[$tmp]=$1		# Resmgr parameter name
+		    param_vals[$tmp]=$2		# Parameter values
+		    param_names[$tmp]=$3	# Parameter names
+		    display[$tmp]=$4		# Parameter descriptor
+		    helpfile[$tmp]=$5		# Help file name
+		    title[$tmp]=$6		# Title of field
+		    IFS=${OIFS}
+
+		    add_field param[$tmp] -ix ${II_WIDTH_MAX}+2 -ilen 14 \
+		      -help "helpwin ${helpfile[$tmp]##*/}" \
+		      -choice "do_param $tmp" -p "${display[$tmp]}" \
+		      -entry "msgnoerr ${title[$tmp]}" \
+		      -exit "check_custom $tmp"
+		    let tmp+=1
+                done
+        fi
+
+	run_form $HWFID
+}
+
+#
+# check that user's selection is acceptable
+#
+function check_custom
+{
+        typeset loc=$1
+        for i in ${param_names[$loc]}
+        do
+                if [ "$i" = "${param[$loc]}" ]
+                then
+                        return 0
+                fi
+        done
+        return 1
+}
+
+

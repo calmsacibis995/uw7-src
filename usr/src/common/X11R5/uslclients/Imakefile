@@ -1,0 +1,71 @@
+/**/#ident	"@(#)r5misc:uslclients/Imakefile	1.30.3.2"
+/*
+ *	@(#)r5misc:uslclients/Imakefile	1.30.3.2	8/15/97	18:09:05
+ *
+ *	Thu Aug 14 16:46:24 PDT 1997	-	hiramc@sco.COM
+ *	- moving olwm olam olprintscreen olpixmap xterm
+ *	- dsdm dtedit dtclock dtcalc dthelp USLGAMES
+ *	- xidlelock xidleprefs dtcolor xdpydev dtfirst upgrade
+ *	- to NOTNOW_OL from OPENLOOKSUBDIRS
+ *	- And xinit xpr xhints xdemo xevent xinfo moved to NOTNOW
+ *	- from XWINSUBDIRS
+ *	- components ls nfs scoadmin netware and nuc are still using
+ *	- parts of the R5 build
+ *	Mon Feb 10 12:47:37 EST 1997	-	davef@sco.com
+ *	- removed dtsched
+ *	Tue Jan 21 12:28:27 EST 1997	-	hiramc@sco.COM
+ *	- order of SUBDIRS is important in the Parallel case
+ *	- because xinfo and xevent depend on oldattlib
+ *	- and remove dtmail from the OPENLOOK list
+ *	Mon Jan 20 13:47:50 EST 1997	-	hiramc@sco.COM
+ *	- moved xauth xlswins xsetroot xwd xwud to NOTNOW
+ *	- have been replaced by X11R6 equivalents
+ *	Fri Jan 10 19:09:19 EST 1997	-	hiramc@sco.COM
+ *	- add Parallel to Make Subdirs and Depend Subdirs
+ *	- pget -Rgemini_bl6 is the release before any of these changes.
+ */
+
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+NOTNOW	= xauth xlswins xsetroot xwd xwud xinit xpr xhints xdemo xevent xinfo
+NOTNOW_OL	=	dtmail dtsched olwm olam olprintscreen olpixmap xterm\
+	dsdm dtedit dtclock dtcalc dthelp USLGAMES \
+	xidlelock xidleprefs dtcolor xdpydev dtfirst upgrade
+
+#if HasBuiltinExtension
+        DTBUILTIN = dtbuiltin
+#endif
+         USLGAMES = train breakout
+
+/* XWINSUBDIRS was:
+ *    XWINSUBDIRS = oldattlib xinit xpr \
+ *		xhints xdemo xevent xinfo
+ */
+
+/* OPENLOOKSUBDIRS was:
+ *  OPENLOOKSUBDIRS = libDtI libMDtI olwm olam olprintscreen olpixmap xterm \
+ *		DTBUILTIN dsdm dtm dtedit dtclock dtadmin \
+ *		dtcalc dthelp USLGAMES wksh xdm xidlelock xidleprefs \
+ *		dtcolor dticon xdpydev dtfirst upgrade
+ * with the dollar and parens removed from DTBUILDIN USLGAMES
+ */
+
+      XWINSUBDIRS = oldattlib
+
+  OPENLOOKSUBDIRS = libDtI libMDtI $(DTBUILTIN) wksh xdm dtadmin dtm dticon 
+
+#ifdef BuildOnlyXWIN
+          SUBDIRS = $(XWINSUBDIRS)
+#elif BuildOnlyOpenLook
+          SUBDIRS = $(OPENLOOKSUBDIRS)
+#else
+          SUBDIRS = $(XWINSUBDIRS) $(OPENLOOKSUBDIRS)
+#endif
+
+ParallelMakeSubdirs($(SUBDIRS))
+ParallelDependSubdirs($(SUBDIRS))
+
+install::
+	(set -x; $(MKDIRHIER) $(DESKTOPDIR)/Applications;\
+	$(MKDIRHIER) $(DESKTOPDIR)/Utilities);

@@ -1,0 +1,50 @@
+#ident	"@(#)devintf:common/cmd/devintf/groups/mbrship/list/Text.list	1.4.5.1"
+#ident  "$Header$"
+
+title="Group Membership"
+help=OPEN TEXT $INTFBASE/Text.itemhelp "LISTING"
+begrow=any
+begcol=any
+framemsg=`readfile $INTFBASE/trept.msg`
+wrap=FALSE
+`
+    set -l LIFE=longterm ;
+`
+lifetime=$LIFE
+altslks=TRUE
+
+`
+    echo $ARG2 | /usr/bin/sed "s/ /\\
+/g" | /usr/bin/sort | set -l LIST ;
+    echo "$LIST" >/tmp/list ;
+    echo "$LIST" | /usr/bin/wc -l | /usr/bin/sed "s/ //g" | set -l NROWS ;
+    echo "$LIST" | $OBJ_DIR/maxcol | set -l NCOLS ;
+    shell expr $DISPLAYW - 4 | set -l MAXCOLS ; 
+    if [ $NCOLS -gt $MAXCOLS ] ;
+    then set -l NCOLS=$MAXCOLS ;
+    else expr $NCOLS + 1 | set -l NCOLS ;
+    fi ;
+`
+
+rows=`
+    shell expr $DISPLAYH - 2 | set -l MAXROWS ;
+    if [ $NROWS -gt $MAXROWS ] ;
+    then set -l NROWS=$MAXROWS ;
+    fi;
+`$NROWS
+columns=$NCOLS
+text="$LIST"
+
+name="HELP"
+button=9
+action=help
+
+name="CONT"
+button=11
+action=`
+    set -l LIFE=shortterm ;
+`update $FRAMENUM true
+
+name="CANCEL"
+button=14
+action=cleanup

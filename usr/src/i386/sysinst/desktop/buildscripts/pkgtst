@@ -1,0 +1,41 @@
+#!/usr/bin/ksh
+#ident	"@(#)pkgtst	15.1"
+test -n "$SUM" || SUM=false
+pkgdir=$1
+shift
+
+. pkgmapfuncs
+for i
+do
+	echo ============= Processing $i
+	cd $pkgdir/$i
+	egrep '^:| [fv] ' pkgmap | {
+		read line
+		set -- $line
+		parts=$2
+		while read line
+		do
+			mapline "$line"
+			rest="${line#* * * * }"
+			#rest="${rest# }"
+			if [ "$parts" = 1 ]
+			then
+				use=root$path
+			else
+				use=root.$part$path
+			fi
+			set -- $(ls -l $use)
+			if [ "$size" != "$5" ]
+			then
+				echo $use is tainted
+			elif $SUM
+			then
+				set -- $(sum "$use")
+				if [ "$sum" != $1 ]
+				then
+					echo $use is tainted
+				fi
+			fi
+		done
+	}
+done

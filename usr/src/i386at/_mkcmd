@@ -1,0 +1,33 @@
+#ident	"@(#)mk:i386at/:mkcmd	1.2.2.11"
+#ident "$Header$"
+#
+echo "START `basename $0` `date`"
+trap 'exit 1' 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+shift 5
+
+ROOT=${Root}
+MACH=${Mach}
+TOOLS=${Tools}
+export MACH ROOT TOOLS
+
+cd ${Root}/usr/src/${Work}/cmd
+
+for i in $@
+do
+	if [ -d $i ] ; then
+		echo "=== $i"
+		cd $i
+		timex ${Tools}/usr/ccs/bin/${Cpu}osenv ${Cpu}make -f $i.mk install
+		cd ..
+	fi
+done
+
+echo "ENDED `basename $0` `date`"
+exit 0

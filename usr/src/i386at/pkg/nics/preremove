@@ -1,0 +1,116 @@
+#ident	"@(#)preremove	20.1"
+
+exec 2>/tmp/remove.err
+DEBUG=on
+REBUILD_FLAG=false
+
+[ -n "$DEBUG" ] && set -x
+
+CHAINS="`/usr/sbin/netcfg -s`"
+SCHAINS="`echo $CHAINS | sed -e s///g`"
+[ "$SCHAINS" ] && {
+	echo ""
+	echo "Please use netcfg to deconfigure the following before removing nics:"
+	echo "$CHAINS\n"
+	exit 1
+}
+
+if [ "$RANDOM" = "$RANDOM" ]
+then
+        exec /usr/bin/xksh $0 $*
+fi
+
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-C}}}
+MENUDIR=/etc/inst/nics/drivers
+MENUDIR2=/etc/inst/nd/mdi
+NETINFO=/usr/sbin/netinfo
+
+cd $MENUDIR
+# change to new scheme - N
+OLDDRIVER_LIST=`for i in */*.bcfg
+do
+	( . ./$i ; echo $DRIVER_NAME )
+done | sort -u`
+
+cd $MENUDIR2
+# change to new scheme - N
+NEWDRIVER_LIST=`for i in */*.bcfg
+do
+	( . ./$i ; echo $DRIVER_NAME )
+done | sort -u`
+
+ODI_MODS="lsl msm ethtsm toktsm odisr fdditsm"
+DLPI_MODS="dlpi dlpibase"
+
+# must do the following for all hardware drivers installed
+for DRIVER_NAME in $OLDDRIVER_LIST $NEWDRIVER_LIST
+do
+
+	[ -f /etc/conf/mdevice.d/$DRIVER_NAME ] && {
+		# De-configure the network device.  Treat as both ODI/DLPI, and
+		# as MDI driver.  Obviously only one will work.
+		#
+		# note the next lines will only work if driver type is ODI/DLPI
+		/etc/confnet.d/configure -r -d ${DRIVER_NAME}_0 > /dev/null
+		/etc/confnet.d/configure -r -d ${DRIVER_NAME}_1 > /dev/null
+		/etc/confnet.d/configure -r -d ${DRIVER_NAME}_2 > /dev/null
+		/etc/confnet.d/configure -r -d ${DRIVER_NAME}_3 > /dev/null
+
+		# we only support up to ODI/DLPI 4 devices so remove any that
+		# might exist from the netdrivers file
+		# Likewise, this will only work if driver type is ODI/DLPI
+		for i in 0 1 2 3
+		do
+			${NETINFO} -r -d ${DRIVER_NAME}_$i
+		done
+
+		# now do the same thing, treating the device as if it's
+		# an MDI driver (through netX)
+		# we can have more netX devices; try up to 20
+		for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20
+		do
+			/etc/confnet.d/configure -r -d net${i} > /dev/null
+			${NETINFO} -r -d net${i} >/dev/null 2>&1
+		done
+
+	}
+
+done > /dev/null 2>&1
+
+# stop the dlpi daemon
+/etc/nd stop
+
+# must do the following for all drivers installed
+for DRIVER_NAME in $OLDDRIVER_LIST $NEWDRIVER_LIST $ODI_MODS $DLPI_MODS
+do
+	[ -f /etc/conf/mdevice.d/$DRIVER_NAME ] && {
+		# Remove the driver
+		/etc/conf/bin/idinstall -d $DRIVER_NAME
+
+		# Unload the driver
+		modadmin -U $DRIVER_NAME
+
+		# remove mod.d too as postinstall scripts looks for these.
+		rm -f /etc/conf/mod.d/$DRIVER_NAME > /dev/null 2>&1
+	}
+
+done > /dev/null 2>&1
+
+# remove odimem driver & rebuild kernel.  it will normally be present in
+# the link kit as the postinstall script put it there (multiple times)
+[ -f /etc/conf/mdevice.d/odimem ] && {
+	# we know odimem is $static courtesy of our postinstall script so
+	# no need to try and unload it.
+	/etc/conf/bin/idinstall -d odimem >&2
+	/etc/conf/bin/idbuild -B
+	[ "$?" = 0 ] && REBUILD_FLAG=true
+}
+
+# Unregister from SCOadmin
+[ -f /usr/bin/scoadmin ] && {
+/usr/bin/scoadmin -P Networking -d "netcfg.obj"
+}
+
+# rm -rf /tmp/remove.err
+
+$REBUILD_FLAG && exit 10 || exit 0

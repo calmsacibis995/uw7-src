@@ -1,0 +1,1646 @@
+/*
+ *	 @(#) qvis1024.tmpl 11.1 97/10/22
+ *
+ * Copyright (C) 1991-1993 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right
+ * to use, modify, and incorporate this code into other products for purposes
+ * authorized by the license agreement provided they include this notice
+ * and the associated copyright notice with any such product.  The
+ * information in this file is provided "AS IS" without warranty.
+ *
+ */
+
+/* *********************************************************************** *
+ *   compaq/qvis1024.xgi - grafinfo file for Compaq QVision 1024 (1 Mb)    *
+ *                                                                         *
+ *                 COMPAQ.QVIS1024.@CLASS@.1024x768-256-72                 *
+ *                 COMPAQ.QVIS1024.@CLASS@.1024x768-256-66-72              *
+ *                 COMPAQ.QVIS1024.@CLASS@.1024x768-256-66-75              *
+ *                 COMPAQ.QVIS1024.@CLASS@.1024x768-256-60                 *
+ *                 COMPAQ.QVIS1024.@CLASS@.800x600-256-75                  *
+ *                 COMPAQ.QVIS1024.@CLASS@.800x600-256-72                  *
+ *                 COMPAQ.QVIS1024.@CLASS@.800x600-256-60                  *
+ *                 COMPAQ.QVIS1024.@CLASS@.640x480-256-75                  *
+ *                 COMPAQ.QVIS1024.@CLASS@.640x480-256-60                  *
+ *                                                                         *
+ * *********************************************************************** */
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   1024x768-256-72 "1024x768 256-color 72Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0x2b);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x9e; r1  = 0x7f; r2  = 0x7f; r3  = 0x81; r4  = 0x83;
+    r5  = 0x93; r6  = 0x1e; r7  = 0xf1; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0xff; r17 = 0xb3; r18 = 0xff; r19 = 0x80;
+    r20 = 0x00; r21 = 0xff; r22 = 0x1e; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf, 00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf, 00);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x41; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77);  
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   1024x768-256-66-72 "1024x768 256-color 66Hz (72 MHz)"
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0x27);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0xa1; r1  = 0x7f; r2  = 0x7f; r3  = 0x84; r4  = 0x85;
+    r5  = 0x9b; r6  = 0x2e; r7  = 0xf5; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x07; r17 = 0xbb; r18 = 0xff; r19 = 0x80;
+    r20 = 0x00; r21 = 0xff; r22 = 0x2e; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf, 00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf, 00);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x41; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77);  
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   1024x768-256-66-75 "1024x768 256-color 66Hz (75 MHz)"
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0x2b);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0xa9; r1  = 0x7f; r2  = 0x7f; r3  = 0x0a; r4  = 0x87;
+    r5  = 0x9f; r6  = 0x2e; r7  = 0xf5; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x06; r17 = 0xba; r18 = 0xff; r19 = 0x80;
+    r20 = 0x00; r21 = 0xff; r22 = 0x2c; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf, 00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf, 00);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x41; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77);  
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   1024x768-256-60 "1024x768 256-color 60Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 1024;
+    PIXHEIGHT   = 768;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0xe3);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x9b; r1  = 0x7f; r2  = 0x7f; r3  = 0x9e; r4  = 0x87;
+    r5  = 0x17; r6  = 0x31; r7  = 0xf5; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x0d; r17 = 0xb4; r18 = 0xff; r19 = 0x80;
+    r20 = 0x00; r21 = 0xff; r22 = 0x31; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf, 00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf, 00);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x41; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77);  
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   800x600-256-75 "800x600 256-color 75Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 800;
+    PIXHEIGHT   = 600;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0x23);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x8b; r1  = 0x63; r2  = 0x66; r3  = 0x8b; r4  = 0x6d;
+    r5  = 0x1d; r6  = 0xc9; r7  = 0xf0; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x77; r17 = 0xba; r18 = 0x57; r19 = 0x80;
+    r20 = 0x00; r21 = 0x5f; r22 = 0xc1; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf,0x00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf,0x20);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x01; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77); 
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   800x600-256-72 "800x600 256-color 72Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 800;
+    PIXHEIGHT   = 600;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0x23);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x8b; r1  = 0x63; r2  = 0x66; r3  = 0x8b; r4  = 0x6d;
+    r5  = 0x1d; r6  = 0xe9; r7  = 0xf0; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x87; r17 = 0xba; r18 = 0x57; r19 = 0x80;
+    r20 = 0x00; r21 = 0x6e; r22 = 0xd1; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf,0x00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf,0x20);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x01; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77); 
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   800x600-256-60 "800x600 256-color 60Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 800;
+    PIXHEIGHT   = 600;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0xf3);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x7f; r1  = 0x63; r2  = 0x64; r3  = 0x80; r4  = 0x68;
+    r5  = 0x19; r6  = 0x73; r7  = 0xf0; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x58; r17 = 0xbc; r18 = 0x57; r19 = 0x80;
+    r20 = 0x00; r21 = 0x58; r22 = 0x72; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf,0x00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf,0x20);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x01; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77); 
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   640x480-256-75 "640x480 256-color 75Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 640;
+    PIXHEIGHT   = 480;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0xf3);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x69; r1  = 0x4f; r2  = 0x55; r3  = 0x86; r4  = 0x59;
+    r5  = 0x81; r6  = 0x56; r7  = 0xb2; r8  = 0x00; r9  = 0x60;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0x11; r17 = 0xa3; r18 = 0xdf; r19 = 0x80;
+    r20 = 0x00; r21 = 0x01; r22 = 0x32; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf,0x00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf,0x28);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x01; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77); 
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }
+
+/**************************************************************************/
+
+VENDOR COMPAQ      "Compaq"
+ MODEL  QVIS1024     "QVision 1024 (1 Mb)"
+  CLASS  @CLASS@        "@CLASS@"
+   MODE   640x480-256-60 "640x480 256-color 60Hz" 
+
+/*
+ * VGA Memory and port addresses
+ */
+MEMORY(0x@BASAD@,0x@FBLEN@);   /*  Base Address, Length        */
+PORT(VGA);
+
+DATA
+    {
+    XDRIVER     = "qvis";
+    VISUAL      = "PseudoColor";
+    DEPTH       = 8;
+    PIXWIDTH    = 640;
+    PIXHEIGHT   = 480;
+    RGBBITS     = 8;
+    FBTYPE	= "@FBTYP@";
+    GLYPH_CACHE = "NO";
+    HYPER_LINK_KIT = "YES";
+    }
+
+PROCEDURE  SetGraphics /* (NO ARGS) */
+    {
+
+    /* Turn Off Video via bit 5, clocking mode reg!        */
+    out(0x3c4, 0x01); out(0x3c5, 0x21);
+
+    /* 1)    Reset Sequencer   (first val resets SEQ)      */
+    /* 2)    Program Sequencer         */
+           /* NOTE: r1 SHOULD be 0x01, but 0x21 preserves
+                    disabled video                         */
+    r0 = 0x00; r1 = 0x21; r2 = 0xff; r3 = 0x00; r4 = 0x0e;
+    bout(5, 0x3c4, 0x3c5);
+
+    /* 3)    Restart Sequencer         */
+    out(0x3c4, 0x00); out(0x3c5, 0x03);
+
+    /* 4)    Unlock VGA Regs           */
+    out(0x3ce, 0x0f); out(0x3cf, 0x05);
+
+    /* 5)    Set AVGA Mode             */
+    out(0x3ce, 0x40); out(0x3cf, 0x01);
+
+    /* 6)    Fix Seq Write Plane Mask  */
+    out(0x3c4, 0x02); out(0x3c5, 0xff);
+
+    /* 7)    Enable Bitblt Engine      */
+    out(0x3ce, 0x10); out(0x3cf, 0x28);
+
+    /* 8)    Set QVision Mode            */
+    out(0x63ca, 0x03);
+
+    /* 9)    Set Misc Output Reg       */
+    out(0x3c2, 0xef);
+
+    /* 10)   DAC Control Reg 1         */
+    out(0x13c8, 0x40);
+
+    /* 11)   Set Port Select           */
+    out(0x13c9, 0x20);
+
+    /* 12)   Set CRTC Regs            */
+    /*  Unlock the CRTC Regs  */
+    out(0x3d4, 0x11); out(0x3d5, 0x00);
+
+    /*  Load all 25 */
+    r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x81; r4  = 0x53;
+    r5  = 0x9f; r6  = 0x0b; r7  = 0x3e; r8  = 0x00; r9  = 0x40;
+    r10 = 0x00; r11 = 0x00; r12 = 0x00; r13 = 0x00; r14 = 0x00;
+    r15 = 0x00; r16 = 0xea; r17 = 0xac; r18 = 0xdf; r19 = 0x80;
+    r20 = 0x00; r21 = 0xe5; r22 = 0x03; r23 = 0xe3; r24 = 0xff;
+    bout(25, 0x3d4, 0x3d5);
+
+    /*  set AVGA extended reg  */
+    out(0x3ce, 0x42); out(0x3cf,0x00);
+
+    /*  set CRTC Overflow Reg 2 */
+    out(0x3ce, 0x51); out(0x3cf,0x08);
+
+    /* 13)   Load Overscan Color      */
+    out(0x83c8,0x00);          /* Select Overscan reg  */
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+    out(0x83c9,0x00);
+
+    /* 14)   Load Attribute Regs  */
+    in(r63,0x3da);
+    r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03; r4  = 0x04;
+    r5  = 0x05; r6  = 0x06; r7  = 0x07; r8  = 0x08; r9  = 0x09;
+    r10 = 0x0a; r11 = 0x0b; r12 = 0x0c; r13 = 0x0d; r14 = 0x0e;
+    r15 = 0x0f; r16 = 0x01; r17 = 0x00; r18 = 0x0f; r19 = 0x00;
+
+    bout(20, 0x3c0, 0x3c0);
+
+    /* 15)   Load Graphics Regs  */
+    r0 = 0x00; r1 = 0x00; r2 = 0x00; r3 = 0x00; r4 = 0x00; r5 = 0x00;
+    r6 = 0x05; r7 = 0x0f; r8 = 0xff;
+    bout(9,  0x3ce, 0x3cf);
+
+    /*  Set Hi Address Map      */
+    out(0x3ce, 0x48); out(0x3cf, 0x@HAMLO@);
+    out(0x3ce, 0x49); out(0x3cf, 0x@HAMHI@);
+
+    /*  Set 8-bit DAC mode */
+    in(r63,0x83c6); or(r63,0x02); out(0x83c6,r63);
+
+    /*   enable palette   */
+    out(0x3c0, 0x20);
+
+    }
+
+PROCEDURE SetText /* (NO ARGS) */
+    {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+/********  QVision Special disable instructions  *******/
+
+         out(0x13c8,0x00);
+         out(0x13c9,0x00);
+         out(0x63ca,0x00);
+         out(0x03ce,0x0f); out(0x03cf,0x05);
+         out(0x03ce,0x10); out(0x03cf,0x20); /* Reset BB engine */
+                           out(0x03cf,0x60);
+                           out(0x03cf,0x20);
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x77); 
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /*  Set 6-bit DAC mode */
+         in(r63,0x83c6); and(r63,0xfd); out(0x83c6,r63);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+    }
+
+PROCEDURE SetColor /* (P0 = index, P1 = Red, P2 = Blue, P3 = Green) */
+    {
+    }
+
+PROCEDURE BlankScreen /* (NO ARGS) */
+    {
+    }
+
+PROCEDURE UnblankScreen /* (NO ARGS) */
+    {
+    }

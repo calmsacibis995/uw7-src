@@ -1,0 +1,57 @@
+/*
+ *	@(#) gd5446.white 65.1 97/07/30 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1997.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+                    GD5446 Source White Paper
+             Stacey Campbell - stacey@anyware-fast.com
+
+
+Please refer to "GD5436 Source White Paper" before reading this document.
+
+Hardware Architecture
+---------------------
+
+The GD5446 is, for the purposes of a SCO X driver, almost identical to
+the GD5436.  The GD5446 can handle higher refresh rates than the GD5436
+for various modes.
+
+GD5446 X Driver Source Information
+----------------------------------
+
+The GD5446 source tree is dependent on the GD5436 source tree.  New GD5446
+drivers are produced from otherwise unchanged GD5436 source.  Source
+compiled in the GD5446 directory can be #ifdef'ed GD5446 if required.
+
+Currently the only code that is specific to the GD5446 has been commented
+out of the GD5436 source tree due to a bug in early versions of the
+GD5446 BIOS.  The commented out code attempts to use the video BIOS to
+determine the pitch of the framebuffer for any given mode.  In the GD5436
+code this was determined from a table in the GD5436 technical manual.
+The "CL-GD5446 Technical Reference Manual", December 1995 no longer
+contains this table and recommends that the programmer call VESA BIOS
+function 06, Set/Get Logical Scanline Length.  This function fails
+to return correct values in Cirrus video BIOS revision 1.0.  The GD5446
+driver, on the advice of Cirrus Logic, continues to use pitch information
+from table D1-1 in the GD5436 manual.
+
+GD5446 Grafinfo File notes
+--------------------------
+
+The GD5446 grafinfo file is built similarly to the GD5436 grafinfo file.
+One new mode and several new refresh rates for old modes have been added
+to the modes.list file.
+
+Note that due to a buggy video BIOS (rev 1.0) mode 7C can destroy a
+GD5446 chip.  This mode has been commented out of the modes.list file.
+This mode has been fully AHS tested (tests completed before the card
+was destroyed), however, and if required can be included in the grafinfo
+file and will function correctly if safely supported by the BIOS.
+
+Also note that the "CL-GD5446 Technical Reference Manual", Dec 1995
+refers to a supported mode 7D (1152x864 16bpp).  Cirrus later removed
+this mode from their BIOS code and it has been removed from the modes.list
+file.

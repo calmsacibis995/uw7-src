@@ -1,0 +1,248 @@
+#!/sbin/sh
+#
+#ident "@(#)nd	27.1"
+#ident "$Header$"
+#
+#	Copyright (C) The Santa Cruz Operation, 1996-1997
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+
+# If we're starting all interfaces and dlpid isn't running, then
+# ensure that all netcfg-configured smart-bus cards (PCI/EISA/MCA) are 
+# physically present in the machine as a condition to starting dlpid.
+# This fixes the problem of having stacks send out frames to the right device 
+# but the driver uses the minor number to (potentially) send the frame to 
+# the wrong interface if there are multiple identical NICs using that driver.
+# We refuse to start dlpid until the user takes corrective action by either:
+# removing the board with netcfg
+#        - or -
+# re-inserting the offending board back in the system (ndcfg will re-"claim"
+# and repopulate the necessary resmgr parameters).
+# If you remove the driver instance with netcfg first before 
+# physically pulling the card you'll never have a problem.
+# DLPI and ODI drivers suffer the same problem but there is little we can do
+# here to remedy the situation except complain and also not start dlpid.
+
+/usr/lib/netcfg/bin/ndcfg -q -v -z "$*"
+if [ "$?" != "0" ] ; then
+   exit 1	# don't start dlpid
+fi
+ 
+exec /usr/bin/tcl -n -c '
+
+#cmdtrace on [ open /tmp/nd.log a+ ]
+#cmdtrace on stderr
+
+loadlibindex /usr/lib/sysadm.tlib
+
+set ND_ROOT /etc/inst/nd 
+set DLPI dlpid
+set DLPID_PATH /usr/sbin/$DLPI
+set DLPIMDI_MAP_PATH $ND_ROOT/dlpimdi
+set PIPE_PATH $ND_ROOT/dlpidPIPE
+
+catch { source $ND_ROOT/bin/dlpid.msg.tcl } err
+
+proc doCommand {cmd {args ""}} \
+{
+	global PIPE_PATH DLPID_PATH
+
+	set ifd [ open $PIPE_PATH r ]
+	set ofd [ open $PIPE_PATH a ]
+
+	set command $cmd
+	foreach arg $args {
+		lappend command $arg
+	}
+
+	puts $ofd $command
+	flush $ofd
+
+	set rc 0
+	while { [ gets $ifd line ] != -1 } {
+		if { $line == "EOF" } {
+			break
+		}
+		set x [ string first " " $line ]
+		if { $x == -1 } {
+			set c "ERROR"
+		} else {
+			set c [ string range $line 0 [ expr $x-1 ] ]
+		}
+		set rest [ string range $line [ expr $x+1 ] end ]
+
+		if { $c != "OK" } {
+			set rc 1
+		}
+		if { "$rest" != {} } {
+			puts stderr $rest
+		}
+	}
+	close $ifd
+	close $ofd
+	return $rc
+}
+
+proc NotRunning {} \
+{
+	global PIPE_PATH
+
+	if { ! [ file exists $PIPE_PATH ] } {
+		return 1
+	}
+	if { ! [ string compare [ file type $PIPE_PATH ] characterSpecial ] } {
+		if { [ catch { set ret [ doCommand ayt ] } ] == 0 } {
+			return $ret
+		}
+	}
+	return 1
+}
+
+proc doStart {ar} \
+{
+	global DLPIMDI_MAP_PATH DLPID_PATH argv0 DLPI
+	global PIPE_PATH
+
+	if { [ file exists $DLPIMDI_MAP_PATH ] } {
+		set fd [ open $DLPIMDI_MAP_PATH ]
+		while { [ gets $fd line ] != -1 } {
+			set l [ split $line ":" ]
+
+			set dlpi [ lindex $l 0 ]
+			set dlpi_array($dlpi) [ lindex $l 1 ]
+		}
+		close $fd
+	} else {
+		return
+	}
+
+	if { [ llength $ar ] != 0 } {
+		foreach dlpi $ar {
+			set temp $dlpi_array($dlpi)
+			unset dlpi_array 
+			set dlpi_array($dlpi) $temp
+		}
+	}
+	if { [ NotRunning ] } {
+		set childPid [ fork ]
+		if { $childPid == 0 } {
+			execl $DLPID_PATH $PIPE_PATH
+		}
+		wait $childPid
+		sleep 3
+	}
+	if { [ info exists dlpi_array ] } {
+		foreach dlpi [ array names dlpi_array ] {
+			doCommand add $dlpi $dlpi_array($dlpi)
+			doCommand start $dlpi
+		}
+	}
+}
+
+proc doStop {ar} \
+{
+	global DLPIMDI_MAP_PATH PIPE_PATH
+
+	if { ! [ file exists $PIPE_PATH ] } {
+		exit 0
+	}
+
+	if { [ llength $ar ] == 0 } {
+		set ifd [ open $PIPE_PATH r ]
+		set ofd [ open $PIPE_PATH a ]
+		puts $ofd "terminate"
+		flush $ofd
+		catch { gets $ifd pid } err
+		
+		for {set i 0} {! [ catch { kill 0 $pid } err ] && $i < 60} {incr i} {
+			sleep 1
+		}
+
+		if {$i == 60} {
+			puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_DLPID_NOT_TERMINATING [ list $pid ] ]"
+		}
+
+		close $ifd
+		close $ofd
+		
+		unlink -nocomplain $PIPE_PATH
+	} else {
+		foreach dlpi $ar {
+			doCommand stop $dlpi
+		}
+	}
+}
+
+proc doGetMDI {ar} \
+{
+	global DLPIMDI_MAP_PATH
+
+	if { [ file exists $DLPIMDI_MAP_PATH ] } {
+		set fd [ open $DLPIMDI_MAP_PATH ]
+		while { [ gets $fd line ] != -1 } {
+			set l [ split $line ":" ]
+
+			set dlpi [ lindex $l 0 ]
+			set mdi [ lindex $l 1 ]
+			set dlpi_array($dlpi) $mdi
+		}
+		close $fd
+	}
+
+	if { [ llength $ar ] == 0 } {
+		if { [info exists dlpi_array] } {
+			foreach dlpi [array names dlpi_array] {
+				echo "$dlpi $dlpi_array($dlpi)"
+			}
+		}
+	} else {
+		if { [info exists dlpi_array] } {
+			foreach dlpi [array names dlpi_array] {
+				if { [string compare $dlpi $ar] == 0 } {
+					echo "$dlpi $dlpi_array($dlpi)"
+				}
+			}
+		}
+	}
+}
+
+set argv0 [ info script ]
+
+if { [ llength $argv ] == 0 } {
+	puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_USAGE ]"
+	puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_USAGE_START [ list $argv0 ] ]"
+	puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_USAGE_STOP [ list $argv0 ] ]"
+	puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_USAGE_RESTART [ list $argv0 ] ]"
+	exit 1
+}
+
+set action [ file tail [ lindex $argv 0 ] ]
+if { [ string index $action 0 ] == "-" } {
+	set action [ string range $action 1 end ]
+}
+set args [ lrange $argv 1 end ]
+
+case $action {
+start {
+	doStart $args
+}
+stop {
+	doStop $args
+}
+{restart add_backup remove_backup failover} {
+	eval doCommand $action $args
+}
+getmdi {
+	doGetMDI $args
+}
+default {
+	puts stderr "[ IntlLocalizeMsg SCO_DLPID_ERR_ILLEGAL_OPTION [ list $argv0 ] ]"
+	exit 1
+} }
+
+exit 0
+# last tcl line
+' $*
+# now back into the bourne shell
+exit $?

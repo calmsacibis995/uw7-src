@@ -1,0 +1,223 @@
+#ident	"@(#)pkg.mpu:request	1.1.2.1"
+#ident	"$Header$"
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+LKEYSFILE=/etc/config/licensekeys
+PKGNAME=mpu
+MYNAME=mpu
+SERIAL_ID=""
+SERIAL_KEY=""
+export SERIAL_ID SERIAL_KEY
+
+_requestinfo()
+{
+	while true
+	do
+		VALID_FLAG=""
+
+		menu -f ${DIR}/menu.request -o /tmp/${MYNAME}_out 2> /dev/null
+		. /tmp/${MYNAME}_out
+
+
+		SID_LEN=`echo ${SERIAL_NUMBER} |awk '{print(length($1))}'`
+		if [ "${SID_LEN}" -eq "14" ]
+		then
+			SERIAL_ID=$SERIAL_NUMBER
+			/sbin/validate $SERIAL_ID $SERIAL_KEY 2>/dev/null
+			if [ $? -eq 0 ]
+			then
+				break
+			fi
+		else
+			_getserialid
+
+		fi
+
+		if [ "${VALID_FLAG}" ]
+		then
+			break
+		else
+
+		   RETURN_VALUE=""
+
+		   #
+		   # Present user with a choice to try again or to stop
+		   # installation.
+		   #
+		   menu_colors warn
+		   menu -f ${DIR}/menu.choice -o /tmp/${MYNAME}_out 2> /dev/null
+		   menu_colors regular
+
+		   . /tmp/${MYNAME}_out
+
+		   if  [ "${RETURN_VALUE}" = "2" ]
+		   then
+			exit 1
+		   else
+			#
+			# clear and export variables so they do not
+			# get displayed on the screen.
+			#
+			SERIAL_KEY=""
+			SERIAL_ID=""
+			export SERIAL_ID SERIAL_KEY
+		   fi
+
+			
+		fi
+	done
+}
+_getserialid()
+{
+
+	#
+	# The serialid is made of:
+	# - Productname (2 characters)
+	# - Additional number of processors to license (3rd character)
+	# - Required user license level (4th character)
+	# - Serial number (10 digits)
+	#
+
+	# 
+	# If serial nmber is less than 10 digits will preappend zero(s).
+	#
+	SN_LENGTH=10
+	while true
+	do
+		LEN=`echo ${SERIAL_NUMBER} |awk '{print(length($1))}'`
+
+		if [ "${LEN}" -lt "${SN_LENGTH}" ]
+		then
+			SERIAL_NUMBER="0${SERIAL_NUMBER}"
+		else
+			break
+		fi
+	done
+
+	#
+	# Must guess the correct "user level" and "required user level"
+	# for the serial number entered by the user.
+	for i in  1U 12 1A 
+	do
+		SERIAL_ID=${PRODUCTNAME}${i}${SERIAL_NUMBER}
+		/sbin/validate $SERIAL_ID $SERIAL_KEY 2>/dev/null
+		if [ $? -eq 0 ]
+		then
+			VALID_FLAG=true
+			break
+		fi
+	done
+}
+
+
+DIR=/etc/inst/locale/${LOCALE}/menus/${PKGNAME}
+[ -d ${DIR} ] || mkdir -p ${DIR}
+
+MENUS="menu.request menu.choice"
+for i in ${MENUS}
+do
+
+        if [ ! -f ${DIR}/${i} ]
+        then
+                if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGNAME}/${i} ]
+                then
+                       cp ${REQDIR}/inst/locale/${LOCALE}/${PKGNAME}/${i} ${DIR}
+                else
+                       cp ${REQDIR}/${PKGNAME}/${i} ${DIR}
+                fi
+        fi
+done
+
+
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+#
+# Determine from which device is this package being installed.
+# (PKGDEV is an environtment variable set by the packaging tools)
+#
+if [ "${PKGDEV}" != "" ]
+then
+	DEVTYPE=`devattr ${PKGDEV} type 2>/dev/null`
+
+	if [ "${DEVTYPE}" = "diskette" ]
+	then
+		DEVALIAS=`devattr ${PKGDEV} alias 2>/dev/null`
+
+		if [ "${DEVALIAS}" = "diskette1" ]
+		then
+			DEVNAME=a
+		else
+			DEVNAME=b
+		fi
+	fi
+fi
+
+if [ "${DEVTYPE}" = "diskette" ]
+then
+	#
+	# Read the key pair stamped on the floppy
+	#
+	KEYPAIR=`/sbin/sflop -r ${DEVNAME} 2>/dev/null`
+	SERIAL_ID=`echo "${KEYPAIR}" | awk '{print $1}'`
+	SERIAL_KEY=`echo "${KEYPAIR}" | awk '{print $2}'`
+
+elif [ "${SERIALID}" != "" -a "${SERIALKEY}"  != "" ]
+then
+	#
+	# If the environment variables SERIALID and SERIALKEY are set
+	# find out if their value is NOT stale (i.e., this is not a value
+	# used on previous installation).
+	#
+	LINE=`grep "^${SERIALID}" ${LKEYSFILE}`
+	if [ $? -eq 0 ]
+	then
+		S_ID=`echo "$LINE" | awk '{print $1}'`
+		S_KEY=`echo "$LINE" | awk '{print $2}'`
+	fi
+
+	if [ "${SERIALID}" != "${S_ID}" -a "${SERIALKEY}" != "${S_KEY}" ]
+	then
+		#
+		# value pass via the environment is not stale, use it!
+		#
+		SERIAL_ID=$SERIALID
+		SERIAL_KEY=$SERIALKEY
+	fi
+fi
+
+if [ "${DEVTYPE}" != "diskette" -a "${SERIAL_ID}" = "" -a "${SERIAL_KEY}" = "" ]
+then
+	if [ "$SILENT_INSTALL" = "true" ]
+	then
+		exit 1
+	else
+		#
+		# Given that:
+		# 	- Installation is not from floppy diskette
+		#
+		#	- the environment variables SERIALID and SERIALKEY
+		#	  are either not set or their value is stale
+		#
+		#	- the environment variable SILENT_INSTALL is not set
+		#
+		# Must request the info from the user!
+		#
+		_requestinfo
+	fi
+fi
+
+echo "SERIAL_ID=${SERIAL_ID}" >> $1
+echo "SERIAL_KEY=${SERIAL_KEY}" >> $1

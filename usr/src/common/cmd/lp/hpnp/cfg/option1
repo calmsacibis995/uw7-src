@@ -1,0 +1,137 @@
+#!/bin/ksh
+#ident	"@(#)option1	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+if [ -z "${HPNPDIR}" ]
+then
+	HPNPDIR="/usr/lib/hpnp"
+fi
+
+if [ -z "${SERVICES}" ]
+then
+	SERVICES="/etc/services"
+fi
+
+if [ -z "${INETDCONF}" ]
+then
+	INETDCONF="/etc/inetd.conf"
+fi
+
+typeset -i ALLFINE=1 BOOTPD_FLAG=0 TFTP_FLAG=0
+echo ""
+
+if [ ! -f "${HPNPDIR}/install.files" ]
+then
+	echo "Cannot find ${HPNPDIR}/install.files"
+	ALLFINE=0
+else
+	for NAME in `cat -- "${HPNPDIR}/install.files"`
+	do
+		BNAM=`basename $NAME`
+		if [ ! -f "$NAME" ]
+		then
+			echo "$NAME is missing"
+			ALLFINE=0
+		else
+			if [ "${BNAM}" = "bootpd" ]
+			then
+				# If file installed was bootpd need to chk
+				# if correct entries are made in services
+				# and inetd.conf
+				BOOTPD_FLAG=1
+			fi
+			if [ "${BNAM}" = "tftp" -o "${BNAM}" = "tftpd" ]
+			then
+				# If file installed was tftp or tftpd need
+				# to chk if correct entries are made in
+				# services and inetd.conf and passwd
+				TFTP_FLAG=1
+			fi
+		fi
+	done
+fi
+
+####################################
+#    BOOTPD_FLAG will be 1 only if bootpd was added
+####################################
+if [ $BOOTPD_FLAG -eq 1 ]
+then
+  ETC_SERVICES="bootpc bootps"
+  for i in $ETC_SERVICES
+  do
+    if egrep "^$i" "$SERVICES" > /dev/null 2>&1
+    then
+      :
+    fi
+  done
+
+  if egrep "^bootps" "$INETDCONF" > /dev/null 2>&1
+  then
+    :
+  else
+      echo "bootps service not found in /etc/inetd.conf."
+      ALLFINE=0
+  fi
+fi
+  
+####################################
+#
+#    TFTP_FLAG will be 1 only if tftp or tftpd was added to the
+#    Sun or HP system as part of hpnpinstall.  There needs to
+#    be a tftp entry in /etc/services, there needs to be a 
+#    tftp entry in /etc/inetd.conf, and there needs to be a
+#    tftp entry in /etc/passwd.
+#    Note:  tftp and tftpd will normally not be added to Sun since sun
+#    has these files in default condition.
+#
+####################################
+if [ $TFTP_FLAG -eq 1 ]
+then
+  if egrep "^tftp" "$INETDCONF" > /dev/null 2>&1
+  then
+    :
+  else
+    echo "tftp service not found in /etc/inetd.conf."
+    ALLFINE=0
+  fi
+  if egrep "^tftp" "$SERVICES" > /dev/null 2>&1
+  then
+    :
+  else
+    echo "tftp service not found in /etc/services."
+    ALLFINE=0
+  fi
+  if egrep "^tftp" /etc/passwd > /dev/null 2>&1
+  then
+    :
+  else
+    echo "tftp entry not found in /etc/passwd"
+    ALLFINE=0
+  fi
+fi
+
+
+if [ $ALLFINE -eq 1 ]
+then
+  echo "Software verification passed."
+else
+  echo "\nSoftware verification failed."
+fi
+
+echo "\nPress the return key to continue ... $NL"
+read -r RESP
+echo ""

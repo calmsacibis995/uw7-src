@@ -1,0 +1,750 @@
+#******************************************************************************
+#                               lists                                
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#) lists 55.1 96/05/17 
+#
+# Copyright (C) 1995-1996 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+#==========================================================================
+# InitLists --
+#	Initialize the necessary lists with information stored in 
+#	configuration files on the system.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc InitLists {} \
+{
+   global OK FAIL
+
+   if {[IsInteractive]} {
+      VtLock
+   }
+   VerifyFilesFatal
+   RunPreScripts
+   LoadConfigFiles	
+   InitPromptStrings
+   VerifyTTYListPrompts
+
+   if {[IsInteractive]} {
+      SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_INIT_LISTS]
+      LoadMainScreen
+
+      SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_INIT_DONE]
+      VtUnLock -once
+   }
+}
+
+
+#==========================================================================
+# LoadConfigFiles --
+#       Load the necessary files.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc LoadConfigFiles {} \
+{
+   global OK FAIL
+
+   if {[IsInteractive]} {
+      SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_LOAD_CONFIG]
+   } else {
+      if {![GetOptions silent]} {
+	puts stdout [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_LOAD_CONFIG]
+      }
+   }
+   LoadDevices
+   LoadGrafDev
+   LoadGrafMon
+   if {(![IsInteractive]) && ([IsTTYEmpty])} {
+      # no need to continue non-interactive mode
+      Exit $OK
+   }
+}
+
+
+#==========================================================================
+# DrawnList --
+#       Build a single screen list element.
+#
+# screenList \
+# { {ICONLIST xxx} {TYPE CARD|MONITOR|RESOLUTION} {DESCRIPTION desc} \
+#   {VENDOR vendor} {MODEL model} {CLASS class} {MODE mode} \
+#   {MONVENDOR monvendor} {MONMODEL monmodel} \
+#   {TTYSHEAD {{tty1 head#} {tty2 head#} ...} } \
+#   ...}
+#
+# Parameters: 
+#	iconlist	ICONLIST - list of icons
+#	type		TYPE - CARD, MONITOR, RESOLUTION, NOTHING
+#	desc		DESCRIPTION string corresponding to TYPE
+#	vendor		VENDOR - vendor name
+#	model		MODEL - model name
+#	class		CLASS - class name
+#	mode		MODE - mode name
+#	monvendor	MONVENDOR - monvendor name
+#	monmodel	MONMODEL - monmodel name
+#	ttyshead	TTYSHEAD - list of lists of tty/head# pairs
+# Returns: 
+#	keyed list to include in screenList
+#--------------------------------------------------------------------------
+proc DrawnList { \
+	iconlist type desc \
+	vendor model class mode \
+	monvendor monmodel ttyshead } \
+{
+   keylset list ICONLIST $iconlist
+   keylset list TYPE $type
+   keylset list DESCRIPTION $desc
+   keylset list VENDOR $vendor
+   keylset list MODEL $model
+   keylset list CLASS $class
+   keylset list MODE $mode
+   keylset list MONVENDOR $monvendor
+   keylset list MONMODEL $monmodel
+   keylset list TTYSHEAD $ttyshead
+
+   return $list
+}
+
+
+#==========================================================================
+# BuildScreenList --
+#       Build screens containing list of lists of useful information.
+#
+# 	The lists are globals to make it easier to pass them around.
+#
+# Parameters: 
+#	filter - what kind of list to build
+# Returns: 
+#	builtlist - contains the list to display
+#--------------------------------------------------------------------------
+proc BuildScreenList {filter cols} \
+{
+    upvar $cols columns
+    global ttyList videoList videoListMap monitorList resPos 
+    global screenList screenIndex curList curIndex
+    global VID_ICON VID_ICON_G MON_ICON RES_ICON RES_ICON_LEG
+   
+    set builtlist {}
+
+    case $filter {
+	"MAIN_SCREEN"
+	    {
+            #XXX doesn't handle dynamic columns for MAIN_SCREEN
+	    # Rebuild MAIN_SCREEN drawn list widget. Store in screenList.
+	    #
+	    # Step 1) Create a temporary list indexed by the value returned
+	    # by videoListMap(vendor.model) which is a sorted index that 
+	    # points into videoList array. (See globals for more info on this).
+	    # tmpList(index) holds each unique class/mode for the vendor.model
+	    # at that index as well as all of the tty/head positions for 
+	    # this unique class/mode.  Yikes!
+	    #
+	    # tmpList syntax:
+	    # tmpList(videoListMap(vendor.model)) \
+	    #	{ {CLASS class} {MODE mode} \
+	    #		{TTYS {tty1 head# tty2 head#...}} } ...
+	    #
+	    # For example:
+	    # tmpList(videoListMap(ibm.vga)) \
+	    # { {CLASS vga} {MODE 640x480-16} \
+	    #		{TTYS {/dev/tty01 0} {/dev/tty02}} }
+	    #
+	    # Note that each index of videoListMap points to a videoList 
+	    # element which was sorted by VENDORPR and MODELPR.  So now
+	    # both tmpList and videoListMap point to the same thing.
+	    #
+	    # videoListMap(ibm.vga)
+	    # 		      ++
+	    #		       \\
+	    # videoList(59) \ <=++
+	    # {VENDOR ibm} {VENDORPR IBM} {MODEL vga} {MODELPR VGA} \
+	    # {VIDSCRIPT {}} {RESOLUTIONS { \
+	    # {{CLASS vga} {CLASSPR VGA} {MODE 640x480-16} \
+	    # {MODEPR {640x480 16-color}} {COMMENT {}}} ... }}
+	    # 
+	    # Step 2) Next take tmpList and convert it into screenList.
+	    # Use contents to build the drawn list.  Index by position
+	    # so we can map back to screenList when a selection is made.
+	    #	
+
+	       SetTotalCards 0
+	       set tmpcardcnt 0
+	       # CARD=0, MONITOR=1, RESOLUTION=2 - init to first card
+	       set screenIndex 0
+               if {[info exists screenList]} {
+	          unset screenList
+               }
+
+	       # empty ttyList - grafdev was empty or all cards were deleted
+	       if {[IsTTYEmpty]} {
+		  # point to NOTHING item
+		  set screenIndex 0
+
+		  # add details for NOTHING to screenList
+		  lappend screenList [DrawnList \
+			$VID_ICON_G "NOTHING" \
+			[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOADAPTERS] \
+	          	{} {} {} {} \
+			{} {} {{}} ]
+		  set builtlist $screenList
+    	          return $builtlist
+	       }
+
+	       ### Step 1) ###
+	       # walk through ttyList, pull all unique (multiheaded) 
+	       # Vendor Model Class Mode entries into tmpList.
+	       foreach tty [lsort [GetTTYIndexes {}]] {
+
+	          # for each multiheaded entry at that tty
+		  set hlen [GetTTYHeadLen $tty]
+
+		  for {set hcnt 0} { $hcnt < $hlen } { incr hcnt } {
+	             set vendor [GetTTYVendor $tty $hcnt]
+	             set model  [GetTTYModel  $tty $hcnt]
+	             set class  [GetTTYClass  $tty $hcnt]
+	             set mode   [GetTTYMode   $tty $hcnt]
+
+	             # add first tmpList(index) where index is returned 
+		     # from videoListMap(vendor.model).  videoListMap is 
+		     # already in sorted order based on vendor and model 
+		     # prompt strings.
+                    if {![info exists tmpList($videoListMap($vendor.$model))]} {
+		        keylset list CLASS $class
+		        keylset list MODE $mode
+		        keylset list TTYS [list [list $tty $hcnt]]
+		        set tmpList($videoListMap($vendor.$model)) [list $list]
+			incr tmpcardcnt
+	             } else {
+		        set index 0
+		        set MATCH 0
+		        # a tmpList(videoListMap(vendor.model)) already exists.
+		        # walk thru each tmpList(videoListMap(vendor.model)).
+			# Try to match class and mode.  If there are several 
+			# different class/modes for vendor.model, index tracks 
+			# which one we are looking at. For only one class/mode,
+		        # index isn't incremented.
+		        foreach elem $tmpList($videoListMap($vendor.$model)) {
+		           keylget elem CLASS classchk
+		           if {![string compare $class $classchk]} {
+		              keylget elem MODE modechk
+			      if {![string compare $mode $modechk]} {
+			         # matched - add the tty to other ttys
+		                 keylget elem TTYS ttys
+			         lappend ttys [list $tty $hcnt]
+		  	         keylset list CLASS $class
+		  	         keylset list MODE $mode
+		  	         keylset list TTYS $ttys
+			         set tmpList($videoListMap($vendor.$model)) \
+	  [lreplace $tmpList($videoListMap($vendor.$model)) $index $index $list]
+			         set MATCH 1
+			         break
+			      }
+		           }
+		           incr index
+		        }
+		        if {! $MATCH} {
+		           # add new class/mode/tty
+		           keylset list CLASS $class
+		           keylset list MODE $mode
+		           keylset list TTYS [list [list $tty $hcnt]]
+		           lappend tmpList($videoListMap($vendor.$model)) $list
+		        }
+	             }
+	          }
+	       }
+	       # track total number of different cards installed
+	       SetTotalCards $tmpcardcnt
+
+	       ### Step 2) ###
+	       # Now build screenList here using tmpList built above.
+	       # Indexes to tmpList are integers that index into videoList
+	       # and are already in sorted order...
+	       set poscnt 0
+	       foreach index [lsort -integer [array names tmpList]] {
+	          set vendor [keylget videoList($index) VENDOR]
+	          set model [keylget videoList($index) MODEL]
+	          set monvendor [GetMonVendor $vendor.$model]
+	          set monmodel  [GetMonModel $vendor.$model]
+                  set vendorPr [GetVendorPr $vendor $model]
+		  set modelPr  [GetModelPr $vendor $model]
+		  if {($vendorPr == "") || ($modelPr == "")} {
+			set vendormodelPr \
+				[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UNKNOWN]
+		  } else {
+			set vendormodelPr "$vendorPr $modelPr"
+		  }
+		  # add details for CARD to screenList
+		  lappend screenList [DrawnList \
+			$VID_ICON "CARD" $vendormodelPr \
+	          	$vendor $model {} {} \
+			{} {} {{}} ]
+
+		  # add details for this MONITOR
+		  lappend screenList [DrawnList \
+			$MON_ICON "MONITOR" \
+			[GetMonDescription $monvendor $monmodel] \
+	          	$vendor $model {} {{}} \
+			$monvendor $monmodel {{}} ]
+
+		  # stuff each resolution from tmpList into screenList
+	          set ln [llength $tmpList($videoListMap($vendor.$model))]
+	          for {set cnt 0} {$cnt < $ln} {incr cnt} {
+		     set list [lindex $tmpList($videoListMap($vendor.$model)) $cnt]
+		     keylget list CLASS class
+		     keylget list MODE mode
+		     keylget list TTYS ttys
+
+		     if {$cnt < [expr $ln-1]} {
+	                set iconlist $RES_ICON_LEG
+		     } else {
+	                set iconlist $RES_ICON
+		     }
+		     # add details for this RESOLUTION
+		     lappend screenList [DrawnList \
+			$iconlist "RESOLUTION" \
+		[GetClassModePr $class $mode [GetResolutions $vendor $model]] \
+	          	$vendor $model $class $mode \
+			$monvendor $monmodel $ttys ]
+	          }
+	       }
+   	       #Display screenList
+	       set builtlist $screenList
+	    }
+        "ADD_SCREEN" 
+	    {   
+	       # CARD=0, MONITOR=1, RESOLUTION=2 - init to card
+	       set curIndex 0
+               if {[info exists curList]} {
+                  unset curList
+               }
+	       # CARD=0, MONITOR=1, RESOLUTION=2 - bump screenlist to card too
+	       set screenIndex 0
+
+	       # add details for CARD
+	       lappend curList [DrawnList \
+			$VID_ICON "CARD" \
+			[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOVIDEO] \
+	          	{} {} {} {} \
+			{} {} {{}} ]
+
+	       # add details for MONITOR
+	       lappend curList [DrawnList \
+			$MON_ICON "MONITOR" \
+                        [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOMONITOR] \
+	          	{} {} {} {} \
+			{} {} {{}} ]
+
+	       #Display curList
+	       set builtlist $curList
+	    }
+        "MODIFY_SCREEN"
+	    {   
+	    # rebuild curList ...
+	    # curList is used to redraw the drawnlist for the MODIFY and
+	    # and REMOVE screens.  The MODIFY screen can be repeatedly redrawn.
+	    # Create the CARD and MONITOR portions of curList one time only.
+	    # Create the resolutions portion of curList from the contents 
+	    # of tmpttyList each time this routine is called.
+	    # By recreating curList from tmpttyList we keep the drawn list 
+	    # updated with the latest configuration information stored in 
+	    # tmpttyList.
+	    # MONITOR information, if changed, is updated directly.
+
+	       set INITCURLIST 0
+               if {![info exists curList]} {
+		  # if curList already exists, update RESOLUTIONS only
+		  # if creating from scratch, add CARD, MONITOR and RESOLUTIONS
+		  set INITCURLIST 1
+
+	          # CARD=0, MONITOR=1, RESOLUTION=2 - init to card
+	          set curIndex 0
+
+	          # curList is removed in ProcessMainScreenStippling
+                  # unset curList
+               }
+               if {[info exists tmpList]} {
+                  unset tmpList
+               }
+
+	       set type {} 
+	       if {$INITCURLIST == 1} {
+	           set elem [lindex $screenList $screenIndex]
+	       } else {
+	            set elem [lindex $curList $curIndex]
+	       }
+
+	       # Determine which vendor and model we are looking for.
+	       # The following code is almost identical to MAIN_SCREEN
+	       # code above.  We search tmpttyList for all entries that
+	       # match vendor and model and store this information into
+	       # tmpList.  Then we pull this information out and put it
+	       # into curList.
+   	       keylget elem TYPE type
+   	       keylget elem VENDOR curvendor
+   	       keylget elem MODEL curmodel
+
+	       if {$type == "CARD"} {
+		  # Remove screen would require type=CARD and curIndex=0
+	          set curIndex 0
+	       } elseif {$type == "MONITOR"} {
+		  set curIndex 1
+	       } elseif {$type == "RESOLUTION"} {
+   	          keylget elem CLASS curclass
+   	          keylget elem MODE curmode
+	       }
+
+               foreach tty [lsort [GetTMPIndexes {}]] {
+
+                  # for each multiheaded entry at that tty
+                  set hlen [GetTMPHeadLen $tty]
+                  for {set hcnt 0} {$hcnt < $hlen} {incr hcnt} {
+                     set vendor [GetTMPVendor $tty $hcnt]
+                     set model  [GetTMPModel  $tty $hcnt]
+		     # gather all modes for vendor/model only - skip others
+		     if {($vendor != $curvendor) || ($model != $curmodel)} {
+			continue
+		     }
+                     set class  [GetTMPClass  $tty $hcnt]
+                     set mode   [GetTMPMode   $tty $hcnt]
+
+                     # add first tmpList(index) where index is returned
+                     # from videoListMap(vendor.model).  videoListMap is
+                     # already in sorted order based on vendor and model
+                     # prompt strings.
+                    if {![info exists tmpList($videoListMap($vendor.$model))]} {
+                        keylset list CLASS $class
+                        keylset list MODE $mode
+                        keylset list TTYS [list [list $tty $hcnt]]
+                        set tmpList($videoListMap($vendor.$model)) [list $list]
+                     } else {
+                        set index 0
+                        set MATCH 0
+                        # a tmpList(videoListMap(vendor.model)) already exists.
+                        # walk thru each tmpList(videoListMap(vendor.model)).
+                        # Try to match class and mode.  If there are several
+                        # different class/modes for vendor.model, index tracks
+                        # which one we are looking at. For only one class/mode,
+                        # index isn't incremented.
+                        foreach elem $tmpList($videoListMap($vendor.$model)) {
+                           keylget elem CLASS classchk
+                           if {![string compare $class $classchk]} {
+                              keylget elem MODE modechk
+                              if {![string compare $mode $modechk]} {
+                                 # matched - add the tty to other ttys
+                                 keylget elem TTYS ttys
+                                 lappend ttys [list $tty $hcnt]
+                                 keylset list CLASS $class
+                                 keylset list MODE $mode
+                                 keylset list TTYS $ttys
+                                 set tmpList($videoListMap($vendor.$model)) \
+          [lreplace $tmpList($videoListMap($vendor.$model)) $index $index $list]
+                                 set MATCH 1
+                                 break
+                              }
+                           }
+                           incr index
+                        }
+                        if {! $MATCH} {
+                           # add new class/mode/tty
+                           keylset list CLASS $class
+                           keylset list MODE $mode
+                           keylset list TTYS [list [list $tty $hcnt]]
+                           lappend tmpList($videoListMap($vendor.$model)) $list
+                        }
+
+                     }
+                  }
+               }
+
+               ### Step 2) ###
+               # Now build curList using tmpList built above.
+               # Indexes to tmpList are integers that index into videoList
+               # and are already in sorted order...
+
+	       # only one index because we are only interested in one card
+               set index [array names tmpList]
+
+               set vendor [keylget videoList($index) VENDOR]
+               set model [keylget videoList($index) MODEL]
+               set monvendor [GetMonVendor $vendor.$model]
+               set monmodel  [GetMonModel $vendor.$model]
+
+	       # Add CARD/MODIFY entries only once
+	       if {$INITCURLIST == 1} {
+                  set vendorPr [GetVendorPr $vendor $model]
+                  set modelPr  [GetModelPr $vendor $model]
+                  if {($vendorPr == "") || ($modelPr == "")} {
+                     set vendormodelPr \
+                                [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UNKNOWN]
+                  } else {
+                     set vendormodelPr "$vendorPr $modelPr"
+                  }
+                  # add details for CARD to curList
+                  lappend curList [DrawnList \
+			   $VID_ICON "CARD" $vendormodelPr \
+                           $vendor $model {} {} \
+                           {} {} {{}} ]
+   
+                  # add details for this MONITOR
+                  lappend curList [DrawnList \
+                           $MON_ICON "MONITOR" \
+                           [GetMonDescription $monvendor $monmodel] \
+                           $vendor $model {} {{}} \
+                           $monvendor $monmodel {{}} ]
+	
+	       } else {
+		  set len [llength $curList]
+		  for {set cnt [expr $len-1]} {$cnt >= 2} {incr cnt -1} {
+		        # Start from the end. Work our way down to a list 
+			# size of 2 removing all resolutions.
+	          	set curList [lreplace $curList $cnt $cnt]
+		  }
+	      }
+              # stuff each resolution from tmpList into curList
+              set ln [llength $tmpList($videoListMap($vendor.$model))]
+              for {set cnt 0} {$cnt < $ln} {incr cnt} {
+                  set list [lindex $tmpList($videoListMap($vendor.$model)) $cnt]
+                  keylget list CLASS class
+                  keylget list MODE mode
+                  keylget list TTYS ttys
+		  if {$type == "RESOLUTION"} {
+		     if {($curclass == $class) && ($curmode == $mode)} {
+			# update curIndex to the proper RESOLUTION
+			set curIndex [expr $cnt+2]
+		     }
+		  }
+
+                 if {$cnt < [expr $ln-1]} {
+                    set iconlist $RES_ICON_LEG
+                 } else {
+                    set iconlist $RES_ICON
+                 }
+                 # add details for this RESOLUTION
+                 lappend curList [DrawnList \
+                        $iconlist "RESOLUTION" \
+                 [GetClassModePr $class $mode [GetResolutions $vendor $model]] \
+                        $vendor $model $class $mode \
+                        $monvendor $monmodel $ttys ]
+               }
+
+	       #Display curList
+	       set builtlist $curList
+	    }
+        "VIDEO_LIST" 
+	    {   
+	    # Build the list, sorted by vendorPr/modelPr
+	       set vcols 0
+	       foreach index [lsort -integer [array names videoList]] {
+		  keylget videoList($index) VENDORPR vendorPr
+		  keylget videoList($index) MODELPR modelPr
+		  set vendormodelPr [format "%s %s" $vendorPr $modelPr]
+	          lappend builtlist $vendormodelPr
+
+		  # see if this is the longest string
+		  set vcols [string length $vendormodelPr]
+		  if {$columns < $vcols} {
+			set columns $vcols
+		  }
+	       }
+	    }
+        "MONITOR_LIST"
+	    {   
+	    # Build the list, sorted by Description
+               if {[info exists monitorList]} {
+	          set moncols 0
+	          foreach index [lsort -integer [array names monitorList]] {
+		     keylget monitorList($index) DESCRIPTION description
+	             lappend builtlist $description
+
+		     # see if this is the longest string
+		     set moncols [string length $description]
+		     if {$columns < $moncols} {
+		   	set columns $moncols
+		     }
+	          }
+	       }
+	    }
+        "RESOLUTION_LIST" 
+	    {   
+	    # build the list containing all resolutions for the
+	    # selected video adapter.
+
+		# get the globally stored vendor and model
+		set vendor [GetCurVendor]
+		set model [GetCurModel]
+
+		# get a list of Class Modes and Comments.
+		# Pull out each of the Class and Mode prompt strings
+		# and store them.
+
+		set rescols 0
+		set pos 0
+		foreach res [GetResolutions $vendor $model] {
+		   # pull each classPr and modePr from res
+		   set classPr [GetClassPr $res]
+		   set modePr [GetModePr $res]
+		   # trim for instances when classPr is empty
+		   set classmodePr [string trim \
+			[format "%s %s" $classPr $modePr]]
+		   lappend builtlist $classmodePr
+
+		   # see if this is the longest string
+		   set rescols [string length $classmodePr]
+		   if {$columns < $rescols} {
+			set columns $rescols
+		   }
+
+		   set class [GetClass $res]
+		   set mode [GetMode $res]
+		   incr pos
+		   set resPos($pos) [format "%s %s" $class $mode]
+		}
+	    }
+        "DEVICE_LIST" 
+	    {   
+	    # Build a list containing all devices
+	    # The device list elements are each of the indexes of the ttyList
+		foreach device [lsort [GetTTYIndexes all]] {
+		     lappend builtlist $device
+		}
+	    }
+        "DEVICE_SCREEN" 
+	    {   
+	    # Build a list containing all devices corresponding to a 
+	    # selection in MAIN_SCREEN.  Use screenList to do this.
+	    #
+	    # Current Video Adapter Configuration:
+	    # +----- (Main Screen) ----------
+	    # | IBM VGA	             << USER SELECTS THIS ---------------+
+	    # |  | +---- Standard VGA  << OR USER SELECTS THIS ----------+
+	    # |  +------ VGA 640x480 2-color	(on tty01 tty02 tty04)   |   
+	    # |  +------ VGA 320x200 256-color	(on tty03)               |
+	    # +---------------------------                               |
+	    #                                                            |
+	    # Associated Devices: Video Adapter and Resolution           |
+	    # +----- (Device Screen) --------                            /
+	    # | /dev/tty01: IBM VGA VGA 640x480 2-color    << THEY SEE THIS
+	    # | /dev/tty02: IBM VGA VGA 640x480 2-color    <<
+	    # | /dev/tty03: IBM VGA VGA 320x200 256-color  <<
+	    # | /dev/tty04: IBM VGA VGA 640x480 2-color    <<
+	    # +------------------------------
+	    #
+	    # However, selecting the line in Main Screen showing this: 
+	    # |  +------ VGA 640x480 2-color  (on tty01 tty02 tty04) <<<-+
+            # Would only display these devices:                          |
+	    # +----- (Device Screen) --------                            /
+	    # | /dev/tty01: IBM VGA VGA 640x480 2-color    << THEY SEE THIS
+	    # | /dev/tty02: IBM VGA VGA 640x480 2-color    <<
+	    # | /dev/tty04: IBM VGA VGA 640x480 2-color    <<
+	    #   
+	    #
+	    # For TYPE CARD or TYPE MONITOR selection:
+	    # - display all devices and RESOLUTIONS for the CARD/MONITOR
+	    # - display other cards that are configured multiheaded for
+	    #   any of these devices
+	    #
+	    # For TYPE RESOLUTION selection:
+	    # - display all devices for the selected RESOLUTION
+	    # - do not display other RESOLUTIONS configured for the same CARD
+	    #   unless they're configured as multiheaded
+	    # - display other cards that are configured as multiheaded for
+	    #   any of these devices
+	    #
+
+	       # if we lock, mainscreen -defaultCallback doesn't activate well
+    	       #VtLock
+	       set ttys {}
+	       set pos $screenIndex
+	       set elem [lindex $screenList $pos]
+	       keylget elem TYPE type
+
+	       if {$type != "NOTHING"} {
+		  if {($type == "CARD") || ($type == "MONITOR")} {
+		     if {$type == "CARD"} {
+			# bump position up two to first resolution
+			set pos [expr $pos+2]
+		     } elseif {$type == "MONITOR"} {
+			# bump position up one to first resolution
+			incr pos
+		     }
+		     # pos == type CARD, +2 is past MONITOR to RESOLUTION
+
+		     # walk through each RESOLUTION belonging to this 
+		     # CARD/MONITOR.  Gather up all ttyshead elements 
+		     # and convert to ttys only
+		     set len [llength $screenList]
+		     for {set cnt $pos} {$cnt < $len} {incr cnt} {
+			 # find all resolutions up to next CARD type or end
+	       		 set elem [lindex $screenList $cnt]
+	       		 keylget elem TYPE type
+			 if {$type == "CARD"} {
+			    break
+			 } elseif {$type == "RESOLUTION"} {
+			    # pull out ttysheads and split out the tty
+		  	    keylget elem TTYSHEAD ttyshead
+		  	    foreach entry $ttyshead {
+			       #XXX - is ttyshead needed any more?
+		     	       if {$entry == {}} { break }
+		     	       set tty [lindex $entry 0]
+			       # make sure the tty isn't already in ttys
+			       if {[lsearch -exact $ttys $tty] == -1} {
+			          lappend ttys $tty
+			       }
+			    }
+			 }
+		      }
+		  } elseif {$type == "RESOLUTION"} {
+		     keylget elem TTYSHEAD ttyshead
+		     foreach entry $ttyshead {
+		     	if {$entry == {}} { break }
+		     	set tty [lindex $entry 0]
+			lappend ttys $tty
+		     }
+		  }
+		  if {($type == "CARD") || \
+			($type == "MONITOR") || ($type == "RESOLUTION")} {
+		     #echo ttys are: $ttys
+		     foreach tty [lsort $ttys] {
+		        set hlen [GetTTYHeadLen $tty]
+	                # for each multiheaded entry at that tty
+		        for {set hcnt 0} {$hcnt < $hlen} {incr hcnt} {
+			    set desc [GetTTYDescription $tty $hcnt]
+			    if {$hcnt == 0} {
+			       lappend builtlist [format "%s: %s  " \
+						[GetTTYString $tty] $desc]
+			    } else {
+			       # Multi-headed entries built here.
+			       if {[IsCharm]} {
+			          lappend builtlist \
+					[format "        %s  " $desc]
+			       } else {
+			          lappend builtlist \
+					[format "                   %s  " $desc]
+			       }
+			    }
+		        }
+		     }
+		  }
+	       }
+    	       #VtUnLock -once
+	    }
+    }
+    return $builtlist
+}
+

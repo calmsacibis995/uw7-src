@@ -1,0 +1,18 @@
+#ident	"@(#)mbc	1.2"
+#
+# Start Multibyte console driver for locales that need it
+#
+case "$1" in
+'start')
+	eval `defadm locale LANG 2> /dev/null`
+	eval `defadm coterm MBCONSOLE 2> /dev/null`
+	if [ $? = 0  -a ! -z "$MBCONSOLE" -a ! -z "$LANG" -a "$MBCONSOLE" = "yes" ]
+	then
+		/usr/bin/pcfont -l $LANG
+	fi
+	;;
+'stop')
+	# reset console
+	/usr/bin/stty VGA_C80x25
+	;;
+esac

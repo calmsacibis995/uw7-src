@@ -1,0 +1,84 @@
+#ident	"@(#)kern-i386at:depend.rules	1.3.2.1"
+
+#
+#	depend.rules for kernel makefiles
+#
+# puts the header dependencies in a separate file, $(MAKEFILE).dep,
+# which is included by $(MAKEFILE)
+#
+
+MAKE_INC_LIST = \
+	_INC=`if [ "$(INC)" = "" ];then echo "__________";else echo $(INC) |sed -e 's,\.,\\\\.,g' ;fi`;\
+	_KBASE=`if [ "$(KBASE)" = "" ];then echo "__________";else echo $(KBASE) |sed -e 's,\.,\\\\.,g' ;fi `; \
+	_TOOLS=`if [ "$(TOOLS)" = "" ];then echo "__________";else echo $(TOOLS) |sed -e 's,\.,\\\\.,g' ; fi ` ;\
+	cat makedep1 | sed -e '3,$$s%^[ 	]*%	%g;2,$$s%$$% \\%g'>> makedep
+
+
+MAKE_SRC_NAME = \
+	_KBASE=`echo $(KBASE) |sed -e 's,\.,\\\\.,g'` ;\
+	_SRC=`echo $$i |sed -e "s,^$$_KBASE,\\$$(KBASE),"`
+
+#
+# The processing of SFILES below finds m4 include()s.
+# It "knows" that include(assym_include) should be expanded to
+# ../util/assym.h and ../util/assym_dbg.h (ASSYM and ASSYMDBG).
+# If the definition of assym_include (in svc/asm.m4) changes,
+# update the following two lines.
+ASSYM = $(KBASE)/util/assym.h
+ASSYMDBG = $(KBASE)/util/assym_dbg.h
+
+depend:: makedep
+	rm -f $(MAKEFILE).dep
+	cp makedep $(MAKEFILE).dep
+	rm -f makedep makedep1 makedeperrs
+
+makedep:: $(CFILES) $(SFILES)
+	@(if [ "$(MAKEFILE)" = "" -o "$(AWK)" = "" ];\
+	then echo one or more of '$$MAKEFILE' or '$$AWK' is not set; false; fi)
+	-@(if [ -n "$(CFILES)" ] ;\
+	then \
+		for i in $(CFILES) "" ; \
+		do \
+			if [ $$i ] ; \
+			then \
+				/bin/echo "\n"`basename $$i .c`.o":\n"$$i >makedep1; \
+				$(CC) -H -E $(CFLAGS) $(INCLIST) $(DEFLIST) $$i 2>&1 >/dev/null | egrep -v '[^ 	][ 	]|^[ 	]*$$'| sort -u>>makedep1;\
+				$(MAKE_INC_LIST); \
+				/bin/echo '	$$(FRC)' >>makedep; \
+				if [ '$(CRULES)' ] ; \
+				then \
+					/bin/echo "	$(CRULES)" >>makedep ; \
+				fi \
+			fi \
+		done \
+	else \
+		echo "" >>makedep;  \
+	fi) 2>makedeperrs
+	-@(if [ -n "$(SFILES)" ] ;\
+	then \
+		for i in $(SFILES) "" ; \
+		do \
+			if [ $$i ] ; \
+			then \
+				/bin/echo "\n"`basename $$i .s`.o":\n"$$i >makedep1; \
+				PFIX=`grep '^include(.*assym_include)' $$i`; \
+				if [ $$PFIX ]; \
+				then \
+					PFIX=`echo $$PFIX | \
+					    sed -e 's%.*(%%;s%assym.*)%%'`; \
+					echo $${PFIX}$(ASSYMDBG) >>makedep1; \
+					echo $${PFIX}$(ASSYM) >>makedep1; \
+				fi; \
+				grep '^include' $$i | grep -v assym_include | \
+					sed -e 's%.*(%%;s%KBASE%$(KBASE)%;s%)%%' >>makedep1; \
+				$(MAKE_INC_LIST); \
+				/bin/echo '	$$(FRC)' >>makedep; \
+				if [ '$(SRULES)' ]; \
+				then \
+					/bin/echo "	$(SRULES)" >>makedep; \
+				fi \
+			fi \
+		done \
+	fi) 2>makedeperrs
+	@cat makedeperrs >&- 1>&2
+	-@(if [ -s makedeperrs ]; then rm -f makedep; false; fi)

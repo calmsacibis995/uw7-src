@@ -1,0 +1,40 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/ictha/request	1.1"
+
+# Check if we're installing on the correct release
+PKGMSG=hba.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+ROOT=
+[ "$SETNAME" = "from_loadhba" -a "$UPDATE" != "yes" ] && ROOT="/mnt" ]
+LC_MESSAGES=$ROOT/usr/lib/local/$LOCALE
+
+if [ ! -f ${LC_MESSAGES}/LC_MESSAGES/${PKGMSG} ]
+then
+	if [ -f ${REQDIR}/inst/locale/${LOCALE}/$PKGMSG} -a \
+		-d ${ROOT}/usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+	then
+		cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+			${LC_MESSAGES}/LC_MESSAGES
+	fi
+fi
+
+WRONG_VER=`pfmt -s ERROR -g ${PKGMSG}:3 "This %s package may only be installed on UnixWare 2 or greater.  You are attempting to install on an older version of the operating system." "$PKGINST" 2>&1`
+
+MAJOR_VER=`uname -v  | cut -f1 -d.`
+if [ $MAJOR_VER -lt 2 ]
+then
+	message -d ${WRONG_VER}
+	exit 1
+fi
+
+# Check if HBA was previously installed via the base package. 
+# This could be the case if this is an update installation
+# of the HBA package and the original HBA was installed via
+# the installation boot floppy.  If it was, create a reverse
+# dependency on the base package so that this package may
+# not be removed from the system unless the base package is
+# already removed (unlikely).
+grep "/etc/conf/mdevice.d/$PKGINST.*base$" /var/sadm/install/contents 2>&1 >/dev/null
+if [ $? -eq 0 ]
+then
+	echo CLASSES=\"$CLASSES dep\" >$1
+fi

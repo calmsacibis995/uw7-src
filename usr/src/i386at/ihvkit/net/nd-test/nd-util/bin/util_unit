@@ -1,0 +1,570 @@
+:
+#
+#       @(#) tcp 11.2 95/05/12 SCOINC
+#
+#	Copyright (C) The Santa Cruz Operation, 1993-1995
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+
+tet_startup=""
+tet_cleanup="finish"
+
+iclist=$ICLIST
+
+ic1="start"
+ic2="pingtest"
+ic3="mftp"
+ic4="sftp"
+ic5="ftpload"
+ic6="dorcp"
+#ic7="mtelnet"
+#ic8="stelnet"
+
+. $TET_ROOT/inc/libant.sh
+
+start()
+{
+	dlpiut stop > /dev/null 2>&1
+	ndsu "nd stop" > /dev/null 2>&1
+	sleep 4
+	ndsu "nd start"
+	sleep 2
+ 	
+        # start tcp/ip
+ 	ndsu "sh /etc/rc2.d/S69inet start"
+ 	ndsu "/usr/sbin/inetd -s"
+
+	echoboth "start: start of TCP Utility test, looking for other machine"
+	dlpiut open device=$DEVICE interface=dlpi > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		rm -f /tmp/tmp$$
+		return
+	}
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+
+	NETTYPE=$media
+	echoboth "NETTYPE=$media"
+	echo "NETTYPE=$media" > /tmp/ant$$
+	framing
+
+	dlpiut bind fd=0 sap=$gsap framing=$gframing error=n > /dev/null
+
+	dlpiut getaddr fd=0 > /tmp/tmp$$
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OURADDR=$addr
+	OURMCHN=`uname -n`
+
+	OURNAME=`uname -n`
+	OURIPADDR=`awk "/$OURNAME/ { print \\$1 }" /etc/hosts`
+
+	echoboth "Test Machine: $OURMCHN=$OURADDR IPADDRESS=$OURIPADDR"
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+	    dlpiut syncsend fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	else
+	    dlpiut syncrecv fd=0 msg=$OURADDR sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDR=$msg
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+	    dlpiut syncsend fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+	    dlpiut syncrecv fd=0 msg=$OURMCHN sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERMCHN=$msg
+
+	#/etc/tcp start
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+	    dlpiut syncsend fd=0 msg=$OURIPADDR sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+	    dlpiut syncrecv fd=0 msg=$OURIPADDR sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERIPADDR=$msg
+
+	echoboth "Remote Machine: $OTHERMCHN=$OTHERADDR, IPADDRESS=$OTHERIPADDR"
+
+	echo OURMCHN=$OURMCHN >> /tmp/ant$$
+	echo OTHERMCHN=$OTHERMCHN >> /tmp/ant$$
+	echo OURADDR=$OURADDR >> /tmp/ant$$
+	echo OTHERADDR=$OTHERADDR >> /tmp/ant$$
+	echo OURIPADDR=$OURIPADDR >> /tmp/ant$$
+	echo OTHERIPADDR=$OTHERIPADDR >> /tmp/ant$$
+	chmod 775 /tmp/ant$$
+
+	echo PASS
+	tet_result PASS
+}
+
+pingtest()
+{
+	echoboth "pingtest: ping remote machine several times"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	syncup pingtest 180 || return
+
+	NSENT=`ping -s $OTHERIPADDR 58 1 | awk '/packets/ {print $4}'`
+	[ "$NSENT" != "1" ] && {
+		echo FAIL
+		tet_result FAIL
+		return
+	}
+
+	ping -s $OTHERIPADDR 58 10>/tmp/tmp$$
+	x=$?
+	NSENT=`awk '/packets/ {print $4}' /tmp/tmp$$`
+	checkfail $?
+	[ "$NSENT" != "10" ] && checkfail 1
+
+	echo "pingtest: $ret"
+	tet_result $ret
+}
+
+ftptest()
+{
+	testname=$1
+	ms=$2
+
+	echoboth "$testname: ftp file to and from remote machine and compare"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$MASTERSLAVE" != "$ms" ]
+	then
+		syncup $testname 180 || return
+		syncup ${testname}-done 400 || return
+		return
+	fi
+	
+	dd if=/dev/swap of=/tmp/ftp$$ bs=100k count=10 2>/dev/null
+	sync; sleep 2; sync
+	size=`ls -l /tmp/ftp$$ | awk '{print $5}'`
+	s=`echo "$size/1024" | bc`
+
+	syncup $testname 180 || return
+
+	ftp -n -v $OTHERIPADDR >/tmp/tmp$$ 2>&1 << END
+user ndcert  
+bin
+put /tmp/ftp$$ /tmp/ftp$$
+quit
+END
+	OUTTIME=`awk '/bytes sent/ {print $7 $8}' /tmp/tmp$$`
+	grep "bytes sent" /tmp/tmp$$ > /dev/null
+	checkfail $?
+
+	ftp -n -v $OTHERIPADDR >/tmp/tmp$$ 2>&1 <<END
+user ndcert  
+bin
+get /tmp/ftp$$ /tmp/Xftp$$
+quit
+END
+	INTIME=`awk '/bytes received/ {print $7 $8}' /tmp/tmp$$`
+	grep "bytes received" /tmp/tmp$$ > /dev/null
+	checkfail $?
+
+	echoboth "$testname: ${s}k file put=$OUTTIME get=$INTIME"
+
+	cmp /tmp/ftp$$ /tmp/Xftp$$ >/tmp/tmp$$
+	if [ "$?" != "0" ]
+	then
+		echoboth "$testname: files aren't the same"
+		checkfail $?
+	fi
+
+	
+	syncup ${testname}-done 60 || return
+}
+
+mftp()
+{
+
+	ftptest mftp master
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		rm /tmp/X*
+	fi
+
+	echoboth "mftp: $ret"
+	tet_result $ret
+}
+
+sftp()
+{
+
+	ftptest sftp slave
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+	    dlpiut syncsend fd=0 msg=$ret sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	    . /tmp/tmp$$
+	    [ "$msg" != "PASS" ] && ret=$msg
+	else
+	    dlpiut syncrecv fd=0 msg=$ret sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	fi
+
+
+
+	if [ "$MASTERSLAVE" = "slave" ]
+	then
+		rm /tmp/X*
+	fi
+
+	echoboth "sftp: $ret"
+	tet_result $ret
+}
+
+
+ftpload()
+{
+
+	echo "ftpload: ftp files simultaneously to and from remote machine"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	size=$SIZE
+	MAX_FILES=5
+
+	mkdir ftpload
+
+	cnt=1
+	while [ $cnt -lt $MAX_FILES ]
+	do
+		ftpfile=ftpload/ftp$$_$cnt
+
+		case $size in
+		*[mM])
+			size=`expr \`expr "$size" : "\(.*\)[Mm]"\` \* 1048576`
+			echo size is now $size
+			;;
+		*[bB]|*[kK])
+			;;
+		*)
+		esac
+
+		 
+		dool 
+
+		cnt=`expr $cnt + 1`
+	done
+	sleep 4
+
+	rm -r ftpload
+	rm /tmp/ftp*
+
+	echoboth "ftpload: $ret"
+	tet_result $ret
+}
+
+dool()
+{
+	ERROR="Usage error: Check configuraion" 
+
+	if dd if=/dev/zero of=$ftpfile bs=$size count=1
+	then
+		:;
+	else
+		echo $ERROR
+		exit 2
+	fi
+
+	echo "put $OTHERIPADDR: \\c"
+	ftp -in $OTHERIPADDR <<-! | grep second
+user ndcert  
+verbose
+put $ftpfile $SUITE/bin/$ftpfile
+quit
+!
+	echo "get $OTHERIPADDR: \\c"
+	ftp -in $OTHERIPADDR <<-! | grep second
+user ndcert  
+verbose
+get $SUITE/bin/$ftpfile $ftpfile
+quit
+!
+
+}
+
+telnettest()
+{
+	testname=$1
+	ms=$2
+	echoboth "$testname: telnet to other machine, cat a file and compare"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$MASTERSLAVE" != "$ms" ]
+	then
+		syncup $testname 180 || return
+		syncup ${testname}-done 400 || return
+		return
+	fi
+
+	syncup $testname 180 || return
+
+	dd if=/dev/zero of=$TET_ROOT/lib/testfile bs=100k count=1
+        echo "cat $TET_ROOT/lib/testfile" > /tmp/tc
+
+
+        $TET_ROOT/bin/rl -t 1 LOGIN=telnet MCHN=$OTHERIPADDR UID=ndcert \
+	    PWD= FILE1=$TET_ROOT/lib/testfile FILE2=/tmp/tc \
+	    TEST=telnettest TR1=50 TR2=300 $TET_ROOT/bin/rls >/tmp/tmp$$
+	checkfail $?
+	rm -f /tmp/tc
+}
+
+mtelnet()
+{
+
+	telnettest mtelnet master
+
+
+	echoboth "mtelnet: $ret"
+	tet_result $ret
+}
+
+stelnet()
+{
+
+	telnettest stelnet slave
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+	    dlpiut syncsend fd=0 msg=$ret sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	    . /tmp/tmp$$
+	    [ "$msg" != "PASS" ] && ret=$msg
+	else
+	    dlpiut syncrecv fd=0 msg=$ret sap=$gsap framing=$gframing \
+		omchnaddr=ffffffffffff ourdstaddr=ffffffffffff \
+		odstaddr=ffffffffffff timeout=180 loop=y match=n > /tmp/tmp$$
+	fi
+
+
+	echoboth "stelnet: $ret"
+	tet_result $ret
+}
+ 
+dorcp()
+{
+	echoboth "dorcp: Copy and compare $RCP_ITERATIONS increasingly larger files to remote machine "
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	prepare_tests
+   	test1
+
+	echoboth "dorcp: $ret"
+	tet_result $ret
+}
+
+prepare_tests()
+{
+	NODECOUNT=2
+	NODE1=$REMOTE_MACHINE
+
+	mkdir ${TET_ROOT}/tmpm 
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		TEMPDIR=${TET_ROOT}/tmpm
+	fi
+
+	if [ -z "$RCP_ITERATIONS" ]
+	then
+		tet_delete test1 "Parameter RCP_ITERATIONS not set"
+		return
+	fi
+	if [ $RCP_ITERATIONS -gt 20 ]
+	then
+		tet_delete test1 "Parameter RCP_ITERATIONS should be set to a value less than or equal to 20"
+	fi
+
+# Create a small (256 bytes) binary file
+
+
+	rm -f ${TEMPDIR}/rcp_file* 
+
+	i=0
+	j=0
+	k=0
+	while [ $i -lt 4 ]
+	do
+		while [ $j -lt 8 ]
+		do
+			while [ $k -lt 8 ]
+			do
+				echo "\0$i$j$k\c"
+				k=`expr $k + 1`
+			done
+			k=0
+			j=`expr $j + 1`
+		done
+		j=0
+		i=`expr $i + 1`
+	done >${TEMPDIR}/rcp_file.tmp
+	cp ${TEMPDIR}/rcp_file.tmp ${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+	rm ${TEMPDIR}/rcp_file.tmp
+	
+}
+
+test1()
+{
+	tet_infoline "RCP_TST_01 Copy a file to remote machine using rcp, copy it back and compare"
+	#echo "RCP test started... "
+	#echo "please wait for the completion message."
+	i=0
+	kbytes=1
+	while [ $i -lt $RCP_ITERATIONS ]
+	do
+
+  		cnt=1
+ 		i=`expr $i + 1`
+   		while [ $cnt -lt $NODECOUNT ]
+   		do
+			node=`eval echo \\$NODE$cnt`
+			echo "Copying a $kbytes KB file to $node" 
+			rcp ${TEMPDIR}/rcp_file $node:${TEMPDIR}/rcp_file
+
+			if [ $? -ne 0 ]
+			then
+				tet_infoline "remote copy of a $i MB file failed" 
+				tet_result FAIL
+				return
+			else
+				rcp $node:${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.$node
+			if [ $? -ne 0 ]
+			then
+				tet_infoline "Copy back of a $i MB file failed" 
+				tet_result FAIL
+				return
+			else
+				cmp ${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.$node > /dev/null 2>&1
+			if [ $? -ne 0 ]
+			then
+				tet_infoline "Comparison of a $i MB file failed"
+				tet_result FAIL
+				return;
+			fi
+
+			rm ${TEMPDIR}/rcp_file.$node
+			fi
+			fi
+			cnt=`expr $cnt + 1`
+    		done
+
+    		cp ${TEMPDIR}/rcp_file ${TEMPDIR}/rcp_file.tmp
+  	  	cat ${TEMPDIR}/rcp_file.tmp >>${TEMPDIR}/rcp_file
+    		rm ${TEMPDIR}/rcp_file.tmp
+    		kbytes=`expr $kbytes + $kbytes`
+	done
+
+	echo "Waiting for $REMOTE_MACHINE to finish ...."
+	sleep 6
+
+	rm -f ${TEMPDIR}/rcp_file*
+	rm -r ${TET_ROOT}/tmpm
+	tet_result PASS
+}
+
+
+finish()
+{
+	echoboth "finish: cleanup"
+	rm /tmp/ant*
+
+	if [ "$TEST_SCEN" != "dorcp" ]
+ 	then
+		rm /tmp/tmp*
+	fi
+
+	dlpiut stop
+	ndsu "nd stop"
+	stopall	
+}
+
+. $TET_ROOT/inc/xpg3sh/mytet.h
+echo done

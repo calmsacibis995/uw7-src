@@ -1,0 +1,50 @@
+#ident	"@(#)Form.rmpoll	1.2"
+#ident "$Header$"
+
+
+################################################################################
+#
+#	Module Name: Form.rmpoll
+#
+#	Functional Description: This Form removes a system from BNU automatic
+#                               polling.
+#			
+################################################################################
+form="Removes a System from the Automatic Polling List of Basic Networking"
+close=`unset -l FRM -l STRING`
+
+`readfile $INTFBASE/form.msg | message -s`
+
+help=OPEN TEXT $INTFBASE/Text.itemhelp $LININFO
+
+begrow=any
+begcol=any
+
+done=`indicator -w;
+	if [ "$F1" = "All" ];
+	then 
+ 	echo OPEN MENU $OBJ_DIR/Menu.rmpoll_a;
+	else sed -e 's/	/ /g' /etc/uucp/Poll > /tmp/Poll.notab;
+		/usr/bin/cat /tmp/Poll.notab | grep "^$F1" | set -l STRING;
+		echo ${STRING} | cut -d" " -f1 | set -l BNU0;
+		echo ${STRING} | cut -d" " -f2- |tr -s " " ","| set -l BNU1;
+ 		set -l "BNU_NEWLN=${BNU0},${BNU1}";
+ 		getfrm | set -l FRM;
+ 		/usr/bin/rm /tmp/Poll.notab;
+ 		echo OPEN FORM $OBJ_DIR/Form.cf_rpoll "$BNU_NEWLN" "$BNU0" "$BNU1" "$FRM";
+ 	fi`
+ 
+# F1
+name=System Name to Validate before Removal:
+nrow=1
+ncol=2
+frow=1
+fcol=42
+rows=1
+columns=14
+value=All
+rmenu=OPEN MENU $OBJ_DIR/../list/Menu.psysname
+lininfo=prmsys
+valid=`validls "$F1" "/etc/uucp/Poll"`
+invalidmsg=No systems available for removal; /etc/uucp/Poll empty or system name not found.
+

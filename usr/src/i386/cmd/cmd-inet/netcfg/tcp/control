@@ -1,0 +1,68 @@
+#!/bin/ksh
+#ident "@(#)control	1.2"
+#
+# Netcfg control script for TCP.
+#
+# This script is run after the init script has been run to allow
+# any interfaces that have been created to be started or stopped.
+#
+# The arguments are:
+#
+# $1: lower element of chain, e.g. net0
+# $2: lower interface
+# $3: upper element of chain, e.g. tcp
+# $4: upper interface
+# $5: Y|N indicating if this is the last element configured
+# $6: start|stop indicating if we are running at init or remove time.
+#
+PATH=$PATH:/bin:/sbin:/usr/bin:/usr/sbin:/etc:/etc/conf/bin
+export PATH
+
+case $6 in
+start)
+	if [ -f /etc/init.d/S02POSTINST ]
+	then
+		#
+		# We're in the middle of ISL.
+		# Don't do anything, let the reboot take care of it.
+		#
+		exit 0
+	fi
+
+	if [ "$5" = "Y" ]
+	then
+		#
+		# This is the first interface configured.
+		# Run initialise -U as this starts the interface and
+		# all the associated network daemons, e.g. routed.
+		#
+		initialize -U
+		exit 0
+	fi
+
+	#
+	# This is not the first interface configured so assume the
+	# daemons are already running and just start the interface.
+	#
+	initialize -u $1
+	exit 0
+	;;
+stop)
+	if [ "$5" = "Y" ]
+	then
+		#
+		# This is the final interface to be deconfigured.
+		#
+		initialize -D
+		exit 0
+	fi
+
+	#
+	# Just bring down this interface.
+	#
+	initialize -d $1
+	exit 0
+	;;
+esac
+
+exit 0

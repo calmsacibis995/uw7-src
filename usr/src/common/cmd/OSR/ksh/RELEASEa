@@ -1,0 +1,483 @@
+#ident	"@(#)OSRcmds:ksh/RELEASEa	1.1"
+#	@(#) RELEASEa 25.2 92/12/11 
+#
+#	Copyright (C) The Santa Cruz Operation, 1990-1992
+#		All Rights Reserved.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+
+This is a list of changes that have been made since the 11/16/88 version
+of ksh. 
+
+1.	New features in 11/16/88[a-g]
+	a.  All characters of alias names can contain non-special
+	    characters, not just the first.  A / is not a valid alias
+	    character.
+	b.  The vi % directive has been added to 11/16/88c
+	c.  A new [[...]] -C option returns true for contiguous files.
+	    This option returns false on systems that do not support
+	    contiguous files.
+	d.  Setting REPLY to the null string in a select command causes
+	    the selection list to get refreshed in 11/16/88d.
+	e.  Unary minus added for arithmetic expressions to increase
+	    compatibility with system V test command.
+	f.  Starting with 11/16/88e, The vi directive '#' has been changed
+	    so that each line of the command is turned into a comment.
+	    Also, if the first character of the command is a '#', the '#'
+	    in front of each line is deleted.
+	g.  The message for EOF with ignoreeof has changed in 11/16/88e.
+	h.  A SOCKETS option has been added for machines with the BSD
+	    socket calls so that scripts can connect to sockets via
+	    redirection.  See the README file for more details.
+	i.  Starting with 11/16/88e, the behavior of 'ksh script' where
+	    script is not a shell script has been changed.  If ksh detects
+	    that script is an a.out, a cannot exec error message is generated.
+	j.  The s directive in vi was added to the documentation starting
+	    with 11/16/88g.
+	k.  The directory /usr/local/bin was added to the set of trusted
+	    directories for /etc/suid_exec starting with 11/16/88g.
+	l.  Starting in 11/16/88g, == can be used where = is used
+	    for string comparison inside [[...]].
+	m.  Starting in 11/16/88g, ulimit without any arguments will print
+	    out a large number rather than the string "unlimited" when
+	    the file size limit is unlimited.
+
+2.	Bugs fixed in 11/16/88a for default OPTIONS
+	a.  Files containing a \ were not matched correctly with patterns.
+	b.  read without arguments no longer references location 0.
+	c.  The value of integer exported variables was not inherited
+	    correctly in some cases.
+	d.  The characters ()|&\ in IFS did cause word splitting when ksh
+	    expanded commands. 
+	e.  $! expanded to 0 before any background jobs were run, rather
+	    than to the null string.  The value of $! was not reset to
+	    null when running a script by name.
+	f.  On some machines, the shell would core dump if the variable
+	    LINENO was exported.
+	g.  The [[ ]] command did not handle multiple && and || without
+	    parenthesis grouping.
+	h.  On some BSD implementations, terminal setting were being
+	    incorrectly reset when using vi-mode. 
+	i.  The execution of traps that write to standard output got
+	    lost when the trap occurred while executing command substitution
+	    of a built-in command. 
+	j.  The noclobber option now only applies to ordinary files.
+	k.  The value of RANDOM changes when ksh creates a subshell.
+	l.  Some syntax error messages had extra backslashes in them.
+	m.  The expansion ${#name[number]} was not returning the string
+	    length of array element number.
+	n.  ksh did not work correctly in some cases when there was
+	    no search permission in the current directory.
+	o.  A pipeline would hang if the last element of the pipeline
+	    was a shell construct that created a lot of child processes.
+	    For example, cat file | while read line;do /bin/true;done
+	p.  getopts has been fixed to agree with the description in
+	    the man page.  Previous ksh initialized OPTIND to 0, not 1,
+	    and did not handle the case with a leading : as described.
+	q.  If the name of the directory you are in contained a :,
+	    a cd command to a relative pathname did always work correctly.
+	r.  read -s now saves commands in the history file even when
+	    read has been redirected from a file.
+	s.  Some here documents containing command substitution with
+	    a command that read from standard input didn't work
+	    correctly.
+	t.  (exec >&-; echo $(command) >&2) no longer runs command
+	    with file descriptor 1 closed.
+	u.  The <ESC>* command of vi and emacs inserted an extra
+	    space when exactly one file matched.
+	v.  A bug in vi edit mode caused a 'p' command to fail
+	    after a 'D' command on some machines.
+	w.  Reseeding the random number generator now guarantees
+	    the same random sequence.
+	x.  The results command substitution with built-in commands
+	    that produced over 1K of output was sometimes incorrect.
+	y.  set -A, without an argument, now produces an error message.
+	    set -A name ... no longer causes the positional parameters
+	    to be reset as an unintentional side effect.
+	z.  Unterminated here-documents do not generate syntax errors
+	    unless the -n option is on.
+	aa. Job control now works for functions as it did with ksh-i.
+	bb. The exit status of a pipeline whose last element is a built-in
+	    command is now correct.
+	cc. ksh no longer dumps core when the last element of a pipeline
+	    is a built-in command with an invalid parameter expansion.
+	dd. A trap on CHLD is no longer triggered by processes in the
+	    current pipeline.
+	ee. One systems without readdir(), filename generation left
+	    open files by mistake.
+	ff. traps ignored in a shell script were sometimes reset to
+	    caught when functions were invoked.
+	gg. The trace (set -x ) of [[ x < y ]] and [[ x > y]] was incorrect.
+	hh. foobar() ; no longer core dumps.
+	ii. A trap on continue from within a select loop no correctly
+	    when the trap occurs while reading from the terminal.
+	jj. The r command correctly handles numerical replacements so
+	    that r 3=4 now works.
+	kk. Long lines (>3K) no longer causes a core dump with read.
+	ll. The command substitution $(name=value) no longer causes a
+	    core dump.
+	mm. With the vi edit mode on some systems, extra characters were
+	    left on the screen when the kill or erase characters were
+	    preceded by a backslash.
+	nn. After a dot script that couldn't be found, a trap command
+	    in a script could cause a core dump.
+	oo. Redirection with read of the form, read x <&3, was causing
+	    the seek position on unit 3 to be positioned incorrectly.
+	pp. When an invalid alias name is given, ksh now prints the
+	    correct error message.
+	qq. On systems with job control, if you escaped to a shell that
+	    terminated abnormally, the calling process would hang.
+
+3.	Bugs fixed in 11/16/88b for default OPTIONS
+	a.  ${x-"{a}"b} now expands to {a}b when x is not set.
+	b.  ksh no longer core dumps with print -s when HISTFILE changed.
+	c.  Tab stripping of numbered here-documents now works.
+	d.  The deprecated, sh -t, now works the same as System V shell.
+	e.  Attempting to list autoloaded functions no longer core dumps.
+
+4.	Bugs fixed in 11/16/88c for default OPTIONS
+	a.  The process id for background jobs killed from scripts was
+	    incorrect.
+	b.  The wait built-in did not always return the correct value when
+	    there was more than one background job.
+	c.  ksh dumped core while in read with stderr redirected and in
+	    emacs mode when it received an signal that had a trap set.
+
+5.	Bugs fixed in 11/16/88d for default OPTIONS
+	a.  With the monitor option on with systems without job control,
+	    login shells no longer print an extraneous 'running jobs'
+	    message with a|b, where b is not found.
+	b.  On systems where the behavior of the echo builtin depends
+	    on the location of echo in the PATH variable, ksh no longer
+	    core dumps if the PATH does not have a directory containing
+	    an echo command.
+	c.  return with an argument greater than 256 no longer causes
+	    a core dump.
+	d.  Tests on files whose names are null return false on all systems.
+	e.  In some instances $0 was being incorrectly set after the
+	    dot command was invoked with arguments inside a script.
+	f.  The line number enclosed in [] when ksh reports a syntax error
+	    has been corrected to be the first line of the command that
+	    it is reading.
+	g.  A trap on EXIT after a syntax error sometimes inserted an
+	    extra character before the trap command text. 
+	h.  for i in ...; do echo ${i[@]};done no longer causes a subscript
+	    error.
+	i.  If the read built-in was interrupted, the terminal was not
+	    always restored to the state it was in before read.
+	j.  Output from background status changes with the monitor mode are
+	    now written to standard error.
+	k.  Executing a function interactively no longer causes SIGTERM
+	    to be caught.
+	l.  Using _ as an array variable no longer causes a core dump.
+	m.  Unsetting a function more than once no longer causes core
+	    dumps or other undesired side effects.
+	n.  The code to process the substring operator ## was changed
+	    so that the time was no longer quadratic in the length
+	    of the string.
+	o.  A bug that caused a job to disappear from the jobs table
+	    after sending it a CONT signal has been fixed.
+	p.  On systems where a null pathname is not the same as .,
+	    the command 'cd .' would fail if the environment was cleared
+	    before executing ksh.
+	q.  In vi-mode, the screen did not always get refreshed correctly
+	    when an insert followed a delete in front of a control character.
+	r.  A bug in getopts that could cause a core dump when getopts
+	    was called with fewer arguments on subsequent calls was fixed.
+	s.  In vi-mode, ^V^M now enters ^M, not ^J on most systems.
+	t.  On systems with job control, the kill command now sends out
+	    SIGCONT signal after the signal has been sent, not before.
+	u.  If the shell was interrupted while processing the .profile
+	    file, the $ENV file was sometimes echoed to the terminal.
+
+6.	Bugs fixed in 11/16/88e for default OPTIONS
+	a.  The code for item n from the d point release was omitted
+	    but included in this release.
+	b.  A script that uses edit modes now restores the terminal
+	    modes with it receive a termination signal.  Also, the
+	    initial process group is restored for job control shells.
+	c.  The standard input for background jobs was not set to
+	    /dev/null in some cases where it should have been.
+	d.  The value of $? now gets set correctly to indicate an
+	    error after eval fails because of a syntax error.
+	e.  The line discipline ^O bit is now cleared by ksh on some
+	    systems that use sys/termios.h.  Earlier versions only cleared
+	    the ^O bit for BSD systems.
+	f.  The suid_exec program has been modified to fix security
+	    problems that could arise on systems that have symbolic links
+	    but do not have the seteuid() system call.
+	g.  The precedence for compound arithmetic assignment operators
+	    such as *= was incorrectly set at the precedence of the
+	    operator rather than the precedence for assignment.
+	h.  The suspend character is now disabled when the last process of
+	    a pipeline is not stoppable to prevent deadlock.
+	i.  An extra secondary prompt was printed whenever a here-document
+	    line contained a partial delimiter.
+	j.  The EXIT trap will be executed for each function in the calling
+	    chain when exit is called and when the maximum recursion level
+	    (currently 128) is reached.  Also return now behaves the same
+	    as exit outside a function or a dot script and inside a subshell.  
+	k.  The value of $? no longer changes with a compound [[...]] command.
+	l.  The jobs command now correctly reports 'no such job' when you
+	    specify a pid that is not part of any running job.
+	m.  The legal names for restricted shells have been reduced to
+	    rsh, krsh, and rksh.
+	n.  The vi, r, f, and @ directives now process ^V correctly.  Also,
+	    the r directive updates the screen correctly after you back
+	    up to a control character and replace it with a non control char.
+	o.  The command, $x > file, where x is not set, no longer core dumps.
+	p.  When the read is redirected from a file it no longer issues the
+	    secondary prompt when the line is continued with a \.
+	q.  Variables that have attributes, but whose values are unset,
+	    are now displayed with typeset, export, and readonly.
+	s.  Set, without arguments, now displays the name-value pairs even
+	    when preceded with a variable assignment list.
+	t.  set -a now causes assignments of the form ${x=value} to get
+	    the export attribute.
+	u.  Arithmetic expansion, $((...)), inside here-documents no longer
+	    causes subsequent parameter expansions to have extra \ inserted.
+	v.  A bug that could cause the shell to go into an infinite
+	    loop while creating the history has been fixed.
+	w.  true and false are now built-in commands rather than aliases so
+	    that correct results are produced when invoked with extraneous
+	    arguments.
+	x.  A tab character near the end of a long prompt no longer
+	    causes the shell to hang.
+	y.  An expansion of the form $((...)) is processed as an arithmetic
+	    expansion only when the inner parenthesis match.  Otherwise,
+	    it will be processed as a nested command substitution.
+	z.  Unsetting a function no longer causes the whence builtin to
+	    give incorrect results for that name.
+	aa. Errors detected while expanding the PS1 prompt no longer
+	    leave the shell in an undefined state.
+	bb. A bug that caused the shell to hang in read when a
+	    coprocess (cmd |&) terminated has been fixed.
+	cc. A bug in getopts that caused a core dump when standard error
+	    was redirected has been fixed.
+	dd. Testing for file access with null file names now returns false
+	    now on all systems. 
+	ee. A bug with [[...]] that caused quoting of patterns following the
+	    = and != operators to give incorrect results has been fixed.
+	ff. A bug with nested $() of builtins, where inner $() was enclosed
+	    in double quotes has been fixed.
+	gg. A bug that caused incorrect results when the -x trace option
+	    was enabled and command substitution of a builtin command 
+	    produced no output was fixed.
+	hh. A bug that prevented set -e from exiting with pipelines has
+	    been fixed.
+	ii. Interactive shells that trap TERM, and then reset the trap,
+	    no longer exit when they receive a TERM signal.
+	jj. When inserting text in vi mode, the kill character deletes
+	    only the insertion, not the whole line. 
+	kk. A bug with eval that occurred when a word ended in a \ has
+	    been fixed.
+	ll. typeset -f fname now returns false after function fname
+	    has been unset.
+	mm. A bug in trap that caused a command to be interpreted as a
+	    trap number if the first character was a digit has been fixed.
+	nn. A bug that caused a trap action of return to not work correctly
+	    when an interrupt occurred during read has been fixed.
+	oo. A bug that could cause the exported value of an integer variable
+	    that has been imported and modified to be incorrect has been fixed.
+	pp. A bug that caused set -n to incorrectly report subscript errors
+	    has been fixed.
+	qq. The select list variable is now set to null when none of the
+	    given choices is not selected.  Previously it was unset. 
+	rr. The pattern */foo, now also matches symbolic links to non-existent
+	    files.
+	ss. The whence command no longer terminates when it doesn't find
+	    one of the names.
+
+7.	Bugs fixed in 11/16/88f for default OPTIONS
+	a.  Running command&, did not cause the standard input to be
+	    redirected from /dev/null when following a built-in command
+	    that had standard input redirected.
+	b.  The path search no longer terminates with exec returns the
+	    ENAMETOOLONG error message because the name need not be
+	    too long for other directories in the PATH.
+	c.  A bug that could cause a file descriptor to be closed-on-exec
+	    has been fixed.
+	d.  A bug with logical or (||) and logical and (&&) in an arithmetic
+	    expression that occurred when the left hand side was an identifier
+	    has been fixed.
+	e.  A bug in the 'e' point release that caused typeset -f name to
+	    return true when name was the name of a built-in has been fixed.
+	f.  Changing the attribute of a variable from integer to left-justified
+	    no longer causes a core dump when the variable doesn't have a value.
+	g.  Changing the attribute of an array variable that contains a
+	    single element whose index is non-zero, now works correctly.
+	h.  A bug in the 'e' point release that prevented an exit command
+	    within a .profile or ENV file to exit the shell has been fixed.
+	i.  The edit modes no longer uses <cr> when positioning the cursor
+	    with read when you do not specify a prompt.  This prevents
+	    characters from earlier echo and commands from being erased.
+	j.  An error from a built-in executed in a subshell no longer
+	    causes the sub-shell to exit, for example, (cd /dev/null;echo $?).
+	k.  On invocation, ksh now causes the arguments after -c string to
+	    become $0 $1 ... as it does with System V shell.  Previously,
+	    they became $1 $2 ....
+	l.  A bug in the 'e' point release that caused some comment lines
+	    in the ENV file to be entered into the history file has been
+	    fixed.
+	m.  A right parenthesis no longer causes an argument expected error
+	    message when used a an operand within a unary test such as
+	    test -d ")".
+	n.  The whence builtin no longer prepends two // when an executable
+	    is in / and / is a component in PATH.  Also, explicit references
+	    to . in the PATH variable will not show up in whence output.
+	o.  The terminal state is correctly restored when read is interrupted
+	    when in the edit modes.  On some systems the state wasn't being
+	    restored when a trap was set and an interrupt occurred.
+	p.  When exit is invoked without an argument within a trap action,
+	    the exit status is the last command executed before the trap. 
+	    The documentation was ambiguous, and the code was incorrect.
+	q.  When xxx is not an executable, the error message produced in the
+	    'e' point release by "ksh -u xxx" was misleading when.
+	s.  A script that ends with an incomplete here-document caused
+	    an extra new-line to be appended to the here-document text. 
+	t.  When an error occurs while processing the .profile file,
+	    the error message now correctly begins with .profile.
+	u.  When the effective userid was 0, test -x returned true
+	    for all files.  Now, at least one execute bit must be
+	    on for regular files.
+	v.  If the ERR trap was set inside a subshell (), it failed to
+	    be executed when the last command was not a built-in and failed.
+	w.  A trailing / at the end of a file pattern will match only
+	    directories on all systems.  Previously, the result depended
+	    on the underlying operating system.
+	x.  The command cd foo/.., where foo was found in CDPATH, works
+	    correctly now.
+	y.  A bug which caused a core dump when the vi 'v' directive was
+	    entered by a user while entering the input to a read command
+	    that is contained in a script has been fixed.  The 'v' directive
+	    is now an error in this case.
+	z.  A bug that could cause /tmp files to remain when it terminates
+	    because of an interrupt has been fixed.
+	aa. The readonly attribute can no longer be disabled with typeset +r.
+	bb. A bug which would cause the interrupt key to be ineffective
+	    when the last part of a pipeline was a compound command on
+	    job control systems was fixed.
+	cc. From an interactive shell, kill 0, now sends the given signal
+	    to all process groups created by the shell, not just the
+	    process group of the shell.
+	dd. A bug on some systems which caused pipelines started in a dot
+	    script or ENV file to be listed on the jobs command was fixed.
+	ee. When the shell dies because of SIGHUP, it no longer resends
+	    the signal to the current process group.
+	ff. kill -s without an options argument produces an error message
+	    rather than a core dump.
+
+8.	Bugs fixed in 11/16/88g for default OPTIONS
+	a.  A bug in test that caused "test -" to report that an argument
+	    was expected has been fixed.
+	b.  A bug in the 'f' point release of cd which caused ../.. not to
+	    work when .. by itself was root was fixed.
+	c.  CDPATH=value cd, now uses value for CDPATH.
+	d.  A bug on some systems that caused pwd -P to change $PWD
+	    has been fixed.
+	e.  A bug is case which caused patterns of the form "$x"foo*, with
+	    x was null, not to match correctly has been fixed.
+	f.  A bug which cause the shell to hang when a long prompt ended
+	    with a tab has been fixed.
+	g.  A bug which could cause a core dump when a here document was
+	    used inside command substitution was fixed.
+	h.  With fc, when a user terminates the editor without changing
+	    the file, the command is not run.
+	i.  A script containing $(<file) or `<file` no longer aborts when
+	    file cannot open.
+	j.  A bug in emacs mode that could cause core dumps for lines > 256
+	    characters was fixed.
+	k.  The vi directive # only inserts # at the beginning of each
+	    line not before each | and ;.  Also, the kill character no
+	    longer advances to the next line; even if echok is enabled.
+	l.  Syntax errors are now correctly reported when ; is the first
+	    token on a line with a brace group.
+	m.  In emacs mode, the prompt is now drawn after two successive
+	    line kills.
+	n.  A bug that caused ksh to go into an infinite loop when the
+	    last word of an eval was a command whose name was an alias
+	    of an alias that was being evaluated has been fixed.
+	o.  A bug on systems that support #! that prevented a script
+	    whose name is the same as an executable in the PATH from
+	    being invoked by full pathname from the directory
+	    that its resides has been fixed.
+	p.  Another bug on systems that support #! that caused a script
+	    beginning with #! that did not have read permission to
+	    recursively create processes has been fixed.
+	q.  A bug that caused command completion not to work within
+	    compound commands in some cases has been fixed.
+	r.  A bug which could cause portions of a pipeline to join
+	    a pre-existing job when early elements of the pipeline
+	    completed before later ones were started has been fixed.
+	s.  A bug on some systems which cause the shell to go into an
+	    infinite loop in vi mode on devices for which read returns 0
+	    (rather than -1) when disconnected has been fixed.
+	t.  The DEBUG trap is now triggered after returning from a function.
+	    Previously, the DEBUG trap was only triggered after a command
+	    that was not a built-in was executed.
+	u.  A bug that could cause a core dump on some systems for command
+	    substitution of compound commands has been fixed.
+	v.  A bug which could cause a core dump when more than CHILD_MAX
+	    jobs had not completed and reported their completion status
+	    was fixed.
+	w.  A bug with caused typeset -ft to be ignored in the case
+	    that the function was an autoload function that was not
+	    yet loaded has been fixed.
+	x.  A bug which caused /tmp files from here-documents defined in
+	    a function not to be removed when the last command of a script
+	    is exec has been fixed.
+	y.  A bug in pipelines that contained one or more here documents in
+	    a compound command that was not the last element has been
+	    fixed.  Earlier versions could produce the message 
+	    /tmp/sh123.1: cannot open.
+	z.  A bug which casused 0> file to be treated as 1>file has been
+	    fixed.
+	aa. A bug which prevented the terminal state from being restored
+	    after resuming a stopped job has been fixed.
+	bb. A bug which caused some dot scripts not to work when file
+	    descriptors less than 3 were closed has been fixed.
+	cc. A bug which caused a script to treat a stopped child process
+	    as if it had completed has been fixed.
+
+9.	Bug fixes for specific non-default option combinations.
+	a.  VERSIONS: MULTIBYTE no longer automatically enabled.
+	b.  ACCT: The accdefs.h include removed.
+	c.  BRACEPAT:  No longer references location 0 and dumps core.
+	d.  EMACSPLUS: Now enables additional EMACS features.
+	e.  FLOAT:  arith.c now compiles.
+	f.  VI off:  e_runvi is no longer unsatisfied external.
+	g.  SUID_EXEC: execute only works when file descriptor 10 is open. 
+	h.  MULTIBYTE: Changing LANG and LC_TYPE now work.
+	i.  FLOAT:  $((...)) now works starting with 11/16/88g.
+	j.  FS_3D: Noclobber allows top level version to be created.
+	k.  DEVFD: bug fix in 11/16/88g.
+
+10.	Other changes to 11/16/88[a-g]
+	a.  sh.1 corrections.
+	b.  sh.memo corrections.
+	c.  ksh.mk modified to build in a cross development environment.
+	d.  jobs.c modified to compile on machines that define the new
+	    line discipline, NTTYDISC, but not the old, OTTYDISC.
+	e.  RELEASE file corrections.
+	f.  Some fixes to the stand-alone edit libraries.
+	g.  VERSIONS option renamed FS_3D
+	h.  POSIX option added to try out some IEEE POSIX 1003.2 proposals.
+	i.  VFORK bugs fixed.  I still don't recommend this option.
+	j.  OLDTERMIO option added to 11/16/88c.  This option allows older
+	    termio ioctls, like TCGETA to be called after newer termios
+	    ioctls' fail.  Only effective for machines that have both termio.h
+	    and termios.h.
+	k.  universe builtin added to 11/16/88d for systems with /bin/universe.
+	l.  code changes to 11/16/88e to remove sbrk() dependence and to
+	    use the standard library version of malloc().
+	m.  A tests directory that contains some ksh regression test has
+	    been added.  See the README file for more details. 
+	n.  The way builtin commands are coded has been changed to make
+	    it easier to add builtins.
+	m.  With 11/16/88g, the makelibedit script has been changed, and
+	    a man page for the stand-alone libedit.a has been added.
+
+11.	Incompatibilities with 11/16/88 version.
+	None intentional.
+

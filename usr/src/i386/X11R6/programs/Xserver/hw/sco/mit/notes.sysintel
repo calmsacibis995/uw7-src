@@ -1,0 +1,326 @@
+
+	@(#)notes.sysintel	12.1	11/28/95	09:29:01
+
+Xsco server:		./server/sys/intel - source notes
+	grep "^[^ 	]" to see only function names [^space tab]
+	 | grep -v static - to see only external functions.
+
+************************************************************************
+crt.c:
+
+SetCrtName(name) char * name;
+	Duplicate the input string into a local static pointer
+
+char * GetCrtName()
+	Returns the local static pointer
+
+
+************************************************************************
+mouse.c:
+	This appears to be the entire event handler ?
+
+
+************************************************************************
+scoConfig.c:
+	Reading Xsco.cfg
+
+static FILE *OpenConfigFile()
+
+static void SetConfigurationDefaults()
+
+void LoadConfiguration()
+
+void scoGetKeyboardMappings(pKeySyms, pModMap, defaultKeySymsRec, defaultModMap,
+    defaultScanTranslate, defaultNumScanTranslate)
+
+************************************************************************
+scoCursor.c:
+
+void scoInitCursor(pScreen)
+	/* For backwards compatibility, scoSWCursorInitialize() should
+		be used now */
+
+void scoSWCursorInitialize(pScreen)
+
+Bool scoDCInitialize (pScreen)
+    ScreenPtr pScreen;
+	Calls miDCInitialize - Complete mi software cursor
+
+Bool scoSpriteInitialize (pScreen, cursorFuncs)
+    ScreenPtr               pScreen;
+    miSpriteCursorFuncPtr   cursorFuncs;
+	Partial mi software cursor, caller must supply rendering routines
+
+Bool scoPointerInitialize(pScreen, spriteFuncs, waitForUpdate)
+    ScreenPtr               pScreen;
+    miPointerSpriteFuncPtr  spriteFuncs;
+    Bool                    waitForUpdate;
+	Minimal mi software cursor, caller must supply all rendering
+	and movement routines
+
+static Bool scoCursorOffScreen (pScreen, x, y)
+    ScreenPtr   *pScreen;
+    int         *x, *y;
+	Takes care of moving across multiple screens
+
+static void scoCrossScreen (pScreen, entering)
+    ScreenPtr   pScreen;
+    Bool        entering;
+	Empty routine, says miPointerUpdate takes care of it all
+
+static void scoWarpCursor (pScreen, x, y, generateEvent)
+    ScreenPtr   pScreen;
+    int         x, y;
+    Bool        generateEvent;
+	Calls miPointerWarpCursor and causes event when necessary
+
+************************************************************************
+scoInit.c:
+
+int InitOutput( ScreenInfo *screenInfo, int argc, char **argv )
+
+InitInput(argc, argv)
+    int           argc;
+    char          **argv;
+	Adds and Registers Pointer and Keyboard devices,
+	calls miRegisterPointer and mieqInit
+	Initializes ScreenSwitch for XMERGE
+
+scoInitVid()
+	Initializes tss for v86 I/O
+	Sets up mpxLock
+	Turns on ScreenSwitching
+
+scoRestoreVid()
+	Restores console video mode
+
+void scoSysInfoInit(ScreenPtr pScreen, scoScreenInfo *pSysInfo)
+	initializes the scoSysInfo structure
+
+
+scoInitCrt()
+	called from OsInit() to do our initial mucking with stdin/stdout
+
+__dummyFunctionForLinker()
+	{
+#ifdef XTEST
+XTestGenerateEvent();
+#endif
+	}
+
+************************************************************************
+scoIo.c:
+
+int TimeSinceLastInputEvent()
+
+void SetTimeSinceLastInputEvent()
+
+ReadInputEvents()
+	Works with the event queue
+
+mapcode_t Mapcode(devEvent * pE, scancode_t scanc)
+	ScanCode processing
+
+void ProcessInputEvents ()
+
+void ProcessEvent(pE) register    devEvent * pE;
+
+void ddxGiveUp()
+	Restores keyboard, console, closes message cataloge
+
+void AbortDDX()
+	scoSetText(); ddxGiveUp();
+
+int scoProcessArgument (argc, argv, i)
+    int argc;
+    char *argv[];
+    int i;
+	Processing arguments for this server.
+
+void scoUseMsg()
+	Output usage message
+
+SaveTtyMode(fd) int fd;
+
+RestoreTtyMode(fd) int fd;
+
+SetTtyRawMode(fd) int fd;
+	Taking care of setting and restoring the keyboard
+
+************************************************************************
+scoKbd.c:
+
+void SetKeyboardDefaults()
+	Taking care of the ModMap
+
+static void scoKbdCtrl(pKeyboard, ctrl)
+    DevicePtr pKeyboard;
+    KeybdCtrl *ctrl;
+	Opens the keyboard
+
+int scoKbdProc (pKeyboard, what)
+    DevicePtr     pKeyboard;    /* Keyboard to manipulate */
+    int           what;         /* What to do to it */
+	Handles DEVICE_INIT _ON _OFF _CLOSE
+
+int scoRestoreKbd()
+	Return keyboard to the kernel
+
+static void scoBell (loudness, pKeyboard)
+    int           loudness;         /* Percentage of full volume */
+    DevicePtr     pKeyboard;        /* Keyboard to ring */
+
+
+static void scoKbdEnqueueEvent (pKeyboard, pE)
+    DevicePtr     pKeyboard;
+    register    devEvent * pE;
+	Convert a devEvent into an X event and pass it off to mi.
+
+
+Bool LegalModifier(key)
+	Returns TRUE
+
+int scoOpenKbd()
+	Places kbd in scancode mode, sets up screen switch
+
+MergeHack()
+	GetSWSequence();
+
+unsigned int GetKeysymMapcode (keysym)
+	Returns a keysym's mapcode.  If there is no mapcode associated
+		with the keysym, then returns 0.
+
+************************************************************************
+scoMerge.c:
+
+SetSWSequence(string) char *string;
+
+gDisplaySupportsXsightExtension()
+
+GetMergeScreenSwitchSeq(str, fd) char *str; int fd;
+
+int SetMergeScreenSwitchSeq(str) char *str;
+
+************************************************************************
+
+int scoMouseProc (pMouse, what) DevicePtr pMouse;   int what;
+	Handles DEVICE_INIT _ON _OFF _CLOSE
+
+static void scoMouseCtrl (pMouse) DevicePtr     pMouse; {/* empty routine */}
+
+static short MouseAccelerate (pMouse, delta)
+    DevicePtr     pMouse;
+    int           delta;
+	Given a delta and a mouse, return the acceleration of the delta.
+
+static void scoMouseEnqueueEvent (pMouse, pE)
+    DevicePtr     pMouse;       /* Mouse from which the event came */
+    register    devEvent * pE;
+
+int scoOpenMouse()
+
+************************************************************************
+scoPopUp.c:
+
+int scoPopMessage(char *message)
+
+int scoHideMessage()
+
+************************************************************************
+scoScrSw.c:
+
+int scoScreenSwitchFilter(keypressed, key) int keypressed; KeySym key;
+	Determine if screen switch requested, return 0 (no) or 1 (yes)
+
+static int scoSSSetNewVT(int screen)
+	calls ioctl VT_ACTIVATE
+
+void scoSetFinalSwitchMask()
+
+void scoInitScreenSwitch()
+	SetSWSequence("ac");
+
+void SetServerSWSequence(string) char *string;
+
+char * GetSWSequence(len) int *len;
+
+scoEnterVtProcMode()
+	Set up signals to catch screen switches and tell the
+	kernel we're in control.
+
+scoLeaveVtProcMode()
+	Let someone else handle screen switching
+
+scoReleaseScreen(client) ClientPtr client;
+
+scoAcquireScreen(client) ClientPtr client;
+
+void scoSetSSFD(int fd)
+	scoSysInfo.consoleFd  fd;
+	Use this fd for all Screen Switch ioctls
+
+scoBecomeActiveScreen()
+
+scoWaitUntilScreenActive()
+
+int scoScreenActive()
+        return scoSysInfo.screenActive;
+
+sco_rel_screen()
+        scoStatusRecord |= CatchScreenReleaseSignal;
+
+sco_acq_screen()
+        scoStatusRecord |= CatchScreenAcquireSignal;
+
+static void scoSSCheckMods()
+	Check modifier keys after Screen Switch
+
+static void scoSSQueKey(key, up_down_state)
+	unsigned int key;
+	int up_down_state;
+
+************************************************************************
+scoScreen.c:
+
+static void scoScreenGetImage(pDrawable, sx, sy, w, h, format, planeMask, pdstLine)
+    DrawablePtr pDrawable;
+    int         sx, sy, w, h;
+    unsigned int format;
+    unsigned long planeMask;
+    pointer     pdstLine;
+
+void scoScreenInit(ScreenPtr pScreen)
+
+void scoSaveScreen(pScreen) ScreenPtr  pScreen;
+
+void scoRestoreScreen (ScreenPtr pScreen)
+
+scoUnblankScreen()
+	Called from WaitForSomething() when we are ready to show the screen.
+
+void scoCloseDownScreen(int index, ScreenPtr pScreen)
+
+Bool scoCloseScreen(int index, ScreenPtr pScreen)
+
+void scoSetText()
+	Called from AbortDDX() to put all screens back in text mode.
+
+************************************************************************
+scoXTest1.c:
+
+void XTestGetPointerPos(fmousex, fmousey) short *fmousex, *fmousey;
+	Calls miPointerPosition
+
+void XTestJumpPointer(jx, jy, dev_type)
+        int     jx;
+        int     jy;
+        int     dev_type;
+
+void XTestGenerateEvent(dev_type, keycode, keystate, mousex, mousey)
+        int     dev_type;
+        int     keycode;
+        int     keystate;
+        int     mousex;
+        int     mousey;
+
+************************************************************************

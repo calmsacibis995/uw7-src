@@ -1,0 +1,34 @@
+#ident	"@(#)asknond	15.1"
+
+function nond_set
+{
+	wclose $_t
+	case "$CHOICE" in
+	${NOND_OPT[0]})
+		NOND="yes"
+		;;
+	${NOND_OPT[1]})
+		NOND="no"
+		;;
+	${NOND_OPT[2]})
+		halt
+		;;
+	esac
+}
+
+function asknond
+{
+	display "$NOND_EXPLAIN" -below 4
+	_t=$CURWIN
+	if [ -z "${NOND_OPT}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A NOND_OPT ${NOND_CHOOSE}
+		IFS="$OIFS"
+	fi
+	NOND=$NOND_OPT
+	CHOOSE_FOOTER="$NOND_FOOTER" CHOOSE_TITLE="$NOND_ENTRY"
+	choose -f -e -exit 'nond_set' -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$NOND" "${NOND_OPT[@]}"
+	return
+}

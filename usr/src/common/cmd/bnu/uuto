@@ -1,0 +1,128 @@
+#!/usr/bin/sh
+#ident	"@(#)uuto	1.2"
+#ident "$Header$"
+
+uuto () {
+f=""
+d=""
+error="0"
+label="UX:uuto"
+cat="uxbnu"
+#	get file names
+#	files must be readable,
+#	directories must be readable/searchable
+#	otherwise increment error count and skip it.
+while test $#  -ge 1
+do
+	if test -d "$1" -a {"$1" = "." -o "$1" = ".."}
+		then shift; continue
+	elif test -r "$1" -a -f "$1"
+		then f="$f $1"
+	elif test -r "$1" -a -x "$1" -a -d "$1"
+		then d="$d $1"
+	else error=`expr 0$error + 1`
+		if test -f "$1"
+			then
+			pfmt -l UX:uuto -s error -g uxbnu:20 "<%s%s>: cannot read file\n" $UUP $1
+		elif test -d "$1"
+			then
+			pfmt -l UX:uuto -s error -g uxbnu:21 "<%s%s>: directory not readable/searchable\n" $UUP $1
+		else
+			pfmt -l UX:uuto -s error -g uxbnu:22 "<%s%s>: file/directory not found\n" $UUP $1
+		fi
+	fi
+	shift
+done
+if test -n "$d" -a -n "$user"
+then
+	for i in $d
+	do
+		( cd $i; UUP="$UUP$i/"
+		uuto * $1)
+		error=`expr 0$error + 0$?`
+	done
+fi
+
+if test -n "$f" -a -n "$user"
+then
+	uucp $a $f $remote!~/receive/$user/$mysys/$UUP
+
+	if test "$?" != "0"
+	then
+		error=`expr 0$error + 01`
+	fi
+fi
+
+return $error
+}
+
+# main uuto shell
+
+export IFS PATH
+IFS=" 	
+"
+PATH="/usr/bin"
+
+a=""
+temp=""
+sub=""
+mysys=`uuname -l`
+mesg="Usage: %s [-m -p] files remote!user\n"
+label="UX:uuto"
+cat="uxbnu"
+sigmsg="received signal %s\\n"
+if test  $# -lt 1
+	then
+		pfmt -l $label -s action -g ${cat}:23 "$mesg" $0
+		exit 26
+fi
+trap "pfmt -l $label -s action -g ${cat}:26 \"$sigmsg\" '<1>'; exit 29" 1
+trap "pfmt -l $label -s action -g ${cat}:26 \"$sigmsg\" '<2>'; exit 29" 2
+trap "pfmt -l $label -s action -g ${cat}:26 \"$sigmsg\" '<3>'; exit 29" 3
+trap "pfmt -l $label -s action -g ${cat}:26 \"$sigmsg\" '<13>'; exit 29" 13
+trap "pfmt -l $label -s action -g ${cat}:26 \"$sigmsg\" '<15>'; exit 29" 15
+copy=0
+#	get options
+while true
+do
+	case $1 in
+	 -m)	a="$a $1" sub="$sub -m" ;;
+	 -p)	a="$a -C" sub="$sub -p" copy=1 ;;
+	 -w)	a="$a -w";;
+	 -*)	pfmt -l $label -s action -g ${cat}:23 "$mesg" $0; exit 26;;
+	 *)	break ;;
+	esac
+	shift
+done
+#	be sure have both files and destination
+if test $# -eq 1
+then
+	pfmt -l $label -s action -g ${cat}:23 "$mesg" $0
+	exit 26
+fi
+#	skip file names to get to destination
+while test $#  -gt 1
+do
+	temp="$temp $1"
+	shift
+done
+#	the recipient arg: remote!user
+#	remote may be omitted (default is this machine)
+#	must have at least !user
+remote=`expr $1 : '\(.*\)!'`
+user=`expr $1 : '.*!\(.*\)'`
+if test -z "$user"
+then
+	pfmt -l $label -s error -g ${cat}:24 "incomplete destination -- must specify user\n"
+	exit 27
+fi
+a="$a -d -n$user"
+
+UUP=""
+uuto $temp
+
+if test "$error" != "0"
+then
+	pfmt -l $label -s error -g ${cat}:25 "failed with <%s> error(s)" $error
+	exit 28
+fi

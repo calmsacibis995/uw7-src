@@ -1,0 +1,31 @@
+#!/usr/bin/wksh -motif
+
+VALUE=1
+
+toggleCB() {	# $1 = widget handle of label
+	case "$VALUE" in
+	1)
+		XtSetValues $1 labelString:"Two"
+		let VALUE=VALUE+1
+		;;
+	2)
+		XtSetValues $1 labelString:"One"
+		let VALUE=VALUE-1
+		;;
+	esac
+}
+  
+quitCB() { # No arguments
+	exit 0
+}
+
+XtAppInitialize TOPLEVEL quit2 Quit2 "$@"
+XtCreateManagedWidget ROWCOL rowcol rowColumn $TOPLEVEL
+
+XtCreateManagedWidget QBUTTON qbutton pushButton $ROWCOL labelString:Quit
+XtAddCallback $QBUTTON activateCallback quitCB
+
+XtCreateManagedWidget TOGBUTTON tbutton pushButton $ROWCOL labelString:One
+XtAddCallback $TOGBUTTON activateCallback "toggleCB $TOGBUTTON"
+XtRealizeWidget $TOPLEVEL
+XtMainLoop

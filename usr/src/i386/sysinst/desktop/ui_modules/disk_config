@@ -1,0 +1,282 @@
+#!/sbin/sh
+#ident "@(#)disk_config	15.1	97/12/19"
+
+# disk_config presents a form to the user to configure the disk drives on
+# his system. The form allows the user to choose the operation he wants to
+# perform on each disk. He has the following choices 
+# 1. Use whole disk for unix
+# 2. Customize partitions
+# 3. Leave the disk untouched
+#
+
+#-------------------------------------------------------
+
+#
+# Should we skip the user interaction?
+#
+function skip_func {
+[ -n "$debug" ] && set -x
+	. /etc/inst/locale/$LANG/menus/disk_config.txtstrings
+	
+	integer disk=0
+
+	load_disk_info
+
+	while (( disk < NDISKS ))
+	do
+		# get the previous choices for each disk
+		CHOICE="`ivar get DISK_CONFIG_ACTION[$disk]`"
+
+		# now act on those choices
+		action $disk
+		if [ $? -ne 0 ]
+		then
+			#
+                	# Get the user to enter the info by calling ourselves
+                	# again, interactively.
+                	#
+                	ivar set silent_$module "false"
+                	ivar set skip_$module "false"
+                	. /isl/ui_map
+                	exec $module_path/$module $direction
+        	fi
+
+		((disk+=1))
+	done
+}
+
+
+# check_params - Checks if the first arg is equal to at least one of the
+# following arguments.
+# Typical usage is to check if choice is one of the acceptable ones.
+# Eg. check_params $CHOICE $CHOICES[0] $CHOICES[1]...
+
+function check_params {
+	[ -n "$debug" ] && set -x
+        typeset param
+        integer i=1 nparams=$#
+        typeset first=$1
+        [ -z "$first" ] && (( i = nparams ))
+        while (( i < nparams ))
+        do
+                shift
+                if [ "$first" = "$1" ]
+                then
+                        `ivar check skip_$module` || msg
+                        return 0
+                fi
+                (( i += 1 ))
+        done
+        `ivar check skip_$module` || msg "$USE_CHOICE"
+        return 1
+}
+
+function save_config {
+	[ -n "$debug" ] && set -x
+	integer disk=0
+
+	while (( disk < NDISKS ))
+	do
+		ivar set DISK_CONFIG_ACTION[$disk] "${DISK_CONFIG_ACTION[disk]}"
+		((disk+=1))
+	done
+}
+
+function action {
+
+	[ -n "$debug" ] && set -x
+
+	integer cur_disk=$1
+
+	check_params "$CHOICE" "${ACTIONS[@]}" 
+	if (( $? != 0 ))
+	then
+		return 1
+	fi
+	
+	svar set action_taken[$cur_disk] 1
+ 	if [ "$CHOICE" = "${ACTIONS[1]}" ] || [ "$CHOICE" = "${ACTIONS[3]}" ]
+	then
+		ivar set disk_to_partition $((cur_disk+1))
+		DISK_CONFIG_ACTION[$cur_disk]="$CHOICE"
+		if [ "$CHOICE" = "${ACTIONS[3]}" ]
+		then
+			fdinit_a_disk $cur_disk
+			DISK_CONFIG_ACTION[$cur_disk]="${ACTIONS[1]}"
+		fi
+		save_config
+		save_disk_info
+		ii_exit PARTITION
+	fi
+
+	if [ "$CHOICE" = "${ACTIONS[0]}" ]
+	then
+		one_unix_partition $cur_disk
+		if fdsize_chk $cur_disk
+		then
+			if fdisk_chk $cur_disk
+			then
+				return 0
+			fi
+			return 1
+		fi	
+		return 1
+	fi
+	return 0
+}
+
+function get_help {
+	save_disk_info
+	save_config
+	wclose $wid
+	ivar set help_topic whole_disk
+	ii_exit HELP
+}
+
+function go_back {
+	save_disk_info
+	save_config
+	wclose $wid
+	ii_exit PREV
+}
+
+# choose the action
+
+function choose_action {
+
+[ -n "$debug" ] && set -x
+	if (( $1 == 0 ))
+	then
+		choose -exit "action $1" -f -b "${DISK_CONFIG_ACTION[$1]}" \
+			     "${ACTIONS[0]}" "${ACTIONS[1]}" "${ACTIONS[3]}"
+	else
+		choose -exit "action $1" -f -b "${DISK_CONFIG_ACTION[$1]}" \
+			     "${ACTIONS[@]}" 
+	fi
+}	
+
+function check_disk_options {
+	[ -n "$debug" ] && set -x
+	integer disk=0
+
+	while (( disk < NDISKS ))
+	do
+		if svar check action_taken[$disk]
+		then	
+			:
+		else
+			CHOICE="${DISK_CONFIG_ACTION[$disk]}"
+			action $disk
+			return $?
+		fi
+		(( disk += 1 ))
+	done
+	return 0
+}
+	
+# create_form: sets up the form
+
+function create_form {
+	[ -n "$debug" ] && set -x
+
+	integer i=0 maxwidth=0
+	open_form -exit check_disk_options
+	FORM_ID=$FID
+
+	while (( i < NDISKS ))
+	do
+		CHAR_DISK_NODES[$i]=`ivar get CHAR_DISK_NODES[$i]`
+		max $maxwidth "${#CHAR_DISK_NODES[$i]}"
+		(( maxwidth=$? ))
+		(( i += 1 ))
+	done
+	D_WIDTH[2]=$maxwidth	
+	
+	max "${#ACTIONS[0]}" "${#ACTIONS[1]}" "${#ACTIONS[2]}" 
+	D_WIDTH[3]=$?
+	
+	setup_table -offset 1 -rows $NDISKS -cols 3 -titles D_TITLE -widths D_WIDTH
+	i=0	
+	while (( i < NDISKS ))
+	do
+
+# Disk number prompt
+		(( maxwidth = i+1 ))
+		next_field_prompt -l "$maxwidth"
+
+# Character disk node
+		next_field_prompt -l "${CHAR_DISK_NODES[i]}"
+
+# Check if user has already chose what he wants to do with the disk
+# else assume he wants to leave it untouched.
+
+		DISK_CONFIG_ACTION[$i]=`ivar get DISK_CONFIG_ACTION[$i]`
+		if [ -z "${DISK_CONFIG_ACTION[i]}" ]
+		then
+			if (( i == 0 ))
+			then
+# For disk #1 if there are existing non-Unix partitions or if
+# there is more than one partition then default action is
+# "Customize partitions" else it is "Use Whole Disk for Unix"
+
+				pcount=0
+				for p in 1 2 3 4
+				do
+					[ "${PARTTYPE[p]}" != "$unused" ] && {
+						((pcount+=1))
+					}
+					[ "${PARTTYPE[p]}" = "$UNIX" ] && \
+						unixp=true
+				done
+					
+				if (( pcount == 0 ))
+				then
+					DISK_CONFIG_ACTION[$i]="${ACTIONS[0]}"
+				elif (( pcount == 1 )) && [ "$unixp" = "true" ]
+				then
+					DISK_CONFIG_ACTION[$i]="${ACTIONS[0]}"
+				else
+					DISK_CONFIG_ACTION[$i]="${ACTIONS[1]}"
+				fi
+			else
+				DISK_CONFIG_ACTION[$i]="${ACTIONS[2]}"
+			fi
+		fi
+
+# Action field.
+		next_field -noinput -entry 'msgnoerr' -choice "choose_action $i" \
+			   "DISK_CONFIG_ACTION[$i]"
+		(( ACT_FIELD[i] = FIELDCNT - 1 ))
+		next_row
+		(( i += 1 ))
+	done 
+
+	integer fwidth=TABLE_WIDTH+1 fheight=NDISKS+2
+	place_window $fwidth $fheight -bg $COMBO2_BG -fg $COMBO2_FG \
+		     -title "$FORM_TITLE" -current 'footer "$DISK_CONFIG_FOOTER"'
+	wid=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	run_form $FORM_ID
+}
+
+# Main
+
+. /globals.sh
+. /etc/inst/locale/$LANG/menus/disk_related.txtstrings
+. /etc/inst/scripts/choose
+. /isl/ui_modules/disk.rc
+. /isl/ui_modules/common.rc
+
+# Read in disk information
+load_disk_info
+
+# Setup the form 
+create_form
+
+# Handle user input
+input_handler
+
+save_disk_info
+save_config
+ii_exit NEXT

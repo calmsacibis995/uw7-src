@@ -1,0 +1,151 @@
+/*
+ *	@(#) gd5465.white 11.1 97/10/22 
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1997.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+
+                    GD5465 Source White Paper
+                Brian Raney - brianr@crudites.com
+
+
+Summary:
+--------
+
+It is in the interest of video driver writers to use the CL-GD5465
+BIOS to allow for future changes to the underlying technology. 
+Unfortunately, the GD5465 BIOS can be used to set up the chip in a
+linear configuration without acceleration or to use a tiled
+configuration with acceleration but not both.  To use acceleration
+with a linear setup the programmer needs to modify the contents of a
+few VGA control registers and set up the BLT engine registers in a
+way that is NOT documented in the 2D Programmer's Guide.
+
+There are also several ways that the chip behaves differently than 
+documented.
+
+Choosing a screen pitch:
+------------------------
+
+The CL-GD5465 can be configured as a linear frame buffer allowing
+video drivers to treat the chip's memory in the same way that system
+memory is addressed.  However, in order to use the BLT engine on the
+chip, the screen pitch must be one of the following values:
+
+Legal pitches:	640, 1024, 1280, 1664, 2048, 2560, 3328, 4096
+
+Unfortunately, the 'Set VBE Mode' and the 'Set Video Mode' BIOS
+calls always set the screen pitch to match the resolution (e.g.
+800x600x8 has an 800 byte screen pitch,  1024x768x24 has a 3072 byte
+pitch). To ameliorate the situation the video driver programmer
+needs to set the screen pitch 'manually' by setting the contents of
+the CR13, CR1B, and CR1D registers.  These registers contain the ten
+bit value for the pitch and should be set to the horizontal
+resolution rounded up to the nearest legal pitch width (listed
+above).
+
+The programmer has a choice between two tile sizes: 128 or 256. 
+However, there is no reason to use anything other than the 128 byte
+mode to support the configurations supported by the BIOS.  This
+makes the number of tiles per line (TPL) the chosen legal pitch
+value divided by 128.
+
+Possible values for TPL:   5, 8, 10, 13, 16, 20, 26, 32	
+
+The GD5465 can be set up with different tile interleave values. 
+However, in order to access the frame buffer as a linear array the
+Interleave Mode must be set to No Interleave.
+
+Avoiding a nasty chip bug
+--------------------------------
+
+The following is a comment from the NT miniport driver rev 1.73.
+
+// The 5465 (to at least AC) has a problem when PCI configuration space
+// is accessible in memory space.  On 16-bit writes, a 32-bit write is
+// actually performed, so the next register has garbage written to it.
+// We get around this problem by clearing bit 0 of the Vendor Specific
+// Control register in PCI configuration space.  When this bit is set
+// to 0, PCI configuration registers are not available through memory
+// mapped I/O. 
+
+BITMASK problems
+-------------------------------
+While the BITMASK register does work in 8 and 16 bit modes, it does 
+not work in 24 bit modes. 
+
+Patterns  in 24 bit mode 
+-------------------------- 
+
+The proper way to set up a 24 bit pattern (to use with the BLT
+engine) is not documented correctly.  A 24 bit pattern takes up two
+scanlines of a single tile.  The first scanline contains the first
+four lines of the pattern with the last four lines in the second
+scanline.  The gotcha is that a line of a 24 bit pattern should take
+3 * 8 bytes (24 bytes).  However the chip requires that each line be
+32 bytes. A copy of the FIRST eight bytes must be placed after the
+24 bytes to make a total of 32 bytes.
+
+Burst Mode
+--------------
+
+I've been unable to use memcpy to access the frame buffer (bytes are
+lost).  I imagine this has something to do with Burst Mode enabling
+but...
+
+
+Sample Initialization Code
+----------------
+
+#define	TILEWIDTH	128
+#define	ENABLE_TILING	0x80
+#define	RGB555		0x200
+
+// InitRegisters  -- set up the GD5465 registers to logical values.  
+//                   Called AFTER SetVideoMode BIOS call 
+Bool
+InitRegisters(int screenWidth, int bytesPerPixel, unsigned char 
+*regs)
+{
+  int possibleTPL[] = {5, 8, 10, 13, 16, 20, 26, 32};
+  int formats[] = {0, 0x1400, 0x2400};
+  int tpl, ii, pitch, depth;
+  volatile unsigned long *pVSPCI = (unsigned long * ) &regs[ 0x3FC ]; 
+  volatile unsigned short *pControl = (unsigned short * ) &regs[ 0x402] ; 
+  volatile unsigned char *tileControl = (unsigned char * ) &regs[ 0x407 ] ; 
+  volatile unsigned short *pDTTR = (unsigned short * ) &regs[ 0xEA ] ; 
+  volatile unsigned short *pTilingCtrl = (unsigned short * ) &regs[ 0x2C4 ] ; 
+  volatile unsigned char *pCR1B = ( unsigned char * ) &regs[ 0x6C ] ; 
+  volatile unsigned char *pCR1D = ( unsigned char * ) &regs[ 0x74 ] ; 
+  volatile unsigned char *pCR13 = ( unsigned char * ) &regs[ 0x4C ] ;
+  volatile unsigned short *pFormat = (unsigned short * ) &regs[ 0xC0] ; 
+
+ *pVSPCI &= 0xfffffffe;	// disable access to PCI configuation registers
+
+ depth = ((bytesPerPixel + 1) >> 3);
+ for(ii=0; ii < sizeof(possibleTPL); ii++)
+  if (depth * screenWidth <= possibleTPL[ii] * TILEWIDTH)
+   break;
+ if (ii == sizeof(possibleTPL))
+ {
+  ErrorF("Cannot find enough TPL for %d\n",depth*screenWidth);
+  return False;
+ }
+
+ tpl = possibleTPL[ii];
+
+ *pControl = (depth - 1) << 13;
+ *tileControl = tpl;
+ *pDTTR = ((tpl << 8) + (*pDTTR & 0x3F)) | ENABLE_TILING;
+ *pFormat = (bytesPerPixel == 15 ? RGB555:0) | formats[depth - 1] ;
+ *pTilingCtrl = (tpl << 8) | ENABLE_TILING;
+ pitch  = *pCR13 | ((*pCR1B & 0x10) << 4) | ((*pCR1D & 1) << 9);
+ pitch += (tpl * TILEWIDTH - (depth * screenWidth))/8;
+ *pCR13 = pitch & 0xff;
+ *pCR1B = (*pCR1B & ~0x10) |  ((pitch >> 4) & 0x10);
+ *pCR1D |= (pitch >> 9) & 0x1;
+
+ return True;
+}
+

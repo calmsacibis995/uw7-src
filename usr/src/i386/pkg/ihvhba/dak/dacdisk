@@ -1,0 +1,284 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/dak/dacdisk	1.1"
+
+PATH=/usr/bin:/usr/sbin:/etc/conf/bin:/sbin:/bin
+trap "trap 1 2 3 15;rm -f /tmp/dakf" 0 1 2 3 15
+
+IRQNUM1=0
+IRQNUM2=0
+IRQNUM3=0
+IRQNUM4=0
+IRQVALID=0
+IRQTYPE=3
+DRIVER=dak
+DAKF=/etc/conf/sdevice.d/${DRIVER}
+TEMPD=/tmp
+	
+HELPI="DAC960 5 channel controller supports IRQ 11 and 15.
+All other DAC960 controllers support IRQ 11, 12 and 15.
+The IRQ selected should not conflict with IRQ of any device 
+configured on UNIX system."
+
+PROMPT0="Select IRQ for first  DAC960 : "
+PROMPT1="Select IRQ for second DAC960 : "
+PROMPT2="Select IRQ for third  DAC960 : "
+PROMPT3="Select IRQ for fourth DAC960 : "
+
+dacvectors()
+{
+awk '{ if ( $2 == "Y" || $2 == "N" ) ; { printf("%d\n", $6)} }' /tmp/dakf
+echo
+}
+
+dacgetirq()
+{
+pp=`dacvectors`
+pos=0
+for i in $pp
+do
+	if [ $i -eq 0 ]
+	then
+		continue
+	fi
+	if [ "$pos" -eq "$1" ]
+	then
+		return $i
+	else
+		pos=`expr $pos + 1`
+	fi
+done
+return 0
+}
+
+# We support four DAC960 controllers.
+
+DACNUM=4
+
+# for First DAC960 IRQ 11 default
+
+adddak()
+{
+dacgetirq 0
+default=$?
+if [ $default -eq  0 ]
+then
+	default=11
+fi
+while true
+do
+ans=`ckrange -l11 -u15		\
+		 -d $default	\
+		-h "$HELPI"	\
+		-p "$PROMPT0"` || exit $?
+
+	case "$ans"
+	{
+	11)	IRQNUM1=11	;;
+	12)	IRQNUM1=12	;;
+	15)	IRQNUM1=15	;;
+	*)	echo "\tERROR: Interrupt $ans is not Supported";continue;;
+	}
+
+idcheck -v $IRQNUM1
+if [ $? -eq 0 ]
+then
+	break
+fi
+if [ $? -ne 3 ]
+then
+	echo "\tERROR: IRQ $IRQNUM1 is being used by another device"
+	continue
+else
+	break
+fi
+done
+
+# for second DAC960 IRQ 15 default
+
+if [ "$DACNUM" -ge 2 ]
+then
+dacgetirq 1
+default=$?
+if [ $default -eq  0 ]
+then
+	default=11
+fi
+while true
+do
+IRQVALID=0
+ans=`ckrange	-l11 -u15	\
+		 -d ${default}	\
+		-h "$HELPI"	\
+		-p "$PROMPT1"`	|| break
+
+	case "$ans"
+	{
+	11)	IRQNUM2=11 ;IRQVALID=1;;
+	12)	IRQNUM2=12 ;IRQVALID=1;;
+	15)	IRQNUM2=15 ;IRQVALID=1;;
+	*)	echo "\tERROR: Interrupt $ans is not Supported";continue;;
+	}
+idcheck -v $IRQNUM2
+if [ $? -eq 0 ]
+then
+	break
+fi
+if [ $? -ne 3 ]
+then
+	echo "\tERROR: IRQ $IRQNUM2 is being used by another device"
+	continue
+else
+	break
+fi
+done
+fi
+
+if [ $IRQVALID -eq 0 ]
+then
+	DACNUM=1
+fi
+
+# for third DAC960 IRQ 12 default
+
+if [ "$DACNUM" -ge 3 ]
+then
+dacgetirq 2
+default=$?
+if [ $default -eq  0 ]
+then
+	default=11
+fi
+while true
+do
+IRQVALID=0
+ans=`ckrange	-l11 -u15	\
+		 -d ${default}	\
+		-h "$HELPI"	\
+		-p "$PROMPT2"`	|| break
+
+	case "$ans"
+	{
+	11)	IRQNUM3=11 ;IRQVALID=1;;
+	12)	IRQNUM3=12 ;IRQVALID=1;;
+	15)	IRQNUM3=15 ;IRQVALID=1;;
+	*)	echo "\tERROR: Interrupt $ans is not Supported";continue;;
+	}
+idcheck -v $IRQNUM3
+if [ $? -eq 0 ]
+then
+	break
+fi
+if [ $? -ne 3 ]
+then
+	echo "\tERROR: IRQ $IRQNUM3 is being used by another device"
+	continue
+else
+	break
+fi
+done
+fi
+
+if [ $IRQVALID -eq 0 -a $DACNUM -ge 3 ]
+then
+	DACNUM=2
+fi
+
+
+# for fourth DAC960 IRQ 11 default
+
+if [ $DACNUM -ge 4 ]
+then
+dacgetirq 3
+default=$?
+if [ $default -eq  0 ]
+then
+	default=11
+fi
+while true
+do
+IRQVALID=0
+ans=`ckrange	-l11 -u15	\
+		 -d ${default}	\
+		-h "$HELPI"	\
+		-p "$PROMPT3"`	|| break
+
+	case "$ans"
+	{
+	11)	IRQNUM4=11 ;IRQVALID=1;;
+	12)	IRQNUM4=12 ;IRQVALID=1;;
+	15)	IRQNUM4=15 ;IRQVALID=1;;
+	*)	echo "\tERROR: Interrupt $ans is not Supported";continue;;
+	}
+
+idcheck -v $IRQNUM4
+if [ $? -eq 0 ]
+then
+	break
+fi
+if [ $? -ne 3 ]
+then
+	echo "\tERROR: IRQ $IRQNUM4 is being used by another device"
+	continue
+else
+	break
+fi
+done
+fi
+
+if [ $IRQVALID -eq 0 -a $DACNUM -ge 4 ]
+then
+	DACNUM=3
+fi
+echo
+
+if [ "$IRQNUM1" -ne 0 ]
+then
+grep -v dak /tmp/dakf > ${TEMPD}/System
+echo "dak\tY\t-1\t5\t"$IRQTYPE"\t"$IRQNUM1"\t0\t0\t0\t0\t-1" >> ${TEMPD}/System
+fi
+
+if [ "$DACNUM" -ge 2 ]
+then
+	echo "dak\tY\t-1\t5\t"$IRQTYPE"\t"$IRQNUM2"\t0\t0\t0\t0\t-1" >> ${TEMPD}/System
+fi
+
+if [ $DACNUM -ge 3 ]
+then
+	echo "dak\tY\t-1\t5\t"$IRQTYPE"\t"$IRQNUM3"\t0\t0\t0\t0\t-1" >> ${TEMPD}/System
+fi
+if [ $DACNUM -ge 4 ]
+then
+	echo "dak\tY\t-1\t5\t"$IRQTYPE"\t"$IRQNUM4"\t0\t0\t0\t0\t-1" >> ${TEMPD}/System
+fi
+cp ${TEMPD}/System ${DAKF}
+}
+
+rbldk()
+{
+	/etc/conf/bin/idbuild -B 2>/tmp/dak.err
+	if [ $? -ne 0 ]
+	then
+		echo "Error in Kernel Build. Error is in /tmp/dak.err file"
+		exit 1
+	fi
+}
+
+if [ ! -f ${DAKF} ]
+then
+	echo "\nError: $0: No DAC960 configured in the system."
+	exit 1
+fi
+
+echo 
+while true
+do
+echo "\t0\t- Exit this utility."
+echo "\t1\t- Modify DAC960 configuration in kernel"
+echo ""
+echo "Select the option:\t\c"
+read c
+case "$c" in
+0) rm -f /tmp/dakf;exit 0;;
+1) cp ${DAKF} /tmp/dakf;rm -f ${DAKF};adddak;rbldk;;
+*) ;;
+esac
+done

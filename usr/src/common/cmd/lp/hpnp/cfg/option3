@@ -1,0 +1,344 @@
+#!/bin/ksh
+#ident	"@(#)option3	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  Check operation of bootp by doing a bootpquery.
+#
+
+# begin UnixWare value added
+if [ $OS = "UnixWare" ]
+then
+	echo "\n\nBootpquery is not supported under the UnixWare."
+	echo "The option you have is to use is the -d option to bootpd,"
+	echo "running it in standalone mode from the command line."
+	echo "See the bootpd manual page for more information.\n"
+  	echo "Press the return key to return to the main menu ... $NL"
+  	read -r RESP
+  	exit 1
+fi
+
+ACTIVEHWADDR=$1
+HATAG=080009000000
+
+if grep "^bootps" /etc/inetd.conf > /dev/null 2>&1
+then
+  :
+else
+  echo ""
+  echo "\"bootps\" service not found in /etc/inetd.conf"
+  echo ""
+# begin UnixWare value added
+  case $OS in
+     sunx)
+        echo "Configure inetd to support the bootps service if /usr/etc/bootpd"
+     ;;
+     hp)
+         echo "Configure inetd to support the bootps service if /etc/bootpd"
+     ;;
+     UnixWare|sco)
+         echo "Configure inetd to support the bootps service if /etc/bootpd"
+     ;;
+   esac
+# end UnixWare value added
+  echo "exists or install the HP Network Peripheral Interface software again"
+  echo "to acquire the BOOTP software."
+  echo "\nPress the return key to return to the main menu ... $NL"
+  read -r RESP
+  exit 1
+fi
+
+if [ ! -f "$BOOTPQUERY" ] 
+then
+  echo "\n$BOOTPQUERY does not exist.\n"
+  echo "Press the return key to continue ... $NL"
+  read -r RESP
+  exit 1
+fi
+
+RMHATAG=0
+grep -i $HATAG $BOOTPTABLE > /dev/null 2>&1
+if [ $? -ne 0 ]
+then
+  RMHATAG=1
+  #    Add a dummy entry with hw address HATAG.
+  echo "" >> $LOG
+  echo "Adding a dummy entry to $BOOTPTABLE" >> $LOG
+  echo "" >> $LOG
+  echo "echo \"a$HATAG:\\\" >> $BOOTPTABLE" >> $LOG
+  echo "a$HATAG:\\" >> $BOOTPTABLE
+  echo "echo \"	:ht=ether:\\\" >> $BOOTPTABLE" >> $LOG
+  echo "	:ht=ether:\\" >> $BOOTPTABLE
+  echo "echo \"	:ba:\\\" >> $BOOTPTABLE" >> $LOG
+  echo "	:ba:\\" >> $BOOTPTABLE
+  echo "echo \"	:ha=$HATAG\" >> $BOOTPTABLE" >> $LOG
+  echo "	:ha=$HATAG" >> $BOOTPTABLE
+fi
+   
+echo ""
+echo "=================================================================="
+echo "Testing BOOTP by looking up a predefined entry ... $NL"
+$BOOTPQUERY "$HATAG" -s "$HOSTNAME" > "$TMP/bootreply"  2>&1
+echo ""
+echo ""
+grep 'Received BOOTREPLY' "$TMP/bootreply" > /dev/null 2>&1
+RETCODE=$?
+rm $TMP/bootreply
+DOEXIT=0
+case $RETCODE in
+  0)
+    echo "BOOTP responded.  The BOOTP service is operational."
+    echo "=================================================================="
+    rmbootpentry "a$HATAG" > /dev/null
+    ;;
+  *)
+    echo "BOOTP did not respond."
+    echo ""
+    echo "Check that bootpd is in /etc/inetd.conf."
+    echo "Check that bootps and bootpc are in /etc/services."
+    echo "Check for error messages from bootpd in your syslog file."
+    echo "=================================================================="
+    DOEXIT=1
+esac
+if [ $RMHATAG -eq 1 ]
+then
+  rmbootpentry "a$HATAG" > /dev/null
+fi
+if [ $DOEXIT -eq 1 ]
+then
+  echo "\nPress the return key to continue ... $NL"
+  read -r RESP
+  exit 1
+fi
+
+while [ 0 ]
+do
+  getbootpha  "$ACTIVEHWADDR"
+
+  if [ $? != 0 ]
+  then
+    exit 1
+  fi
+
+  HATAG="`cat -- $TMP/UHATAG`"
+  rm -- "$TMP/UHATAG"
+
+  grep -i -- "$HATAG"  "$BOOTPTABLE" > /dev/null 2>&1
+  if [ $? -ne 0 ]
+  then
+    echo "\nThere is no entry with hardware address $HATAG in"
+    echo "$BOOTPTABLE on $HOSTNAME."
+  else
+    break
+  fi
+done
+
+#
+# Add "ba" tag so bootpquery sees the response
+#
+echo "" >> $LOG
+echo "Add \"ba\" tag so bootpquery sees the response" >> $LOG
+echo "" >> $LOG
+echo cp $BOOTPTABLE  $TMP/TMPBOOTPTAB >> $LOG
+cp -- "$BOOTPTABLE"  "$TMP/TMPBOOTPTAB"
+echo sed -e 's/'$HATAG'/'$HATAG':ba/' $BOOTPTABLE \>$TMP/BOOTPTAB >> $LOG
+sed -e 's/'$HATAG'/'$HATAG':ba/' "$BOOTPTABLE" > "$TMP/BOOTPTAB"
+echo cp   $TMP/BOOTPTAB $BOOTPTABLE >> $LOG
+cp   -- "$TMP/BOOTPTAB" "$BOOTPTABLE"
+rm -f -- "$TMP/BOOTPTAB"
+
+echo ""
+echo "=================================================================="
+$ECHO "Testing BOOTP response to hardware address $HATAG ...$NL"
+$BOOTPQUERY $HATAG -s $HOSTNAME > $TMP/BOOTPRSP  2>&1
+echo ""
+echo ""
+cat --  "$TMP/BOOTPRSP" | awk -f -- "$HPNP/cfg/bootp.awk" > "$TMP/BOOTPRSP2" 2>&1
+grep 'Received BOOTREPLY' "$TMP/BOOTPRSP" > /dev/null 2>&1
+RETCODE=$?
+
+#
+# Restore table without "ba" tag.
+#
+echo "" >> $LOG
+echo "Restore /etc/bootptab without \"ba\" tag" >> $LOG
+echo "" >> $LOG
+echo cp $TMP/TMPBOOTPTAB $BOOTPTABLE >> $LOG
+cp -- "$TMP/TMPBOOTPTAB" "$BOOTPTABLE"
+rm -f -- "$TMP/TMPBOOTPTAB"
+
+case $RETCODE in
+  0)
+    echo "The BOOTP daemon responded to the BOOTP request sent"
+    echo "by \"$HOSTNAME\" and should respond to the BOOTP request"
+    echo "sent by your peripheral when it is powered on."
+    echo "=================================================================="
+    ;;
+  *)
+    echo "BOOTP did not respond."
+    echo ""
+    echo "Check for error messages from bootpd in your syslog file."
+    echo "=================================================================="
+    rm -- "$TMP/BOOTPRSP"
+    rm -- "$TMP/BOOTPRSP2"
+    echo "\nPress the return key to continue ... $NL"
+    read -r RESP
+    exit 1
+    ;;
+esac
+
+#  check if a config is defined for the bootp entry on host
+FNAME=`cat $TMP/BOOTPRSP2 | awk '/Configuration File:/ {print $3}'`
+
+while [ 0 ]
+do
+  echo "\nDo you want to see the BOOTP response"
+  echo "to check that it is correct?  (y/n/q default=y) $NL"
+  read -r RESP
+  if [ -z "$RESP" -o "$RESP" = 'y' ]
+  then
+    if [ -n "$FNAME" ]
+    then
+      echo "\nNote: Some configuration data is in the network peripheral"
+      echo "      interface configuration file $TFTPDIR/$FNAME."
+    fi
+    echo ""
+    echo "=================================================================="
+    cat $TMP/BOOTPRSP2
+    echo "=================================================================="
+    break
+  fi
+  if [ "$RESP" = "q" ]
+  then
+    rm -- "$TMP/BOOTPRSP"
+    rm -- "$TMP/BOOTPRSP2"
+    exit 1
+  fi
+  if [ "$RESP" = "n" ]
+  then
+    break
+  fi
+  if [ "$RESP" = "?" ]
+  then
+    echo "\nEnter \"y\" to display the contents of the BOOTP response and"
+    echo "continue with the configuration test."
+    echo ""
+    echo "Enter \"n\" to continue with the configuration test."
+    echo ""
+    echo "If there is a peripheral configuration file set up, the next test"
+    echo "will verify that the configuration file can be retrieved with TFTP."
+    echo "If there is no peripheral configuration file, the configuration test"
+    echo "is complete."
+    echo ""
+    $QUITHELP
+  fi
+done
+
+if [ -n "$FNAME" ]
+then
+    if [ "$RESP" != "n" ]
+    then
+      echo "\nPress the return key to continue ... $NL"
+      read -r RESP
+    fi
+    #
+    # A configuration file was specified in bootptab file - now check if 
+    # it can be retrieved with tftp.
+    #
+    echo ""
+    echo "=================================================================="
+    echo "Testing that $TFTPDIR/$FNAME can be retrieved "
+    $ECHO "with TFTP ...$NL"
+
+    if [ ! -f "$TFTP" ] 
+    then
+      echo "\n$TFTP does not exist.\n"
+      echo "Press the return key to continue ... $NL"
+      read -r RESP
+      exit 1
+    fi
+
+    "$TFTP" "$HOSTNAME" > "$TMP/INFO" 2>&1 <<-EOF
+get ${FNAME} $TMP/TFTP
+EOF
+
+    echo "\n"
+
+    # Determine if the tftp transfer was successful.  We know that the host
+    # is known so host unknown error will not occur.  A check is made
+    # to determine if the tftp was able to read the configuration file.
+
+    cat -- "$TMP/INFO" | egrep "not found|timed out|Access violation" > /dev/null 2>&1
+
+    if [ $? -eq 0 ]
+    then 
+      echo "The configuration file $FNAME could not be retrieved with TFTP.\n"
+      echo "Check for tftp entries in /etc/inetd.conf and /etc/services."
+      echo "Check for error messages from tftpd in your syslog file."
+      echo "Check the permissions on the directories and the file in the path:"
+      echo ""
+      echo "          $TFTPDIR/$FNAME"
+      echo ""
+      echo "=================================================================="
+      echo "\nPress the return key to continue ... $NL"
+      read -r RESP
+      exit 1
+    else
+      echo "The configuration file $TFTPDIR/$FNAME was"
+      echo "successfully retrieved with TFTP.  The network peripheral"
+      echo "should be able to retrieve this file."
+      echo "=================================================================="
+      while [ 0 ]
+      do
+        echo "\nDo you want to see the peripheral configuration file"
+        echo "to check that it is correct?  (y/n/q default=y) $NL"
+        read -r RESP
+        if [ -z "$RESP" -o "$RESP" = "y" ]
+        then
+          echo ""
+          echo "=================================================================="
+          cat $TMP/TFTP
+          echo "=================================================================="
+          break
+        fi
+        if [ "$RESP" = "q" ]
+        then
+	  break
+        fi
+	if [ "$RESP" = "n" ]
+	then
+	  break
+	fi
+        if [ "$RESP" = "?" ]
+        then
+          echo "\nEnter \"y\" to display the contents of the peripheral configuration"
+	  echo "file.\n"
+          echo "Enter \"n\" or \"q\" to complete the configuration test."
+        fi
+      done
+
+    fi
+    rm -f -- "$TMP/INFO" "$TMP/TFTP"
+fi
+
+rm -f -- "$TMP/BOOTPRSP"
+rm -f -- "$TMP/BOOTPRSP2"
+
+echo "\nThe BOOTP/TFTP Configuration test is complete.  You can now"
+echo "power on your peripheral if it is not already powered on."
+echo "\nPress the return key to continue ... $NL"
+read -r RESP
+
+exit 0

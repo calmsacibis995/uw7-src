@@ -1,0 +1,158 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                    GEMINI ND Test Certification Suites 
+
+                              Release 4.2
+
+                             Release Notes
+
+                          (Dated 25th December '96)
+
+
+
+
+
+This document describes solution to various problems encountered while 
+running the UnixWare ND Certification Suites. 
+
+The commands which follow # should be run as superuser and those which
+follow $ should be run as 'ndcert' user.
+
+The following applies to all the tests and must be checked in case the test
+could not be started or if the test aborts without completion:
+
+	1. Make sure the two machine can talk to each other. Use the following
+           command:
+
+		# ping <machine name>
+
+	   Run the above command from both the machines.
+
+	2. Use the following command to make sure that the machine under test
+           can run remote commands on the remote machine:
+
+		$ rsh <remote_machine> ls
+
+	   If this command fails, include the name of the local machine (the 
+           system under test) in /etc/hosts.equiv file of the remote machine.
+
+	3. Check for the multiple processes running due to abnormal termination
+           of the tests. e.g.
+
+		$ ps -ef |grep ndcert
+
+	    Kill all the test processes which may be running using:
+
+		$ kill -9 <process id>
+
+	4. Remove any lock file (/home/ndcert/nd-tcp/bin/tet_lck) on both
+           the machines using:
+
+		$ rm /home/ndcert/<test_suite_name>/bin/tet_lck
+
+	   where <test_suite_name> is the name of the test (e.g. nd-dlpi).
+	
+	5. Make sure there is enough hard disk space on both the machines
+           as most of the tests involve copying files across the network. 
+	   Atleast 42.3MB of hard disk space is required to run all the tests
+	   successfully.
+       
+Data Link Provider Interface (DLPI) tests
+-----------------------------------------
+
+PROBLEM:  The tests report many UNRESOLVED results.
+
+SOLUTION: Check the result file and find out the actual cause of the 
+          problem.  The result file is encripted and can be found in 
+          /home/ndcert/nd-dlpi/result. This file can be displayed 
+          using 'unc_read' utility provided with the tests. To display 
+          the result file:
+
+		$ unc_read <result_file> |more
+
+          Look at the very first UNRESOLVED test and the reason why the
+          test cannot be resolved. For example, if the reason is:
+
+		device not found
+
+	  Check the file /home/ndcert/nd-dlpi/dlpi_config. This file should 
+          have contained the device names, machine names and MAC addresses of
+          both the machine involved in testing. Do not change this file as
+          this file is created automatically during the test. Look for a 
+          problem on the machine for which the entry is not found in this 
+          file.
+          
+          Check the ND configuration in file /etc/confnet.d/inet/interface
+          make sure that there are no entries for the devices which are not
+          configured in the system. 
+
+          Check if the interfaces are correctly configured and up and running.
+          This can be done using:
+
+		# ifconfig -a
+
+SPX stress test
+---------------
+
+PROBLEM:  The test could not be started or comes out immediately.
+
+SOLUTION: Make sure the two machines can talk to each other over SPX. Use the 
+          following command:
+
+		# nwsapinfo -d 
+
+	  Make sure that the names of both the machines appear in the output.
+	  If this is not the case, the two machines are either not running
+          the same frame type or the two machines cannot talk to each other.
+          Use the 'nwcm' command to check the frame type on both the machines
+          and correct the frame type if they don't match.
+
+NFS stress test
+---------------
+PROBLEM:  The test could not be started.
+
+SOLUTION: Make sure that the file system is shared on the remote machine in 
+          order to be able to be mounted on the system under test. Use the
+	  following command:
+
+		# share <file_system_name>
+
+NUCFS stress test
+-----------------
+
+PROBLEM:  The test could not be started or comes out immediately.
+
+SOLUTION: Make sure that the system under test can see the netware server. Use
+          the following command:
+
+		# nwsapinfo -d 
+
+	  The name of the netware server should appear in the output of this
+          command.  If this is not the case, the two machines (the system
+          under test and the netware server) are either not running the same 
+          frame type or the two machines are not connected to each other.
+          Use the 'nwcm' command to check the frame type on the UnixWare
+	  machine and correct the frame type to that of the netware server.
+
+	  Use the 'nwlogin' command being superuser on the UnixWare machine
+          to login into the netware server as NW_LOGIN user and verify that 
+          a file can be written and read from the netware server in directory
+          /.NetWare/NW_SERVER/NW_VOLUME/<machine_name>. Where NW_LOGIN,
+          NW_SERVER, NW_VOLUME are the values specified as configuration 
+          parameters and <machine_name> is the name of the system under test.

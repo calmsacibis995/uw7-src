@@ -1,0 +1,147 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:30:36
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1993-1998.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ */
+XCOMM
+XCOMM	SCO MODIFICATION HISTORY
+XCOMM	
+XCOMM	S000    Tue Aug 24 18:46:50 PDT 1993    davidw@sco.com
+XCOMM	- Use flags of -Olgitc instead of -Olegitc. w32RectOps.c
+XCOMM	core dumps server otherwise.  Using -Olgitc on w32RectOps.c
+XCOMM	(only) works but then desktop comes up w/ corrupt icons.
+XCOMM	S001	Thu Oct 28 13:17:26 PDT 1993	hiramc@sco.COM
+XCOMM	- And don't forget the -DagaII flag
+XCOMM	S002	Tue Nov 02 13:17:26 PDT 1993	toma@sco.COM
+XCOMM	- forget the -DagaII flag. Don't want it anymore.
+XCOMM	S003    Thu Feb 17 18:20:18 PST 1994 	davidw@sco.com
+XCOMM	- USL compiler corrects -Olegitc bug - remove CDEBUGFLAGS
+XCOMM   S004    Wed Mar 16 18:06:46 PST 1994    davidw@sco.com
+XCOMM   - added ibm valuepoint w32 xgi file generation.
+XCOMM	- Note: Changes to w32 .xgi file may cause sed to fail!!
+XCOMM   S005    Wed Mar 21 18:06:46 PST 1994    davidw@sco.com
+XCOMM   - added w32Spans.c and .o., fixed ibm valuepoint rule
+XCOMM   S006    Wed Mar 22 02:06:46 PST 1994    davidw@sco.com
+XCOMM   - CDEBUGFLAGS put back in for AHS 3.3.0 - can't use USL cc.
+XCOMM   S007    Wed Apr 06 17:13:48 PDT 1994    davidw@sco.com
+XCOMM   - USL compiler corrects -Olegitc bug - remove CDEBUGFLAGS again
+XCOMM   S008    Wed Jul 26 17:13:48 PDT 1994    davidw@sco.com
+XCOMM	- Sed script on vp-w32.xgi broke because pl4-w32.xgi changed.
+
+
+
+#include <Server.tmpl>
+
+HDRS = w32Defs.h w32HW.h w32Macros.h w32Procs.h w32cursor.h
+
+SRCS =	w32Assem.s w32Cmap.c w32GC.c w32Init.c w32Screen.c \
+	w32Cursor.c w32Glyph.c w32Mono.c w32TileRect.c \
+	w32Data.c w32Image.c w32RectOps.c w32Win.c w32Spans.c
+
+OBJS =	w32Assem.o w32Cmap.o w32GC.o w32Init.o w32Screen.o \
+	w32Cursor.o w32Glyph.o w32Mono.o w32TileRect.o \
+	w32Data.o w32Image.o w32RectOps.o w32Win.o w32Spans.o
+
+       DDXLIBS = libw32.a
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+       MONDIR=$(USRLIBDIR)/grafinfo/moninfo
+
+SEDARGS= -e 's/compaq/ibm/g' \
+        -e 's/Compaq/IBM/g' \
+        -e 's/COMPAQ/IBM/g' \
+        -e 's/ProLinea 4 (//g' \
+        -e 's/Tseng/Tseng Labs/g' \
+        -e 's/ET4000\/W32)/ET4000\/W32/g' \
+	-e 's/\/pl4-w32/\/vp-w32/g' \
+        -e 's/PL4-W32/VP-W32/g'
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -D VOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+#ifndef	SCP_PRODUCT
+NormalLibraryTarget(w32,$(OBJS))
+SharedXDriverTarget(w32,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(w32,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(w32,$(DDXLIBS),w32Init.c)
+
+#else /* USLArchitecture */
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/nfb -I$(SERVERSRC)/ddx/ports \
+	 -I$(SERVERSRC)/include -I$(INCLUDESRC) -I$(FONTSRC)/include
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(w32,$(OBJS))
+ProfiledLibraryTarget(w32,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(w32,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(w32,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(w32,$(OBJS))
+LintLibraryTarget(w32,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(w32,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+./vp-w32.xgi: ./grafinfo/compaq/pl4-w32.xgi
+        rm -f vp-w32.xgi
+        sed $(SEDARGS) < ./grafinfo/compaq/pl4-w32.xgi > vp-w32.xgi
+	chmod 0444 vp-w32.xgi
+
+InstallGrafFile(./grafinfo/compaq,pl4-w32.xgi,compaq)
+InstallGrafFile(.,vp-w32.xgi,ibm)
+
+DependTargetSCP(w32Init.c)

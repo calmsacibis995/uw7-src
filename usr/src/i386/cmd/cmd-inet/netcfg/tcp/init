@@ -1,0 +1,1214 @@
+#!/bin/ksh
+#ident "@(#)init	1.13"
+#
+# Copyrighted as an unpublished work.
+# (c) Copyright 1987-1995 Legent Corporation
+# All rights reserved.
+#
+#      SCCS IDENTIFICATION
+PATH=/bin:/usr/sbin:/usr/bin:/etc:/etc/conf/bin:$PATH
+
+LOWER_PRD=$1
+LOWER_IF=$2
+UPPER_PRD=$3
+UPPER_IF=$4
+CONFIGURE=$5
+
+#
+# Valid exit codes for netcfg
+#
+OK=0
+FAIL=1
+RESTART=2
+CANCEL=3
+INVALID=4
+
+#
+# Set up temporary directory if it doesn't already exist.
+#
+TMPDIR=/usr/lib/netcfg/tmp
+if [ ! -d $TMPDIR ]
+then
+	mkdir -p $TMPDIR
+	chmod 755 $TMPDIR
+fi
+
+#
+# Location of prompter scripts and other goodies.
+#
+NCFGBIN=/usr/lib/netcfg/bin
+export NCFGBIN
+
+#
+# Miscellaneous variable declarations.
+#
+ND=/etc/conf/node.d
+SNMPD_CONF=/etc/netmgt/snmpd.conf
+
+#
+# Some miscellaneous functions.
+#
+error() {
+	echo "\nError: $*" >&2
+	return $FAIL
+}
+
+warning() {
+	echo "\nWarning: $*"
+}
+
+FILES="/etc/inet/config /etc/confnet.d/netdrivers \
+       /etc/confnet.d/inet/interface /etc/inet/hosts \
+       /etc/resolv.conf /etc/netmgt/snmpd.conf /etc/inet/inet.dfl \
+       /etc/inet/nb.conf /etc/conf/sdevice.d/ptm \
+       /etc/conf/sdevice.d/pts /etc/conf/sdevice.d/ptem \
+       /etc/conf/node.d/ptm /etc/conf/node.d/pts /etc/conf/rc.d/ptm \
+       /etc/conf/rc.d/pts /etc/conf/cf.d/mtune"
+
+#
+# Save all files changed or potentially changed by this script.
+#
+save_files() {
+	trap '' 1 2 3 15
+
+	for i in $FILES
+	do
+		if [ -f $i ]
+		then
+			cp $i ${TMPDIR}/`basename $i`
+		fi
+	done
+}
+
+#
+# Restore saved files in the event of a trap.
+#
+restore_files() {
+	trap '' 1 2 3 15
+
+	for i in $FILES
+	do
+		if [ -f ${TMPDIR}/`basename $i` ]
+		then
+			cp -f ${TMPDIR}/`basename $i` $i
+		fi
+	done
+}
+
+cleanup() {
+	trap '' 1 2 3 15
+
+	rm -f ${TMPDIR}/sco_tcp.conf
+	rm -f ${TMPDIR}/sco_tcp_reconf
+
+	for i in $FILES
+	do
+		rm -f ${TMPDIR}/`basename $i`
+	done
+
+	exit $1
+}
+
+#
+# Add entries to /etc/inet/hosts file.
+#
+put_hosts() {
+	_IP=$1
+	_HOST=$2
+	_FULL=$3
+
+	if [ "$_FULL" ]
+	then
+		if egrep -i "^$_IP[ 	]+$_FULL[ 	]+$_HOST" \
+			/etc/inet/hosts > /dev/null 2>&1
+		then
+			: done
+		else
+			echo "$_IP\t$_FULL $_HOST" >> /etc/inet/hosts
+		fi
+	else
+		#
+		# Case where SLIP or PPP remote destination entry is
+		# being added.
+		#
+		if egrep -i "^$_IP[ 	]+$_HOST$" /etc/inet/hosts\
+			> /dev/null 2>&1 || \
+		   egrep -i "^$_IP[ 	]+$_HOST[ 	]" \
+			/etc/inet/hosts > /dev/null 2>&1
+		then
+			: done
+		else
+			if [ "$_HOST" ]
+			then
+				echo "$_IP\t$_HOST" >> /etc/inet/hosts
+			fi
+		fi
+	fi
+	_IP=""; _HOST=""; _FULL=""
+}
+
+#
+# Check /etc/inet/hosts to see if an entry exists.
+#
+check_hosts() {
+	_IP=$1
+	_HOST=$2
+
+	if [ ! -f /etc/inet/hosts ]
+	then
+		echo "127.0.0.1\tlocalhost loopback lb" > /etc/inet/hosts
+		chmod 644 /etc/inet/hosts
+		chown bin /etc/inet/hosts
+		chgrp bin /etc/inet/hosts
+	fi
+
+	if [ "$_reconfig" ]
+	then
+		#
+		# Two things could be done here:
+		#
+		# 1. The hostname changed and the IP didn't:
+		#	replace the line that contains the
+		#	same IP.
+		#
+		# 2. The IP changed but the hostname didn't:
+		#	replace the line that contains the
+		#	duplicate hostname.
+		#
+		host=`grep "^$IP" /etc/inet/hosts`
+
+		if [ "$host" ]
+		then
+			if [ "$LOCAL_NAME" = `echo $host | awk '{print $3}'` ]
+			then
+				#
+				# Nothing changed.
+				#
+				return
+			else
+				#
+				# The hostname changed. Remove this line, a new
+				# one will be added when we call put_hosts
+				# below.
+				#
+				ed -s /etc/inet/hosts <<-EOF > /dev/null 2>&1
+					/^$IP/d
+					.
+					w
+					q
+					EOF
+			fi
+		else
+			#
+			# Couldn't find an entry for that IP address so
+			# maybe the IP address changed.
+			#
+			ip=`grep "$LOCAL_NAME" /etc/inet/hosts | awk '{print $1}'`
+
+			if [ "$ip" ]
+			then
+				if [ "$ip" = "$IP" ]
+				then
+					#
+					# Nothing changed.
+					#
+					return
+				else
+					ed -s /etc/inet/hosts <<-EOF > /dev/null 2>&1
+					/^$ip/d
+					.
+					w
+					q
+					EOF
+				fi
+			fi
+		fi
+	fi
+
+	#
+	# There should not be a default for the domain.
+	#
+	if [ ! "$DOMAIN" ]
+	then
+		_FULL=${_HOST}
+	else
+		_FULL=${_HOST}.$DOMAIN
+	fi
+
+	#
+	# If $_HOST is an alias for localhost remove the localhost alias.
+	#
+	_ALIAS=`grep "^127" /etc/inet/hosts | awk '{print $3}'`
+	if [ "$_ALIAS" -a "$_ALIAS" = "$_HOST" ]
+	then
+		ed -s /etc/inet/hosts <<-EOF > /dev/null 2>&1
+			/^127/d
+			i
+			127.0.0.1	localhost
+			.
+			w
+			q
+			EOF
+	fi
+
+	put_hosts "$_IP" "$_HOST" "$_FULL"
+}
+
+#
+# Modify /etc/confnet.d/inet/interface for the ethernet case
+#
+# $LINE is constructed in main.
+#
+ether_modify()
+{
+	if [ ! "$_reconfig" ]
+	then
+		ed -s /etc/confnet.d/inet/interface <<-EOF > /dev/null
+			$
+			a
+			$LINE
+			.
+			w
+			q
+			EOF
+
+		#
+		# Add inet entry to /etc/confnet.d/netdrivers file.
+		#
+		netinfo -a -d $LOWER_PRD -p inet
+	else
+		if grep "^$INTERFACE_NAME:$INTERFACE_NUMBER" \
+		   /etc/confnet.d/inet/interface > /dev/null 2>&1
+		then
+			ed -s /etc/confnet.d/inet/interface <<-EOF > /dev/null
+				/^$INTERFACE_NAME:$INTERFACE_NUMBER/d
+				i
+				$LINE
+				.
+				w
+				q
+				EOF
+		fi
+	fi
+}
+
+modify_resolver() {
+	_DOMAIN=$1
+	_DNS_1=$2
+	_DNS_2=$3
+	_DNS_3=$4
+
+	if [ "$_DOMAIN" ]
+	then
+		echo "domain $_DOMAIN" > /etc/resolv.conf
+	fi
+
+	if [ "$_DNS_1" -a "$_DNS_1" != "..." ]
+	then
+		echo "nameserver $_DNS_1" >> /etc/resolv.conf
+	fi
+
+	if [ "$_DNS_2" -a "$_DNS_2" != "..." ]
+	then
+		echo "nameserver $_DNS_2" >> /etc/resolv.conf
+	fi
+
+	if [ "$_DNS_3" -a "$_DNS_3" != "..." ]
+	then
+		echo "nameserver $_DNS_3" >> /etc/resolv.conf
+	fi
+}
+
+#
+# Set the number of pseudo ttys configured in the kernel to N_PTTY
+#
+setptty()
+{
+	#
+	# N_PTTY is the number of SCO pseudo ttys to configure.
+	# The actual number of pseudo ttys is N_PTTY + 256 since
+	# there are 256 regular pseudo ttys.
+	#
+	N_PTTY=`expr $N_PTTY + 256`
+
+	#
+	# Turn on all the pseudo tty drivers.
+	#
+	for i in ptm ptem pts
+	do
+		if [ -f /etc/conf/sdevice.d/$i ]
+		then
+			cp /etc/conf/sdevice.d/$i ${TMPDIR}/$i.Sy
+
+			line=`grep "^$i[ 	]" /etc/conf/sdevice.d/$i \
+				2>/dev/null`
+			set - $line
+
+			DEFAULT=$3
+			if [ "$DEFAULT" -ne "$N_PTTY" ]
+			then
+				ed -s ${TMPDIR}/$i.Sy 1>/dev/null 2>&1 <<-EOF
+					/^$i[ 	]/
+					s/$DEFAULT/$N_PTTY/
+					.
+					w
+					q
+				EOF
+			else
+				#
+				# The number of pttys has not changed,
+				# don't bother with the rest of this.
+				#
+				rm -f ${TMPDIR}/$i.Sy
+				return
+			fi
+		fi
+	done
+
+	#
+	# Add the UnixWare pseudo tty master and slave devices
+	# first.
+	#
+	echo "clone	ptmx	c	ptm" > ${TMPDIR}/ptm.No
+
+	/sbin/putdev -a pseudo_master cdevlist=/dev/ptmx \
+		desc="pseudo terminal master" > /dev/null 2>&1
+
+	TEMP=0
+	until [ "$TEMP" -eq "256" ]
+	do
+		echo "pts	pts/${TEMP}	c	${TEMP}" \
+			>> ${TMPDIR}/pts.No
+		TEMP=`expr $TEMP + 1`
+	done
+
+	#
+	# Now add the SCO pseudo ttys.
+	#
+	TEMP=256
+	i=0
+	until [ "$TEMP" -eq "$N_PTTY" ]
+	do
+		echo "ptm	ptyp$i	c	${TEMP}" \
+			>> ${TMPDIR}/ptm.No
+		echo "pts	ttyp$i	c	${TEMP}" \
+			>> ${TMPDIR}/pts.No
+		/sbin/putdev -a ptyp${TEMP} \
+			cdevlist=/dev/ptyp${TEMP},/dev/ttyp${TEMP} \
+			desc="SCO pseudo terminal pair ${TEMP}" > /dev/null 2>&1
+		TEMP=`expr $TEMP + 1`
+		i=`expr $i + 1`
+	done
+
+	#
+	# Create the slave pseudo tty Rc script.
+	#
+	> ${TMPDIR}/pts.Rc
+	echo "if [ -c /dev/pts000 ]" >> ${TMPDIR}/pts.Rc
+	echo "then" >> ${TMPDIR}/pts.Rc
+	echo "	exit" >> ${TMPDIR}/pts.Rc
+	echo "fi" >> ${TMPDIR}/pts.Rc
+	echo "\ncd /dev/pts" >> ${TMPDIR}/pts.Rc
+	echo "\nfor i in *" >> ${TMPDIR}/pts.Rc
+	echo "do" >> ${TMPDIR}/pts.Rc
+	STRING="NUM=\`echo \$i | awk '{printf(\"%.3d\",\$1)}'\`"
+	echo "	$STRING" >> ${TMPDIR}/pts.Rc
+	echo "	ln \$i /dev/pts\${NUM} > /dev/null 2>&1" \
+		>> ${TMPDIR}/pts.Rc
+	echo "done" >> ${TMPDIR}/pts.Rc
+
+	#
+	# Set up the autopush.
+	#
+	set `grep pts /etc/conf/mdevice.d/pts | grep -v ident`
+	> ${TMPDIR}/sco.ap
+	echo "	$6	256	`expr ${N_PTTY} - 1`	ptem	ldterm" >> ${TMPDIR}/sco.ap
+
+	cp -f ${TMPDIR}/sco.ap /etc/ap/sco.ap
+
+	> ${TMPDIR}/ptm.Rc
+	echo "if [ ! -f /tmp/.scopty ]" >> ${TMPDIR}/ptm.Rc
+	echo "then" >> ${TMPDIR}/ptm.Rc
+	echo "	> /tmp/.scopty" >> ${TMPDIR}/ptm.Rc
+	echo "	/sbin/autopush -f /etc/ap/sco.ap" >> ${TMPDIR}/ptm.Rc
+	echo "fi" >> ${TMPDIR}/ptm.Rc
+
+	rm -f /tmp/.scopty
+
+	if [ -f /etc/ap/sco.ap ]
+	then
+		/sbin/autopush -f /etc/ap/sco.ap > /dev/null 2>&1
+	fi
+
+	#
+	# Now install the kernel modules.
+	#
+	_cwd=`pwd`
+	cd ${TMPDIR}
+
+	for MODULE in ptm ptem pts
+	do
+		if [ -f ${MODULE}.Sy ]
+		then
+			SEDCMD1="s/[	 ]N[	 ]/	Y	/"
+			grep -v "^[\*#]ident" ${MODULE}.Sy |
+				sed "${SEDCMD1}" > System
+			rm -rf ${MODULE}.Sy
+		fi
+
+		if [ -f ${MODULE}.No ]
+		then
+			grep -v "^[\*#]ident" ${MODULE}.No > Node
+			rm -rf ${MODULE}.No
+		fi
+
+		if [ -f ${MODULE}.Rc ]
+		then
+			grep -v "^[\*#]ident" ${MODULE}.Rc > Rc
+			rm -rf ${MODULE}.Rc
+		fi
+
+		/etc/conf/bin/idinstall -P nsu -u ${MODULE} \
+			> ${TMPDIR}/idinstall.${MODULE}.err 2>&1
+		ret=$?
+
+		rm -rf System Node Rc
+
+		if [ ${ret} -ne 0 ]
+		then
+			Error "idinstall failed for ${MODULE}."
+			exit $FAIL
+		fi
+
+		rm -rf ${TMPDIR}/idinstall.${MODULE}.err
+	done
+
+	cd $_cwd
+
+	#
+	# Build the kernel.
+	#
+	/etc/conf/bin/idbuild -M ptm -M ptem -M pts >/dev/null 2>&1
+
+	MTUNE_ORIG=${TMPDIR}/mtune.$$
+	if [ -f /etc/conf/cf.d/mtune ]
+	then
+		cp /etc/conf/cf.d/mtune $MTUNE_ORIG
+		cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+	else
+		cat /etc/conf/mtune.d/* >> /etc/conf/cf.d/mtune
+	fi
+
+	#
+	# Ensure the tunables are up to date.
+	#
+	/etc/conf/bin/idtune -f NUMREGPT 256
+	/etc/conf/bin/idtune -f NUMSCOPT `expr $N_PTTY - 256`
+
+	if [ -f $MTUNE_ORIG ]
+	then
+		cp $MTUNE_ORIG /etc/conf/cf.d/mtune
+		rm -f $MTUNE_ORIG
+	else
+		rm -f /etc/conf/cf.d/mtune > /dev/null 2>&1
+	fi
+}
+
+#
+# Set IPFORWARDING and IPSENDREDIRECTS and IPNONLOCALSRCROUTE for gateways.
+# Clear if not a gateway to be conformant with RFC 1122.
+# 
+set_ipforwarding()
+{
+	inconfig -f /etc/inet/inet.dfl ipforwarding $1
+	inconfig -f /etc/inet/inet.dfl ipsendredirects $1
+	inconfig -f /etc/inet/inet.dfl ipnonlocalsrcroute $1
+}
+
+# main Main MAIN
+
+trap 'restore_files' 1 2 3 15
+
+_no_prompt=
+_reconfig=
+_upgrade=
+
+save_files
+
+already_configured=0
+#
+# Does this chain already exist?
+#
+netcfg -s | grep "tcp#$LOWER_PRD" > /dev/null 2>&1
+if [ $? -eq 0 ]
+then
+	already_configured=1
+fi
+
+#
+# Are we configuring a protocol over TCP?
+#
+if [ "$LOWER_PRD" = "-" ]
+then
+	already_configured=1
+fi
+
+#
+# If we're not reconfiguring this chain and we're already
+# configured then exit without making any changes.
+#
+if [ ! -f ${TMPDIR}/sco_tcp_reconf -a $already_configured -eq 1 ]
+then
+	cleanup $OK
+fi
+
+N_PTTY=32
+GATEWAY=No
+
+#
+# Get variables from ifile when we're in the post-reboot
+# stage of an installation.
+#
+if [ -f /isl/ifile -a -f /etc/init.d/S02POSTINST ]
+then
+	. /isl/ifile
+
+	LOCAL_NAME=$NODE
+	if [ "$TCP_IPADDR" -a "$TCP_IPADDR" != "DEFER" ]
+	then
+		IP=$TCP_IPADDR
+		NM=$TCP_NETMASK
+		BD=$TCP_BROADCAST
+		DOMAIN=$TCP_DOMAIN_NAME
+		DEF_ROUTER=$TCP_ROUTER_ADDR
+		DNS_1=${TCP_DNS_ADDR[0]}
+		DNS_2=${TCP_DNS_ADDR[1]}
+		DNS_3=${TCP_DNS_ADDR[2]}
+		FRAME_FMT=$TCP_FRAME_TYPE
+	else
+		#
+		# We have no configuration data.
+		#
+		# If we did a netinstall but then chose to defer
+		# the TCP configuration we should move /etc/resolv.conf
+		# out of the way so name lookups don't use DNS.
+		#
+		if [ -f /etc/resolv.conf ]
+		then
+			mv /etc/resolv.conf /etc/inet/resolv.save
+		fi
+
+		#
+		# In this case we should also add uname -n as an
+		# alias to localhost in /etc/inet/hosts.
+		#
+		ed -s /etc/inet/hosts <<-EOF > /dev/null 2>&1
+			/^127/d
+			a
+			127.0.0.1	localhost $NODE
+			.
+			w
+			q
+			EOF
+
+		exit 0
+	fi
+	_no_prompt=true
+elif [ -f ${TMPDIR}/sco_tcp_reconf ]
+then
+	#
+	# We're reconfiguring this particular instance of TCP.
+	#
+	_reconfig=true
+
+	#
+	# Call the prompter to gather the new information.
+	#
+	ncfgprompter ${NCFGBIN}/tcp.BE $INTERFACE_NAME $INTERFACE_NUMBER > \
+		${TMPDIR}/sco_tcp.reconf
+
+	case $? in
+		0)
+			#
+			# Success!
+			#
+			;;
+		1)
+			#
+			# ncfgprompter failed.
+			#
+			error "error in ${NCFGBIN}/tcp.BE"
+			rm -f ${TMPDIR}/sco_tcp.reconf
+			exit $FAIL
+			;;
+		3)
+			#
+			# User selected cancel, exit with cancel exit code.
+			#
+			rm -f ${TMPDIR}/sco_tcp.reconf
+			exit $CANCEL
+			;;
+		*)
+			#
+			# Some other exit code, assume it is an error.
+			#
+			error "error in ${NCFGBIN}/tcp.BE"
+			rm -f ${TMPDIR}/sco_tcp.reconf
+			exit $FAIL
+			;;
+	esac
+	. ${TMPDIR}/sco_tcp.reconf
+else
+	#
+	# We're adding a new instance of TCP.
+	#
+
+	if [ "$LOWER_PRD" = "sl0" ]
+	then
+		#
+		# This is SLIP configuration.
+		#
+		# XXX: This probably needs changing.
+		#
+		/usr/lib/netcfg/bin/addsl netconfig
+		if [ $? -ne 0 ]
+		then
+			#
+			# The GUI failed.
+			#
+			error "error in /usr/lib/netcfg/bin/addsl"
+			exit $FAIL
+		else
+			#
+			# Success!
+			#
+			exit $OK
+		fi
+	fi
+
+	#
+	# Call the prompter to gather the parameters.
+	#
+	ncfgprompter ${NCFGBIN}/tcp.BE $INTERFACE_NAME \
+		$INTERFACE_NUMBER > ${TMPDIR}/sco_tcp.conf
+	case $? in
+		0)
+			#
+			# Success!
+			#
+			;;
+		1)
+			#
+			# The prompter failed.
+			#
+			error "error in ${NCFGBIN}/tcp.BE"
+			rm -f ${TMPDIR}/sco_tcp.conf
+			exit $FAIL
+			;;
+		3)
+			#
+			# User selected cancel,
+			# exit with cancel exit code.
+			#
+			rm -f ${TMPDIR}/sco_tcp.conf
+			exit $CANCEL
+			;;
+		*)
+			#
+			# Some unknown exit code, assume it is
+			# an error.
+			#
+			error "error in ${NCFGBIN}/tcp.BE"
+			rm -f ${TMPDIR}/sco_tcp.conf
+			exit $FAIL
+			;;
+	esac
+	. ${TMPDIR}/sco_tcp.conf
+fi
+
+#
+# netconfig sets $CONFIGURE to "Y" if this is the first tcp to be installed
+#
+if [ "$CONFIGURE" = "Y" -o "$_upgrade" ]
+then
+	#
+	# Turn off IPFORWARDING conformant with RFC 1122.
+	#
+	set_ipforwarding 0
+
+	#
+	# If we saved /etc/resolv.conf, restore it now.
+	#
+	if [ -f /etc/inet/resolv.save ]
+	then
+		cp /etc/inet/resolv.save /etc/resolv.conf
+
+		#
+		# We need to ensure that the domain in this
+		# resolv.conf file agrees with what the user
+		# entered into the prompter.
+		#
+		OLD_DOMAIN=`grep "^domain" /etc/resolv.conf | awk '{print $2}'`
+		if [ "$OLD_DOMAIN" != "$DOMAIN" ]
+		then
+			ed -s /etc/resolv.conf <<-EOF > /dev/null 2>&1
+				/^domain/d
+				i
+				domain $DOMAIN
+				.
+				w
+				q
+				EOF
+		fi
+	fi
+fi
+
+if [ "$LOWER_PRD" = "-" ]
+then
+	cleanup $OK
+fi
+
+#
+# If NetBIOS is present then if NB_ADDR is not set explicitly then configure
+# NetBIOS to use this interface.
+#
+if [ -f /etc/inet/nb.conf ]
+then
+	if [ ! "`grep '^NB_ADDR=' /etc/inet/nb.conf`" ]
+	then
+		ed -s /etc/inet/nb.conf <<-EOF > /dev/null 2>&1
+			?^#?
+			a
+			NB_ADDR=$IP
+			.
+			/^export/s/^export \(.*\)/export NB_ADDR \1/
+			w
+			q
+			EOF
+	fi
+
+	NB_AD=`grep '^NB_ADDR=' /etc/inet/nb.conf | sed -e 's/^NB_ADDR=//'`
+	if [ ! "$NB_AD" -o "$NB_AD" = "127.0.0.1" ]
+	then
+		ed -s /etc/inet/nb.conf <<-EOF > /dev/null 2>&1
+			/^NB_ADDR/d
+			i
+			NB_ADDR=$IP
+			.
+			w
+			q
+			EOF
+	fi
+fi
+
+#
+# Now check if a new driver is being installed.
+# Not in reconfig mode.
+#
+if [ ! "$_reconfig" ]
+then
+	netcfg -s 2>/dev/null | \
+		fgrep $LOWER_PRD 2>/dev/null | \
+		fgrep tcp > /dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		cleanup $OK
+	fi
+fi
+
+if [ "$_reconfig" ]
+then
+	#
+	# Determine what the old IP address for $LOWER_PRD was.
+	#
+	OLD_IP=`grep "^$INTERFACE_NAME:$INTERFACE_NUMBER" \
+		/etc/confnet.d/inet/interface | awk -F: '{ print $3 }'`
+fi
+
+if [ "$LOCAL_NAME" ]
+then
+	check_hosts $IP $LOCAL_NAME
+fi
+
+NETMASK="netmask $NM"
+BROADCAST="broadcast $BD"
+
+#case $LOWER_PRD in
+#	e3A*)
+#		IFCONFIG="		ifconfig -p $LOWER_PRD $IP onepacket 512 3 perf 4096 8192 1 $FLAGS $NETMASK $BROADCAST"
+#		;;
+#	*)
+		#
+		# in case we're invoked by an
+		# older version of netconfig
+		#
+		if [ -z "$SEND_SPEED" ]; then
+			SEND_SPEED=30
+		fi
+
+		if [ -z "$RECEIVE_SPEED" ]; then
+			RECEIVE_SPEED=30
+		fi
+
+		FS=1
+		case $RECEIVE_SPEED in
+		10)
+			FS="1 onepacket 512 3"
+			RCV=4096
+			;;
+		20)
+			RCV=4096
+			;;
+		30)
+			RCV=4096
+			;;
+		40)
+			RCV=24576
+			;;
+		*)
+			RCV=4096
+			;;
+		esac
+		case $SEND_SPEED in
+		10)
+			SND=8192
+			;;
+		20)
+			SND=8192
+			;;
+		30)
+			SND=8192
+			;;
+		40)
+			SND=24576
+			;;
+		*)
+			SND=8192
+			;;
+		esac
+		PERF="perf $RCV $SND $FS"
+
+		IFCONFIG="$FLAGS $NETMASK $BROADCAST $PERF"
+#		;;
+#esac
+
+DEFMULTI=$IP
+
+if [ ! "$IFCONFIG" ]
+then
+	IFCONFIG="$FLAGS $NETMASK $BROADCAST"
+fi
+
+#
+# Determine whether nodes are cloning or not.
+#
+NODE=$ND/$INTERFACE_NAME
+
+if [ ! -f $NODE ]
+then
+	#
+	# This may be an MDI device in which case the
+	# Node file should be the same as $LOWER_PRD.
+	#
+	NODE=$ND/$LOWER_PRD
+
+	if [ ! -f $NODE ]
+	then
+		error "$LOWER_PRD is not installed on this\c"
+		error "system.\nPlease install the driver\c"
+		error "and re-run $0"
+		cleanup $FAIL
+	fi
+fi
+	
+#
+# Set up /etc/confnet.d/inet/interface.
+#
+set -- `cat $NODE | grep "$LOWER_PRD"`
+if [ $1 = "clone" ]
+then
+	if [ ! "$FRAME_FMT" ]
+	then
+		for TOPOLOGY in $NETWORK_MEDIA
+		do
+			if [ "$TOPOLOGY" = "ETHER" -o \
+			     "$TOPOLOGY" = "ether" ]
+			then
+				FRAME_FMT="Ethernet-II"
+			fi
+		done
+
+		if [ ! "$FRAME_FMT" ]
+		then
+			FRAME_FMT="802.n"
+		fi
+	fi
+	if [ "$FRAME_FMT" = "Ethernet-II" -o \
+	     "$FRAME_FMT" = "Ethernet II" -o \
+	     "$FRAME_FMT" = "ETHERNET_II" ]
+	then
+		SLINK="add_interface"
+	else
+		SLINK="add_interface_SNAP"
+	fi
+else
+	SLINK="senet ip /dev/$2 /dev/$6 $LOWER_PRD"
+fi
+
+LINE="$INTERFACE_NAME:$INTERFACE_NUMBER:$IP:/dev/$LOWER_PRD:$IFCONFIG:$SLINK:"
+#
+# Modify /etc/confnet.d/inet/interface.
+#
+ether_modify
+
+#
+# Modify /etc/resolv.conf.
+#
+if [ "$_no_prompt" = "true" ]
+then
+	modify_resolver $DOMAIN $DNS_1 $DNS_2 $DNS_3
+fi
+
+#
+# Set the domain if it's different from what's already been configured.
+#
+if [ -f /etc/resolv.conf ]
+then
+	OLD_DOMAIN=`grep "^domain" /etc/resolv.conf | awk '{ print $2 }'`
+
+	if [ "$DOMAIN" != "$OLD_DOMAIN" ]
+	then
+		ed -s /etc/resolv.conf <<-EOF > /dev/null 2>&1
+			/^domain/d
+			i
+			domain $DOMAIN
+			.
+			w
+			q
+			EOF
+	fi
+fi
+
+#
+# If this script is called a second time then the machine may be a
+# gateway. If so set IPFORWARDING and IPSENDREDIRECTS.
+#
+no_of_devs=`netcfg -s | grep "^tcp" | wc -l`
+
+#
+# Update for multicast and default routes.
+#
+if [ "$DEF_ROUTER" != "" -a "$DEF_ROUTER" != "..." ]
+then
+	ROUT="4c:/usr/sbin/route::y::add default $DEF_ROUTER:"
+fi
+
+MULT="4d:/usr/sbin/route::y::add 224.0.0.0 $DEFMULTI:"
+
+if [ $no_of_devs -eq 0 ]
+then
+	if [ "$ROUT" ]
+	then
+		ed -s /etc/inet/config <<-EOF > /dev/null
+			\$
+			a
+			$ROUT
+			.
+			w
+			q
+			EOF
+	fi
+
+	ed -s /etc/inet/config <<-EOF > /dev/null
+		\$
+		a
+		$MULT
+		.
+		w
+		q
+		EOF
+elif [ $no_of_devs -eq 1 -a "$_reconfig" ]
+then
+	#
+	# Remove old /etc/route line and replace it with
+	# one with the new IP address.
+	#
+	if [ "$ROUT" ]
+	then
+		ed -s /etc/inet/config <<-EOF > /dev/null
+			g/^4c/d
+			\$
+			a
+			$ROUT
+			.
+			w
+			q
+			EOF
+	else
+		#
+		# No route specified.
+		# If one exists in /etc/inet/config, delete it.
+		#
+		if grep "^4c" /etc/inet/config > /dev/null 2>&1
+		then
+			ed -s /etc/inet/config <<-EOF > /dev/null
+				g/^4c/d
+				.
+				w
+				q
+				EOF
+		fi
+	fi
+
+	ed -s /etc/inet/config <<-EOF > /dev/null
+		g/^4d/d
+		\$
+		a
+		$MULT
+		.
+		w
+		q
+		EOF
+elif [ "$_reconfig" ]
+then
+	if [ "`grep '^4d' /etc/inet/config | \
+		awk '{ print $3 }'`" = "$OLD_IP" ]
+	then
+		#
+		# The interface we're reconfiguring is the one
+		# used for routing multicasts so lets change it.
+		#
+		if [ "$ROUT" ]
+		then
+			ed -s /etc/inet/config <<-EOF > /dev/null
+				g/^4c/d
+				\$
+				a
+				$ROUT
+				.
+				w
+				q
+				EOF
+		else
+			#
+			# No route specified. 
+			# If one is configured, remove it.
+			#
+			if grep "^4c" /etc/inet/config > /dev/null 2>&1
+			then
+				ed -s /etc/inet/config <<-EOF > /dev/null 2>&1
+					g/^4c/d
+					.
+					w
+					q
+					EOF
+			fi
+		fi
+
+		ed -s /etc/inet/config <<-EOF > /dev/null
+			g/^4d/d
+			\$
+			a
+			$MULT
+			.
+			w
+			q
+			EOF
+	else
+		if [ "$ROUT" ]
+		then
+			ed -s /etc/inet/config <<-EOF > /dev/null
+				g/^4c/d
+				\$
+				a
+				$ROUT
+				.
+				w
+				q
+				EOF
+		else
+			#
+			# No route specified. 
+			# If one is configured, remove it.
+			#
+			if grep "^4c" /etc/inet/config > /dev/null 2>&1
+			then
+				ed -s /etc/inet/config <<-EOF > /dev/null 2>&1
+					g/^4c/d
+					.
+					w
+					q
+					EOF
+			fi
+		fi
+	fi
+fi
+
+#
+# Configure SNMP information
+#
+if [ "$_reconfig" -o \
+    ! "`grep '^contact=' $SNMPD_CONF | sed -e 's/^contact=//' \
+	> /dev/null 2>&1`" ]
+then
+	if [ "`grep '^#contact=' $SNMPD_CONF`" -o \
+	     "`grep '^contact=' $SNMPD_CONF`" ]
+	then
+		ed -s $SNMPD_CONF <<-EOF > /dev/null 2>&1
+			g/^#contact=/d
+			g/^contact=/d
+			.
+			w
+			q
+			EOF
+	fi
+	echo "contact=$SYS_CONTACT" >> $SNMPD_CONF
+fi
+
+if [ "$_reconfig" -o \
+    ! "`grep '^location=' $SNMPD_CONF | sed -e 's/^location=//' \
+	> /dev/null 2>&1`" ]
+then
+	if [ "`grep '^#location=' $SNMPD_CONF`" -o \
+	     "`grep '^location=' $SNMPD_CONF`" ]
+	then
+		ed -s $SNMPD_CONF <<-EOF > /dev/null 2>&1
+			g/^#location=/d
+			g/^location=/d
+			.
+			w
+			q
+			EOF
+	fi
+	echo "location=$SYS_LOCATION" >> $SNMPD_CONF
+fi
+
+#
+# Configure the system as a router.
+#
+if [ "$GATEWAY" = "Yes" -o "$GATEWAY" = "yes" ]
+then
+	set_ipforwarding 1
+
+	#
+	# Make sure in.routed is enabled in /etc/inet/config.
+	#
+	ed -s /etc/inet/config <<-EOF > /dev/null 2>&1
+		/^##*4b/s/^##*//
+		.
+		w
+		q
+		EOF
+else
+	set_ipforwarding 0
+fi
+
+if [ "$LOWER_PRD" != "-" ]
+then
+	#
+	# Add pseudo terminals for telnet and rlogin.
+	#
+	setptty
+fi
+
+cleanup $REBOOT

@@ -1,0 +1,136 @@
+/**/#	@(#)Imakefile	11.2	10/28/97	14:04:29
+/**/#	@(#)Imakefile	6.6	3/19/96	15:57:59
+/**/#
+/**/#	Copyright (C) The Santa Cruz Operation, 1991-1993.
+/**/#	This Module contains Proprietary Information of
+/**/#	The Santa Cruz Operation, and should be treated as Confidential.
+/**/#
+/**/#
+/**/#	SCO MODIFICATION HISTORY
+/**/#
+/**/#
+/**/#	S000	Fri Feb 01 19:51:20 PST 1991	buckm@sco.com
+/**/#	- Created file
+/**/#	S001	Thu Feb 14 15:37:00 PST 1991	pavelr@sco.com
+/**/#	- added DEFINES = XSERVER for stand alone lib support
+/**/#	S002	Thu Apr 25 19:00:00 PST 1991	pavelr@sco.com
+/**/#	- added graferror and io386 to SRCS and OBJS
+/**/#	S003	Thu Sep 11			pavelr
+/**/#	- sdded mon to SRCS and OBJS
+/**/#	S004    Fri Oct 18 15:30:00 PST 1991    garyh@sco.com
+/**/#	- added y.tab.c to the clean rule to insure we have the latest src
+/**/#	  from our yacc file, parse.y.
+/**/#	S005    Thu Sep 03 17:37:38 PDT 1992	buckm@sco.com
+/**/#	- add v86bios.[cho]
+/**/#	- add things to clean rule
+/**/#	- add rules for use when including this file from tools/graflib
+/**/#	S006    Mon Nov 02 09:03:50 PST 1992	buckm@sco.com
+/**/#	- add v86asm.[so], vbdintf.[cho], and eprint.[co].
+/**/#	S007	Fri Dec 18 11:24:12 PST 1992	hiramc@sco.COM
+/**/#	- add include <Server.tmpl>
+/**/#	S008	Wed Jan 24 09:58:03 PST 1996	hiramc@sco.COM
+/**/#	- adding if XwinServer to build differently on Unixware
+/**/#   S009    Tue Jun 25 22:52:50 GMT 1996    kylec@sco.COM
+/**/#   - change XwinServer to USLArchitecture.  XwinServer is
+/**/#     only defined when building the Novel si server.
+/**/#   S010    Mon Dec 30 14:41:22 PST 1996    kylec@sco.com
+/**/#   - Add V86BiosDefines
+/**/#	S011	Tue Oct 28 14:03:59 PST 1997	hiramc@sco.COM
+/**/#	- Add MemConMap.c to the build
+/**/#
+
+#include <Server.tmpl>
+#ifdef USLArchitecture
+#define XWINSRC v86asm.s interp.c disassemble.c interpIfc.c MemConMap.c
+#define XWINOBJ v86asm.o interp.o disassemble.o interpIfc.o MemConMap.o
+#else
+#define XWINSRC v86asm.s v86bios.c
+#define XWINOBJ v86asm.o v86bios.o
+#endif
+
+SRCS =	\
+	parse.y \
+	lexit.l \
+	graf.c \
+ 	graferror.c \
+	mon.c \
+	eprint.c \
+ 	io386.s \
+	vbdintf.h \
+	vbdintf.c \
+	v86bios.h \
+	vm86.c \
+	XWINSRC
+
+OBJS =	\
+	parse.o \
+	lexit.o \
+	graf.o \
+ 	graferror.o \
+	mon.o \
+	eprint.o \
+ 	io386.o \
+	vbdintf.o \
+	vm86.o \
+ 	XWINOBJ
+
+YFLAGS = -d
+
+#ifndef LinkDirectory
+DEFINES = -DXSERVER -DGRAFDIR=\"$(GRAFDIR)\" V86BiosDefines
+#endif
+
+INCLUDES = -I$(SERVERSRC)/include -I../include -I$(TOP)/include
+
+NormalLibraryObjectRule()
+
+NormalLibraryTarget(grafinfo,$(OBJS))
+
+vbdintf.o: vbdintf.h
+v86bios.o: v86bios.h
+
+#ifdef LinkDirectory
+#define LinkDepSourceFile(file,dir)		@@\
+LinkSourceFile(file,dir)			@@\
+depend:: file					@@\
+clean::						@@\
+	$(RM) file
+
+LinkDepSourceFile(parse.y,LinkDirectory)
+LinkDepSourceFile(lexit.l,LinkDirectory)
+LinkDepSourceFile(graf.c,LinkDirectory)
+LinkDepSourceFile(graferror.c,LinkDirectory)
+LinkDepSourceFile(mon.c,LinkDirectory)
+LinkDepSourceFile(eprint.c,LinkDirectory)
+LinkDepSourceFile(io386.s,LinkDirectory)
+LinkDepSourceFile(vbdintf.h,LinkDirectory)
+LinkDepSourceFile(vbdintf.c,LinkDirectory)
+LinkDepSourceFile(v86bios.h,LinkDirectory)
+LinkDepSourceFile(v86bios.c,LinkDirectory)
+LinkDepSourceFile(v86asm.s,LinkDirectory)
+#endif
+
+LinkFileList(includes,grafinfo.h,../../../include,../hw/sco/grafinfo)
+
+
+depend:: y.tab.h
+
+DependTarget()
+
+y.tab.h:
+	touch y.tab.h
+
+
+#ifdef USLArchitecture
+interp.o:       interp.c
+	$(RM) $@
+	$(CC) -c -O $(CCOPTIONS) $(THREADS_CFLAGS) $(ALLDEFINES) $*.c
+#endif
+
+clean::
+	rm -f y.tab.h y.output y.tab.c parse.c lexit.c
+
+
+HDK_HEADERS = grafinfo.h
+InstallHDKMultiple($(HDK_HEADERS),$(HDKSERVERINCDIR))
+InstallHDKLibrary(grafinfo,$(HDKSERVERLIBDIR))

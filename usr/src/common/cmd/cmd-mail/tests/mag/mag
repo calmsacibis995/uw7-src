@@ -1,0 +1,601 @@
+#!/bin/sh
+#ident "@(#)mag	11.2"
+#
+# Semi-automated test suite for GUI parts of mailadmin.
+#
+# Attempts to achieve complete branch coverage
+# of the front end files.
+# This script expects the test version (mailadmint) to be installed
+# in /etc/mail/admin/mailadmin.
+#
+
+# utility routines
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo $TEST: BEGIN
+
+		retry=y
+		while [ "$retry" = "y" ]
+		do
+			${name}$i
+			code=$?
+			if [ $code -ne 0 ]
+			then
+				echo "Failed: retry (y/n) [y]: \c"
+				retry=`line`
+			else
+				retry=n
+			fi
+		done
+		passfail $code
+		echo $TEST: END
+	done
+}
+
+passfail() \
+{
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: FAIL
+	fi
+}
+
+cleanup() \
+{
+	cp cf/cf_start /etc/sendmail.cf
+	cp cf/cf_start /etc/mail/sendmailcf.factory
+	cp cf/ms_start /etc/default/mail
+	cp cf/ms_start /etc/mail/mail.factory
+	rm -f /etc/mail/table/domain /etc/mail/table/domain.db
+	rm -f /etc/mail/table/uucp.db
+	rm -f /tmp/out /tmp/out1 /tmp/out1.db
+	rm -f /etc/mail/table/uucp.db
+	if [ -f /etc/mail/makemap.rls ]
+	then
+		mv /etc/mail/makemap.rls /etc/mail/makemap
+	fi
+	if [ -f /usr/lib/uucp/Systems.rls ]
+	then
+		mv /usr/lib/uucp/Systems.rls /usr/lib/uucp/Systems
+	fi
+}
+
+sumfix() \
+{
+	file=$1
+	sed -e '/# checksum:/d' $file > /tmp/$$
+	sum=`sum -r /tmp/$$ | awk '{ print $ 1}'`
+	echo "# checksum:$sum" > $file
+	cat /tmp/$$ >> $file
+	rm -f /tmp/$$
+}
+
+#
+# little script to diff two cf files stripping out comments and blank lines.
+#
+cfdiff() \
+{
+	sed -e '/^$/d' -e '/^#.*/d' $1 > /tmp/cf1.$$
+	sed -e '/^$/d' -e '/^#.*/d' $2 > /tmp/cf2.$$
+}
+
+core_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	cfdiff /etc/sendmail.cf cf/cf_start
+	return $?
+}
+
+core_test2() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff /etc/sendmail.cf cf/cf_add
+	return $?
+}
+
+core_test3() \
+{
+	cleanup
+	cp cf/cf_add /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	return $?
+}
+
+core_test4() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff /etc/sendmail.cf cf/cf_set
+	return $?
+}
+
+object_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+objedit_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+objedit_test2() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+objedit_test3() \
+{
+	cleanup
+	$pgm -test objedit_test3 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+objedit_test4() \
+{
+	cleanup
+	$pgm -test objedit_test4 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+objedit_test5() \
+{
+	cleanup
+	$pgm -test objedit_test5 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test1() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test2() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf /etc/mail/sendmailcf.factory
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test3() \
+{
+	cleanup
+	rm -f /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff /etc/sendmail.cf cf/cf_start
+	return $?
+}
+
+main_test4() \
+{
+	cleanup
+	sed -e "s/^# checksum:.*/# checksum:123/" cf/cf_start > /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test5() \
+{
+	cleanup
+	sed -e "/^Schannels/d" cf/cf_start > /etc/sendmail.cf
+	sumfix /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test6() \
+{
+	cleanup
+	$pgm -test main_test6 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test7() \
+{
+	cleanup
+	sed -e "/^Schannels/d" cf/cf_start > /etc/sendmail.cf
+	sumfix /etc/sendmail.cf
+	rm -f /etc/mail/sendmailcf.factory
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test7_1() \
+{
+	cleanup
+	sed -e "/^Schannels/d" cf/cf_start > /etc/sendmail.cf
+	sumfix /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/cf_start /etc/sendmail.cf
+	return $?
+}
+
+main_test8() \
+{
+	cleanup
+	rm /etc/default/mail
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test9() \
+{
+	cleanup
+	rm /etc/default/mail /etc/mail/mail.factory
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test10() \
+{
+	cleanup
+	rm /etc/default/mail
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/ms_start /etc/default/mail
+	return $?
+}
+
+main_test11() \
+{
+	cleanup
+	sed -e 's/^MS1_UMASK=/MS1_UMASK /' cf/ms_start > /etc/default/mail
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test12() \
+{
+	cleanup
+	$pgm -test main_test12 > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test13() \
+{
+	cleanup
+	sed -e 's/^MS1_UMASK=/MS1_UMASK /' cf/ms_start > /etc/default/mail
+	rm -f /etc/mail/mail.factory
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+main_test14() \
+{
+	cleanup
+	sed -e 's/^MS1_UMASK=/MS1_UMASK /' cf/ms_start > /etc/default/mail
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/ms_start /etc/default/mail
+	return $?
+}
+
+utils_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/cf_start /etc/sendmail.cf
+	return $?
+}
+
+utils_test2() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	if [ $? -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/cf_smarthost /etc/sendmail.cf
+	return $?
+}
+
+utils_test3() \
+{
+	cleanup
+	mv /etc/mail/makemap /etc/mail/makemap.rls
+	cp cf/cf_uucp /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	mv /etc/mail/makemap.rls /etc/mail/makemap
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+utils_test4() \
+{
+	cleanup
+	cp cf/cf_uucp /etc/sendmail.cf
+	rm -f /etc/mail/table/uucp.db
+	cp /usr/lib/uucp/Systems /tmp/out1
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	/etc/mail/makemap hash /tmp/out1 < /tmp/out1
+	cmp /tmp/out1.db /etc/mail/table/uucp.db
+	return $?
+}
+
+utils_test5() \
+{
+	cleanup
+	cp cf/cf_uucp /etc/sendmail.cf
+	cp /usr/lib/uucp/Systems /usr/lib/uucp/Systems.rls
+	echo another system >> /usr/lib/uucp/Systems
+	cp /usr/lib/uucp/Systems /tmp/out1
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	mv /usr/lib/uucp/Systems.rls /usr/lib/uucp/Systems
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	/etc/mail/makemap hash /tmp/out1 < /tmp/out1
+	cmp /tmp/out1.db /etc/mail/table/uucp.db
+	return $?
+}
+
+utils_test6() \
+{
+	cleanup
+	cp cf/cf_uucp /etc/sendmail.cf
+	rm -f /etc/mail/table/uucp.db
+	$pgm -test utils_test6 > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+bad_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/cf_allbad /etc/sendmail.cf
+	return $?
+}
+
+bad_test2() \
+{
+	cleanup
+	cp cf/cf_allbad /etc/sendmail.cf
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	diff cf/cf_start /etc/sendmail.cf
+	return $?
+}
+
+flags_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	grep MSMTP /etc/sendmail.cf > /tmp/out
+	grep F=/8DFMPelmsuz /tmp/out > /dev/null
+	if  [ $? -ne 0 ]
+	then
+		echo Flags are wrong in /etc/sendmail.cf
+		return 1
+	fi
+	return 0
+}
+
+chadd_test1() \
+{
+	cleanup
+	$pgm > /tmp/out 2>&1
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		cat /tmp/out
+		return 1
+	fi
+	return $?
+}
+
+# main Main main()
+# the test wants to run as root
+
+ cleanup
+TEST=""
+pgm=/etc/mail/admin/mailadmin
+
+core="test1 test2 test3 test4"
+object="test1"
+objedit="test1 test2 test3 test4 test5"
+main="test1 test2 test3 test4 test5 test6 test7 test7_1 test8 test9 test10 test11 test12 test13 test14"
+utils="test1 test2 test3 test4 test5 test6"
+bad="test1 test2"
+flags="test1"
+chadd="test1"
+
+#testlist chadd_ test1
+#exit
+
+testlist core_ $core
+testlist object_ $object
+testlist objedit_ $objedit
+testlist main_ $main
+testlist utils_ $utils
+testlist bad_ $bad
+testlist flags_ $flags
+testlist chadd_ $chadd

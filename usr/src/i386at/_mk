@@ -1,0 +1,311 @@
+#ident	"@(#):mk	16.1	97/11/08"
+#
+#	Shell script for building the UNIX System
+#
+# 	For cross rebuilding set at least env variables MACH, ROOT, TOOLS,
+#	SYMLINK and MAKE, for native rebuilding you can use the default values.
+#
+#	MUST fill in the correct values for ROOT, MACH, CPU, WORK, and TOOLS
+#	Also, you must build the binary mkmerge command (:mkall should
+#	have done this)
+
+echo "START `basename $0` `date`"
+ROOT=${ROOT:-''}
+TOOLS=${TOOLS:-''}
+MACH=${MACH:-'i386at'}
+CPU=${CPU:-'i386'}
+WORK=${WORK:-'work'}
+export CPU MACH ROOT TOOLS WORK
+
+TMPFILE=/tmp/mk$$
+trap "rm -f $TMPFILE $TMPFILE.* ; exit 1" 1 2 3 15
+
+UID_NAME=`id|sed 's/[()]/ /gp'|awk '{print $2}'`
+
+PARALLEL=`/sbin/psrinfo -n`
+export PARALLEL
+
+#	We'll set -e to stop on errors until
+#	we finish building the xenv
+set -e
+
+# Here is a new function timelogfunction, whose only purpose is to add
+# a start and stop time to the output file created by each :mk
+# script called from within this script.  This should help give
+# a better idea of how long individual :mk scripts take to run.
+timelogfunction () {
+   echo BEGAN `date`; $*; echo ENDED `date`;
+   }
+
+#	make directories in $ROOT/$MACH
+timelogfunction ./:mktarget "${ROOT}" "${MACH}" >target.out 2>&1
+
+#	make vpp for $TOOLS
+timelogfunction ./:mkvpp "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" >vpp.out 2>&1
+
+#	install usr/include and usr/include/sys header files
+timelogfunction ./:mkhead "${ROOT}" "${MACH}" "${WORK}" >mkhead.out 2>&1
+
+timelogfunction ./:mksyshead "${ROOT}" "${MACH}" "${WORK}" >syshead.out 2>&1
+
+timelogfunction ./:mkfiles "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >files.out 2>&1
+
+chmod +x :mkucbhead 
+
+#	install /usr/ucbinclude and /usr/ucbinclude/sys header files
+timelogfunction ./:mkucbhead ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} >sysucbhead.out 2>&1
+
+
+#
+#	Build xenv
+#
+#	The args are:	CPU we are building (as in directory in sgs)
+#			ROOT of all src and binaries
+#			TOOLS where xenv is to be installed
+#			MACH, i386at, MX300I, etc.
+#			WORK where all source is merged into
+#			PREFIX of CCS we are using to build this xenv
+timelogfunction ./:mkxenv "${CPU}" "${ROOT}" "${TOOLS}" "${MACH}" "${WORK}" '' >xenv.out 2>&1
+
+# The copy of ${TOOLS}/usr/ccs/bin/${PFX}env is the last thing done
+# by make of sgs, if it failed before that, we probably are missing
+# some sgs tools, so let's exit.
+
+if [ ! -f ${TOOLS}/usr/ccs/bin/${PFX}env ]
+then
+	echo "ERROR: Cannot find ${TOOLS}/usr/ccs/bin/${PFX}env"
+	exit 1
+fi
+
+if [ ! -f ${TOOLS}/usr/lib/zzzzz -a "X${CONTINUE}" != "Xyes" ]
+then
+	echo "ERROR: ${USRLIB}/zzzzz does not exist."
+	echo "       all libs did not build successfully"
+	exit 1
+fi
+
+set +e
+
+#	build the system administration tools
+if [ "$ROOT" != "" ]
+then
+	timelogfunction ./:mkcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" .adm >cmdadm.out 2>&1
+fi
+
+#
+# Build Host versions of pkgmk, pkgtrans, and other packaging tools.
+#
+timelogfunction ./:mkpkgtools "${ROOT}" "${WORK}" "${TOOLS}" "${PROTO}" >pkgtools.out 2>&1
+
+#
+# Build lp
+#
+timelogfunction ./:mkcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" lp >cmdlp.out 2>&1
+
+#	build all the commands
+#	(no need to build CCS tools - also comment out ref-only pcintf)
+#	any command we don't want built at this time should
+#	also be placed in the egrep list.
+#
+#	We'll now build the commands in PARALLEL. Not using make -P
+#	by by building more than 1 command at a time. We'll
+#	the PARALLEL variable to decide how many commands to build
+#	at one time. We'll use an awk script to divide the list
+#	alternately rather than split into $PARALLEL number of pieces.
+#	Also, for the 10 cmd subdirs that require the most build time,
+#	we'll pre-allocate them so they are evenly divided
+#
+#	ksh, terminfo, winxksh & xdcu need to be built in the same file.
+ 
+(cd ${ROOT}/usr/src/${WORK};
+echo "STARTDEP
+ahcomp cmd-nics
+ahcomp cmd-inet
+cmd-nm cmd-nw
+cmd-nm cpq.cmds
+ksh terminfo
+terminfo winxksh
+winxksh xdcu
+STARTLONG
+fs.d
+cmd-inet
+fmli
+bnu
+cmd-nm
+sa
+auditrpt
+unixtsa
+vi
+oampkg
+ksh
+END";
+ ls cmd | \
+	egrep -v "^OSR$|^bkrs$|^crash$|^cb$|^cflow$|^cscope$|^ctrace$|^cxref$|^cmd-mail$|^debug$|^fur$|^isapnpslot$|^inetinst$|^ldd$|^lp$|^make$|^oamintf$|^pkgtools$|^prof$|^regcmp$|^sccs$|^sgs$|^pcintf$|^gnu$|^gzip$|^ypcmd$|^vpp$" ) \
+	| awk ' BEGIN {
+		COUNT='"${PARALLEL}"'
+		LFILE="'"${TMPFILE}".'"
+		count=COUNT
+		longct=0
+		regct=0
+		type=0
+		numb=1
+                File[Numfiles++] = LFILE numb++ ""
+		while ( --count != 0 ) {
+                	File[Numfiles++] = LFILE  numb++ ""
+		}
+        }
+		type == 1 {
+			arr[$1] = $2
+			rev[$2] = $1
+		}
+
+		type == 2 {
+			long[$1] = (++longct - 1) % COUNT
+		}
+
+		type == 3 {
+			if ($1 in long)
+				out = long[$1]
+			else
+				out = (++regct - 1) % COUNT
+
+			if ( $1 in rev )
+				out = arr[rev[$1]]
+
+			if ( $1 in arr )
+				arr[$1] = out
+
+		        print  > File[out]
+		}
+
+		$0 == "STARTDEP" { type = 1 }
+		$0 == "STARTLONG" { type = 2 }
+		$0 == "END" { type = 3 }
+        '
+
+# let's run :mkcmd for each list of files we've just created and
+# we'll wait for each to be done
+
+for i in $TMPFILE.*
+do
+num=`echo $i | sed -e 's/^.*\.//'`
+timelogfunction ./:mkcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" `cat $i` >cmd${num}.out 2>&1 &
+done
+
+wait
+
+#
+# Build  boot code
+#
+
+timelogfunction ./:mkstand "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >stand.out 2>&1
+
+#	xcplibs are built with other libraries
+#	xcplibs are built with other libraries
+#	during :mkxenv and :mknatccs, so no need
+#	to make them here
+#	./:mkxcplib ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU}
+
+timelogfunction ./:mkxcpcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >xcpcmd.out 2>&1
+
+timelogfunction ./:mkeaccmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >eaccmd.out 2>&1
+
+timelogfunction ./:mkucb "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >ucb.out 2>&1
+
+# gnu depends on ucb libs
+
+timelogfunction ./:mkcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" gnu >cmdgnu.out 2>&1
+
+timelogfunction ./:mkX61 ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} >X61.out 2>&1
+
+if [ "${BUILDMOTIF}" != scp ]
+then
+	timelogfunction ./:mkmotif ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} \
+>motif.out 2>&1
+fi
+
+#	build the graphics and graphical debugger
+#	:mknodep builds those pieces of the build (ktools,uts,mputs and natccs)
+#	which have no dependencies on order (except for xenv).
+#	since the graphics build cannot currently be built in PARALLEL
+#	we'll bulld everything called in :mknodep useing the
+#	remaining CPU's. This should not affect the graphics build
+#	since it uses only one CPU.
+
+timelogfunction ./:mkX ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} >X.out 2>&1 &
+
+timelogfunction ./:mknodep "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >nodep.out 2>&1 &
+wait
+
+# cmd/OSR depends on natccs, made by :mknodep indirectly
+
+timelogfunction ./:mkcmd ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} OSR >OSRcmds.out 2>&1 
+
+if [ "${BUILDNWU}" != scp ]
+then
+	timelogfunction ./:mknwu ${ROOT} ${MACH} ${WORK} ${TOOLS} ${CPU} >nwu.out 2>&1 
+fi
+
+# cmd/inetinst depends on X
+
+timelogfunction ./:mkcmd "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" inetinst ypcmd >dep_cmd.out 2>&1
+
+timelogfunction ./:mkls "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >ls.out 2>&1
+
+# 	build the language extensions.
+
+(cd ${ROOT}/usr/src/${WORK}/le ; ls -d ?? > $TMPFILE)
+timelogfunction ./:mkle "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" `cat $TMPFILE` >le.out 2>&1
+
+rm -f $TMPFILE
+
+timelogfunction ./:mkihvkit "${ROOT}" "${MACH}" "${WORK}" "${TOOLS}" "${CPU}" >ihvkit.out 2>&1
+
+# Add SCOHelp to Gemini build route.
+timelogfunction ./:mkscohelp $ROOT $MACH $WORK $TOOLS $CPU \
+	search mancgi netscape scohttp printchapter getnav \
+	> scohelp.out 2>&1
+
+# Add tclds to Gemini build route.
+timelogfunction $TOOLS/usr/ccs/bin/${CPU}env \
+  ./:mktclds $CPU $ROOT $TOOLS $MACH $WORK $CPU > tclds.out 2>&1
+
+# Add SCOAdmin to Gemini build route.
+timelogfunction ./:mkscoadmin $ROOT $MACH $WORK $TOOLS $CPU \
+	> scoadmin.out 2>&1
+
+# Add Mail to Gemini build route.
+timelogfunction ./:mkmail $ROOT $MACH $WORK $TOOLS $CPU \
+	> mail.out 2>&1
+
+# Add Audio to Gemini build route.
+timelogfunction ./:mkaudio $ROOT $MACH $WORK $TOOLS $CPU \
+	> audio.out 2>&1
+
+
+# Add License to Gemini build route.
+if [ "${BUILDLIC}" != scp ]
+then
+timelogfunction ./:mklicense $ROOT $MACH $WORK $TOOLS $CPU \
+	> license.out 2>&1
+fi
+
+#To control the getpkginfo file for SCP
+chmod 777 $ROOT/usr/src/i386at/:mk
+chmod 777 $ROOT/usr/src/i386at/build/tools/getpkginfo
+chmod 777 $ROOT/usr/src/i386at/build/tools/getpkginfo.scp
+[ -f $ROOT/usr/src/work/build/tools/getpkginfo.bin ] || cp $ROOT/usr/src/work/build/tools/getpkginfo $ROOT/usr/src/work/build/tools/getpkginfo.bin
+if [ -f $ROOT/usr/src/work/build/tools/getpkginfo.bin ]
+then
+	chmod 755 $ROOT/usr/src/work/build/tools/getpkginfo.bin
+fi
+
+if [ "${BUILDPKG}" = scp ]
+then
+	cp $ROOT/usr/src/work/build/tools/getpkginfo.scp $ROOT/usr/src/work/build/tools/getpkginfo
+else
+	cp $ROOT/usr/src/work/build/tools/getpkginfo.bin $ROOT/usr/src/work/build/tools/getpkginfo
+fi
+
+echo "ENDED `basename $0` `date`"
+exit 0

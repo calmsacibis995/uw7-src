@@ -1,0 +1,1496 @@
+#!/bin/ksh
+#set -x
+#==============================================================================
+# ldaptabProcedures
+#
+# This file contains korn shell procedures to interogate ldap configuration
+# files. These procedures are used by commands like ldapinfo, to view and
+# set configuration information.
+#
+# Revision history
+# ~~~~~~~~~~~~~~~~
+#
+# L000 17th Oct 1997	tonylo
+#
+#	Fix for MR ul97-23807. Return numeric values for status instead of
+#	strings for both daemon "type" and "status"
+#
+#
+# EXIT CODES (ldaptabProcedures)
+#
+# Some procedures will exit straight out of the source with a particular exit 
+# code. The following lists the values of these codes:
+# 
+#	10	- the LDAPTAB file does not exist (see note 1)
+#	11	- the LDAPTAB file is not readable by the current process
+#	12	- the LDAPTAB file cannot be written to by another process
+#	13	- the daemon's master configuration file does not exist (see
+#		  note 2)
+#	14	- the daemon's master configuration file is not readable by
+#		  the current process
+#	15	- the daemon's master configuarion file is not writeable by 
+#		  the current process
+#	16	- Database config file does not exist
+#       17 	- Database config file is not readable
+#	18	- Database config file is not writeable
+#	19	- the environmental variable LDAPTAB is not set (see note 3)
+#	20	- an invalid daemon number was specified (set note 4)
+#	21	- no database type specified in the database configuration
+#		  file
+#	22	- invalid database type specified in the database configuration
+#		  file
+#	23	- daemon identifier is invalid
+#
+# Shared exit code:
+# 	100	- Cannot include ldaptabProcedures
+#
+# Reserved exit codes:
+# 101 - 119       ldapinfo
+# 120 - 139       ldapdbinfo
+# 140 - 179       ldapcfg
+# 180 - 184       ldapstart
+# 185 - 189       ldapstop
+#
+# NOTE that exit codes above 100 are reserved for commands using 
+# ldaptabProcedures
+#
+# note 1
+# ~~~~~~
+# The LDAPTAB file (current /etc/ldap/ldaptab) contains information on the 
+# managed ldap daemons on the system. It contains details such the location
+# of the daemons master configuarion file, error log and boot and startup info.
+#
+# note 2
+# ~~~~~~
+# Each daemon listed in the LDAPTAB file has a master configuarion file entry
+# (slapd.conf). This contains all the configuration info for the daemon.
+#
+# note 3
+# ~~~~~~
+# This condition should not occur as LDAPTAB=/etc/ldap/ldaptab is the first
+# statement of the shell script
+#
+# note 4
+# ~~~~~~
+# Different daemons are referred to logically by daemon number. This 
+# currently corresponds to the position of the daemons entry in the LDAPTAB
+# file. This exit code means that a daemon has been referred to which does
+# not have an entry is LDAPTAB. 
+#------------------------------------------------------------------------------
+LDAPTAB=/etc/ldap/ldaptab
+
+export cmd_ldapinfo=/usr/lib/ldap/ldapinfo
+export cmd_ldapdbinfo=/usr/lib/ldap/ldapdbinfo
+export cmd_ldapcfg=/usr/lib/ldap/ldapcfg
+export cmd_ldapstart=/usr/bin/ldapstart
+export cmd_ldapstop=/usr/bin/ldapstop
+
+umask 066
+
+#====================================================================== XXX ===
+# General procedures
+#
+#	argexpected()			- display args expected msg
+#	commentFilter()                 - filter out comment lines
+#	printLine()                     - print a particular line from stdin or 
+#					  file
+#	replaceLine()                   - replace a particular line in a file
+#	deleteLine()			- delete line in a file
+#	trimTrailingSpaces()		- 
+# 	findFileFieldLine() 		- return lineno of field
+#	getConfigFileField()		- return field from a file
+#	setConfigFileField()		- set a field value in a file
+#	getColonDelimitedField()	- echo nth colon delimited field from 
+#					  stdin
+#	setColonDelimitedField()	- echo line from stdin where the nth
+#					  field is set to a particular value
+#
+#------------------------------------------------------------------------------
+# LDAPTAB specific procedures
+#
+#	canReadLDAPTAB()		- cannot read LDAPTAB file
+#	canReadWriteLDAPTAB()		- cannot write to LDAPTAB file
+#	findDaemonLine()                - return the line in the ldaptab file 
+#					  on which a particular daemon is 
+#					  specified
+#	getLDAPTABfield()		- print a field from a particular 
+#					  daemon from ldaptab
+#	setLDAPTABfield()		- set a field in a particular 
+#					  ldaptab record (daemon)
+#	daemonNumberIsValid()		- check that the passed daemon number
+#					  is valid i.e. that daemon exists in
+#					  LDAPTAB
+#	daemonIdentifierIsValid()	- check that the passed daemon number
+#					  is valid i.e. that daemon exists in
+#					  LDAPTAB
+#	getDaemonMasterFile()		- Return the daemon's master file,
+#					  also check it is readable
+#
+#------------------------------------------------------------------------------
+# Master config file (slapd.conf) specific procedures
+#
+#	canReadMasterFile()      	- checks whether the given file exists
+#					  and is readable
+#	canReadWriteMasterFile()	- checks whether the file can be exists
+#					  and can be written to
+#	getDaemonStatus()		- get the status of a particular daemon
+#	getDaemonType()			- return daemon type
+#
+#	getLabelledIncludeFileName()    - return included file associated with
+#					  a particular label
+#	findLabelledIncludeFileNameLine() -
+#	setLabelledIncludeFileName()     -
+#	getDatabaseFileNames()		- return all database include files
+#
+#	setMasterFileField()            - set the value of a particular field
+#	getMasterFileField()		- return the value of a particular
+#					  in the daemons masterfile
+#
+#	getAllDaemonDatabases()         - returns the names and config files
+#					  of particular databases
+#------------------------------------------------------------------------------
+# Database configuration file specific procedures
+#
+#	canReadDatabaseFile()           - check whether the given file exists
+#					  and is readable
+#	canReadWriteDatabaseFile()
+#	checkDatabaseType()
+#	getDatabaseFileField()		- get field from a database cfg file
+#	setDatabaseFileField() 		- set field in a database cfg file
+#------------------------------------------------------------------------------
+argexpected() { pfmt -s nostd -g ldapmisc:16 "%s expected an argument\n" "$1"; }
+
+#====================================================================== XXX ===
+# commentFilter
+#
+# Filter which removes comment lines beginning with #
+#------------------------------------------------------------------------------
+commentFilter() {
+	case $# in
+	0) sed -e '/^[      ]*#/D' -e '/^[  ]*$/D' ;;
+	*) sed -e '/^[      ]*#/D' -e '/^[  ]*$/D' $@;;
+	esac
+}
+
+#====================================================================== XXX ===
+# printLine
+#
+# print a particular line 
+#------------------------------------------------------------------------------
+printLine() {
+	case $# in
+	0) return;;
+	1) sed -n -e "$1p" ;;
+	*) LN=$1; shift; sed -n -e "${LN}p" $@;;
+	esac
+}
+
+
+#====================================================================== XXX ===
+# replaceLine
+#
+# args:
+#	filename
+#	lineno
+#	replacement line
+#	tmpfile (optional)
+#	
+# Replaces a particular line in a file with a given piece of text
+#	- assumes filename exists and is writeable
+#	- assumes /tmp/replaceLine.$$ or tmpfile is writeable
+#
+#------------------------------------------------------------------------------
+replaceLine() {
+	if [ $# -eq 3 ] || [ $# -eq 4 ]
+	then
+		typeset filename="$1"
+		typeset lineno="$2"
+		typeset replacement="$3"
+		typeset TMPFILE="$4"
+		[ -z "$TMPFILE" ] && TMPFILE="/tmp/replaceLine.$$"
+
+                let LINEBEFORE=$lineno-1
+                let LINEAFTER=$lineno+1
+		[ $LINEBEFORE -gt 0 ] && \
+		sed -n -e"1,${LINEBEFORE}p" $filename > $TMPFILE
+
+		echo $replacement >> $TMPFILE
+		sed -n -e"${LINEAFTER},\$p" $filename >> $TMPFILE
+
+		mv $TMPFILE $filename
+	fi
+}
+
+trimTrailingSpaces() {
+	if [ $# -eq 1 ] || [ $# -eq 2 ]
+	then
+		typeset filename="$1"
+		typeset TMPFILE="$2"
+		[ -z "$TMPFILE" ] && TMPFILE="/tmp/trimTrailingSpaces.$$"
+
+		typeset lastline=`awk '
+			BEGIN { THELINE=""; }
+			/^[	 ]*$/ {	if( THELINE == "")THELINE=NR; next; }
+			{ echo hi; THELINE=""; }
+			END { print THELINE","NR; }' $filename`
+		echo $lastline
+		if [ ! -z "$lastline" ]
+		then
+			sed -n -e"$lastline"!p "$filename" 
+		fi
+	fi
+}
+
+
+#====================================================================== XXX ===
+# deleteLine
+#
+# args:
+#	filename
+#	lineno
+#	tmpfile (optional)
+#	
+# Deletes a particular line in a file
+#	- assumes filename exists and is writeable
+#	- assumes /tmp/replaceLine.$$ or tmpfile is writeable
+#
+#------------------------------------------------------------------------------
+deleteLine() {
+	if [ $# -eq 2 ] || [ $# -eq 3 ]
+	then
+		typeset filename="$1"
+		typeset lineno="$2"
+		typeset TMPFILE="$3"
+		[ -z "$TMPFILE" ] && TMPFILE="/tmp/replaceLine.$$"
+
+                let LINEBEFORE=$lineno-1
+                let LINEAFTER=$lineno+1
+		[ $LINEBEFORE -gt 0 ] && \
+		sed -n -e"1,${LINEBEFORE}p" $filename > $TMPFILE
+
+		sed -n -e"${LINEAFTER},\$p" $filename >> $TMPFILE
+
+		mv $TMPFILE $filename
+	fi
+}
+
+#====================================================================== XXX ===
+# echoExceptLines
+#
+# args:
+#	filename
+#	list of linenos
+#
+# dependencies:
+#	none
+#
+# Echo the contents of the file except for those lines in the list
+#------------------------------------------------------------------------------
+echoExceptLines() {
+	if [ $# -eq 2 ]
+	then
+		typeset filename="$1"
+		typeset linenos="$2"
+		[ ! -z "$linenos" ] && {
+			awk -v LIST="$linenos" '
+			BEGIN { sizeOfArray = split( LIST, linenos, " "); }
+			{
+				doprint=1;
+				for (i =1; i<=sizeOfArray; ++i) {
+					if ( linenos[i] == NR ) {
+						doprint=0;
+						break;
+					}
+				}
+				if( doprint ) print $0;
+			}
+			' "$filename" 
+		}
+	fi
+}
+
+#====================================================================== XXX ===
+# findFileFieldLine
+#
+# args:
+#	filename 
+#	fieldname
+#	occurence( optional)
+#
+# dependencies:
+#	none
+#
+# Returns the line number of a particular field
+# - assumes the file is readable
+# - can return the nth occurence of a field, if n is supplied as a 3rd
+#   parameter
+#
+#------------------------------------------------------------------------------
+findFileFieldLine() {
+        if [ $# -eq 2 ] || [ $# -eq 3 ]
+        then
+	        typeset file="$1"
+		typeset field="$2"
+		typeset fieldno="$3"
+
+                [ -z "$fieldno" ] && fieldno=1;
+	
+		typeset linenos=`awk -v LABEL="$field" \
+		' BEGIN { }
+		/^[        ]*#/ { next; }
+		/^[      ]*$/   { next; }
+		$1 == LABEL { print NR; next; }
+		' "$file"`
+	
+		
+		if [ "$fieldno" = "all" ]
+		then
+			echo $linenos
+		else
+			let j=1
+			[ ! -z "$linenos" ] && for i in $linenos
+			do
+				if [ "$j" -eq "$fieldno" ]
+				then
+					echo "$i"
+				fi
+				let j=j+1
+			done
+			return ""
+		fi
+	fi
+}
+
+#==============================================================================
+# getConfigFileField
+#
+# args:
+#	filename - config file
+#	field    - field being searched for in the file
+#	multiple - flag indicating if there are multiple instances
+#	           of the field to return all the values
+#
+# dependencies:
+#	none
+#
+# This procedure reads the given file and searches for a particular field.
+# The multiple option indicates that if multiple occurences are present 
+# whether to display them or not. 
+#
+# - results are echoes to the standard output
+# - assumes the file exists and is readable by the current process
+# - if multiple == 0 and there are multiple occurennces of a particular
+#   field then the last field value is displayed
+#------------------------------------------------------------------------------
+getConfigFileField() {
+        if [ $# -eq 3 ]
+	then
+                typeset file="$1"
+                typeset field="$2"
+                typeset multiple="$3"
+
+
+                fieldlist=`awk -v LABEL="$field" \
+                ' BEGIN { }
+                  /^[      ]*$/   { next; }
+                  $1 == LABEL {
+			FIELD=$2
+			for(i=3; i<= NF; i++)
+			{
+				FIELD=FIELD" "$i
+			}
+			print FIELD
+			next;
+		  }
+                ' "$file"`
+
+		if [ ! -z "$fieldlist" ]
+		then
+			if [ "$multiple" != 0 ]
+			then
+				echo "$fieldlist"
+			else
+				echo "$fieldlist" | awk 'BEGIN { COUNT=0; }
+							{
+								COUNT++
+								if(COUNT == NR)
+								{
+								print $0
+								}
+							}'
+			fi
+		fi
+        fi
+}
+
+
+#====================================================================== XXX ===
+# setConfigFileField
+#
+# args:
+#	filename
+#	field
+#	value
+#
+# dependencies:
+#	findFileFieldLine
+# 	replaceLine
+#
+# This procedure sets a line in a config file. If the field does not exist
+# then the value is appended to the end of the file.
+# - it is assumed that the file exists and is both readable and writeable
+#   by the current process
+#------------------------------------------------------------------------------
+setConfigFileField() {
+	if [ $# -eq 3 ]
+        then
+		typeset FIELDLINE=`findFileFieldLine "$1" "$2"`
+		typeset NEWLINE="$2	$3"
+
+		if [ ! -z "$FIELDLINE" ]
+                then
+                        replaceLine \
+				"$1" "$FIELDLINE" "$NEWLINE" /tmp/ldapinfo.$$
+		else
+			echo $NEWLINE | cat >> "$1"
+		fi
+	fi
+}
+
+# DeleteConfigFileFields
+
+deleteConfigFileFields() {
+	if [ $# -eq 2 ]
+        then
+		typeset field="$1"
+		typeset filename="$2"
+		typeset linenos=`findFileFieldLine $filename $field all`
+		echoExceptLines "$filename" "$linenos" \
+			> /tmp/deleteConfigFileFields.$$
+		mv /tmp/deleteConfigFileFields.$$ "$filename"
+	fi
+}
+	
+#====================================================================== XXX ===
+# setMultiConfigFileField
+#
+# args:
+#	field
+#	filename
+#	suffixes....
+#
+# dependencies:
+#	findFileFieldLine
+#	echoExceptLines
+#
+# Assumes the file exists and is readable and writeable
+#------------------------------------------------------------------------------
+setMultiConfigFileField() {
+	if [ $# -ge 2 ]
+        then
+		typeset field="$1"
+		typeset filename="$2"
+		
+		typeset linenos=`findFileFieldLine $filename $field all`
+		if [ ! -z "$linenos" ]
+		then
+			echoExceptLines "$filename" "$linenos" \
+				> /tmp/setMultiConfigFileField.$$
+			mv /tmp/setMultiConfigFileField.$$ "$filename"
+		fi
+
+		shift; shift;
+		while [ $# != 0 ]
+                do
+			i="$1"
+			echo "$field    \"$i\"" | cat >> "$filename"
+			shift
+		done
+	fi
+}
+
+#====================================================================== XXX ===
+# getColonDelimitedField
+#
+# args:
+#	n	-nth  field to be displayed
+#
+# dependencies:
+#	none
+#
+# print the nth colon delimited field supplied at the standard input
+#------------------------------------------------------------------------------
+getColonDelimitedField() {
+	[ $# -eq 1 ] && awk -v FIELDNO="$1" -F ":" '{ print $FIELDNO }'
+}
+
+
+
+#====================================================================== XXX ===
+# setColonDelimitedField
+#
+# args:
+#	n	- nth field to be modified
+#	value	- value to put in that field
+#
+# dependencies:
+#	none
+# 
+# Sets the nth colon delimited field from the standard input to a given value
+#------------------------------------------------------------------------------
+setColonDelimitedField() {
+	[ $# -eq 2 ] && \
+	awk -v FIELDNO="$1" -v FIELDVAL="$2" -F ":"\
+		'{ for (i=1;i<=NF;i++) 
+			{
+			if (i != 1 ) { printf(":"); }
+			if ( i==FIELDNO )
+				{
+				printf("%s", FIELDVAL)
+				}
+			else
+				{
+				printf("%s",$i)
+				}
+			}
+			if (i < NF ) { printf(":"); }
+		 
+		 }'
+}
+
+#====================================================================== XXX ===
+# canReadMasterFile
+#
+# args:
+#	name of config file
+#
+# dependencies:
+#	none
+#
+# EXIT STATES:
+#	13 - Master config file does not exist
+#	14 - Master config file is not readable
+#
+# Checks whether the given file:
+#	1). Exists
+#	2). Is readable by the current process
+
+# Displays an error message that the given file cannot be read by the current
+# process (for what ever reason). This function will exit if a problem with
+# the given file is found
+# 
+#------------------------------------------------------------------------------
+canReadMasterFile() {
+	[ ! -a "$1" ] && {
+	pfmt -s nostd -g ldapmisc:17 "The ldap daemon's master configuration file %s does not exist\n" $1
+	exit 13
+	}
+	[ ! -r "$1" ] && {
+	pfmt -s nostd -g ldapmisc:18 "The ldap daemon's master configuration file %s is not readable by this process\n" "$1"
+	exit 14
+	}
+}
+
+#====================================================================== XXX ===
+# canReadWriteMasterFile
+#
+# args:
+#       name of config file
+#
+# dependencies:
+#       none
+#
+# EXIT STATES:
+#	13 - Master config file does not exist
+#	14 - Master config file is not readable
+#	15 - Master config file is not writeable
+#
+# Checks whether the given file:
+#       1). Exists
+#       2). Is writeable by the current process
+#	3). Is readable by the current process
+#
+#------------------------------------------------------------------------------
+canReadWriteMasterFile() {
+	[ ! -a "$1" ] && {
+	pfmt -s nostd -g ldapmisc:17 "The ldap daemon's master configuration file %s does not exist\n" $1
+	exit 13
+	}
+	[ ! -w "$1" ] && {
+	pfmt -s nostd -g ldapmisc:19 "The ldap daemon's master configuration file %s is not writeable by this process\n" "$1"
+	exit 15
+	}
+	[ ! -r "$1" ] && {
+	pfmt -s nostd -g ldapmisc:18 "The ldap daemon's master configuration file %s is not readable by this process\n" "$1"
+	exit 14
+	}
+}
+
+#====================================================================== XXX ===
+# canReadLDAPTAB
+# 
+# args:
+#	none
+#
+# dependencies:
+#	none
+#
+# EXIT STATES:
+#	10 - $LDAPTAB does not exist
+#	11 - $LDAPTAB cannot be read 
+#	19 - $LDAPTAB is not set 
+#------------------------------------------------------------------------------
+canReadLDAPTAB() {
+	if [ ! -z "$LDAPTAB" ]
+	then
+		[ ! -a "$LDAPTAB" ] && {
+		pfmt -s nostd -g ldapmisc:20 "ldap daemon file %s does not exist\n" "$LDAPTAB"
+		exit 10
+		}
+		[ ! -r "$LDAPTAB" ] && {
+		pfmt -s nostd -g ldapmisc:21 "ldap daemon file %s cannot be read by the current process\n" "$LDAPTAB"
+		exit 11
+		}
+	else
+		exit 19
+	fi
+}
+		
+		
+#====================================================================== XXX ===
+# canReadWriteLDAPTAB
+# 
+# args:
+#	none
+#
+# dependencies:
+#	none
+#
+# EXIT STATES:
+#	10 - $LDAPTAB does not exist
+#	12 - $LDAPTAB cannot be written to 
+#	19 - $LDAPTAB is not set 
+#------------------------------------------------------------------------------
+canReadWriteLDAPTAB() {
+	if [ ! -z "$LDAPTAB" ]
+	then
+		[ ! -a "$LDAPTAB" ] && {
+		pfmt -s nostd -g ldapmisc:20 "ldap daemon file %s does not exist\n" "$LDAPTAB"
+		exit 10
+		}
+		[ ! -w "$LDAPTAB" ] && {
+		pfmt -s nostd -g ldapmisc:22 "ldap daemon file %s cannot be written to by the current process\n" "$LDAPTAB"
+		exit 12
+		}
+	else
+		exit 19
+	fi
+}
+
+
+
+#====================================================================== XXX ===
+# daemonNumberIsValid
+#
+# args:
+#	daemon no
+#	exit flag 
+# 
+# dependencies:
+#	commentFilter
+#
+# EXIT STATES:
+#	20 - requested an unavailable daemon number
+#
+# Returns whether the given daemonnumber exists in the file $LDAPTAB
+# - assumes that $LDAPTAB exists and is readable by the current 
+#   process
+#------------------------------------------------------------------------------
+daemonNumberIsValid() {
+	typeset retVal=1
+	if [ $# -gt 0 ] && [ $# -le 2 ]
+	then
+		typeset daemonno="$1"
+		 [ -z "$NumberOfDaemons" ] && \
+                        NumberOfDaemons=`commentFilter $LDAPTAB | wc -l`
+		if [ "$NumberOfDaemons" -eq 0 ] || \
+		   [ "$NumberOfDaemons" -lt "$daemonno" ]
+                then
+			[ "$2" = "-e" ] && \
+                        pfmt -s error -g ldapmisc:23 "Requested daemon number %s from %s available daemons\n" "$daemonno" $NumberOfDaemons
+			exit 20
+		else
+			retVal=0
+                fi
+	else
+		retVal=1
+	fi
+	return "$retVal"
+}
+
+#====================================================================== XXX ===
+# getDaemonMasterFile
+#
+# Gets a daemons master file
+#	- assumes the daemon number is valid
+#	- if there is no slapd.conf entry in ldaptab then /etc/slapd.conf
+#	  is assumed
+#	- does not check if the file exists or is readable
+#------------------------------------------------------------------------------
+getDaemonMasterFile() {
+	if [ $# -eq 1 ]
+	then
+		typeset daemonid="$1"
+		typeset masterfile=`getLDAPTABfield "$daemonid" 3`
+		
+		[ -z "$masterfile" ] && {
+			masterfile="/etc/slapd.conf"
+		}
+		echo $masterfile
+	fi
+}
+
+
+
+#====================================================================== XXX ===
+# findDaemonLine
+#
+# args:
+#	daemonid	- daemon id
+#
+# Find the line in ldaptab that a daemon exists on
+# - assmues that the given id number is valid
+# - assumes that $LDAPTAB exists and is readable
+#------------------------------------------------------------------------------
+findDaemonLine() {
+	[ $# -eq 1 ] && \
+        awk -v DAEMONID="$1" -F ":" \
+	    '
+	      /^[        ]*#/ { next; } 
+              /^[      ]*$/   { next; } 
+              $1 == DAEMONID { print NR; exit; }
+              ' "$LDAPTAB"
+
+}
+
+#====================================================================== XXX ===
+# daemonIdentifierIsValid
+#
+# args:
+#	daemonid	- daemon id
+#
+# - assumes that $LDAPTAB exists and is readable
+#------------------------------------------------------------------------------
+daemonIdentifierIsValid() {
+	if [ $# -ge 1 ]
+	then
+		typeset daemonid="$1"
+		typeset isPresent=`awk -v DAEMONID="$daemonid" -F ":" '
+			/^[        ]*#/ { next; } 
+			/^[      ]*$/   { next; } 
+			$1 == DAEMONID { print NR; exit; }
+			' "$LDAPTAB"`
+		if [ -z "$isPresent" ]
+		then
+			pfmt -s nostd -g ldapmisc:24 "No daemon with identifier \"%s\" found\n" $daemonid
+			exit 23
+		fi
+		return 1
+	fi
+}
+
+#====================================================================== XXX ===
+# getLDAPTABfield
+#
+# Read the ldaptab file, print the xth field from the nth daemon
+# - assume that there is an nth daemon
+#------------------------------------------------------------------------------
+getLDAPTABfield() {
+	if [ $# -eq 2 ]
+	then
+		typeset daemonid="$1"
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid"
+		typeset DLINE=`findDaemonLine "$daemonid"`
+		VAL=`printLine "$DLINE" "$LDAPTAB" | getColonDelimitedField $2`
+		echo $VAL
+	fi
+}
+
+#====================================================================== XXX ===
+# setLDAPTABfield
+# 
+# args:
+#	daemon		- daemon id
+#	field		- field no from 1..n
+#	value		- value to set the field to
+#
+# dependencies:
+#	canReadWriteLDAPTAB
+#	daemonIdentifierIsValid
+#	findDaemonLine
+#	printLine
+#	setColonDelimitedField
+#	replaceLine
+#
+# This procedure will set a particular field for a particular daemon to a 
+# value. This procedure does NO CHECKING to figure if the field is being set to
+# a valid value.
+#------------------------------------------------------------------------------
+setLDAPTABfield() {
+	typeset daemonid="$1"
+	typeset fieldno="$2"
+	typeset value="$3"
+
+	if [ $# -eq 3 ]
+	then
+		canReadWriteLDAPTAB
+
+		# Check that there are daemons to set values for
+		daemonIdentifierIsValid "$daemonid" -e 
+		
+		# This section will work out what to lines keep and which 
+		# line (daemon) to replace
+		typeset DLINE=`findDaemonLine "$daemonid"`
+		typeset NEWDAEMONLINE=`printLine $DLINE $LDAPTAB | setColonDelimitedField "$fieldno" "$value"`
+
+		replaceLine "$LDAPTAB" "$DLINE" \
+			"$NEWDAEMONLINE" /tmp/ldaptab.$$
+	fi
+}
+
+
+#====================================================================== XXX ===
+# getDaemonStatus
+#
+# args:
+#	daemonid	- daemon id 
+#
+# Echoes 0 if the daemon is down or 1 if the daemon is up
+#------------------------------------------------------------------------------
+getDaemonStatus() {
+	if [ $# -eq 1 ]
+	then
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$1" -e
+                typeset masterfile=`getDaemonMasterFile "$1" `
+
+		typeset bname=`echo $masterfile | sed -e's/\//_/g'`
+		typeset FILE="/var/ldap/pids/$bname"
+		
+		if [ -f "$FILE" ]
+		then
+			let count=0
+			while [ -f "$FILE" ]
+			do
+				typeset value=`cat $FILE`
+				if [ $value != "STARTING" ]
+				then
+					break
+				fi
+				sleep 1
+				let count=$count+1
+				if [ $count -eq 5 ]
+				then
+# L000 vvv
+					echo 0
+# L000 ^^^
+					return 
+				fi
+			done
+			typeset APID=`cat $FILE`
+			typeset PSLINE=`ps -e -o pid -o comm | \
+				awk -v APID="$APID" '{ if ($1 == APID) print $2 }'`
+			echo $PSLINE | fgrep slapd > /dev/null 2>&1
+			if [ $? -eq 0 ] 
+			then
+# L000 vvv
+				echo 1
+# L000 ^^^
+			else
+# L000 vvv
+				echo 0
+# L000 ^^^
+			fi
+		else
+# L000 vvv
+			echo 0
+# L000 ^^^
+		fi
+	fi
+}
+
+#====================================================================== XXX ===
+# getLabelledIncludeFileName
+#
+# args:
+#	daemon number	- 
+#	label		- return label include file is associated with
+#	flag		- 0=return 1st included file found
+#			  1=return all included files found
+#
+# dependencies:
+#	daemonIdentifierIsValid
+#	getDaemonMasterFile
+#	canReadMasterFile
+#
+# - procedure does check if the masterfile is readable
+#------------------------------------------------------------------------------
+getLabelledIncludeFileName() {
+	if [ $# -eq 3 ]
+        then
+		typeset daemonid=$1
+		typeset label=$2
+		typeset multiple=$3
+
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid" -e
+
+		typeset masterfile=`getDaemonMasterFile "$daemonid" `
+		canReadMasterFile "$masterfile"
+
+		typeset filelist=`awk \
+				-v LABEL="$label" \
+				-v MULTIPLE="$multiple" \
+		' BEGIN { SCOLABEL=0; }
+		  { if( $0 ~ LABEL ) { SCOLABEL=1; next;} }
+		  /^[        ]*#/ { next; }
+		  /^[      ]*$/   { next; }
+		  /^[ 	]*include/ { 
+			if (SCOLABEL==1) { for(i=2; i<=NF;i++) {print $i;}; SCOLABEL=0; if(MULTIPLE==0){ exit 0; } } 
+		  }
+		' "$masterfile"`
+		
+		[ ! -z "$filelist" ] && {
+			filelist=`echo "$filelist" | sed -es/\"//g`
+		}
+		echo "$filelist"
+	fi
+}
+
+#====================================================================== XXX ===
+# getDatabaseFileNames
+#
+# args:
+#	daemon number
+#
+# dependencies:
+#	getLabelledIncludeFileName
+#
+# Return those include files which are marked to include database information
+# - getLabelledIncludeFileName checks if the master config file is readable
+#------------------------------------------------------------------------------
+getDatabaseFileNames() {
+	if [ $# -eq 1 ]
+	then
+		getLabelledIncludeFileName $1 "#SCO_GUI_DATABASE" 1
+	fi
+	
+}
+
+
+
+#====================================================================== XXX ===
+# getDaemonType
+#
+# args:
+#       daemonid        - daemon number
+#
+# dependencies:
+#	canReadLDAPTAB
+#	daemonIdentifierIsValid
+#	getDatabaseFileNames
+
+# Returns the daemon type:-
+#	0 (no databases)
+#	1 (standalone)
+#	2 (master)
+#	3 (slave)
+#	4 (master/slave)
+#
+# You can determine the type of a daemon by looking the daemons database 
+# information files
+#------------------------------------------------------------------------------
+getDaemonType() {
+	if [ $# -eq 1 ]
+        then
+		canReadLDAPTAB
+                daemonIdentifierIsValid "$1" -e
+
+		typeset filelist=`getDatabaseFileNames "$1"`
+		if [ -z "$filelist" ]
+		then
+# L000 vvv
+			echo 0
+# L000 ^^^
+			return
+		fi
+
+		typeset MASTERFLAG=0
+		typeset SLAVEFLAG=0
+		let NOTREADCOUNT=0
+		let COUNT=0
+		for i in $filelist
+		do
+			if [ -r "$i" ]
+			then
+				grep "^[ 	]*updatedn" $i > /dev/null 2>&1
+				[ $? -eq 0 ] && SLAVEFLAG=1
+				grep "^[ 	]*replica" $i > /dev/null 2>&1
+				[ $? -eq 0 ] && MASTERFLAG=1
+			else
+				let NOTREADCOUNT=$NOTREADCOUNT+1
+			fi
+			let COUNT=$COUNT+1
+		done
+		if [ "$NOTREADCOUNT" -eq "$COUNT" ]
+		then
+# L000 vvv
+			echo 0
+# L000 ^^^
+			return
+		fi
+
+		[ "$MASTERFLAG" -eq 1 ] && [ "$SLAVEFLAG" -eq 1 ] && {
+# L000 vvv
+			echo 4
+		}
+		[ "$MASTERFLAG" -eq 1 ] && { echo 2; }
+		[ "$SLAVEFLAG" -eq 1 ]  && { echo 3; }
+		[ "$MASTERFLAG" -eq 0 ] && [ "$SLAVEFLAG" -eq 0 ] && {
+			echo 1
+		}
+# L000 ^^^
+	fi
+}
+
+
+#==============================================================================
+# getMasterFileField
+#
+# args:
+#	daemon id	- id of the daemon
+# 	field		- name of the field
+#	multiple	- there are multiple instances of the field
+#
+# dependencies:
+#	canReadLDAPTAB
+#	daemonIdentifierIsValid
+#	getDaemonMasterFile
+#	canReadMasterFile
+#	getConfigFileField
+#
+# echo a master file field to the standard output. 
+#
+#------------------------------------------------------------------------------
+getMasterFileField() {
+	if [ $# -eq 3 ]
+        then
+		typeset daemonid="$1"
+		typeset field="$2"
+		typeset multiple="$3"
+
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid" -e
+
+                typeset masterfile=`getDaemonMasterFile "$daemonid"`
+		canReadMasterFile "$masterfile"
+		getConfigFileField "$masterfile" "$field" "$multiple"
+	fi
+}
+
+#==============================================================================
+# setMasterFileField
+#
+# args:
+#       daemon id   - id of the daemon
+#       field           - name of the field
+#	value		- value of the field
+#
+# dependencies:
+#	canReadLDAPTAB
+#	daemonIdentifierIsValid
+#	getDaemonMasterFile
+#	canReadWriteMasterFile
+#	setConfigFileField
+#
+#------------------------------------------------------------------------------
+setMasterFileField() {
+	if [ $# -eq 3 ]
+        then
+                typeset daemonid="$1"
+                typeset field="$2"
+		typeset value="$3"
+
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid" -e
+
+                typeset masterfile=`getDaemonMasterFile "$daemonid"`
+		canReadWriteMasterFile "$masterfile"
+
+		if [ ! -z "$value" ]
+		then
+			setConfigFileField "$masterfile" "$field" "$value"
+		else
+			typeset fieldline=`findFileFieldLine \
+				$masterfile $field`
+			if [ ! -z "$fieldline" ]
+			then
+				deleteLine $masterfile $fieldline
+			fi
+		fi
+	fi	
+}
+
+#==============================================================================
+# setDatabaseFileField
+#
+# args:
+#       file            - database cfg file
+#       field           - name of the field
+#	value		- value of the field
+#
+# dependencies:
+#	canReadLDAPTAB
+#	daemonIdentifierIsValid
+#	getDaemonMasterFile
+#	canReadWriteMasterFile
+#	setConfigFileField
+#
+#------------------------------------------------------------------------------
+setDatabaseFileField() {
+	if [ $# -eq 3 ]
+        then
+                typeset file="$1"
+                typeset field="$2"
+		typeset value="$3"
+
+		canReadWriteDatabaseFile "$file"
+		if [ ! -z "$value" ]
+		then
+			setConfigFileField "$file" "$field" "$value"
+		else
+			typeset fieldline=`findFileFieldLine \
+				$file $field`
+                        if [ ! -z "$fieldline" ]
+                        then
+                                deleteLine $file $fieldline
+                        fi
+		fi
+
+	fi	
+}
+
+#====================================================================== XXX ===
+# findLabelledIncludeFileNameLine
+#
+# args:
+#	masterfile
+#	label
+#	sublabel	- (optional)
+#
+# assumptions:
+#	- master file is readable
+#	- returns first instance found
+#
+#------------------------------------------------------------------------------
+findLabelledIncludeFileNameLine() {
+	if [ $# -eq 3 ] || [ $# -eq 2 ]
+	then
+		typeset masterfile="$1"
+		typeset label="$2"
+		typeset sublabel="$3"
+
+		awk \
+			-v LABEL="$label"       \
+			-v SUBLABEL="$sublabel" \
+		' BEGIN { SCOLABEL=0; }
+		  { 
+			if( $1 == LABEL ) { 
+				if( SUBLABEL == "" ) {
+					SCOLABEL=1; 
+					next;
+				} else {
+					if( $2 == SUBLABEL ) { 
+						SCOLABEL=1;
+						next;
+					}
+				}
+			} 
+		  }
+		  /^[        ]*#/ { next; }
+		  /^[      ]*$/   { next; }
+		  /^[ 	]*include/ { if (SCOLABEL==1) { print NR; exit; } }
+		' "$masterfile"
+	fi
+}
+
+#====================================================================== XXX ===
+# setLabelledIncludeFileName
+#
+# args:
+#	daemon number	- 
+#	label		- return label include file is associated with
+#	filename	- file
+#	sublabel 	- 
+#
+#------------------------------------------------------------------------------
+setLabelledIncludeFileName() {
+	if [ $# -eq 3 ] || [ $# -eq 4 ]
+	then
+		typeset daemonid="$1"
+		typeset label="$2"
+		typeset filename="$3"
+		typeset sublabel="$4"
+
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid" -e
+
+		typeset masterfile=`getDaemonMasterFile "$daemonid"`
+
+		canReadWriteMasterFile "$masterfile"
+		
+		typeset lineno=`findLabelledIncludeFileNameLine \
+			"$masterfile" \
+			"$label" \
+			"$sublabel"`
+
+		typeset NEWDAEMONLINE="include $filename"
+
+		if [ ! -z "$lineno" ]
+		then
+			replaceLine \
+				"$masterfile"     \
+				"$lineno"         \
+				"$NEWDAEMONLINE" \
+				/tmp/slapd.conf.$$
+		else
+			echo "$label $sublabel" | cat >> $masterfile
+			echo $NEWDAEMONLINE | cat >> $masterfile
+		fi
+	else
+		return 10
+	fi
+}
+
+
+
+#====================================================================== XXX ===
+# canReadDatabaseFile
+#
+# args:
+#	name of config file
+#
+# dependencies:
+#	none
+#
+# EXIT STATES:
+#	16 - Database config file does not exist
+#	17 - Database config file is not readable
+#	18 - Database config file is not writeable
+#
+# Checks whether the given file:
+#	1). Exists
+#	2). Is readable by the current process
+
+# Displays an error message that the given file cannot be read by the current
+# process (for what ever reason). This function will exit if a problem with
+# the given file is found
+# 
+#------------------------------------------------------------------------------
+canReadDatabaseFile() {
+	[ ! -a "$1" ] && {
+	pfmt -s nostd -g ldapmisc:25 "Database configuration file %s does not exist\n" $1
+	exit 16
+	}
+	[ ! -r "$1" ] && {
+	pfmt -s nostd -g ldapmisc:26 "Database configuration file %s is not readable by this process\n" "$1"
+	exit 17
+	}
+}
+
+#====================================================================== XXX ===
+# canReadWriteDatabaseFile
+#
+# args:
+#       name of config file
+#
+# dependencies:
+#       none
+#
+# EXIT STATES:
+#	16 - Database config file does not exist
+#	17 - Database config file is not readable
+#	18 - Database config file is not writeable
+#
+# Checks whether the given file:
+#       1). Exists
+#       2). Is writeable by the current process
+#	3). Is readable by the current process
+#
+#------------------------------------------------------------------------------
+canReadWriteDatabaseFile() {
+	[ ! -a "$1" ] && {
+	pfmt -s nostd -g ldapmisc:25 "Database configuration file %s does not exist\n" $1
+	exit 16
+	}
+	[ ! -r "$1" ] && {
+	pfmt -s nostd -g ldapmisc:26 "Database configuration file %s is not readable by this process\n" "$1"
+	exit 17
+	}
+	[ ! -w"$1" ] && {
+	pfmt -s nostd -g ldapmisc:27 "Database configuration file %s is not writeable by this process\n" "$1"
+	exit 18
+	}
+}
+
+
+#====================================================================== XXX ===
+# checkDatabaseType
+#
+# args:
+#	file
+#
+# returns:
+#	echo the database type to stdout
+#
+# dependencies:
+#	getDatabaseFileField
+#	
+# EXIT CODES:
+#	21  - no database type specified in the database configuration file
+#	22 - Invalid database type
+#
+# This function is used to check the type of database in the configuration file
+#------------------------------------------------------------------------------
+checkDatabaseType() {
+	if [ $# -eq 1 ]
+	then
+		typeset filename="$1"
+		typeset dbtype=`getDatabaseFileField "$filename" database 0`
+		case "$dbtype" in
+		ldbm)   echo "$dbtype";;
+		shell)  echo "$dbtype";;
+		passwd) echo "$dbtype";;
+		"")
+		        pfmt -s nostd -g ldapmisc:28 "Missing database type in %s\n" "$filename"
+		        exit 21
+		        ;;
+		*)
+		        pfmt -s nostd -g ldapmisc:29 'Invalid type in %s (must be ldbm or shell)\n' "$filename"
+		        exit 22
+	        ;;
+		esac
+	fi
+}
+
+
+#====================================================================== XXX ===
+# getAllDaemonDatabases
+#
+# args:
+#	daemonid
+#
+# This procedure returns a list of database names and 
+#
+#------------------------------------------------------------------------------
+getAllDaemonDatabases() {
+	if [ $# -eq 1 ]
+	then
+		typeset daemonid="$1"
+
+		canReadLDAPTAB
+		daemonIdentifierIsValid "$daemonid" -e
+                typeset masterfile=`getDaemonMasterFile "$daemonid"`
+		canReadMasterFile "$masterfile"
+
+		typeset filelist=`awk \
+		' BEGIN { SCOLABEL=0; }
+		  { 
+			if( $1 == "#SCO_GUI_DATABASE" )
+			{
+				SCOLABEL=1; 
+				DATABASENAME=$2
+				for(i=3; i<=NF;i++) 
+				{
+					DATABASENAME=DATABASENAME" "$i
+				}
+				next;
+			} 
+		  }
+		  /^[        ]*#/ { next; }
+		  /^[      ]*$/   { next; }
+		  /^[ 	]*include/ { 
+			if (SCOLABEL==1)
+			{ 
+				print "\""DATABASENAME"\""" "$2;
+				SCOLABEL=0; 
+			} 
+		  }
+		' "$masterfile"`
+		echo "$filelist"
+	fi
+}
+
+
+
+#====================================================================== XXX ===
+# getDatabaseFileField
+#
+# args:
+#	database file
+#	fieldname
+#	multiple
+#	
+# Assume that the database is valid
+#------------------------------------------------------------------------------
+getDatabaseFileField() {
+	if [ $# -gt 2 ]
+	then
+		typeset file="$1"
+		typeset fieldname="$2"
+		typeset multiple=0
+		 [ $# -ge 3 ] && multiple=1
+
+		canReadDatabaseFile "$file"
+
+		typeset dbfiletype=`getConfigFileField "$file" database 0`
+		if [ "$dbfiletype" = "ldbm" ]
+		then
+			if [ "$fieldname" = "add" ]     || \
+			   [ "$fieldname" = "bind" ]    || \
+			   [ "$fieldname" = "compare" ] || \
+			   [ "$fieldname" = "delete" ]  || \
+			   [ "$fieldname" = "modify" ]  || \
+			   [ "$fieldname" = "modrdn" ]  || \
+			   [ "$fieldname" = "search" ]  || \
+			   [ "$fieldname" = "unbind" ] 
+			then
+				pfmt -s nostd -g ldapmisc:30 "No such option \"%s\" for an ldbm database\n" "$fieldname"
+				exit 103
+			fi
+		fi
+		if [ "$dbfiletype" = "shell" ]
+		then
+			if [ "$fieldname" = "cachesize"   ] || \
+			   [ "$fieldname" = "dbcachesize" ] || \
+			   [ "$fieldname" = "directory"   ] || \
+			   [ "$fieldname" = "index"       ] || \
+			   [ "$fieldname" = "min_maxids"  ] || \
+			   [ "$fieldname" = "mode"        ]    
+			then
+				pfmt -s nostd -g ldapmisc:31 "No such option \"%s\" for a shell database\n" "$fieldname"
+				exit 104
+			fi
+		fi
+		if [ "$dbfiletype" = "passwd" ]
+		then
+			pfmt -s nostd -g ldapmisc:32 "Cannot configure password databases\n"
+			exit 105
+		fi
+
+		getConfigFileField "$file" "$fieldname" "$multiple"
+
+	fi
+}
+

@@ -1,0 +1,42 @@
+:
+#
+#	@(#)gd5446pci	11.1	10/22/97	12:33:20
+#	@(#) gd5446pci 58.1 96/10/09 
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1997.
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+USRLIBDIR=/usr/X11R6.1/lib
+PCIINFO=${USRLIBDIR}/vidconf/scripts/pciinfo
+#
+set_trap()  {
+	trap 'echo "Interrupted! Giving up..."; cleanup 1' 1 2 3 15
+}
+
+unset_trap()  {
+	trap '' 1 2 3 15
+}
+ 
+cleanup() {
+	trap '' 1 2 3 15
+	exit $1
+}
+
+set_trap
+${PCIINFO} -q -d 0x000000B8 -v 0x00001013
+status="$?"
+if [ $status = "1" ]
+then
+	echo "Cannot find a Cirrus Logic GD5446 card in this computer!"
+	cleanup 1
+fi
+base=`${PCIINFO} -v 0x00001013 -d 0x000000B8 -B 0x13`
+
+TEMPLATE=${USRLIBDIR}/grafinfo/cirrus/gd5446pci.tmpl
+XGIFILE=${USRLIBDIR}/grafinfo/cirrus/gd5446pci.xgi
+
+sedarg="s/@FRAMEBUFFER@/"$base"000000/g"
+sed -e $sedarg < ${TEMPLATE} > ${XGIFILE}
+cleanup 0

@@ -1,0 +1,27 @@
+:
+
+# TRACE is the tcltrace program
+# -- if not set in your env, will assume as follows
+if [ "$TRACE" == "" ]
+then
+	TRACE=../tcl/tcltrace
+fi
+
+# remove old results
+rm -f merge.*
+rm -f *.tclt.a
+
+# merge trace files
+$TRACE -m trace.vacation* > merge.vacation
+rm -f trace.vacation*
+
+# create annotated instrumented files
+$TRACE -a merge.vacation vacation.tclt >vacation.tclt.a
+
+# output current branch coverage info
+covered=`egrep '^_branch' vacation.tclt.a | wc -l`
+not_covered=`egrep '^>_branch' vacation.tclt.a | wc -l`
+total=`expr $covered + $not_covered`
+
+echo "vacation.tcl :"
+echo "$covered out of $total branches covered"

@@ -1,0 +1,152 @@
+
+	@(#)notes.syscommon	12.1	11/28/95	09:27:00
+
+Xsco server:		./server/sys/common - source notes
+	grep "^[^ 	]" to see only function names [^space tab]
+	 | grep -v static - to see only external functions.
+
+************************************************************************
+ddxArgs.c:
+
+void ddxRegisterArgs(char *name,ddxArgDescPtr pArgs)
+	Strange small routine, seems to allocate some space
+
+void ddxFlaggedUseMsg(char *name,unsigned flags)
+	Output specialized usage message based on arg type
+
+void ddxUseMsg()
+	Calls: ddxFlaggedUseMsg(NULL,0);
+
+int ddxProcessArgument(int argc,char *argv[],int i)
+
+void ddxInitArguments()
+	Calls: ddxRegisterArgs("common",commonArgs);
+
+void ddxHandleDelayedArgs()
+	A NoOp
+
+************************************************************************
+ddxLoad.c:
+
+static Bool ParseScreenArgs(char *arg,ddxScreenRequest *pRequest)
+	Handles board= specifications for visual and screen location
+
+int ddxAddScreenRequest( register int argc, register char **argv, int i )
+	Handles -hw option
+
+int ddxSetVisualRequest( register int argc, register char **argv, int i )
+	Handles -class option
+
+int ddxSetLoadType( register int argc, register char **argv, int i )
+	Handles -static or -dynamic load options
+
+Bool ddxOpenScreens()
+	More stuff about location of multiple screens
+
+************************************************************************
+ddxMisc.c:
+
+#ifdef DEBUG
+void Notice(unsigned flags,char *format,void *a0,void *a1,void *a2, \
+		void *a3,void *a4)
+	A front end to ErrorF
+#endif 	/*	DEBUG	*/
+
+void ddxInitBitSwap()
+	filling the ddxBitSwap array
+
+
+************************************************************************
+ddxOutput.c:
+
+static int ddxMatchFormat(int depth, int bpp, int pad)
+	Finding an entry in ddxPixmapFormats[]
+
+Bool ddxAddPixmapFormat(int depth, int bpp, int pad)
+	Adding an entry to ddxPixmapFormats[]
+
+void ddxInitPixmapFormats(ScreenInfo *screenInfo)
+	Copying static ddxPixmapFormats[] into the screenInfo->formats[]
+
+static Bool ddxFindAvailableBoards()
+	Parsing the grafdev tty/mode line, forming modeList[]
+
+Bool ddxGetModeName(int index,char *buf)
+	Return a string from modeList[]
+
+int ddxFindFirstMode(char *mode)
+	Finding a particular string in modeList[]
+
+int ddxFindFirstAvailableBoard()
+	Finding a board in modeList[] that is DDX_BOARD_UNSPEC
+
+Bool ddxRequestAllBoards()
+	Assigning boards, filling ddxRequestedScreens[] with data
+
+Bool ddxFindBoardInfo(ddxScreenRequest *pRequest)
+	Parsing grafinfo file, assigning characteristics
+
+************************************************************************
+dyddxload.c:
+
+void *(* dyddxload( int inFD, struct dynldinfo *infop ) )()
+	Reads in and relocates the XDriver.o file
+
+void dyddxunload( struct dynldinfo *infop )
+	A NoOp
+
+************************************************************************
+dynamicExt.c:
+
+static void loadExtFile(extInfo *pext)
+	Opens a file and calls dyddxload
+
+void loadDynamicExtensions()
+	Reading the /usr/lib/X11/dyddx/extensions.cf file and loading the
+	specified extensions
+
+Bool loadExtension(char *name)
+	Loading an extension upon first use, needs to be fixed
+	up to work properly for the multi-headed case
+
+************************************************************************
+dynamicScr.c:
+
+Bool loadDynamicDDX(ddxScreenRequest *pRequest)
+	using dyddxload, loads the requested XDriver.o
+
+Bool loadStaticDDX(ddxScreenRequest *pRequest)
+	a return FALSE
+
+************************************************************************
+globStub.c:
+
+Data only, defining: 'symbolDef globalSymbols[]' and 'int globalSymbolCount'
+
+************************************************************************
+globals.c:
+
+Declares all externals, created by mkglobals.sh during make
+
+************************************************************************
+staticScr.c:
+
+Defining ddxScreenInfo *staticScreens[]
+
+Bool loadStaticDDX(ddxScreenRequest *pRequest)
+	calls the screenProbe routine for each static screen
+
+Bool loadDynamicDDX(ddxScreenRequest *pRequest)
+	Drop in here when problems operating the static screen
+
+************************************************************************
+staticStub.c:
+
+static void BailOut( char *str, int exit_val)
+	Calls exit()
+
+int main( int argc, char *argv[])
+	Compiles and runs when ports.def changes, creates staticStr.h
+
+************************************************************************
+

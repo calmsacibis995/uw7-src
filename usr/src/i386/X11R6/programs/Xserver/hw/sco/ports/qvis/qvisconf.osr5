@@ -1,0 +1,128 @@
+:
+#
+#	@(#) qvisconf.osr5 11.1 97/10/22
+#
+# Copyright (C) 1991-1993 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right
+# to use, modify, and incorporate this code into other products for
+# purposes authorized by the license agreement provided they include
+# this notice and the associated copyright notice with any such
+# product.  The information in this file is provided "AS IS" without
+# warranty.
+#
+# Configure QVision 1024/1280 memory address mode on EISA systems
+#
+
+PATH=/etc:/bin:/usr/bin
+export PATH 
+
+GRAFDIR=/usr/X11R6.1/lib/grafinfo/compaq
+
+#
+#  Find primary QVision slot
+#
+get_slot() 
+{
+  found_it=0
+  for BOARD_ID in CPQ3011 CPQ3021 CPQ3111 CPQ3112 CPQ3121 CPQ3122
+  do 
+    slot_info=`eisa_nvm "BOARD_ID SUB_TYPE" $BOARD_ID 0xFFFFFFFF 1`
+    if [ "$slot_info" ]; then
+      echo $slot_info |awk '{printf "%s",$1}'
+      found_it=1
+      break
+    fi
+  done
+  if [ $found_it -eq 0 ]; then
+    echo "999"
+  fi
+}
+
+#
+#  Get high memory address for primary QVision
+#
+find_address() 
+{
+  read SLOT_NO
+  if [ $SLOT_NO -ne 999 ]; then
+     eisa_nvm "SLOT SUB_TYPE" $SLOT_NO HMA | xgi_params 
+  fi
+}
+
+#
+#  Use flat (linear) memory map if HMA enabled, else banked
+#
+xgi_params()
+{
+  awk \
+    ' BEGIN {
+        hiflag = 0 
+        adrs = "a0000"
+      } 
+      /00000/ { 
+        hiflag = 1  
+        adrs = $7
+      } 
+      END { 
+        if (hiflag) {
+          msn   = substr(adrs,1,(length(adrs))-5)
+          news  = sprintf("%04s ",msn )
+          him   = substr(news,1,2)
+          lom   = substr(news,3,2)
+          printf "%s 200000 ", adrs 
+          printf "%s ",   lom;
+          printf "%s ",   him;
+          printf "FLAT TVGA ";
+        }
+        else {
+          printf "%s ", adrs 
+          printf "10000 00 00 BANK VGA "
+        }
+      } '
+}
+
+#
+#  Create grafinfo file
+#
+create_xgi()
+{
+  read BASAD FBLEN HAMLO HAMHI FBTYP CLASS
+  if [ $BASAD ]; then
+    for ADAPTER in qvis1024 qvis1280
+    do
+       sed < $ADAPTER.tmpl > $ADAPTER.xgi -e \
+         "s/@BASAD@/$BASAD/g
+          s/@FBLEN@/$FBLEN/g
+          s/@HAMLO@/$HAMLO/g
+          s/@HAMHI@/$HAMHI/g
+          s/@FBTYP@/$FBTYP/g
+          s/@CLASS@/$CLASS/g"
+       chown bin $ADAPTER.xgi
+       chgrp bin $ADAPTER.xgi
+       chmod 444 $ADAPTER.xgi
+    done
+  fi
+}
+
+#main()  
+
+
+#
+#  Exit if not EISA system
+#
+exec 2>/dev/null
+if [ ! -x /etc/eisa_nvm  -o ! -f $GRAFDIR/qvis1024.tmpl -o ! -c /dev/eisa0 ]
+then
+	exit 1
+fi
+
+cd $GRAFDIR
+
+#
+#  Create QVision grafinfo file with memory address stored in EISA NVRAM
+#
+get_slot | find_address | create_xgi > /dev/null 2>&1
+
+exit 0

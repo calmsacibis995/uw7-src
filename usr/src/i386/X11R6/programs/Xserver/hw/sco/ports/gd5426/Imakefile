@@ -1,0 +1,107 @@
+/*
+ *	@(#)Imakefile	11.1.1.1	1/21/98	17:38:22
+ *	@(#) Imakefile 55.1 96/05/17 SCOINC
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ * Modification History
+ *
+ * S019, Wed Mar 13 15:26:33 PST 1996  davidw
+ *	Put kelvin64 install rule back.
+ * S018, Thu Jan 25 15:26:33 PST 1996  toma
+ *	remove old kelvin64 install rule since its not used anymore.
+ * S017, Mon Aug  7 16:43:24 PDT 1995, kylec
+ *	install kelvin64 AOF
+ * S016, 14-Jul-95, davidw
+ *	create/install compaq grafinfo files
+ * S015, 20-Oct-94, davidw
+ *	create/install Orchid Kelvin 64 grafinfo file
+ * S014, 22-Jun-94, davidw
+ *	Too many grafinfo files - created grafinfo subdirectory.
+ * S013, 17-Jan-94, staceyc
+ * 	gd5434 grafinfo file
+ * S012, 04-Jan-94, staceyc
+ * 	code seems to be GD5428 compatibile
+ * S011, 24-Aug-93, staceyc
+ * 	install Diamond SpeedStar PRO grafinfo file
+ * S010, 16-Jul-93, staceyc
+ * 	install horizon grafinfo file
+ * S009, 26-Apr-93, staceyc
+ * 	created
+ */
+
+#include <Server.tmpl>
+
+#if defined(USLArchitecture)
+VIDCONFDIR	=	$(USRLIBDIR)/vidconf
+#endif
+
+#define IHaveSubdirs
+
+#if defined(USLArchitecture)
+SUBDIRS= gd6_8 gd6_16 grafinfo/AOF
+#else
+SUBDIRS= gd6_8 gd6_16
+#endif
+
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+
+grafinfo/cirrus/gd5428.xgi: grafinfo/cirrus/gd5426.xgi
+	rm -f grafinfo/cirrus/gd5428.xgi
+	sed -e 's/GD5426/GD5428/g' < grafinfo/cirrus/gd5426.xgi > grafinfo/cirrus/gd5428.xgi
+	chmod 0444 grafinfo/cirrus/gd5428.xgi
+
+grafinfo/sni/gd5428.xgi: grafinfo/cirrus/gd5426.xgi
+	rm -f grafinfo/sni/gd5428.xgi
+	[ -d grafinfo/sni ] || mkdir grafinfo/sni
+	sed -e 's/CIRRUS/SNI/g' \
+	    -e 's/Cirrus Logic/SNI/g' \
+	    -e 's/"GD5426"/"Ergo III"/g' \
+	    -e 's/GD5426/GD5428/g' \
+		< grafinfo/cirrus/gd5426.xgi > grafinfo/sni/gd5428.xgi
+	chmod 0444 grafinfo/sni/gd5428.xgi
+
+grafinfo/spider/32vlb.xgi: grafinfo/cirrus/gd5426.xgi
+	rm -f grafinfo/spider/32vlb.xgi
+	[ -d grafinfo/spider ] || mkdir grafinfo/spider
+	sed -e 's/CIRRUS/SPIDER/g' \
+	    -e 's/Cirrus Logic/Spider/g' \
+	    -e 's/"GD5426"/"32 VLB"/g' \
+	    -e 's/GD5426/32VLB/g' \
+		< grafinfo/cirrus/gd5426.xgi > grafinfo/spider/32vlb.xgi
+	chmod 0444 grafinfo/spider/32vlb.xgi
+
+InstallGrafFile(grafinfo/cirrus,gd5426.xgi,cirrus)
+InstallGrafFile(grafinfo/cirrus,gd5428.xgi,cirrus)
+InstallGrafFile(grafinfo/cirrus,gd5434.xgi,cirrus)
+InstallGrafFile(grafinfo/compaq,pl-cl-1.xgi,compaq)
+InstallGrafFile(grafinfo/compaq,pl-cl-2.xgi,compaq)
+InstallGrafFile(grafinfo/compaq,pl-mt.xgi,compaq)
+InstallGrafFile(grafinfo/diamond,sspro.xgi,diamond)
+InstallGrafFile(grafinfo/orchid,kelvin64.xgi,orchid)
+InstallGrafFile(grafinfo/sni,gd5428.xgi,sni)
+InstallGrafFile(grafinfo/spider,32vlb.xgi,spider)
+InstallGrafFile(grafinfo/stb,horizon.xgi,stb)
+InstallGrafFile(grafinfo/cirrus,gd54m30.xgi,cirrus)
+
+InstallNamedNonExec(./grafinfo/cirrus/gd54m30.unq,gd54m30,$(USRLIBDIR)/vidconf/AOF/UNIQUE/cirrus)
+InstallNamedNonExec(./grafinfo/orchid/kelvin64.unq,kelvin64,$(USRLIBDIR)/vidconf/AOF/UNIQUE/orchid)
+
+#if ! defined(USLArchitecture)
+
+InstallNonExecFile(./grafinfo/AOF/gd5434,/usr/lib/vidconf/AOF/ID/cirrus)
+InstallNonExecFile(./grafinfo/AOF/gd54m30,/usr/lib/vidconf/AOF/ID/cirrus)
+InstallNonExecFile(./grafinfo/AOF/kelvin64,/usr/lib/vidconf/AOF/ID/orchid)
+
+#endif
+
+clean::
+	rm -f grafinfo/cirrus/gd5428.xgi grafinfo/sni/gd5428.xgi \
+		grafinfo/spider/32vlb.xgi
+

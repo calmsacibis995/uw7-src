@@ -1,0 +1,689 @@
+#!/usr/bin/ksh
+#==============================================================================
+# ldapcfg
+#
+#	100 - Cannot include ldaptabProcedures (not ldapcfg specific)
+#	140 - you must be root to run this command
+#	141 - invalid arguments passed to ldapcfg
+#	142 - Could not create directory for configuration files
+#	143 - Could not create directory database files
+#	144 - Can create new backend database for daemon, one already exists
+#------------------------------------------------------------------------------
+LDAPTABPROCS=/usr/lib/ldap/ldaptabProcedures
+
+if [ -f $LDAPTABPROCS ]
+then
+        . $LDAPTABPROCS
+else
+        echo Cannot include $LDAPTABPROCS
+        exit 100
+fi
+
+#Check permissions to run this command
+UID=`id -u`
+if [ "$UID" != 0 ]
+then
+        printf "You must be root to run this command\n"
+        exit 140
+fi
+
+
+usage1() { printf "Usage: %s createdaemon <identifier>\n" $1; }
+usage2() { printf "Usage: %s deletedaemon <id>\n" $1; }
+usage3() { printf "Usage: %s setvalues <id> [<parameter> <value>] ...\n" $1; }
+usage4() { printf "Usage: %s createldbm <id>\n" $1; }
+usage5() { printf "Usage: %s createshell <id>\n" $1; }
+usage6() { printf "Usage: %s deleteConfigFileFields <field> <file>\n" $1; }
+usage7() { printf "Usage: %s changedbname <id> <dbfile> <name>\n" $1; }
+usage8() { printf "Usage: %s addreplica <file> <host> <binddn> <passwd>\n" $1; }
+usage9() { printf "Usage: %s addindex <file> <newindex>\n" $1; }
+usage10() { printf "Usage: %s setsuffixes <file> <values>....\n" $1; }
+usage11() { printf "Usage: %s setgendbvalues <dbfile> [<parameter> <value>] ...\n" $1; }
+usage12() { printf "Usage: %s deletedatabase <id> <database file>\n" $1; }
+
+usage()  { 
+	usage1 $1
+	usage2 $1
+	usage3 $1
+	usage4 $1
+	usage5 $1
+	usage6 $1
+	usage7 $1
+	usage8 $1
+	usage9 $1
+	usage10 $1
+	usage11 $1
+	usage12 $1
+}
+
+
+#====================================================================== XXX ===
+# cfg_setDaemonValues
+#
+# args:
+#	daemonid
+#	* the rest of the arguments are pairs of options and values
+# 
+# dependencies:
+#	ldapinfo
+#
+# This function allows the user to set  multiple daemon configuration options
+# at once.
+#------------------------------------------------------------------------------
+cfg_setDaemonValues() {
+	if [ $# -gt 2 ]
+	then
+		typeset daemonid="$1"
+
+		typeset arg1=
+		typeset arg2=
+
+		shift
+		# What this simple algorithm does is when a pair of values
+		# arg1 and arg2 are set, "$cmd_ldapinfo" -s arg1=arg2 is called
+		while [ $# != 0 ]
+		do
+			if [ -z "$arg1" ] 
+			then
+				arg1="$1"
+				arg2=
+			else
+				[ -z "$arg2" ] && {
+					arg2="$1"
+					"$cmd_ldapinfo" \
+					-s "$arg1"="$arg2" -i "$daemonid"
+					errcode=$?
+					if [ "$errcode" != 0 ]
+					then
+						exit "$errcode"
+					fi
+				}
+				arg1=
+			fi
+			shift
+		done
+	fi
+}
+
+
+#====================================================================== XXX ===
+# cfg_setGeneralDatabaseValues
+#
+# args:
+#	database file name
+#	option/value pairs
+#
+# dependencies:
+#	ldapdbinfo
+#
+# This function allows the user to the set multiple database parameters at
+# once
+#------------------------------------------------------------------------------
+cfg_setGeneralDatabaseValues() {
+	if [ $# -gt 2 ]
+	then
+		typeset dbfile="$1"
+
+		typeset arg1=
+		typeset arg2=
+
+		shift
+		# What this simple algorithm does is when a pair of values
+		# arg1 and arg2 are set, "$cmd_ldapdbinfo" -s arg1=arg2 is 
+		# called
+		while [ $# != 0 ]
+		do
+			if [ -z "$arg1" ] 
+			then
+				arg1="$1"
+				arg2=
+			else
+				[ -z "$arg2" ] && {
+					arg2="$1"
+					"$cmd_ldapdbinfo" \
+					-s "$arg1"="$arg2" -d "$dbfile"
+					errcode=$?
+					if [ "$errcode" != 0 ]
+					then
+						exit "$errcode"
+					fi
+				}
+				arg1=
+			fi
+			shift
+		done
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_changedatabasename
+#
+# args:
+#	daemon id
+#	dbfile
+#	new name
+#
+# dependencies
+#	daemonIdentifierIsValid
+#	ldapinfo
+#	canReadWriteMasterFile
+#	replaceLine
+#
+#------------------------------------------------------------------------------
+cfg_changedatabasename() {
+	if [ $# -eq 3 ]
+	then
+		typeset daemonid="$1"
+		typeset dbfile="$2"
+		typeset newname="$3"
+		daemonIdentifierIsValid "$daemonid" -e
+		typeset masterfile=`"$cmd_ldapinfo" \
+			-v masterfile -i "$daemonid"`
+		canReadWriteMasterFile "$masterfile"
+
+		typeset line=`awk -v LABEL="#SCO_GUI_DATABASE" \
+			-v INCFILE="$dbfile" \
+		'
+		BEGIN { SCOLABEL=0; LABELLINE="";}
+		{
+			if( $1 == LABEL ) {
+				SCOLABEL=1;
+				LABELLINE=NR;
+				next;
+			}
+		}
+		/^[ 	]*#/  { next; }
+		/^[	 ]*$/ { next; }
+		/^[ 	]*include/ {
+			if (SCOLABEL==1) {
+				if( $2 == INCFILE ) {
+					print LABELLINE; exit;
+				}
+			}
+		}
+		' "$masterfile"`
+
+		replaceLine "$masterfile" "$line" "#SCO_GUI_DATABASE $newname"
+
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_deletedatabase
+#
+# args:
+#	daemon id
+#	database filename
+#
+# dependencies:
+#	daemonIdentifierIsValid
+#	ldapinfo
+#	canReadWriteMasterFile
+#	deleteLine
+#
+# Delete a database entry from a particular daemon.
+#------------------------------------------------------------------------------
+cfg_deletedatabase() {
+	if [ $# -eq 2 ]
+	then
+		typeset daemonid="$1"
+		typeset dbfile="$2"
+		daemonIdentifierIsValid "$daemonid" -e
+		typeset masterfile=`"$cmd_ldapinfo" \
+			-v masterfile -i "$daemonid"`
+		canReadWriteMasterFile "$masterfile"
+
+		typeset lines=`awk -v LABEL="#SCO_GUI_DATABASE" -v INCFILE="$dbfile" \
+		'
+		BEGIN { SCOLABEL=0; LABELLINE="";}
+		{
+			if( $1 == LABEL ) {
+				SCOLABEL=1;
+				LABELLINE=NR;
+				next;
+			}
+		}
+		/^[ 	]*#/  { next; }
+		/^[	 ]*$/ { next; }
+		/^[ 	]*include/ {
+			if (SCOLABEL==1) {
+				if( $2 == INCFILE ) {
+					print LABELLINE" "NR; exit;
+				}
+			}
+		}
+		' "$masterfile"`
+
+		# Get rid of entries in slapd.conf
+
+		# Assume the lines to be deleted in the variable $lines
+		# are in order from lowest to highest
+
+		if [ ! -z "$lines" ]
+		then
+			let decrement=0
+			for i in $lines
+			do
+				let theline=$i-$decrement
+				deleteLine "$masterfile" $theline
+				let decrement=$decrement+1
+			done
+
+			# Delete database config file
+			rm -f "$dbfile" > /dev/null 2>&1
+		fi
+		
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_deleteDaemon
+# 
+# args:
+#	daemon id
+#
+# dependencies:
+#	daemonIdentifierIsValid
+#	findDaemonLine
+#
+# This procedure deletes a daemon entry from the ldaptab configuration file
+#------------------------------------------------------------------------------
+cfg_deleteDaemon() {
+	if [ $# -eq 1 ]
+        then
+		typeset daemonid=$1
+                daemonIdentifierIsValid "$daemonid" -e
+		typeset masterfile=`"$cmd_ldapinfo" \
+			-v masterfile -i "$daemonid"`
+		typeset errno=$?
+		if [ $errno != 0 ]
+		then
+			exit $errno
+		fi
+		typeset mfiledir=`dirname $masterfile`
+
+		# This check is here to avoid deleting this entire subtree
+		if [ "$mfiledir" != "/etc/ldap/adm" ]
+		then
+			# Check whether masterfile is in the /etc/ldap/adm
+			# hierarchy
+			if [ "$mfiledir" != "${mfiledir#/etc/ldap/adm}" ]
+			then
+				rm -rf "$mfiledir" > /dev/null 2>&1
+			fi
+		fi
+
+		DLINE=`findDaemonLine "$daemonid"`
+		
+		# Just in case
+		cp $LDAPTAB /tmp/ldaptab > /dev/null 2>&1
+
+                TMPFILE=/tmp/ldaptab.$$
+                let LINEBEFORE=$DLINE-1
+                let LINEAFTER=$DLINE+1
+                [ $LINEBEFORE -gt 0 ] && sed -n -e"1,${LINEBEFORE}p" $LDAPTAB > $TMPFILE
+                sed -n -e"${LINEAFTER},\$p" $LDAPTAB >> $TMPFILE
+                mv $TMPFILE $LDAPTAB
+
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_createdbcfgfile
+#
+# args:
+#	type
+#	daemonid
+#
+# EXITCODES:
+#	143 - Could not create directory for ldbm database files
+#	144 - Backend database already exists
+#
+# This function creates a new database configuration file. If the daemon 
+# already has a backend-database then an exit code is returned.
+#------------------------------------------------------------------------------
+cfg_createdbcfgfile() {
+	if [ $# -eq 2 ]
+	then
+		typeset TYPE="$1"
+		typeset daemonid="$2"
+
+                daemonIdentifierIsValid "$daemonid" -e
+
+		# Check that the given daemon does not have any existing
+		# databases
+
+		typeset dbs=`getAllDaemonDatabases "$daemonid"`
+		if [ ! -z "$dbs" ]
+		then
+			printf "Cannot create new backend database, daemon already has a backend database\n"
+			exit 144
+		fi
+
+		typeset masterfile=`"$cmd_ldapinfo" -v masterfile -i "$daemonid"`
+		typeset errno=$?; [ $errno != 0 ] && { exit $errno; }
+		typeset masterfilepath=`dirname $masterfile`
+		
+		# Determine config filename
+		typeset dbcfgfile="$masterfilepath/database.conf"
+
+		typeset DATE=`date`
+		if [ "$TYPE" = "ldbm" ]
+		then
+			# Determine database directories currently being used
+
+			DIRECTORY="/var/ldap/databases/$daemonid"
+			mkdir -p "$DIRECTORY" > /dev/null 2>&1
+			[ $? != 0 ] && {
+				printf "Could not create dir %s\n" $DIRECTORY
+				exit 143
+			}
+			
+			# Create ldbm database config file
+			>"$dbcfgfile"
+			ed -s "$dbcfgfile" <<EOF
+a
+# $dbcfgfile, created $DATE
+
+database	ldbm
+suffix          "o=org, c=country"
+suffix          ""
+directory	$DIRECTORY
+rootdn          "cn=root, o=org, c=country"
+.
+w
+q
+EOF
+		else
+
+			# Create shell database config file
+
+			>"$dbcfgfile"
+			ed -s "$dbcfgfile" <<EOF
+a
+# $dbcfgfile, created $DATE
+
+database        shell
+suffix          "o=org, c=country"
+suffix          ""
+rootdn          "cn=root, o=org, c=country"
+.
+w
+q
+EOF
+		fi
+
+		# Then add an entry top the daemon's slapd.conf
+		ed -s "$masterfile" <<EOF
+a
+#SCO_GUI_DATABASE no name
+include $dbcfgfile
+.
+w
+q
+EOF
+
+		echo "$dbcfgfile"
+	fi
+}
+
+#===================================================================== XXX ===
+# cfg_createDaemon
+#
+# args:
+#	daemonid - daemon identifier
+#
+# EXIT CODES:
+#	142 - Could not create directory for config files
+#
+# ASSUMPTIONS:
+#	Assumes that daemonid is unique
+#
+# This function creates a new ldap daemon entry. A directory will be created 
+# and contain the files:
+#
+#	/etc/ldap/adm/$daemonid/slapd.at.conf
+#	/etc/ldap/adm/$daemonid/slapd.oc.conf
+#	/etc/ldap/adm/$daemonid/slapd.acl.conf
+#	/etc/ldap/adm/$daemonid/slapd.conf
+#
+# The files slapd.at.conf slapd.oc.conf slapd.acl.conf will be copied from
+# files in  /usr/lib/ldap/default-files.
+#
+# The slapd.conf file will be generated, and will contain 'include' entries for
+# the above config files. slapd.conf will also contain some field entries 
+# from the file /usr/lib/ldap/default-files/slapd.conf.entries.
+# 
+# The ldaptab fields will be:
+#	daemon id    : $daemonid
+#	port         : 389
+#	masterfile   : /etc/ldap/adm/$daemonid/slapd.conf
+#	syslog level : 0 
+#	startatboot  : no
+#
+#------------------------------------------------------------------------------
+cfg_createDaemon() {
+	if [ $# -eq 1 ]
+	then
+		typeset daemonid="$1"
+		typeset ADMINDIR="/etc/ldap/adm"
+		[ ! -d $ADMINDIR ] && mkdir -p $ADMINDIR 
+
+		typeset DAEMONDIR="$ADMINDIR/$daemonid"
+		if [ -d "$DAEMONDIR" ]
+		then
+			rm -rf "$DAEMONDIR" > /dev/null 2>&1
+		fi
+		mkdir -p "$DAEMONDIR" > /dev/null 2>&1
+		[ $? != 0 ] && {
+			printf "Could not create dir %s\n" "$DAEMONDIR"
+			exit 142
+		}
+		cp /usr/lib/ldap/default-files/slapd.oc.conf "$DAEMONDIR"
+		cp /usr/lib/ldap/default-files/slapd.at.conf "$DAEMONDIR"
+		cp /usr/lib/ldap/default-files/slapd.acl.conf "$DAEMONDIR"
+	
+		# Write the slapd.conf file
+		>"$DAEMONDIR/slapd.conf"
+		typeset DATE=`date`
+		ed -s "$DAEMONDIR/slapd.conf" <<EOF
+a
+# $DAEMONDIR/slapd.conf, created $DATE
+
+# Be careful not to remove the SCO_GUI* comments, these identify the
+# contents of the included files.
+#
+# Put attribute, object class and access control list in the correct
+# file
+
+#SCO_GUI_ATTRIBUTES
+include $DAEMONDIR/slapd.at.conf
+#SCO_GUI_OBJECTCLASSES
+include $DAEMONDIR/slapd.oc.conf
+#SCO_GUI_ACL
+include $DAEMONDIR/slapd.acl.conf
+
+.
+w
+q
+EOF
+	
+		# This puts any default entries in the slapd.conf
+		[ -f /usr/lib/ldap/default-files/slapd.conf.entries ] && \
+			cat /usr/lib/ldap/default-files/slapd.conf.entries >> \
+				"$DAEMONDIR/slapd.conf"
+	
+	
+		# Put the entry in the ldaptab file
+		[ ! -f /etc/ldap/ldaptab ]  && > /etc/ldap/ldaptab
+		ed -s /etc/ldap/ldaptab <<EOF
+a
+$daemonid: 389 : $DAEMONDIR/slapd.conf : 0 :off
+.
+w
+q
+EOF
+
+	fi
+}
+
+
+#====================================================================== XXX ===
+# DeleteConfigFileFields
+#
+# args:
+#	field
+#	filename
+#
+#------------------------------------------------------------------------------
+cfg_deleteConfigFileFields() {
+	if [ $# -eq 2 ]
+        then
+		typeset field="$1"
+		typeset filename="$2"
+		typeset linenos=`findFileFieldLine $filename $field all`
+		if [ ! -z "$linenos" ]
+		then
+			echoExceptLines "$filename" "$linenos" \
+			> /tmp/deleteConfigFileFields.$$
+			mv /tmp/deleteConfigFileFields.$$ "$filename"
+		fi
+		return 0
+	fi
+}
+#====================================================================== XXX ===
+# cfg_setSuffixes
+#------------------------------------------------------------------------------
+cfg_setSuffixes() {
+	if [ $# -ge 1  ]
+	then
+		typeset filename="$1"
+		shift
+		if [ $# -eq 0 ]
+		then
+			typeset linenos=`findFileFieldLine $filename suffix all`
+			if [ ! -z "$linenos" ]
+			then
+				echoExceptLines "$filename" "$linenos" \
+					> /tmp/setMultiConfigFileField.$$
+				mv /tmp/setMultiConfigFileField.$$ "$filename"
+			fi
+		else
+			echo setMultiConfigFileField
+			setMultiConfigFileField suffix $filename "$@"
+		fi
+		return 0
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_addReplica
+#------------------------------------------------------------------------------
+cfg_addReplica() {
+	if [ $# -eq 4 ]
+	then
+		typeset filename="$1"
+		typeset host="$2"
+		typeset bindDN="$3"
+		typeset password="$4"
+
+		ed -s "$filename" <<EOF
+a
+replica host=$host binddn="$bindDN" bindmethod=simple credentials=$password
+.
+w
+q
+EOF
+	fi
+}
+
+#====================================================================== XXX ===
+# cfg_addIndex
+#------------------------------------------------------------------------------
+cfg_addIndex() {
+	if [ $# -gt 1 ]
+	then
+		typeset filename="$1"
+		shift
+		typeset newline="$@"
+		ed -s "$filename" <<EOF
+a
+index $newline
+.
+w
+q
+EOF
+	fi
+}
+		
+
+#====================================================================== XXX ===
+#                                    MAIN
+#------------------------------------------------------------------------------
+# Check for no arguments
+if [ $# -eq 0 ]; then usage $0; exit 141; fi
+
+
+case $1 in
+deletedaemon)
+	shift
+	[ $# -eq 0 ] && { argexpected "$0 deletedaemon"; usage $0; exit 141; }
+	cfg_deleteDaemon $1
+	;;
+createldbm)
+	shift
+	[ $# -eq 0 ] && { argexpected "$0 createldbm"; usage $0; exit 141; }
+	cfg_createdbcfgfile ldbm $1
+	;;
+createshell)
+	shift
+	[ $# -eq 0 ] && { argexpected "$0 createshell"; usage $0; exit 141; }
+	cfg_createdbcfgfile shell $1
+	;;
+createdaemon)
+	shift
+	[ $# -eq 0 ] && { argexpected "$0 createdaemon"; usage $0; exit 141; }
+	cfg_createDaemon "$1"
+	;;
+deletedatabase)
+	shift
+	[ $# != 2 ] && { argexpected "$0 deletedatabase"; usage $0; exit 141; }
+	cfg_deletedatabase "$1" "$2"
+	;;
+setvalues)
+	shift
+	cfg_setDaemonValues "$@"
+	;;
+setgendbvalues)
+	shift
+	cfg_setGeneralDatabaseValues "$@"
+	;;
+setsuffixes)
+	shift
+	cfg_setSuffixes "$@"
+	;;
+addindex)
+	shift
+	[ $# -lt 1 ] && { argexpected "$0 addindex"; usage $0; exit 141; }
+	cfg_addIndex "$@"
+	;;
+addreplica)
+	shift
+	[ $# != 4 ] && { argexpected "$0 addreplica"; usage $0; exit 141; }
+	cfg_addReplica "$@"
+	;;
+changedbname)
+	shift
+	[ $# != 3 ] && { argexpected "$0 changedbname"; usage $0; exit 141; }
+	cfg_changedatabasename "$@"
+	;;
+deleteConfigFileFields)
+	shift
+	 [ $# != 2 ] && { argexpected "$0 deleteConfigFileFields"; usage $0; exit 141; }
+	cfg_deleteConfigFileFields "$@"
+	;;
+*)
+	usage $0;
+	exit 141
+	;;
+esac

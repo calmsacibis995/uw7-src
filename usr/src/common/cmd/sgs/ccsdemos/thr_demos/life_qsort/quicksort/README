@@ -1,0 +1,64 @@
+#ident	"@(#)ccsdemos:thr_demos/life_qsort/quicksort/README	1.1"
+		QUICK SORT THREADS DEMONSTRATION
+
+
+		Parallel Quick Sort Algorithm
+
+ This code was adapted from code
+ provided by the Rochester group of Prof. Michael Scott and his
+ group who kindly allowed us to use it here.
+
+ There are three stages to the algorithm.
+ 1. Generate a number of pivots equal to one less than the the number of
+    threads available.  Sort them.  The interval between two successive
+    pivots is called a "bucket" and will ultimately be sorted by a single
+    thread.
+
+ 2. Each thread (routine NormalStart) takes an equi-length portion of the 
+    original array and puts each item into an appropriate bucket, labeled
+    index using routine findpart.  To avoid contention, each thread j has
+    its own array for bucket index called myarray[index][j].  After
+    copying to myarray[][j], thread j barrier synchronizes with the other
+    threads using routine BarrierSync.  Then all threads cooperate to copy
+    from each myarray[index][j] to finalarray[index].
+
+ 3. Each thread j does a local quicksort on finalarray[j] using the routine
+    quicksort.
+
+  Steps two and three are repeated MaxStep numbers of time to get performance
+  figures.
+
+
+
+
+		Quick Sort Usage
+
+ To invoke, use
+
+	make
+
+	quicksort [-p ProblemSize] [-t NormalThreads] [-i MaxStep] 
+		  [-a PrintAll] [-l LWPs] [-b bind]
+
+
+
+
+		Tips for Running the Quick Sort Demo Program
+
+ By default, a single thread running on a single LWP on a very small array
+ (1000 elements) is used.  It is recommended that a larger array (~60000
+ elements) be used to obtain observable results.  Performance
+ increases using multiple threads and multiple LWPs can be observed by using
+ the -n and -l options.  These increases are evident only on machines with
+ multiple processors.
+
+ To demonstrate the speed-up of threads versus a single process, first run
+ with timex and only the -p argument, then run with timex and the -p, -t 
+ and -l options.  (The number of threads should be >= the number of LWPs.)
+
+ For example, after compiling quicksort,
+
+	timex quicksort -p 60000             # gives single threaded results
+
+	timex quicksort -p 60000 -t 4 -l 4   # gives multithreaded results
+

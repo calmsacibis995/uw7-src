@@ -1,0 +1,129 @@
+:
+#
+#	@(#) buildgrafinfo 11.1 97/10/22 
+#
+#	Copyright (C) The Santa Cruz Operation, 1997.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+#
+if [ "$1" = "" ]
+then
+	echo "usage: $0 template < modes.list" 1>&2
+	exit 1
+fi
+templ=$1
+
+# Need one copyright in output file.
+echo "/*
+ *      @(#) gd5465pci.xgi 10.1 97/10/14
+ *
+ * Copyright (C) 1997 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+*/"
+
+while read modenum width height depth vhz 
+do
+	extra=""
+	case $height in
+	    400)
+		maxres=0;;
+	    480)
+		maxres=0;;
+	    600)
+		maxres=1;;
+	    768)
+		maxres=2;;
+	    1024)
+		maxres=3;;
+	    1200)
+		maxres=4;;
+	    *)
+		echo "$0: unknown vertical dimension $height!  Fix this." 1>&2
+		exit 1;;
+	esac
+	case $depth in
+            8)
+                colors=256;;
+            15)
+                colors=32K;;
+            16)
+                colors=64K;;
+            24)
+                colors=16M;;
+	    *)
+		echo "$0: unknown depth $depth!  Fix this." 1>&2
+		exit 1;;
+        esac
+	alh=0
+	bhl=0
+	bhh=0
+	chl=0
+	chh=0
+	case $vhz in
+	    43i)
+		bhh=0
+		extra='(interlaced)'
+		;;
+	    48i)
+		chl=0
+		extra='(interlaced)'
+		;;
+	    56)
+		bhl=0
+		;;
+	    60)
+		alh=0
+		bhl=1
+		bhh=1
+		chl=1
+		chh=1
+		;;
+	    70)
+		bhh=2
+		;;
+	    71.2)
+		chh=2
+		;;
+	    72)
+		alh=1
+		bhl=2
+		;;
+	    75)
+		alh=2
+		bhl=3
+		bhh=4
+		chh=3
+		;;
+	    85)
+		alh=3
+		bhl=4
+		bhh=5
+		chh=4
+		;;
+	    *)
+		echo "$0: unknown refresh rate $vhs!  Fix this." 1>&2
+		exit 1;;
+	esac
+	sed -e "s/@WIDTH@/$width/g" \
+	    -e "s/@HEIGHT@/$height/g" \
+	    -e "s/@DEPTH@/$depth/g" \
+	    -e "s/@COLORS@/$colors/g" \
+	    -e "s/@VHZ@/$vhz/g" \
+	    -e "s/@MAXRES@/$maxres/g" \
+	    -e "s/@MODENUM@/$modenum/g" \
+	    -e "s/@BHL@/$bhl/g" \
+	    -e "s/@BHH@/$bhh/g" \
+	    -e "s/@ALH@/$alh/g" \
+	    -e "s/@CHL@/$chl/g" \
+	    -e "s/@CHH@/$chh/g" \
+	    -e "s/@EXTRA@/$extra/" \
+	    < $templ
+	echo
+done

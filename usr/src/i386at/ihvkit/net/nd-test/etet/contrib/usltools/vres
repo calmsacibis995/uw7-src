@@ -1,0 +1,68 @@
+#!/usr/bin/nawk  -f vres
+#ident "@(#)usltools/vres	1.1"
+# vres - calculate summary reports - version for vsx4
+#
+# Copyright 1991 UNIX System Laboratories Europe, Ltd (USLE)
+# 
+# Permission to use, copy, modify, and distribute this software 
+# for any purpose and without fee is hereby granted, provided
+# that the above copyright notice appear in all copies and that both that
+# copyright notice and this permission notice appear in supporting
+# documentation, and that the name of USLE not be used in 
+# advertising or publicity pertaining to distribution of the software 
+# without specific, written prior permission.  USLE make 
+# no representations about the suitability of this software for any purpose.  
+# It is provided "as is" without express or implied warranty.
+#
+# USLE DISCLAIM ALL WARRANTIES WITH REGARD TO THIS SOFTWARE, 
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS, IN NO 
+# EVENT SHALL USLE BE LIABLE FOR ANY SPECIAL, INDIRECT OR 
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF 
+# USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR 
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR 
+# PERFORMANCE OF THIS SOFTWARE.
+#
+BEGIN {printf "Results: %s\n",FILENAME}
+
+  $1 ~ "^220" {if ($3 == 0) passed++ 
+		else if ($3 == 1) failed++
+		else if ($3 == 2) unresolved++
+		else if ($3 == 3) notinuse++
+		else if ($3 == 4) unsuported++
+		else if ($3 == 5) untested++
+		else if ($3 == 6) uninitiated++
+		else if ($3 == 7) unreported++
+		else if ($3 == 101) warning++
+		else if ($3 == 102) fip++
+		else {printf("Unknown result code: %d\n",$3);unknown++}
+	    total++
+	}
+
+  $1 ~ "^50" { tetfail++ }
+
+  $1 ~ "^510" { tetfail++}
+
+END {
+pass=passed+warning+fip+unsuported+notinuse+untested;
+fail=failed+unresolved+uninitiated+unreported;
+printf("Total tests: \t\t%d\tPASS = %d\tFAIL = %d\n\n",total,pass,fail);
+printf("Pass Breakdown:\n");
+printf("Number of successes: \t%d\t",passed);
+printf("Number of warnings: \t%d\n",warning);
+printf("Number unsupported: \t%d\t",unsuported);
+printf("Number not in use: \t%d\n",notinuse);
+printf("Number of untested: \t%d\t",untested);
+printf("Number of FIP: \t\t%d\n\n",fip);
+printf("Failure Breakdown:\n");
+printf("Number of failures: \t%d\t",failed);
+printf("Number unresolved: \t%d\n",unresolved);
+printf("Number uninitiated: \t%d\t",uninitiated);
+printf("Number unreported: \t%d\n",unreported);
+
+if (unknown > 0)
+  printf("\n*WARNING* unknown result code encountered\n");
+if (tetfail > 0)
+  printf("\n*WARNING* TET failure result code encountered\n");
+printf
+}
+

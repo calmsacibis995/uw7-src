@@ -1,0 +1,629 @@
+:
+#       @(#) ncard 11.1 95/05/01 SCOINC
+#
+#	(C) Copyright 1994 The Santa Cruz Operation, Inc.  
+#	    All Rights Reserved.
+#
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+tet_startup=""
+tet_cleanup="finish"
+iclist="ic1 ic2"
+#iclist="ic1"
+ic1="start"
+ic2="loadtest"
+
+. $TET_ROOT/inc/libant.sh
+
+BASE_SAP=10
+
+logout()
+{
+	while read x
+	do
+		tet_infoline "$x"
+	done
+}
+
+recvfile()
+{
+	. /tmp/ant$$
+
+	dlpiut recvfile fd=$OURFD framing=$gframing sap=$gsap \
+		ourdstaddr=$OTHERADDR loop=n file=$1
+	checkfail $?
+}
+
+sendfile()
+{
+	. /tmp/ant$$
+
+	dlpiut sendfile fd=$OURFD framing=$gframing sap=$gsap \
+		ourdstaddr=$OTHERADDR loop=n file=$1
+	checkfail $?
+}
+
+framecheck()
+{
+awk ' {
+	if ($1 == "ok_acks")
+		ok_acks = $2;
+	if ($1 == "ack_timeouts")
+		ack_timeouts = $2;
+	if ($1 == "bad_acks")
+		bad_acks = $2;
+	if ($1 == "bad_saps")
+		bad_saps = $2;
+	if ($1 == "bad_seq_hi")
+		bad_seq_hi = $2;
+	if ($1 == "bad_seq_lo")
+		bad_seq_lo = $2;
+	if ($1 == "frames_received")
+		frames_received = $2;
+	if ($1 == "bad_saps_received")
+		bad_saps_received = $2;
+	if ($1 == "bad_len_received")
+		bad_len_received = $2;
+	if ($1 == "bad_type_received")
+		bad_type_received = $2;
+	if ($1 == "bad_seq_hi_received")
+		bad_seq_hi_received = $2;
+	if ($1 == "bad_seq_lo_received")
+		bad_seq_lo_received = $2;
+	if ($1 == "dup_frames_received")
+		dup_frames_received = $2;
+	if ($1 == "bad_data_received")
+		bad_data_received = $2;
+	}
+	END {
+	errs = bad_acks + bad_saps + bad_saps_received + \
+		bad_len_received + bad_type_received + dup_frames_received + \
+		bad_data_received;
+	printf "Framing %s sap %s: ", framing, sap
+	if (errs != 0 || frames_received == 0) {
+	#	print "FAIL"; 
+		ndsu "nd stop"
+		exit 1;
+	}
+	else {
+		#print "PASS"; 
+		ndsu "nd stop"
+		exit 0;
+	}
+
+	}' framing=$1 sap=$2
+	return $?
+}
+
+total()
+{
+	. /tmp/ant$$
+
+awk '{
+	if ($1 == "ok_acks")
+		ok_acks += $2;
+	if ($1 == "ack_timeouts")
+		ack_timeouts += $2;
+	if ($1 == "bad_acks")
+		bad_acks += $2;
+	if ($1 == "bad_saps")
+		bad_saps += $2;
+	if ($1 == "bad_seq_hi")
+		bad_seq_hi += $2;
+	if ($1 == "bad_seq_lo")
+		bad_seq_lo += $2;
+	if ($1 == "frames_received")
+		frames_received += $2;
+	if ($1 == "bad_saps_received")
+		bad_saps_received += $2;
+	if ($1 == "bad_len_received")
+		bad_len_received += $2;
+	if ($1 == "bad_type_received")
+		bad_type_received += $2;
+	if ($1 == "bad_seq_hi_received")
+		bad_seq_hi_received += $2;
+	if ($1 == "bad_seq_lo_received")
+		bad_seq_lo_received += $2;
+	if ($1 == "dup_frames_received")
+		dup_frames_received += $2;
+	if ($1 == "bad_data_received")
+		bad_data_received += $2;
+	}
+	END {
+		printf "ok_acks              %d\n", ok_acks;
+		printf "ack_timeouts         %d\n", ack_timeouts;
+		printf "bad_acks             %d\n", bad_acks;
+		printf "bad_saps             %d\n", bad_saps;
+		printf "bad_seq_hi           %d\n", bad_seq_hi;
+		printf "bad_seq_lo           %d\n", bad_seq_lo;
+		printf "frames_received      %d\n", frames_received;
+		printf "bad_saps_received    %d\n", bad_saps_received;
+		printf "bad_len_received     %d\n", bad_len_received;
+		printf "bad_type_received    %d\n", bad_type_received;
+		printf "bad_seq_hi_received  %d\n", bad_seq_hi_received;
+		printf "bad_seq_lo_received  %d\n", bad_seq_lo_received;
+		printf "dup_frames_received  %d\n", dup_frames_received;
+		printf "bad_data_received    %d\n", bad_data_received;
+
+		seconds = substr(duration, 5, 2);
+		seconds += substr(duration, 3, 2) * 60;
+		seconds += substr(duration, 1, 2) * 60 * 60;
+		printf "duration = %d\n", seconds;
+		fps = frames_received / seconds;
+		printf "frames per second average is %d\n", fps;
+		kps = (fps * len) / 1024;
+		printf "k/sec is %d\n", kps;
+	}' duration=$duration len=1500
+	return $?
+}
+
+start()
+{
+	dlpiut stop
+
+	# restart the dlpi daemon
+	ndsu "nd stop"
+	sleep 4
+	ndsu "nd start"
+	
+
+#	Count number of adapters attached.
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		OURNCARD=$NUMBER_OF_CARDS
+	else
+		# only 1 card on slave side is sufficient
+		OURNCARD=1
+	fi
+
+	echoboth "start: start of ncard test, looking for other machine"
+#	open dlpi devices to get adapter MAC address
+	n=0
+	while [ $n -lt $OURNCARD ]
+	do
+		dlpiut open device=/dev/net$n interface=dlpi > /tmp/tmp$$
+		[ "$?" != "0" ] && {
+			errout < /tmp/tmp$$
+			echo ABORT
+			tet_result ABORT
+			dlpiut stop
+			return
+		}
+		. /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		NETTYPE=$media
+		echoboth "NETTYPE=$media"
+		echo "NETTYPE=$media" > /tmp/ant$$
+		framing
+
+		dlpiut getaddr fd=$fd > /tmp/tmp$$
+		[ "$?" != "0" ] && {
+			errout < /tmp/tmp$$
+			echo ABORT
+			tet_result ABORT
+			dlpiut stop
+			return
+		}
+		. /tmp/tmp$$
+		OURADDRLIST="$OURADDRLIST $addr"
+		rm -f /tmp/tmp$$
+
+		[ $n -eq 0 ] && {
+			. /tmp/ant$$
+			OURFD=$fd
+			OURADDR=$addr
+			dlpiut bind fd=$OURFD sap=$gsap framing=$gframing \
+				error=n > /tmp/tmp$$
+			[ "$?" != "0" ] && {
+				errout < /tmp/tmp$$
+				echo ABORT
+				tet_result ABORT
+				dlpiut stop
+				return
+			}
+		}
+		n=`expr $n + 1`
+	done
+
+	OURMCHN=`/bin/uname -n`
+	echoboth "$OURMCHN=$OURADDR"
+
+#	Send Card0 MAC address across
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$OURFD msg=$OURADDR sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=180 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$OURFD msg=$OURADDR sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=180 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDR=$msg
+
+#	Send Card0 machine name across
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$OURFD msg=$OURMCHN sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$OURFD msg=$OURMCHN sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERMCHN=$msg
+
+	echoboth "$OTHERMCHN=$OTHERADDR"
+	echoboth "ncard=$OURADDRLIST"
+
+#	Send number of adapters across
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$OURFD msg=$OURNCARD sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$OURFD msg=$OURNCARD sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERNCARD=$msg
+
+#	Send MAC address of all $OTHERNCARD adapters across
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		dlpiut syncsend fd=$OURFD msg="$OURADDRLIST" sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	else
+		dlpiut syncrecv fd=$OURFD msg="$OURADDRLIST" sap=$gsap \
+			framing=$gframing omchnaddr=ffffffffffff \
+			ourdstaddr=ffffffffffff odstaddr=ffffffffffff \
+			timeout=30 loop=y match=n > /tmp/tmp$$
+	fi
+
+	[ "$?" != "0" ] && {
+		dlpiut stop
+		errout < /tmp/tmp$$
+		rm -f /tmp/tmp$$
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+	. /tmp/tmp$$
+	rm -f /tmp/tmp$$
+	OTHERADDRLIST="$msg"
+
+#	Check for correct number of addresses sent
+	n=$OTHERNCARD
+	for i in $OTHERADDRLIST
+	do
+		n=`expr $n - 1`
+	done
+	[ $n -ne 0 ] && {
+		dlpiut stop
+		echoboth "Number of addresses and address list mismatch"
+
+		echo ABORT
+		tet_result ABORT
+		return
+	}
+
+#	Set up sap lists and address lists
+
+	# Pairs of send and receive processes are set up :
+	#
+	# Master 				Slave
+	#
+	# Proc	Sap	MAC Address		Proc	Sap	MAC Address
+	# ====	===	===========		====	===	===========
+	# MS1	sap1	Mcard0_macaddr	<---->	SR1	sap1	Scard0_mcaddr
+	# MR1	sap2	Mcard1_macaddr	<---->	SS1	sap2	Scard0_mcaddr
+	# MS2	sap3	Mcard2_macaddr	<---->	SR2	sap3	Scard0_mcaddr
+	# MR2	sap4	Mcard3_macaddr	<---->	SS2	sap4	Scard0_mcaddr
+	#  ..
+	#
+	# MSN - Master Send process N
+	# MRN - Master receive process N
+	# SSN - Slave Send process N
+	# SRN - Slave receive process N
+	# McardN_macaddr - Master card N MAC address
+	# ScardN_macaddr - Slave card N MAC address (only 1 card)
+	# sapN - sap values (send and receive pair always have the same sap
+	#	 values)
+
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		n=$OURNCARD
+		new_sap=$BASE_SAP
+		# total # of send and receive processes = # of cards present
+		while [ $n -gt 0 ]
+		do
+			# send sap and addresslists
+			txsaplist="$txsaplist $new_sap"
+			new_sap=`expr $new_sap + 2`
+			txaddrlist="$txaddrlist $OTHERADDR"
+			n=`expr $n - 1`
+			[ $n -eq 0 ] && break	# in case of odd # of cards
+
+			# receive sap and addresslists
+			rxsaplist="$rxsaplist $new_sap"
+			new_sap=`expr $new_sap + 2`
+			rxaddrlist="$rxaddrlist $OTHERADDR"
+			n=`expr $n - 1`
+		done
+	else
+		# Divide Mac addresses on Master among addresses to send to
+		# or receive from (alternately)
+		n=$OTHERNCARD
+		new_sap=$BASE_SAP
+		set -- $OTHERADDRLIST
+		while [ $n -gt 0 ]
+		do
+			# receive sap and addresslists
+			rxsaplist="$rxsaplist $new_sap"
+			new_sap=`expr $new_sap + 2`
+			rxaddrlist="$rxaddrlist $1"
+			shift
+			n=`expr $n - 1`
+			[ $n -eq 0 ] && break	# in case of odd # of cards
+
+			# send sap and addresslists
+			txsaplist="$txsaplist $new_sap"
+			new_sap=`expr $new_sap + 2`
+			txaddrlist="$txaddrlist $1"
+			shift
+			n=`expr $n - 1`
+		done
+	fi
+
+#	Set up load level (low to medium) and window size
+	windowsz=1
+	delay=20
+	duration=000500
+
+#	Print out all configurations
+	echo "OURMCHN=$OURMCHN" >> /tmp/ant$$
+	echo "OTHERMCHN=$OTHERMCHN" >> /tmp/ant$$
+	echo "OURNCARD=$OURNCARD" >> /tmp/ant$$
+	echo "OURADDR=$OURADDR" >> /tmp/ant$$
+	echo "OTHERADDR=$OTHERADDR" >> /tmp/ant$$
+	echo "OURFD=$OURFD" >> /tmp/ant$$
+	echo "OURADDRLIST=\"$OURADDRLIST\"" >> /tmp/ant$$
+	echo "OTHERNCARD=$OTHERNCARD" >> /tmp/ant$$
+	echo "OTHERADDRLIST=\"$OTHERADDRLIST\"" >> /tmp/ant$$
+	echo "prefix=\"$prefix\"" >> /tmp/ant$$
+	echo "txsaplist=\"$txsaplist\"" >> /tmp/ant$$
+	echo "txaddrlist=\"$txaddrlist\"" >> /tmp/ant$$
+	echo "rxsaplist=\"$rxsaplist\"" >> /tmp/ant$$
+	echo "rxaddrlist=\"$rxaddrlist\"" >> /tmp/ant$$
+	echo "windowsz=$windowsz" >> /tmp/ant$$
+	echo "delay=$delay" >> /tmp/ant$$
+	echo "duration=$duration" >> /tmp/ant$$
+
+	chmod 775 /tmp/ant$$
+	echo PASS
+	tet_result PASS
+}
+
+finish()
+{
+	. /tmp/ant$$
+
+	rm -f /tmp/ant$$
+	rm -f /tmp/tmp*
+
+	for sap in $txsaplist
+	do
+		dlpiut -n tx$sap stop
+	done
+
+	for sap in $rxsaplist
+	do
+		dlpiut -n rx$sap stop
+	done
+
+	dlpiut stop
+	ndsu "nd stop"
+}
+
+loadtest()
+{
+	echoboth "loadtest: test all cards"
+
+	. /tmp/ant$$
+
+	ret=PASS
+
+	if [ "$NETTYPE" = "ethernet" ]
+	then
+		framing=802.3
+	else
+		framing=802.5
+	fi
+
+	syncup loadtest 180 || return
+
+#	Set up Send processes
+	index=0
+	set -- $txaddrlist
+	for sap in $txsaplist
+	do
+		macaddr=$1
+		shift
+
+		dlpiut -n tx$sap open device=/dev/net$index \
+			interface=dlpi > /tmp/tmp$$
+		code=$?
+		. /tmp/tmp$$
+		checkfail $code
+		[ "$MASTERSLAVE" = "master" ] && 
+			index=`expr $index + 2`
+		dlpiut -n tx$sap bind fd=$fd sap=$sap framing=$framing \
+			 error=n > /tmp/tmp$$
+		checkfail $?
+		dlpiut -n tx$sap sendload fd=$fd framing=$framing sap=$sap \
+			ourdstaddr=$macaddr len=1490 \
+			windowsz=$windowsz duration=$duration verify=0 \
+			delay=$delay timeout=3 loop=n \
+			multisync=y > /tmp/tmptx$sap &
+	done
+
+#	Set up Receive processes
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		index=1
+	else
+		index=0
+	fi
+	set -- $rxaddrlist
+	for sap in $rxsaplist
+	do
+		macaddr=$1
+		shift
+
+		dlpiut -n rx$sap open device=/dev/net$index \
+			interface=dlpi > /tmp/tmp$$
+		code=$?
+		. /tmp/tmp$$
+		checkfail $code
+		[ "$MASTERSLAVE" = "master" ] && 
+			index=`expr $index + 2`
+		dlpiut -n rx$sap bind fd=$fd sap=$sap framing=$framing \
+			error=n > /tmp/tmp$$
+		checkfail $?
+		dlpiut -n rx$sap recvload fd=$fd framing=$framing sap=$sap \
+			ourdstaddr=$macaddr len=1490 \
+			windowsz=$windowsz duration=$duration verify=0 \
+			delay=$delay timeout=20 loop=n \
+			multisync=y > /tmp/tmprx$sap &
+	done
+
+	wait
+
+	syncup loadend 60 || return
+
+#	Collect log files from both sides
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		for sap in $txsaplist
+		do
+			recvfile /tmp/tmprx$sap
+			cat /tmp/tmptx$sap /tmp/tmprx$sap > /tmp/tmpf$sap
+		done
+		for sap in $rxsaplist
+		do
+			recvfile /tmp/tmptx$sap
+			cat /tmp/tmptx$sap /tmp/tmprx$sap > /tmp/tmpf$sap
+		done
+	else
+		for sap in $rxsaplist
+		do
+			sendfile /tmp/tmprx$sap
+		done
+		for sap in $txsaplist
+		do
+			sendfile /tmp/tmptx$sap
+		done
+	fi
+
+#	Print out log files
+	if [ "$MASTERSLAVE" = "master" ]
+	then
+		rm -f /tmp/tmp$$
+		n=$OURNCARD
+		sap=$BASE_SAP			# first transmit sap
+		index=0				# card 0
+		set -- $OURADDRLIST
+		while [ $n -gt 0 ]
+		do
+			# Send report
+			addr=$1
+			tet_infoline "MAC Address $addr Device /dev/net$index sap $sap Transmit"
+			logout < /tmp/tmpf$sap
+			framecheck $framing $sap < /tmp/tmpf$sap | errout
+			[ "$?" != "0" ] && ret=FAIL
+			cat /tmp/tmpf$sap >> /tmp/tmp$$
+			shift
+			sap=`expr $sap + 2`
+			index=`expr $index + 1`
+			n=`expr $n - 1`
+			[ $n -eq 0 ] && break
+
+			# Receive report
+			addr=$1
+			tet_infoline "MAC Address $addr Device /dev/net$index sap $sap Receive"
+			logout < /tmp/tmpf$sap
+			framecheck $framing $sap < /tmp/tmpf$sap | errout
+			[ "$?" != "0" ] && ret=FAIL
+			cat /tmp/tmpf$sap >> /tmp/tmp$$
+			shift
+			sap=`expr $sap + 2`
+			index=`expr $index + 1`
+			n=`expr $n - 1`
+		done
+
+		total < /tmp/tmp$$ | errout
+	fi
+
+	echo "loadtest: all $ret"
+	tet_result $ret
+}
+
+. $TET_ROOT/inc/xpg3sh/mytet.h
+echo done

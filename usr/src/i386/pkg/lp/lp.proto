@@ -1,0 +1,88 @@
+#ident	"@(#)lp.proto	1.2"
+
+################################################################
+## many of the dir, files, slinks, etc. that used to be in the 
+## lp add-on are moved to the base; rest are here
+
+##########
+##
+## LP Commands, scripts, etc.
+##
+##########
+
+d none $USRLIB/lp	? ? ? ? ? ?
+d none $USRLIB/lp/model	? ? ? ? ? ?
+d none $USRLIB/lp/locale	? ? ? ? ? ?
+d none $USRLIB/lp/locale/C	? ? ? ? ? ?
+#####
+#
+# LP commands for the system administrator
+# 
+#####
+f none $USRSBIN/lpforms			4110 root lp 2 NULL	audit,macread,macwrite,setflevel,owner,dacread
+f none $USRSBIN/lpfilter		4110 root lp 2 NULL	audit,macread,macwrite,setflevel,owner,dacread
+f none $USRSBIN/lpusers			4110 root lp 2 NULL	audit,macread,macwrite,setflevel,owner,dacread
+f none $USRSBIN/lpmove			4110 root lp 2 NULL	dacread
+f none $USRSBIN/accept			4110 root lp 2 NULL	dacread
+l none $USRSBIN/reject=$USRSBIN/accept	4110 root lp 2 NULL	dacread
+
+#####
+#
+# Symbolic links for some of the above, for SVR3.2 compatibility
+#####
+s none $USRLIB/lpforms=$USRSBIN/lpforms
+s none $USRLIB/lpmove=$USRSBIN/lpmove
+s none $USRLIB/lpusers=$USRSBIN/lpusers
+s none $USRLIB/accept=$USRSBIN/accept
+s none $USRLIB/reject=$USRSBIN/reject
+s none $USRLIB/lpfilter=$USRSBIN/lpfilter
+
+#####
+#
+# LP commands for regular users
+#
+#####
+
+f none $USRBIN/lpstat 			111 lp lp 1 NULL	macread
+f none $USRLIB/lp/lpdata		111 lp lp 2 NULL	NULL
+
+# dumpolp is removed during installation 
+f none $USRSBIN/dumpolp			555 lp lp		
+
+#####
+#
+# Initial configuration files
+#
+# Note: Initial filter table entries are kept in the source tree
+# as separate files, one per filter, in ``source'' form. These
+# source files are fed to the lpfilter command ON THE TARGET MACHINE.
+# (Sorry, but the cross environment doesn't have an lpfilter command!)
+# The installation thus has to put the source filter table entries
+# in a temporary directory on the target machine, then run lpfilter
+# (see postinstall). We make this temporary directory here, but note
+# that other places in the prototype files deal with the filter
+# table entries. (This is done so that the filter table entries can
+# be grouped with their corresponding filter commands; e.g. the
+# PostScript stuff.)
+#####
+f none $USRLIB/lp/model/B2		111 lp lp 2 setuid,sysops	NULL
+f none $USRLIB/lp/model/B2.banntrail	555 lp lp 1 NULL	NULL
+f none $USRLIB/lp/model/B2.job		555 lp lp 1 NULL	NULL
+
+#####
+#
+# Special Terminfo files for PostScript support are installed by the base pkg.
+#####
+
+#########################
+# Upgrade installation
+# patch files
+!default 0755 root sys 1 NULL NULL
+
+d none  $PATCH_LOC/etc/lp 
+
+!default 0644 root sys 1 NULL NULL
+
+f none  $PATCH_LOC/etc/lp/default
+f none  $PATCH_LOC/etc/lp/filter.table
+f none  $PATCH_LOC/etc/lp/users

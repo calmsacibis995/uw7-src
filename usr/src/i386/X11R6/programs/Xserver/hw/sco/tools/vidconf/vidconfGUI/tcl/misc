@@ -1,0 +1,1065 @@
+#******************************************************************************
+#                                misc
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#)misc	3.1	8/29/96	21:27:56
+#       @(#) misc 55.2 96/06/27 
+#
+#       Copyright (C) The Santa Cruz Operation, 1993-1996.
+#       This Module contains Proprietary Information of
+#       The Santa Cruz Operation, and should be treated as Confidential.
+#------------------------------------------------------------------------------
+# SCO Modification
+#
+#==============================================================================
+
+#==========================================================================
+# ErrorCB --
+#       Error callback routine.  
+#
+#	If the result field contains the keyword MAINLOOP, return
+#	to (Vt)MainLoop.  Otherwise display the error message and fail.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ErrorCB {cbs} \
+{
+   global errorInfo
+
+   set result [keylget cbs result]
+   if {$result == "MAINLOOP"} {
+	# not an error - jumping back to Mainloop
+	return
+   }
+
+   # unexpected error
+   DisplayErrorInfo [GetMainDialogID].error $result "HELP" ExitErrorInfoCB
+
+   #puts stderr "Error: $result"
+   #puts stderr "$errorInfo"
+}
+
+
+#==========================================================================
+# DisplayErrorInfo --
+#       Displays errorInfo using errorStack mechanism.
+#
+# Parameters:
+#	dialogName - passed to SaDisplayErrorStacks
+#	topErrorText - generic message
+#	help - passed to SaDisplayErrorStacks
+#	callback - callback to call when OK is selected
+# Returns: none
+#--------------------------------------------------------------------------
+proc DisplayErrorInfo {dialogName topErrorText help {callback {}}} \
+{
+   global errorInfo
+
+   VtLock
+   # next two lines do nothing except prevent warnings from tcli18n 
+   # consistency checker
+   #if {0} { IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FORMAT }
+   #if {0} { IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_UNEXPECTED }
+   ErrorPush errorStack 0 SCO_VIDCONF_GUI_ERR_FORMAT [list $errorInfo]
+   ErrorPush errorStack 0 SCO_VIDCONF_GUI_ERR_UNEXPECTED [list $topErrorText]
+   #echo errorStack: $errorStack
+
+   SaDisplayErrorStacks $dialogName [list $errorStack] $help $callback
+   # remove all locks
+   VtUnLock
+}
+
+
+#==========================================================================
+# ExitErrorInfoCB --
+#       Called from ErrorCB routine if we have received and unexpected
+#	error.
+#	
+#	Destroy the previous error message _first_ then call ExitErrMesg.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ExitErrorInfoCB {cbs} \
+{
+   VtDestroyDialog [keylget cbs dialog]
+   ExitErrMesg [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] 1
+}
+
+
+#==========================================================================
+# MainLoop --
+#	Return directly back to mainloop.  This is done by calling
+#	into the applications errorCallback routine passing in the
+#	keyword MAINLOOP.  The application errorCallback routine does 
+#	nothing if 'result' is MAINLOOP.  Otherwise it displays the 
+#	error message.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MainLoop {} \
+{
+   error "MAINLOOP"
+}
+
+
+#==========================================================================
+# Exit --
+#       Exits the form and closes the connection to the widget server.
+#
+# Parameters: 
+#	status - status to exit with
+#	cbs - sometimes called via callback and sometimes not
+# Returns: none
+#--------------------------------------------------------------------------
+proc Exit {status {cbs {}}} \
+{
+   global TMP_FILE VIDSETUP_ERR
+   #puts stderr "Exit, status: $status"
+
+   system "rm -f $TMP_FILE"
+   system "rm -f $VIDSETUP_ERR"
+
+   if {[IsInteractive]} {
+      VtClose
+   }
+   UnSetTrap
+   exit $status
+}
+
+
+#==========================================================================
+# ExitErrMesg --
+#       Displays an error message.  Exits with status when 
+#	ok callback is called.  Returns back to mainloop.
+#
+# Parameters: 
+#	errmesg - a useful error message
+#	status - exit status returned to calling program
+#	cbs - needed when called from FatalErrMesg callback.
+# Returns: none
+#--------------------------------------------------------------------------
+proc ExitErrMesg {errmesg status {cbs {}}} \
+{
+   global OK FAIL
+
+   #puts stderr "ExitErrMesg: $errmesg, $status
+   if {![IsInteractive]} {
+      puts stderr "$errmesg"
+      Exit $status
+   }
+
+   VtLock
+   set exiterr [VtErrorDialog [GetMainDialogID].exiterr \
+	-message $errmesg \
+	-ok -okCallback "Exit $status" \
+	-defaultButton OK \
+	-cancelButton OK \
+	-help]
+   VtShow $exiterr
+   # remove all locks
+   VtUnLock
+   MainLoop
+}
+
+
+#==========================================================================
+# FatalErrMesgScrolled --
+#       Displays FatalErrMesg in a scrolled window.
+#	Use this version when the length of data can change.
+#	Displays a primary and then a secondary error message.
+#	Then exit with status.  Secondary error message is called
+#	via callback of primary error message - they are chained.
+#	Returns back to mainloop.
+#
+# Parameters: 
+#	toperr - top level error message
+#	errmesg1 - fatal error message body
+#	errmesg2 - generic secondary message passed to ExitErrMesg
+#	status - exit status to pass to ExitErrMesg
+# Returns: none
+#--------------------------------------------------------------------------
+proc FatalErrMesgScrolled {toperr errmesg1 errmesg2 status} \
+{
+   global errorInfo OK FAIL
+
+   #puts stderr "FatalErrMesg: $errmesg1, $errmesg2, $status"
+   if {![IsInteractive]} {
+	puts stderr [format %s%s $errmesg1 $errmesg2]
+	Exit $FAIL
+   }
+
+   VtLock
+   set errorInfo $errmesg1
+   DisplayErrorInfo [GetMainDialogID].fatalerr $toperr "HELP" \
+	"ExitErrMesg {$errmesg2} $status"
+   # remove all locks
+   VtUnLock
+   MainLoop
+}
+
+
+#==========================================================================
+# FatalErrMesg --
+#       Displays a primary and then a secondary error message.
+#	Then exit with status.  Secondary error message is called
+#	via callback of primary error message - they are chained.
+#	Returns back to mainloop.
+#
+# Parameters: 
+#	errmesg1 - fatal error message
+#	errmesg2 - generic secondary message passed to ExitErrMesg
+#	status - exit status to pass to ExitErrMesg
+# Returns: none
+#--------------------------------------------------------------------------
+proc FatalErrMesg {errmesg1 errmesg2 status} \
+{
+   #puts stderr "FatalErrMesg: $errmesg1, $errmesg2, $status"
+   if {![IsInteractive]} {
+      puts stderr "$errmesg1"
+      Exit $status
+   }
+
+   VtLock
+   set fatalerr [VtErrorDialog [GetMainDialogID].fatalerr \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATAL_ERROR] \
+	-message $errmesg1 \
+	-ok -okCallback "ExitErrMesg {$errmesg2} $status" \
+        -defaultButton OK \
+	-cancelButton OK \
+	-help]
+   VtShow $fatalerr
+   # remove all locks
+   VtUnLock
+   MainLoop
+}
+
+
+#==========================================================================
+# ErrMesg --
+#       Display an error message within scrollbars.
+#
+# Parameters: 
+#	errmesg - a useful error message
+# Returns: none
+#--------------------------------------------------------------------------
+proc ErrMesg {errmesg} \
+{
+   #puts stderr "ErrMesg: $errmesg"
+   if {![IsInteractive]} {
+      puts stderr "$errmesg"
+   } else {
+
+   set err [VtFormDialog [GetMainDialogID].err \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_ERROR] \
+	-ok -okCallback VxEndFormCB \
+	-defaultButton OK \
+	-cancelButton OK \
+	-help]
+
+   VtText $err.text \
+	-readOnly \
+	-value $errmesg \
+	-verticalScrollBar TRUE \
+	-horizontalScrollBar TRUE \
+	-rows 5 \
+	-columns 50 \
+	-rightSide FORM \
+	-bottomSide FORM
+   VtShow $err
+   return $err
+   }
+}
+
+
+#==========================================================================
+# InfoMesg --
+#       Display the information message.
+#
+# Parameters:
+#	infomesg - information message to display
+#	okCallback - function to call when ok is pressed.
+# Returns:
+#	information dialog id
+#--------------------------------------------------------------------------
+proc InfoMesg {infomesg {okCallback return}} \
+{
+   set info [VtInformationDialog [GetMainDialogID].info \
+	-message $infomesg \
+   	-ok -okCallback $okCallback \
+        -defaultButton OK \
+        -cancelButton OK]
+   VtShow $info
+   return $info
+}
+
+
+#==========================================================================
+# WarnMesg --
+#       Display the warning message.
+#
+# Parameters:
+#	dialog - parent dialog name
+#	warnmesg - warning message to display
+#	okCallback - function to call when ok is pressed.
+# Returns: none
+#--------------------------------------------------------------------------
+proc WarnMesg {dialog warnmesg {okCallback return}} \
+{
+   #puts stdout "WarnMesg: $warnmesg"
+   if {![IsInteractive]} {
+      puts stdout "$warnmesg"
+   } else {
+
+   set warn [VtWarningDialog $dialog.warn \
+	-message $warnmesg \
+	-ok -okCallback "$okCallback" \
+        -defaultButton OK \
+        -cancelButton OK \
+	-help]
+   VtShow $warn
+   return $warn
+   }
+}
+
+
+#==========================================================================
+# RunPreScripts --
+#       Execute each of the scripts in SCRIPTS ending with .sh.
+#	They might create new grafinfo files. Must be done before loading 
+#	grafdev and reading grafinfo files.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc RunPreScripts {} \
+{
+   global SCRIPTS
+
+   if {! [IsViewOnly]} {
+      if {[IsInteractive]} {
+	SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_EXEC_SCRIPTS]
+      }
+
+      foreach prescript [glob -nocomplain $SCRIPTS/*.sh] {
+         set basename [format "./%s" [file tail $prescript]]
+         set status [system "cd $SCRIPTS; $basename 2> /dev/null"]
+      }
+   }
+}
+
+
+#==========================================================================
+# CheckExe --
+#       Verify file exists, is a regular file and has execute 
+#	permission.  Enforce error message consistency.
+#
+# Parameters:
+#	filename - /path/name of file to check
+# Returns:
+#	errstr - "" if file exists/is executable, otherwise an error message.
+#--------------------------------------------------------------------------
+proc CheckExe {filename} \
+{
+   set errstr ""
+
+   if {![file exists $filename]} {
+      set errstr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_FIND $filename]
+   } elseif {![file isfile $filename]} {
+      set errstr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NOT_FILE $filename]
+   } elseif {![file executable $filename]} {
+      set errstr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_EXE_PERMS $filename]
+   }
+   #echo CheckExe: $filename, $errstr
+   return $errstr
+}
+
+
+#==========================================================================
+# CheckDir --
+#       Verify directory exists and is a directory.
+#
+# Parameters:
+#	dirname - /dirname of directory to check
+# Returns:
+#	errstr - "" if dirname exists, otherwise an error message.
+#--------------------------------------------------------------------------
+proc CheckDir {dirname} \
+{
+   set errstr ""
+
+   if {![file exists $dirname]} {
+      set errstr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_EXIST $dirname]
+   } elseif {![file isdirectory $dirname]} {
+      set errstr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NOT_DIR $dirname]
+   }
+   return $errstr
+}
+
+
+#==========================================================================
+# CheckFile --
+#       Verify file exists, is a regular file (not a directory) and
+#	the file is readable (regular user verse root).
+#
+# Parameters:
+#	file - /path/filename of file to check
+# Returns:
+#	errstr - "" if file exists, otherwise an {error?} message.
+#--------------------------------------------------------------------------
+proc CheckFile {filename} \
+{
+   global errorCode
+   set infostr ""
+
+   if {![file exists $filename]} {
+      set infostr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_EXIST $filename]
+   } elseif {![file isfile $filename]} {
+      set infostr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NOT_FILE $filename]
+   } elseif {![file readable $filename]} {
+      set infostr [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NOT_READABLE $filename]
+   }
+   return $infostr
+}
+
+
+#==========================================================================
+# VerifyFilesFatal --
+#       Verify that required directories, executables and files exist.
+#	If any do not exist, display a message and then exit.
+#	Combine messages into one big message where appropriate.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc VerifyFilesFatal {} \
+{
+   global OK FAIL
+   global UTMPDIR GRAFINFO MONINFO GRAFDEV GRAFMON
+   global VIDPATH DEVICES GRAFPARSE
+   global VIDPARSE
+
+   # verify that required dirs/files exist and programs are executable
+
+   if {[IsInteractive]} {
+	SaStatusBarSet [VxGetVar [GetMainDialogID] statusbar] \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_VERIFY_FILES]
+   }
+
+   set errstr ""
+   # combine into one error message
+   append errstr [CheckDir $UTMPDIR]
+   append errstr [CheckDir $GRAFINFO]
+   append errstr [CheckDir $MONINFO]
+   append errstr [CheckDir $VIDPATH]
+   append errstr [CheckDir $DEVICES]
+   append errstr [CheckExe $GRAFPARSE]
+   if {! [IsViewOnly]} {
+	# User can't access/post saving files
+      append errstr [CheckExe $VIDPARSE]
+   }
+   if {$errstr != ""} {
+      FatalErrMesgScrolled \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_NO_ACCESS] \
+		$errstr \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+		$FAIL
+   }
+}
+
+
+#==========================================================================
+# Display --
+#       Debugging routine - Display the indexed list or array.
+#
+# Parameters:
+#       listname - name of the indexed list or array to display
+# Returns:
+#       none
+#--------------------------------------------------------------------------
+proc Display {listname} \
+{
+   global curList curIndex screenList screenIndex
+   global monList monitorList ttyList videoList
+
+   case $listname {
+    	"curList"
+	{ 
+		echo "\ncurList \[indexed list\] contains =================="
+		if {[info exists curList]} {
+		   set len 0
+		   set len [llength $curList]
+		   for {set cnt 0} {$cnt < $len} {incr cnt} {
+        	      echo "curList \[$cnt\] ==\n[lindex $curList $cnt]\n"
+    		   }
+	           echo "Value of curIndex: \'$curIndex\'\n"
+		}
+	}
+    	"deviceList"
+	{ 
+	# The device list elements are the indexes of the ttyList
+		echo "\ndeviceList array contains =================="
+		foreach device [lsort [GetTTYIndexes all]] {
+        	    echo "$device\n"
+    		}
+	}
+    	"monList"
+	{ 
+		echo "\nmonList array contains =================="
+		foreach vm [lsort [GetMonIndexes]] {
+        		echo "monList($vm) ==\n$monList($vm)\n"
+    		}
+	}
+    	"monitorList"
+	{ 
+		echo "\nmonitorList array contains =================="
+		foreach pos [lsort -integer [array names monitorList]] {
+        	    echo "monitorList($pos) ==\n$monitorList($pos)\n"
+    		}
+	}
+    	"ttyList"
+	{ 
+		echo "\nttyList array contains =================="
+		foreach tty [lsort [GetTTYIndexes all]] {
+        	    echo "ttyList($tty) ==\n[GetTTYElement $tty]\n"
+    		}
+	}
+    	"screenList"
+	{ 
+		echo "\nscreenList \[indexed list\] contains =================="
+		if {[info exists screenList]} {
+		   set len 0
+		   set len [llength $screenList]
+		   for {set cnt 0} {$cnt < $len} {incr cnt} {
+        	      echo "screenList \[$cnt\] ==\n[lindex $screenList $cnt]\n"
+    		   }
+	           echo "Value of screenIndex: \'$screenIndex\'\n"
+		}
+	}
+    	"videoList"
+	{ 
+		echo "\nvideoList array contains ====================" 
+		foreach pos [lsort -integer [array names videoList]] {
+        	    echo "videoList($pos) ==\n$videoList($pos)\n"
+    		}
+	}
+	default
+	{
+		echo "\nDisplay: Unknown list name ====================" 
+	}
+    }
+}
+
+
+#==========================================================================
+# SyncMonList --
+#       Remove unused vendor.model entries in the monList array.  
+#	This routine is called to synchronize monList with ttyList.
+#	It should be called whenever the ttyList is updated
+#	because a vendor.model entry may no longer be referenced.
+#
+#	Walk through monList and compare each vendor.model index 
+#	with each vendor and model found in ttyList until a match
+#	is found (setting match to 1).  If match is 1, do not remove 
+#	the vendor.model from monList because it is referenced in 
+#	ttyList.  If match is 0, remove the vendor.model from monList
+#	because it is no longer referenced in ttyList.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SyncMonList {} \
+{
+   global monList
+
+   set tty {}
+   set vendormodel {}
+
+   # clean out any unused monList elements after changing ttyList
+   foreach vendormodel [GetMonIndexes] {
+      set match 0
+      foreach tty [GetTTYIndexes {}] {
+         set i 0
+         set adapters [GetTTYHeadLen $tty]
+         while {$i != $adapters} {
+	    set vendor [GetTTYVendor $tty $i]
+	    set model [GetTTYModel $tty $i]
+	    if {![string compare $vendormodel $vendor.$model]} {
+	       set match 1
+	       break
+            }
+	    incr i
+	 }
+      }
+      if {$vendormodel != {}} {
+         # didn't find vendormodel in ttyList, remove the entry from monList
+	 if {$match == 0} {
+	    unset monList($vendormodel)
+	 }
+      }
+   }
+}
+
+
+#==========================================================================
+# RunCommand --
+#	Execute the script and return the exit status back.  If the
+#       script returns a bad exit status, also return a message.
+#       This is done so that only a single message window is displayed.
+#	Not multiple ones.
+#
+# Parameters:
+#	cmd - command to execute via system
+#	interactive - flag to designate interactive or not.
+# Returns:
+#	status - status holding error code.
+#--------------------------------------------------------------------------
+proc RunCommand {cmd interactive} \
+{
+   global EMULATOR EM_OPTS OK FAIL
+
+   set status 0
+   set mesg "OK"
+
+   if {![IsInteractive]} {
+      set status [system $cmd]
+   } elseif {[IsCharm]} {
+      if {! $interactive} {
+	   VtLock
+	   set status [system $cmd]
+	   VtUnLock
+      } else {
+	   # don't lock screen - interactive
+	   VtControl -suspend
+	   set status [system $cmd]
+	   VtControl -resume
+      }
+   } else {
+      VtLock
+      if {! $interactive} {
+	   set status [system $cmd]
+      } else {
+	   set errstr [CheckExe $EMULATOR]
+	   if {$errstr != ""} {
+	   FatalErrMesg \
+                $errstr \
+                [IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_FATALSTR] \
+                $FAIL
+	
+	   }
+	   set videostr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MAIN_TITLE]
+	   set status [system [format \
+		"$EMULATOR $EM_OPTS" $videostr $videostr $cmd]]
+      }
+      VtUnLock -once
+   }
+   if {$status != 0} {
+	 set mesg \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_RUN_CMD_FAIL \
+		[list $cmd]]
+   }
+   return [list $status $mesg]
+}
+
+
+#==========================================================================
+# SetTrap --
+#       Define signals to trap and trap function to call.
+#	Save off old signal settings in a global.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc SetTrap {} \
+{	
+   global SIGLIST SIGSAVE
+
+   set SIGSAVE [signal get $SIGLIST]
+   signal trap $SIGLIST {TrapError}
+}
+
+
+#==========================================================================
+# UnSetTrap --
+#       Restore signals to original settings.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc UnSetTrap {} \
+{
+   global SIGLIST SIGSAVE
+
+   set cnt 0
+   foreach sig $SIGSAVE {
+      # reset signals back to original settings
+      signal [lindex [lindex $sig 1] 0] [lindex $SIGLIST $cnt]
+      incr cnt
+   }
+}
+ 
+
+#==========================================================================
+# TrapError --
+#       Routine called if a trap signal is handled.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc TrapError {} \
+{
+   global SIGLIST OK FAIL
+
+   signal trap $SIGLIST {TrapError}
+   Exit $FAIL
+}
+
+
+#==========================================================================
+# NoopFunc --
+#       Does nothing but fall through.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc NoopFunc {{cbs {}}} \
+{
+   # do nothing but fall through
+}
+
+
+#==========================================================================
+# NotImplemented --
+#       Called if the callback is not implemented yet.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc NotImplemented {cbs} \
+{
+   set noimp [VtMessageDialog [GetMainDialogID].noimp \
+	-message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOT_IMPLEMENTED] \
+	-ok \
+	-help]
+   VtShow $noimp
+   VtUnLock
+   return $noimp
+}
+
+#############################################################################
+#############################################################################
+## 
+## Functions to parse command line arguments:
+##
+##       ParseCommandLineOptions()
+##       CmdPrintUsage()
+##	_optMatch()
+##
+##
+#############################################################################
+#############################################################################
+#----------------------------------------------------------------------------
+# FUNCTION:     _optMatch
+#
+# DESCRIPTION:  matches an option (opt_name) with one of the options
+#       specified in opts_desc.  Returns the matched option.
+#----------------------------------------------------------------------------
+proc _optMatch { opt_name opts_desc } {
+
+        # Check for exact matches
+        for {set i [expr [llength $opts_desc]-1]} {$i >= 0} {incr i -1} {
+                set this_opt [lindex $opts_desc $i]
+                if {[string compare [lindex $this_opt 0] \
+                        $opt_name] == 0 } {
+                        # *** RETURN ****
+                        return $this_opt
+                }
+        }
+
+        # Check for sticky args
+        for {set i [expr [llength $opts_desc]-1]} {$i >= 0} {incr i -1} {
+                set this_opt [lindex $opts_desc $i]
+                if {[string match [lindex $this_opt 0]* $opt_name] == 1} {
+                        # *** RETURN ****
+                        return $this_opt
+                }
+        }
+
+        # Check for abbreviated format of option
+        set match_found {}
+        for {set i [expr [llength $opts_desc]-1]} {$i >= 0} {incr i -1} {
+                set this_opt [lindex $opts_desc $i]
+                if {[string match $opt_name* [lindex $this_opt 0]] == 1} {
+                        if {$match_found != {}} {
+				# ambiguous option
+                                return {}
+                        } else {
+                                set match_found $this_opt
+                        }
+                }
+        }
+        return $match_found
+
+}
+#----------------------------------------------------------------------------
+# FUNCTION:     CmdParseOptions
+#
+# DESCRIPTION:  Matches argv options (argv_in_out) against options
+#       specified in table opts_desc.  The arguments that are matched
+#       are placed in the array opts_return.  When the function exits
+#       argv will contain options that could not be matched.  opts_return
+#       will contain the values of all the options that were matched.
+#----------------------------------------------------------------------------
+proc CmdParseOptions { argv_in_out opts_desc opts_return } {
+
+        set OPTION      0
+	set INDEX	1
+        set TYPE        2
+	set VALUE	3
+        set DEFAULT     4
+
+	# Verify all option types are supported
+	set total_opts [llength $opts_desc]
+        for {set n 0} {$n < $total_opts} {incr n} {
+		set this_opt [lindex $opts_desc $n] 
+		set opt_type [lindex $this_opt $TYPE]
+		case $opt_type in {
+			optionNoArg {}
+			optionIsArg {}
+			optionStickyArg {}
+			optionSepArg {}
+			optionSkipArg {}
+			optionSkipLine {}
+			default {
+				# I18N msg
+				puts stderr [format "%s %s %s %s" \
+                                	"Error: option" \
+                                	"'[lindex $this_opt $OPTION]'" \
+                                	"is specified incorrectly as" \
+                                	$opt_type ]
+				return -1
+				
+			}
+		}
+	}
+
+        # Initialize return values
+        upvar $opts_return opts
+        for {set n 0} {$n < $total_opts} {incr n} {
+                set opts([lindex [lindex $opts_desc $n] $INDEX]) \
+                         [lindex [lindex $opts_desc $n] $DEFAULT]
+        }
+
+        # Parse argv
+        upvar $argv_in_out argv
+        set argv_no_match {}
+        set argc [llength $argv]
+
+        for {set n 0} {$n < $argc} {incr n} {
+
+                set opt_type {}
+                set this_opt [_optMatch [lindex $argv $n] $opts_desc]
+
+                if {$this_opt != {}} {
+                        set opt_type [lindex $this_opt $TYPE]
+                        set opt_index [lindex $this_opt $INDEX]
+                }
+
+                case $opt_type in {
+
+                        optionNoArg {
+                                set opts($opt_index) [lindex $this_opt $VALUE]
+                        }
+
+                        optionIsArg {
+                                set opts($opt_index) $opt_index
+                        }
+
+                        optionStickyArg {
+                                set sticky {}
+                                scan [lindex $argv $n] \
+                                        [lindex $this_opt $OPTION]%s sticky
+                                set opts($opt_index) $sticky
+                        }
+
+                        optionSepArg {
+                                set n [expr $n+1]
+                                set opts($opt_index) [lindex $argv $n]
+                        }
+
+                        optionSkipArg {
+                                set n [expr $n+1]
+                        }
+
+                        optionSkipLine {
+                                set n $argc
+                        }
+
+                        default {
+                                if {$this_opt == {}} {
+                                        lappend argv_no_match [lindex $argv $n]
+                                } 
+                        }
+                }
+        }
+        set argv $argv_no_match
+        return {}
+}
+#----------------------------------------------------------------------------
+# FUNCTION:     CmdPrintUsage
+#
+# DESCRIPTION: 	Prints a usage line. 
+#----------------------------------------------------------------------------
+proc CmdPrintUsage {options} {
+	global argv0
+	puts -nonewline "Usage: $argv0 "
+	foreach opt $options {
+		if {[llength $opt] > 5} {
+			puts -nonewline "[lindex $opt 5] "
+		}
+	}
+	puts ""
+}
+
+
+#==========================================================================
+# Usage --
+#       Display command line option usage message to stderr.
+#
+# Parameters:
+#	status - status to exit with
+# Returns: none
+#--------------------------------------------------------------------------
+proc Usage {status} \
+{
+   global PROGNAME OK FAIL RELINK GRAFDEV GRAFMON
+
+   puts -nonewline stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_USAGE $PROGNAME]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_OPTIONS]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_UPDATE [list $OK $FAIL $RELINK]]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_GRAFDEV [list $GRAFDEV]]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_GRAFMON [list $GRAFMON]]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_HELP]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOVIDPARSE]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_RC]
+   puts stderr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SILENT]
+
+   Exit $status
+}
+
+
+#==========================================================================
+# GetVerifyOptions --
+#       Get and verify vidsetup options.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc GetVerifyOptions {} \
+{
+   global argv OptionDescs Option GRAFDEV GRAFMON INTERACTIVE PROGNAME
+   global OK FAIL
+
+   # non-interactive mode
+   set INTERACTIVE 0
+   if {[CmdParseOptions argv $OptionDescs Option] == -1} {
+        Usage $FAIL
+   }
+
+   if {$argv != ""} {
+      Usage $FAIL
+   }
+
+   if {[GetOptions help]} {
+      Usage $OK
+   }
+
+   if {[GetOptions rc]} {
+      # rc option - sets update and novidparse options.
+      if {(![SetOption update 1]) || (![SetOption novidparse 1])} {
+         ExitErrMesg [format "%s: %s" $PROGNAME \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_ERR_INTERNAL]] $FAIL
+      }
+   }
+
+   if {![GetOptions update]} {
+      Usage $FAIL
+   }
+
+   if {[IsViewOnly]} {
+      ExitErrMesg [format "%s: %s" $PROGNAME \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NOT_ROOT]] $FAIL
+   }
+
+   if {[GetOptions grafdev] != $GRAFDEV} {
+      set GRAFDEV [GetOptions grafdev]
+   }
+   if {[GetOptions grafmon] != $GRAFMON} {
+      set GRAFMON [GetOptions grafmon]
+   }
+}
+
+#==========================================================================
+# BuildDocHook --
+#	Build the documentation help hook file each time on startup to 
+# prevent it from becoming stale.  Search driver directories for new 
+# hooklets to add.
+# 	Only needs to rebuild hook file in interactive mode.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc BuildDocHook {} \
+{
+   global HELPDIR HOOKTMPL HOOKFILE HOOK DOCHOOK
+
+   if {![IsViewOnly]} {
+      set hooktmpl $DOCHOOK/$HOOKTMPL
+      set hookfile $HELPDIR/$HOOKFILE
+      set warnstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_DONT_EDIT $hooktmpl]
+
+      system "echo \"$warnstr\" > $hookfile"
+      system "cat $hooktmpl >> $hookfile 2> /dev/null"
+      system "cat $DOCHOOK/*$HOOK >> $hookfile 2> /dev/null"
+   }
+}
+
+
+#==========================================================================
+# RunVidsetupScripts --
+#    Run all VIDSETUP script(s) of adapters configured in grafdev.
+#    - update flag - Initial .xgi file won't contain any MEMORY and MODES
+#      until after VIDSETUP is run.
+#    - rc flag - PCI cards moved between boots might have different MEMORY
+#      settings requiring a new .xgi file.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc RunVidsetupScripts {} \
+{
+   global videoListMap
+   if {([GetOptions update] == 1) || ([GetOptions rc] == 1)} {
+      foreach vm [array names videoListMap] {
+         set vm [split $vm "."]
+         set vendor [lindex $vm 0]
+         set model [lindex $vm 1]
+         set script [GetVidsetup $vendor $model]
+         if {$script != {}} {
+            RunScript $script 0 $vendor $model
+            set vlMapCnt 1000
+            if {[info exists videoListMap]} {
+               unset videoListMap
+            }
+            set VendorModelList [GetTTYVendorModelPairs]
+            SetVideos $VendorModelList
+         }
+         ## XXX ignore VIDSCRIPTS
+      }
+   }
+}
+

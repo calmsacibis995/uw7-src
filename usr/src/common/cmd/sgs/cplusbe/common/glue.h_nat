@@ -1,0 +1,152 @@
+#ident	"@(#)cplusbe:common/glue.h_nat	1.1"
+
+#include "p1.h"		/* in ../../acomp/common */
+#include "manifest.h"	/* in ../../cg/common */
+#include "mfile2.h"	/* in ../../cg/common */
+
+#undef ASM_PRAGMA	/* now to edg's version */
+#undef PACK_PRAGMA	/* now to edg's version */
+#undef WEAK_PRAGMA	/* now to edg's version */
+
+#undef DEBUG
+#define DEBUG EDGDEBUG
+
+#if VAR_INITIALIZERS
+
+
+#include "fe_common.h"
+#include "il_display.h"
+#include "il_walk.h"
+
+#if IL_SHOULD_BE_WRITTEN_TO_FILE
+#include "il_file.h"
+#include "il_read.h"
+#endif /*IL_SHOULD_BE_WRITTEN_TO_FILE*/
+
+#else /*!VAR_INITIALIZERS*/
+
+#include "fe_common.h"
+
+#endif /* VAR_INITIALIZERS*/
+
+EXTERN char * C_catalog
+#if VAR_INITIALIZERS
+			= "uxcds"
+#endif /* VAR_INITAILIZERS */
+				;
+EXTERN char * Cplusplus_catalog
+#if VAR_INITIALIZERS
+			= "uxcplusplus"
+#endif /* VAR_INITAILIZERS */
+				;
+
+extern int db_curline;
+extern int elineno;
+extern int doing_eh;
+
+extern ND1* catch_clause_number_temp;
+extern ND1* caught_object_address_temp;
+extern SX current_dotdotdot;	/* Current function's ellipsis sid */
+
+extern SX static_guard_start_func;	/* SIDs of static guard ASM functions */
+extern SX static_guard_end_func;
+
+extern int cplusplus_threads;		/* TRUE if C++ and -Kthreads */
+
+#define SET_C_CATALOG (void)setcat(C_catalog);
+#define SET_CPLUSPLUS_CATALOG (void)setcat(Cplusplus_catalog);
+
+
+
+		/* for cgtr_expr() goal */
+#define GOAL_EFFECT	0	/* value unused; side effects only */
+#define GOAL_RVALUE	1	/* value used in r-value context */
+#define GOAL_LVALUE	2	/* value used in l-value context */
+
+		/* cg_cgs.c */
+void	cgbe_ident(char *, size_t);	/* ship #[pragma ]ident to CG */
+void	cgbe_weak(char *);		/* ship #weak to CG */
+void	cgbe_oldasm(an_asm_entry_ptr);	/* ship old-style asm to CG */
+void	cgbe_copy_updates(a_debug_mark_list_ptr, a_routine_ptr, a_scope_ptr);
+void	cg_main_init(char *);		/* initialize cg/amigo stuff */
+char	*st_nlookup(char *, size_t);	/* add char seq. to string table */
+char	*st_lookup(char *);		/* add string to string table */
+
+		/* cg_err.c */
+void	dprintf(const char *, ...);	/* printf to stderr */
+void	er_filename(const char *, int);	/* set err's line and maybe file */
+int	er_getline(void);		/* return err's line */
+char	*er_curname(void);		/* return err's file */
+void	cerror(const char *, ...);	/* field internal compiler error */
+void	uerror(const char *, ...);	/* field user input error */
+void	ulerror(int, const char *, ...); /* field user error w/line */
+void	ulferror(int, const char *, const char *, ...); /* error w/both */
+void	werror(const char *, ...);	/* field user input warning */
+void	wlerror(int, const char *, ...); /* field user warning w/line */
+void	wlferror(int, const char *, const char *, ...); /* warning w/both */
+
+		/* cg_sm.c */
+int	sm_g_weight();			/* return the current symbol weight. */
+int	sm_genlab(void);		/* return unique label number */
+void	sm_expr(ND1 *);			/* ship expr to CG */
+void	cgsm_routine(SX, a_routine_ptr, a_scope_ptr); /* ship function to CG */
+void	cgsm_seq_to_file_and_line(a_seq_number); /* set db_curline and elineno
+						    from the sequence number. */
+		/* cg_sy.c */
+SY_LEVEL_t sy_getlev(void);		/* return current scope level */
+void	cgsy_inclev(void);		/* increase scope level */
+void	cgsy_declev(void);		/* decrease scope level */
+void	cgsy_label_debug(void);		/* generate debugging info calls for
+					   function labels */
+SX	cgsy_enter(char *, T1WORD, int, int); /* generic symbol */
+SX	cgsy_func(a_routine_ptr);	/* sym index for IL routine */
+a_constant_ptr
+	constant_initializer(a_variable_ptr, a_scope_ptr); 
+					/* determine if constant 
+					   initialization. */
+
+void	cgsy_initialize(SX, T1WORD, a_constant_ptr);
+					/* constant initialization of a
+					   variable. */
+void	cgsy_variable(a_variable_ptr, a_scope_ptr);	
+					/* sym index for IL variable */
+SX	sy_temp(T1WORD);		/* sym index for created temp */
+void	sy_bind_global(SX);		/* ?note sym index's in registers? */
+
+		/* cg_tr.c */
+void	tr_eprint(ND1 *);		/* print expr */
+void	tr_e1print(ND1 *, const char *); /* print expr with string tag */
+ND1	*tr_newnode(int);		/* pass 1 tree node */
+ND1	*tr_generic(int, ND1 *, T1WORD); /* unary pass 1 tree node */
+ND1	*tr_symbol(SX);			/* pass 1 tree node for symbol */
+ND1	*tr_smicon(long);		/* pass 1 tree for small integer */
+ND1	*tr_copy(ND1 *);		/* return copy of pass 1 tree */
+ND1	*tr_build(int, ND1 *, ND1 *);	/* binary pass 1 tree node */
+ND1	*tr_cbranch(ND1 *, int);	/* flow control expr for IL */
+int	tr_truncate(INTCON *, T1WORD);	/* shove integer through knothole */
+ND1	*tr_conv(ND1 *, T1WORD, char *, int); /* build a CONV node */
+ND1	*cgtr_expr(an_expr_node_ptr, int); /* expr tree for IL expr tree */
+ND1	*cgtr_invert_cbranch(ND1 *, int); /* invert flow control expr */
+void	cgtr_intcon(INTCON *, a_constant_ptr); /* set INTCON from IL */
+ND1	*cgtr_constant(a_constant_ptr, T1WORD); /* pass 1 tree ICON node */
+ND1	*cgtr_rewrite_commas(ND1 *);	/* hoist comma ops in pass 1 tree */
+
+		/* cg_ty.c */
+T1WORD	cgty_t1type(a_type_ptr);	/* type word for IL type */
+void	cgty_mktypes(a_type_ptr);	/* create T1WORDs for types */
+
+#include <assert.h>
+		/*
+		* Various scalar ACOMPish information is saved in
+		* the EDG "assoc_info" source correspondence member.
+		* These macros provide a checked access to this info.
+		* We can't use check_assertion() since EDG uses an if!
+		*/
+#define GET_ASSOC_INFO_AS(p, t) \
+	(assert((p)->source_corresp.assoc_info != NULL), \
+		(t)((p)->source_corresp.assoc_info))
+#define CGSY_FUNC(rp)		GET_ASSOC_INFO_AS(rp, SX)
+#define CGSY_VARIABLE(vp)	GET_ASSOC_INFO_AS(vp, SX)
+#define CGSY_FIELD(fp)		GET_ASSOC_INFO_AS(fp, SX)
+#define CGTY_T1TYPE(tp)		GET_ASSOC_INFO_AS(tp, T1WORD)
+

@@ -1,0 +1,52 @@
+#ident	"@(#)oemcd:mach.build/read_header	1.1"
+
+# Read a datastream header from stdin
+function read_header
+{
+	integer counter=1 readsz=512
+	typeset buffer OIFS
+	typeset nl='
+'
+	cdecl "char [$readsz]" buf=
+
+	while :
+	do
+		call -c read 0 buf $readsz
+		(( _RETD == readsz )) || {
+			print -u2 "$0: ERROR: read failed."
+			return 1
+		}
+		buffer="$buffer$(call -c altprintf "%.${readsz}s" buf)"
+		# The shell strips trailing newlines.  Add them back now.
+		while (( ${#buffer} != counter * readsz ))
+		do
+			buffer="${buffer}$nl"
+		done
+		(( counter != 1 )) || {
+			case "$buffer" in
+			*"# PaCkAgE DaTaStReAm:zip"*)
+				;;
+			*)
+				print -u2 "$0: ERROR: Not a datastream."
+				return 2
+				;;
+			esac
+		}
+		case "$buffer" in
+		*"# end of header"*)
+			OIFS=$IFS
+			IFS=""
+			print -n $buffer
+			IFS=$OIFS
+			return 0
+			;;
+		esac
+		(( counter < 20 )) || {
+			# 20 is an arbitrarily-large high-water mark.
+			# Most datastream headers are only 1 or 2 blocks.
+			print -u2 "$0: ERROR: Datastream header is too large."
+			return 3
+		}
+		(( counter += 1 ))
+	done
+}

@@ -1,0 +1,76 @@
+#ident	"@(#)nic_stty	2.1"
+
+#
+# Set Necessary variables and structures
+#
+STTYS=0
+STTYA=0
+STTYX=0
+struct termios_data c_iflag:short c_oflag:short c_cflag:short c_lflag:short c_line:char c_cc:'char [19]'
+struct termiosx_data x_hflag:short x_cflag:short x_rflag:'short [5]' x_sflag:short
+
+#
+# mysetcolor - this script will reset the color of the screen back to
+# 		what it should be after running winxksh
+#
+function mysetcolor
+{
+	if [ $1 = "-n" ]
+	then
+		cdecl string_t fmt1='!\\\033[=%d%s!'
+		cdecl string_t cmd_ch1='!F!'
+		cdecl string_t cmd_ch2='!G!'
+
+		ccall altprintf "@string_t:"!\\\033[0m!""
+		ccall ioctl 0 24832 0
+		ccall altprintf "@string_t:"!\\\033[=0E!""
+		ccall altprintf fmt1 7 cmd_ch1
+		ccall altprintf fmt1 0 cmd_ch2
+		ccall altprintf "@string_t:"!\\\033[0m!""
+		ccall altprintf "@string_t:"!\\\033[J!""
+	fi
+}
+
+#
+# myclear - winxksh equivalent of "tput clear"
+#
+function myclear
+{
+	ccall altprintf "@string_t:"!\\\033[2J\\\033[H!""
+}
+
+#
+# getstty - get the current stty settings to use to reset the screen at end
+#
+function getstty
+{
+	cdecl termios_data cbs={}
+	cdecl termios_data cba={}
+	cdecl termiosx_data cbx={}
+
+	ccall ioctl 0 21517 cbs
+	retd=$_RETD
+	cprint -v STTYS cbs
+	ccall ioctl 0 21505 cba
+	retd=$_RETD
+	cprint -v STTYA cba
+	ccall ioctl 0 22529 cbx
+	retd=$_RETD
+	cprint -v STTYX cbx
+}
+
+#
+# setstty - reset the screen (uses variables from getstty function)
+#
+function setstty
+{
+	cdecl termios_data cbs="$STTYS"
+	cdecl termios_data cba="$STTYA"
+	cdecl termiosx_data cbx="$STTYX"
+	ccall ioctl 0 21518 cbs
+	retd=$_RETD
+	ccall ioctl 0 21506 cba
+	retd=$_RETD
+	ccall ioctl 0 22530 cbx
+	retd=$_RETD
+}

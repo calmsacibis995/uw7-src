@@ -1,0 +1,81 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.online.sh	1.2 3/3/97 03:21:13 - cmd.vxvm:common/voladm/disk.online.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.online.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push OnlineDisk
+voladm_help_push disk.online.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:217 "Enable (online) a disk device"
+	ewritemsg -M vxvmshm:556 \
+"Use this operation to enable access to a disk that was disabled
+  with the \\\"Disable (offline) a disk device\\\" operation.
+
+  You can also use this operation to re-scan a disk that may have
+  been changed outside of the Volume Manager.  For example, If a
+  disk is shared between two systems, the Volume Manager running on
+  the other system may have changed the disk.  If so, you can use
+  this operation to re-scan the disk.
+
+  NOTE: Many voldiskadm operations re-scan disks without user
+        intervention.  This will eliminate most needs to online a
+        disk directly, except when the disk is directly offlined."
+
+	voladm_disk_device -M vxvmshm:358 "Select a disk device to enable"
+	set -- `vxdisk -q list | grep "^\$daname[ 	]"`
+	if [ $# -lt 5 ]
+	then
+		doit vxdisk define $daname 2> $tmpfile1
+		if [ $? -ne 0 ]
+		then
+			export device tmpfile1; ewritemsg -M vxvmshm:189 \
+"Disk device $device cannot be defined.
+  `cat $tmpfile1`"
+			voladm_yorn -M vxvmshm:218 "Enable a different device?" n || break
+			continue
+		fi
+	else
+		if [ "X$4" != X- ]
+		then
+			export device; ewritemsg -M vxvmshm:190 \
+"Disk device $device is added to disk group $4, operation is
+  not allowed." $0 "$@"
+			voladm_yorn -M vxvmshm:218 "Enable a different device?" n || break
+			continue
+		fi
+	fi
+	doit vxdisk define "$daname" 2> $tmpfile1
+	status=$?
+	if [ $status -eq 12 ]
+	then
+		doit vxdisk online "$daname" 2> $tmpfile1
+		status=$?
+	fi
+	[ $status -eq 0 ] || writemsg "`cat $tmpfile1`"
+#	[ $status -eq 0 ] || tmpfile1="$tmpfile1" ewritemsg -M vxvmshm:904 "Error: `cat $tmpfile1`"
+	voladm_yorn -M vxvmshm:220 "Enable another device?" n || break
+done
+
+quit 0

@@ -1,0 +1,134 @@
+#!/usr/bin/sh
+#ident	"@(#)uulog	1.2"
+#ident "$Header$"
+
+export IFS PATH
+IFS=" 	
+"
+PATH="/usr/bin"
+
+#
+# usage:
+# 	uulog
+# or	uulog foo
+# or	uulog -sfoo
+# or	uulog -s foo
+# or	uulog -ffoo
+# or	uulog -f foo
+#
+#	-x means check the execute file
+#	-nnn where 'nnn' is a number will do tail -nnn
+#
+USAGE="Usage: uulog [-number] [-x] [ [-s] system ...] | [ -f system ]"
+LOGDIR=/var/uucp/.Log
+type=uucico
+fflag=""
+sys=""
+n=""
+label="UX:uulog"
+cat="uxbnu.abi"
+
+cd $LOGDIR
+
+while [ $# -gt 0 ]
+do
+	case $1 in
+	-x)	type=uuxqt
+		shift
+		;;
+
+	-[0-9]*)n=`echo $1|cut -c2-`
+		shift
+		;;
+
+	-f)	fflag=1
+		shift
+		if [ $# -eq 0 ]
+		then
+			pfmt -l $label -s error -g ${cat}:33 "system name must follow -f flag\n"
+			pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+			exit 1
+		else
+			case "$1" in
+			-*)
+				pfmt -l $label -s error -g ${cat}:33 "system name must follow -f flag\n"
+				pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+				exit 1
+				;;
+			esac
+		fi
+		;;
+
+	-f*)	x=`echo $1|cut -c3-`
+		shift
+		set - $x $*
+		fflag=1
+		;;
+
+	-s)	shift
+		if [ $# -eq 0 ]
+		then
+			pfmt -l $label -s error -g ${cat}:34 "system name must follow -s flag\n"
+			pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+			exit 1
+		else
+			case "$1" in
+			-*)
+				pfmt -l $label -s error -g ${cat}:34 "system name must follow -s flag\n"
+				pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+				exit 1
+				;;
+			esac
+		fi
+		;;
+
+	-s*)	x=`echo $1|cut -c3-`
+		shift
+		set - $x $*
+		;;
+
+	-*)	pfmt -l $label -s error -g ${cat}:35 "Invalid flag %s\n" $1
+		pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+		exit 1
+		;;
+
+	*)	sys="$sys $1"
+		shift
+		;;
+
+	esac
+done
+
+set - $sys
+if [ x$fflag = x ]; then
+	if [ $# = 0 ]; then
+		set - `/usr/bin/ls $type`
+	fi
+	for i in $*
+	do
+		if [ -f $type/$i ]
+		then
+			if [ x$n = x ]; then
+				cat $type/$i
+			else
+				tail -$n $type/$i
+			fi
+		else
+			pfmt -l $label -s error -g ${cat}:36 "no log file available for system %s\n" $i 2>&1
+			exit 1
+		fi
+	done
+else
+	if [ $# != 1 ]; then
+		pfmt -l $label -s error -g ${cat}:37 "only one system allowed with -f\n"
+		pfmt -l $label -s action -g ${cat}:47 "$USAGE"
+		exit 2
+	fi
+	if [ -f $type/$1 ]
+	then
+		exec tail -${n}f $type/$1
+	else
+		pfmt -l $label -s error -g ${cat}:36 "no log file available for system %s\n" $1 2>&1
+		exit 1
+	fi
+fi

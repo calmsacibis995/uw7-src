@@ -1,0 +1,735 @@
+#!/usr/bin/sh
+#ident	"@(#)B2.banntrail	1.2"
+
+###########
+##
+##  This is a derivative of the Standard printer interface program
+##  delivered w/ LP.  Does banner and trailer markings only.
+##
+##  This interface is only certified B2 for the AT&T 57[0123] model
+##  printers.
+##
+###########
+
+#####
+#
+#  In case we are in a SUM env.
+#
+#####
+priv -allprivs max
+
+#####
+#
+#  Until we get to the point below where the printer port
+#  and physical printer are initialized, we can't do much
+#  except exit.
+#
+#####
+trap 'exit ${exit_code}' 0
+trap 'exit_code=129 exit 129' 1
+trap 'exit_code=129 exit 129' 2 3
+
+cancel_flag=${CANCEL_FLAG:=0}
+cancel_trap ()
+{
+	trap '' 15	#  Ignore further SIGTERMS
+	cancel_flag=1
+}
+trap 'cancel_trap' 15
+
+#####
+#
+#  Most of the time we don't want the standard error to be captured
+#  by the Spooler, mainly to avoid "Terminated" messages that the
+#  shell puts out when we get a SIGTERM. We'll save the standard
+#  error channel under another number, so we can use it when it
+#  should be captured.
+#
+#  Open another channel to the printer port, for use when the
+#  regular standard output won't be directed there, such as in
+#  command substitution (`cmd`).
+#####
+exec 5>&2 2>/dev/null 3>&1
+
+truep ()
+{
+	if [ -n "$1" -a "$1" -eq 1 ]
+	then
+		return	0
+	else
+		return	1
+	fi
+}
+
+falsep ()
+{
+	if [ -z "$1" -o "$1" -eq 0 ]
+	then
+		return	0
+	else
+		return	1
+	fi
+}
+#####
+#
+#  Error message formatter:
+#
+#  Invoke as
+#
+#	errmsg severity message-number problem help
+#
+#  where severity is "ERROR" or "WARNING", message-number is
+#  a unique identifier, problem is a short description of the
+#  problem, and help is a short suggestion for fixing the problem.
+#
+#####
+
+LP_ERR_LABEL="UX:lp"
+
+E_IP_ARGS=1
+E_IP_OPTS=2
+#E_IP_FILTER=3
+E_IP_STTY=4
+E_IP_UNKNOWN=5
+E_IP_BADFILE=6
+E_IP_BADCHARSET=7
+E_IP_BADCPI=8
+E_IP_BADLPI=9
+E_IP_BADWIDTH=10
+E_IP_BADLENGTH=11
+E_IP_ERRORS=12		# (in slow.filter)
+
+errmsg ()
+{
+	#
+	#  arg 2 is ignored here.
+	#
+	case $1 in
+	ERROR )
+		sev="  ERROR";
+		;;
+	WARNING )
+		sev="WARNING";
+		;;
+	esac
+	echo "${LP_ERR_LABEL}: ${sev}: $3
+        TO FIX: $4" >&5
+}
+
+#####
+#
+#  Set some globally used variables and functions.
+#
+#####
+
+: ${TMPDIR:=/tmp}
+: ${SPOOLDIR:=/usr/spool/lp}
+: ${TERMINFO:=/usr/lib/terminfo}
+: ${CHARSETDIR:=/usr/lib/charsets}
+: ${LPBIN:=/usr/lib/lp/bin}
+
+PATH="/bin:/usr/bin:${LPBIN}"
+
+#####
+#
+#  Use ${TMPPREFIX} as the prefix for all temporary files, so
+#  that cleanup is easy. The prefix may be up to 13 characters
+#  long, so you only have space for one more character to make
+#  a file name. If necessary, make a directory using this prefix
+#  for better management of unique temporary file names.
+#
+#  Before exiting, set ${exit_code} to the value with which to exit.
+#  Otherwise, the exit from this script will be 0.
+#
+#####
+TMPPREFIX=${TMPDIR}/`uname -n`$$
+
+trap 'rm -fr ${TMPPREFIX}*; exit ${exit_code}' 0
+
+#####
+#
+#  ${LPTELL} is the name of a program that will send its
+#  standard input to the Spooler. It is used to forward
+#  the description of a printer fault to the Spooler,
+#  which uses it in an alert to the administrator.
+#
+#####
+if [ ! -x "${LPTELL:=${LPBIN}/lp.tell}" ]
+then
+	fake_lptell ()
+	{
+		header="no"
+		while read line
+		do
+			if [ "no" = "${header}" ]
+			then
+				errmsg ERROR ${E_IP_UNKNOWN} \
+		"unknown printer/interface failure" \
+		"consult your system administrator;
+		reasons for failure (if any) follow:"
+				header=yes
+			fi
+			echo "${line}" >&2
+		done
+		return 1
+	}
+	LPTELL=fake_lptell
+fi
+
+	#####
+	#
+	#  Now that LPTELL is defined lets do something useful
+	#  with it. We can be clever about getting a hangup or interrupt,
+	#  though, at least until the filter runs.
+	#
+	#####
+
+	catch_hangup ()
+	{
+		echo \
+		"The connection to the printer dropped;" \
+		"perhaps the printer went off-line?" \
+			| ${LPTELL} ${printer}
+		return 0
+	}
+	trap 'catch_hangup; exit_code=129 exit 129' 1
+
+	catch_interrupt ()
+	{
+		echo \
+	"Received an interrupt from the printer.  The reason is unknown,
+	although a common cause is that the baud rate is too high." \
+			| ${LPTELL} ${printer}
+		return 0
+	}
+	trap 'catch_interrupt; exit_code=129 exit 129' 2 3
+
+#####
+#
+#  ${DRAIN} is the name of a program that will wait
+#  long enough for data sent to the printer to print.
+#
+#####
+if [ -x "${LPBIN}/drain.output" ]
+then
+	DRAIN="${LPBIN}/drain.output 5"	# wait only five seconds
+else
+	DRAIN=
+fi
+
+#####
+#
+#  ${LPCAT} is the name of a program to use as a default
+#  filter. Minimally it should copy its standard input to
+#  the standard output, but it should also trap printer
+#  faults. The current LPCAT traps hangups (DCD dropping, SIGHUP),
+#  interrupts (SIGINT, SIGQUIT), broken pipe (SIGPIPE), and
+#  excess delays in sending data to the printer, interpreting all
+#  as printer faults.
+#
+#####
+if [ ! -x "${LPCAT:=${LPBIN}/lp.cat}" ]
+then
+	LPCAT="cat"
+fi
+
+#####
+#
+#  $(LPLVLPROC} is the name of a program that provides the MAC-level
+#  of the current process (us) for labeling the banner and trailer pages.
+#
+#####
+if [ ! -x "${LPLVLPROC:=${LPBIN}/lp.lvlproc}" ]
+then
+	echo "Cannot find \`\`lp.lvlproc''." | ${LPTELL} ${printer}
+	return 0
+fi
+
+#####
+#
+#  ${LPSET} is the name of a program that will set the
+#  character pitch, line pitch, page width, page length,
+#  and character set. It helps to have this in a single
+#  binary program so that (1) it's faster than calls
+#  to "tput"; and (2) it can access the new Terminfo
+#  capabilities for printers (on pre SVR3.2 machines, tput can't).
+#
+#####
+if [ ! -x "${LPSET:=${LPBIN}/lp.set}" ]
+then
+	fake_lpset () {
+		echo H V W L S >&2
+		false
+	}
+	LPSET=fake_lpset
+fi
+
+internal_lpset () {
+	#####
+	#
+	#  The funny business with the "2>&1 1>&3" is to let us capture
+	#  the standard ERROR, not the standard OUTPUT as is the usual case
+	#  with foo=`cmd`. The standard output will go to the printer.
+	#
+	#####
+	[ -n "${stty1}" ] && stty ${stty1} 0<&1
+	chk=`${LPSET} "$1" "$2" "$3" "$4" "$5" 2>&1 1>&3`
+	[ -n "${stty2}" ] && stty ${stty2} 0<&1
+
+	#####
+	#
+	#  The standard error of the delivered ${LPSET} program
+	#  is a string of letters, H, V, W, L, S, which correspond
+	#  to cpi, lpi, width, length, and character set. A letter
+	#  is present only if the corresponding attribute could not
+	#  be set.
+	#
+	#####
+	for err in ${chk}
+	do
+		case ${err} in
+		H )
+			errmsg WARNING ${E_IP_BADCPI} \
+		"can't select the character pitch \"${cpi}\"" \
+		"check the valid pitches for the printer,
+		or consult your system administrator;
+		printing continues"
+			;;
+		V )
+			errmsg WARNING ${E_IP_BADLPI} \
+		"can't select the line pitch \"${lpi}\"" \
+		"check the valid pitches for the printer,
+		or consult your system administrator;
+		printing continues"
+			;;
+		W )
+			width=${cols}
+			errmsg WARNING ${E_IP_BADWIDTH} \
+		"can't select the page width \"${width}\"" \
+		"check the valid widths for the printer,
+		or consult your system administrator;
+		printing continues"
+			;;
+		L )
+			length=${lines}
+			errmsg WARNING ${E_IP_BADLENGTH} \
+		"can't select the page length \"${length}\"" \
+		"check the valid lengths for the printer,
+		or consult your system administrator;
+		printing continues"
+			;;
+		S )
+			errmsg WARNING ${E_IP_BADCHARSET} \
+		"can't select the character set \"${CHARSET}\"" \
+		"check the name given in the -S option,
+		or consult your system administrator;
+		printing continues"
+			;;
+		esac
+	done
+}
+
+
+#####
+#
+#  ${TPUT} is "tput" IF it works. We'll disable it if we get an
+#  ugly error message the first time we use it. See the TERM variable
+#  later in the script.
+#
+#  NOTE: The check we use to see if "tput" works is to use an OLD
+#  Terminfo capability, like "lines". If it works with that it may
+#  still fail with some of the newer capabilities like "init" (SVR3.0)
+#  or "swidm" (SVR3.2), because the version of "tput" we have on your
+#  machine is older. Thus, on some of the code where ${TPUT} is used
+#  you'll see "2>/dev/null" being used to avoid ugly error messages.
+#
+#  We're confident that most printers don't have backslashes
+#  in the control sequences for carriage return and form-feed.
+#  We're also confident that these don't contain newlines.
+#  We're also confident that most printers have a linefeed
+#  in the control sequence for doing a newline (move to beginning
+#  of next line), but we can't capture it like we do the
+#  carriage return or form-feed. Thus we set it unconditionally.
+#  We don't set form-feed if it isn't defined, however, because
+#  maybe the printer doesn't have a formfeed. If not set, we're
+#  out of luck.
+#
+#  Additional ``parameters'' are passed via Shell environment
+#  variables:
+#
+#	TERM	The printer type (used for Terminfo access)
+#  		Set defaults for unset variables.
+#####
+
+: ${TERM:=unknown}
+: ${CHARSET:=cs0}
+
+TPUT=tput
+tput lines 1>/dev/null 2>&1 || TPUT=:
+
+CR=`${TPUT} cr`
+[ -z "${CR}" ] && CR="\r"
+
+FF=`${TPUT} ff`
+
+NL="${CR}\n"
+
+lines=`${TPUT} lines`
+[ -z "${lines}" -o 0 -ge "${lines}" ] && lines=66
+
+cols=`${TPUT} cols`
+[ -z "${cols}" -o 0 -ge "${cols}" ] && cols=132
+
+if BOLD=`${TPUT} bold` && SGR0=`${TPUT} sgr0`
+then
+	ENHANCE="-E '$BOLD' -E '$SGR0'"
+else
+	#
+	#  Built in label enhancements:
+	#
+	#  	'-E cr' or '-E bs'
+	#
+	ENHANCE="-E cr"
+fi
+LPPR="${LPPR} -l $lines -w $cols $ENHANCE"
+
+
+#####
+#
+#  Additional ``parameters'' are passed via Shell environment
+#  variables:
+#
+#	FILTER	The filter to run
+#
+#  Set defaults for unset variables.
+#
+#####
+if [ -z "$BANNER_KEY" -o -z "$JOB_SEQ_NO" -o -z "$B2_CONTROL" ]
+then
+	errmsg ERROR ${E_IP_ARGS} \
+		"Missing critical environment variables." \
+		"Consult your system administrator."
+	exit 129
+fi
+#####
+#
+#	Although filter may be defined in the env.  we do not use it
+#	for banners and trailers.
+#
+#####
+FILTER="${LPCAT} 0"
+
+###########
+#
+#  Initialize the printer port
+#
+###########
+
+#####
+#
+#  SERIAL PORTS:
+#  Initialize everything.
+#
+#  PARALLEL PORTS:
+#  Don't initialize baud rate.
+#
+#  It's not obvious how to tell if a port is parallel or serial.
+#  However, by splitting the initialization into two steps and letting
+#  the serial-only part fail nicely, it'll work.
+#
+#  Another point: The output must be a ``tty'' device. If not, don't
+#  bother with any of this.
+#
+#####
+stty1= stty2=
+tty 0<&1 1>/dev/null 2>&1 && {
+
+	#####
+	#
+	#  First set the default parameters,
+	#  then the requested parameters.
+	#
+	#####
+
+	stty \
+		9600 \
+			0<&1 2>/dev/null 1>&2
+	stty \
+		cs8 -cstopb -parenb -parodd \
+		ixon -ixany \
+		opost -olcuc onlcr -ocrnl -onocr -onlret -ofill \
+		nl0 cr0 tab0 bs0 vt0 ff0 \
+		start ^Q stop ^S intr ^? \
+			0<&1 2>/dev/null 1>&2
+
+
+
+	##########
+	#
+	#  Find out if we have to turn off opost before initializing the
+	#  printer and on after. Likewise, check clocal.
+	#
+	#  Turning OFF opost (output postprocessing) keeps the UNIX system
+	#  from changing what we try to send to the printer. Turning ON
+	#  clocal keeps the UNIX system from dropping what we are trying to
+	#  send if the printer drops DTR. An example of the former is the
+	#  AT&T 479, which wants to send a linefeed (ASCII 10) when a page
+	#  width of 10 is set; with opost on, this COULD BE turned into a
+	#  carriage-return/linefeed pair. An example of the latter is the
+	#  AT&T 455, which momentarily drops DTR when it gets the
+	#  initialization string, is2; with clocal off, the UNIX system
+	#  stops sending the rest of the initialization sequence at that
+	#  point.
+	#
+	#  THIS CODE MUST FOLLOW THE REST OF THE PORT INITIALIZATION CODE.
+	#
+	##########
+	cur_stty=`stty -a 0<&3`
+	expr "${cur_stty}" : '.*-opost' 1>/dev/null 2>&1 \
+		|| stty1="${stty1} -opost" stty2="${stty2} opost"
+	expr "${cur_stty}" : '.*-clocal' 1>/dev/null 2>&1 \
+		&& stty1="${stty1} clocal" stty2="${stty2} -clocal"
+	expr "${cur_stty}" : '.* opost.*' 1>/dev/null 2>&1
+}
+
+
+###########
+#
+#  Initialize the physical printer (Part I).
+#  Here we bring the printer to a sane state and set the page size.
+#
+###########
+
+#####
+#
+#  Basic initialization. The ``else'' clause is equivalent,
+#  but covers cases where old Terminal Information Utilities are present.
+#
+#
+#  WARNING! The "echo" command will catch backslashes (\) and
+#  try to interpret the characters following it. Thus, using
+#  "echo" to print string values obtained from "tput" is dangerous.
+#
+#####
+[ -n "${stty1}" ] && stty ${stty1} 0<&1
+
+if ${TPUT} init 2>/dev/null
+then
+	:
+else
+	pgm=`${TPUT} iprog`	# initialization program
+	if [ -x "${pgm}" ]
+	then
+		eval ${pgm}
+	fi
+
+	${TPUT} is1		# init string 1
+	${TPUT} is2		# init string 2
+
+	#
+	#  The goal of all this tab setting is to ensure that tabs
+	#  (expanded or not) result in a forward horizontal motion
+	#  up to the next 8-space tab stop.  The theory here is that
+	#  the user probably has tabs set to every 8-space (which is
+	#  most common.  Of course 'stty2' (below) could screw this
+	#  all up again.
+	#
+	tabset=
+	if [ "8" != "`${TPUT} it`" ] # Tabs initially every # spaces
+	then
+		stty tab3 0<&1 1>/dev/null 2>&1 # expand tabs to spaces
+
+	elif `${TPUT} ht >/dev/null` # tab to next 8-space hardware tab-stop
+	then
+		tabset="/usr/lib/tabset/${TERM}"
+		if [ -r ${tabset} ]
+		then
+			cat -s ${tabset}
+		fi
+		stty tab3 0<&1 1>/dev/null 2>&1 # expand tabs to spaces
+	fi
+
+	file=`${TPUT} if`	# is there an initialization file.
+	if [ "${tabset}" != "${file}" -a -r "${file}" ]
+	then
+		cat -s "${file}"
+	fi
+
+	${TPUT} is3
+	echo "${CR}\c"
+fi
+[ -n "${stty2}" ] && stty ${stty2} 0<&1
+
+#####
+#
+#  Set the page size and print spacing, but not the character set.
+#  We will be doing the character set later (after the header).
+#
+#####
+#
+# This skeleton is left here in case it is decided that these
+# attributes should be set to soemthing different to whatever
+# they when the printer is initialized.
+#
+# cpi=""
+# lpi=""
+# width=""
+# length=""
+
+# internal_lpset "${cpi}" "${lpi}" "${width}" "${length}" ""
+
+#####
+#
+#  The banner page (and cancellation page) will
+#  use double width characters if they're available.
+#
+#####
+WIDE_CS=`${TPUT} swidm 2>/dev/null`
+NORM_CS=`${TPUT} rwidm 2>/dev/null`
+PAD="#####${NL}"
+
+
+#####
+#
+#  The format of the banner and trailer pages should not change.
+#  This is the format that went through certification.  If you
+#  want a custom banner then take the Standard interface and
+#  modify it to your taste.
+#
+#####
+
+printer=`basename $0`
+request_id=$1
+user_name=$2
+title=$3
+copies=$4
+option_list=$5
+
+shift 5
+files="$*"
+
+banner_flag=0
+TIMESTAMP=`date +%y%m%d5/29/91M%S`
+DATE=`date '+%a %T %h %d, 19%y'`
+
+banner_page ()
+{
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}S${JOB_SEQ_NO}-${BANNER_KEY}${NORM_CS}${NL}\c"
+	echo "#####   ${WIDE_CS}${TIMESTAMP}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	/usr/bin/banner "S${JOB_SEQ_NO}-${BANNER_KEY}" | sed 's/^/#####   /'
+	echo "${PAD}${PAD}\c"
+	echo "#####   ${WIDE_CS}User:    ${user_name}${NORM_CS}${NL}\c"
+	if [ -n "${title}" ]
+	then
+		echo "${PAD}\c"
+		echo "#####   ${WIDE_CS}Title:   ${title}${NORM_CS}${NL}\c"
+	fi
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Printed: ${DATE}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Job-id:  ${request_id}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Sensitivity level:${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	${LPLVLPROC} -Zw `expr ${cols} - 13`  | sed 's/^/#####        /'
+	if [ -n "${FF}" ]
+	then
+		echo "${CR}${FF}\c"
+	fi
+	banner_flag=1
+}
+
+trailer_page ()
+{
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}E${JOB_SEQ_NO}-${BANNER_KEY}${NORM_CS}${NL}\c"
+	echo "#####   ${WIDE_CS}${TIMESTAMP}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	/usr/bin/banner "E${JOB_SEQ_NO}-${BANNER_KEY}" | sed 's/^/#####   /'
+	echo "${PAD}${PAD}\c"
+	echo "#####   ${WIDE_CS}User:    ${user_name}${NORM_CS}${NL}\c"
+	if [ -n "${title}" ]
+	then
+		echo "${PAD}\c"
+		echo "#####   ${WIDE_CS}Title:   ${title}${NORM_CS}${NL}\c"
+	fi
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Printed: ${DATE}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Job-id:  ${request_id}${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	if truep $cancel_flag
+	then
+		echo "#####   ${WIDE_CS}Status:  Suspended or Canceled${NORM_CS}${NL}\c"
+		echo "${PAD}\c"
+	fi
+	echo "#####   ${WIDE_CS}Sensitivity level:${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	${LPLVLPROC} -Zw `expr ${cols} - 13`  | sed 's/^/#####        /'
+	if [ -n "${FF}" ]
+	then
+		echo "${CR}${FF}\c"
+	fi
+}
+
+#####
+#
+#
+#####
+cancel_page ()
+{
+	#  We should already be at the top of a new page.
+	#
+	${TPUT} scs 0 2>/dev/null
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Time: `date`${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	echo "#####   ${WIDE_CS}Status:  Suspended or Canceled${NORM_CS}${NL}\c"
+	echo "${PAD}\c"
+	if [ -n "${FF}" ]
+	then
+		echo "${CR}${FF}\c"
+	fi
+}
+
+
+#####
+#
+#  Print the banner or trailer page
+#
+#####
+
+case "$B2_CONTROL" in
+
+"banner")
+	banner_page
+	if truep $cancel_flag
+	then
+		#  This will appear to be the job.
+		cancel_page
+	fi
+	;;
+
+"trailer")
+	#  A cancellation notice received during the trailer
+	#  page generation is dealt with on the trailer page.
+	#
+	trailer_page
+	;;
+
+*)
+	exit_code=129
+	;;
+esac
+
+
+if [ -n "${exit_code}" -a 0 -ne "${exit_code}" ]
+then
+	exit ${exit_code}
+fi
+
+${DRAIN}
+
+exit_code=0 exit 0

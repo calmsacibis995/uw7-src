@@ -1,0 +1,109 @@
+#!/usr/lib/setup/Back_Ends/web.so
+I18N-FILE	Network_Mgmt
+HELP-FILE	"NetWare_Setup/NetWare_Setup.hlp"
+FIRST	web	networkMgt_web
+
+OBJECT	choiceList	yesNo_choiceList
+TYPE	i
+CHOICE	s	"Yes:1"	1	s	"Y:2"
+CHOICE	s	"No:3"	0	s	"N:4"
+
+OBJECT	joinList	NWUM_joinList
+FILE	nwu
+JOIN	1	c	nwum
+
+OBJECT	var	NWUM_var
+LABEL	f	NWUM_joinList	4
+LIST	yesNo_choiceList
+JOIN	NWUM_joinList	6
+DESCRIPTION	f	NWUM_joinList	3
+
+OBJECT	joinList	NWUMPS_joinList
+FILE	nwu
+JOIN	1	c	nwumps
+
+OBJECT	var	NWUMPS_var
+LABEL	f	NWUMPS_joinList	4
+LIST	yesNo_choiceList
+JOIN	NWUMPS_joinList	6
+DESCRIPTION	f	NWUMPS_joinList	3
+
+OBJECT	joinList	NWUM_TRAP_TIME_joinList
+FILE	nwu
+JOIN	1	c	nwum_trap_time
+
+OBJECT	var	NWUM_TRAP_TIME_var
+LABEL	f	NWUM_TRAP_TIME_joinList	4
+JOIN	NWUM_TRAP_TIME_joinList	6
+DESCRIPTION	f	NWUM_TRAP_TIME_joinList	3
+
+OBJECT	joinList	DESCR_joinList
+FILE	/etc/netmgt/snmpd.conf
+JOIN	0	c	descr
+
+OBJECT	var	DESCR_var
+LABEL	s	"System Description:5"
+JOIN	DESCR_joinList	1
+DESCRIPTION	s	"Enter information about your system which
+			could be useful to your network administrator
+			if a network problem is detected.
+			The information could include the hardware
+			and software components of your system,
+			such as computer make, model, memory and disk
+			sizes, network boards and drivers used,
+			and operating system type and version.:6"
+
+OBJECT	joinList	LOCATION_joinList
+FILE	/etc/netmgt/snmpd.conf
+JOIN	0	c	location
+
+OBJECT	var	LOCATION_var
+LABEL	s	"System Location:7"
+JOIN	LOCATION_joinList	1
+DESCRIPTION	s	"Enter a description of the physical location
+			of your system.  This will help the network
+			administrator locate this system in the event
+			that a problem has been detected.:8"
+
+OBJECT	joinList	CONTACT_joinList
+FILE	/etc/netmgt/snmpd.conf
+JOIN	0	c	contact
+
+OBJECT	var	CONTACT_var
+LABEL	s	"Contact Person:9"
+JOIN	CONTACT_joinList	1
+DESCRIPTION	s	"Enter the name of the person at your
+			site to contact in the event that a problem
+			has been detected with your system.  This
+			would normally be your local system
+			administrator.:10"
+
+
+OBJECT	objectList	master_list
+LABEL	s	"Variables:11"
+ADD	NWUM_var
+ADD	NWUMPS_var
+ADD	NWUM_TRAP_TIME_var
+ADD	DESCR_var
+ADD	LOCATION_var
+ADD	CONTACT_var
+
+OBJECT	icon	web_icon
+LABEL	s	"Network Management:12"
+ICON_FILENAME	s	"nwsetup48.icon"
+
+
+OBJECT	web	networkMgt_web
+TFADMIN		NetWare_Setup
+LABEL	s	"Network Management Setup:13"
+DESCRIPTION	s	"Use this window to enable or disable various
+			statistic-gathering programs related to network
+			management.  You can also provide information
+			about your system which is useful to the network
+			administrator when network problems have been
+			detected.:14"
+ICON	web_icon
+HELP_TITLE	"Network Management Setup:13"
+HELP_SECTION	s	"80"
+VARIABLE_LIST	master_list
+TYPE	secondary

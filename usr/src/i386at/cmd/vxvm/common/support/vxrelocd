@@ -1,0 +1,496 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxrelocd.sh	1.2 3/3/97 03:16:51 - cmd.vxvm:common/support/vxrelocd.sh
+#ident	"@(#)cmd.vxvm:common/support/vxrelocd.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+__VXVM_CONNECT_WAIT=WAIT
+export __VXVM_CONNECT_WAIT
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+prog=vxrelocd
+
+usage()
+{
+	egettxt >&2 \
+"Usage: $prog [-o vxrecover_arg] [mail-address ...]" \
+	vxvmshm:523
+	exit 1
+}
+
+# Find all dead volumes that have storage on a speficic DM
+deadvols()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -nv -e 'v_read_pol!=V_RAID &&
+			!(any aslist.pl_kstate=ENABLED) &&
+			(any aslist.aslist.sd_dmname="'$dmname'")'
+}
+
+deadraids()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -p -F"%vname" \
+		-e '(any aslist.sd_dmname="'$dmname'") &&
+		    pl_layout=RAID && assoc.v_unusable'	
+}
+
+# Find all affected volumes that have storage on a specific DM but
+# are not completely bashed
+affvols()
+{
+	dmname=$1
+	dgname=$2
+	shift 2
+
+	vxprint -g $dgname -nv -e '(v_read_pol!=V_RAID) && 
+			(any aslist.pl_kstate=ENABLED) && 
+			(any aslist.aslist.sd_dmname="'$dmname'")'
+
+	vxprint -g $dgname -p -F'%vname' \
+		-e '(any aslist.sd_dmname="'$dmname'") &&
+		    pl_layout=RAID && !assoc.v_unusable'
+}
+
+o_args=
+check_cnt=2
+
+while getopts :vo: c
+do
+	case $c in
+	o)	o_args=$OPTARG;;
+	v)	verbose="on";;
+	?)	usage;;
+	esac
+done
+
+shift `expr $OPTIND - 1`
+[ $# -eq 0 ] && set root
+
+recipients="$@"
+
+shift $#
+
+# set the da_name for root disk
+set_OS_variables
+
+
+#
+# try_reloc(dm, dg, volume)  attempt hot-relocation of subdisks
+#
+# Call vxassist to attempt the actual relocation.
+#
+try_reloc()
+{
+
+	[ -n "$verbose" ] && echo "connect_spare $*" >&2
+
+	resultfile=/tmp/hs-4$$
+	
+	trap "rm -f $resultfile" 1 2 3
+
+	dm_name=$1
+	dg_name=$2
+	v_name=$3
+
+	_ms="`egettxt \"Attempting VxVM relocation on host \`uname -n\`\" vxvmshm:128`"
+
+	# If it is the root volume, do not relocate, create another
+	# mirror
+	if [ X$v_name = X`vxprint -AQve '(v_use_type="root" || v_use_type="swap") && 
+			v_name="'$v_name'"' -F %name` ]
+	then
+
+		vxassist -g $dg_name mirror $v_name spare=yes layout=nospan,contig
+		vxassist_ret=$?
+		plexname=`vxprint -qQp -g $dg_name -e '(pl_kstate==DETACHED || pl_nodarec) 
+				&& pl_volume="'$v_name'"' -F %name`
+		if [ $vxassist_ret -eq 0 ] 
+		then	
+			# run vxbootsetup to create hard partitions for
+			# swap and root
+			/etc/vx/bin/vxbootsetup
+			vxplex -g $dg_name -v $v_name dis $plexname 
+			vxedit -g $dg_name -rf rm $plexname
+			(egettxt "\
+\\nRemirrored $v_name volume plex $plexname because of error on disk $dm_name.
+\\n" vxvmshm:598
+			) | mailx -s "$_ms" "$recipients"
+			return 0
+   	        fi
+	else
+	
+		vxassist -r -g $dg_name move $v_name !$dm_name \
+			spare=yes >$resultfile
+		vxassist_ret=$?
+		[ $vxassist_ret -eq 0 ] && return 0
+	fi
+
+	# If we've gotten here, relocation was not successful,
+	# so send mail
+   	(
+		export v_name dm_name dg_name; egettxt \
+"Relocation was not successful for subdisks on disk $dm_name in
+volume $v_name in disk group $dg_name.  No replacement was made and the
+disk is still unusable." vxvmshm:322
+
+		avols=`affvols $dm_name $dg_name`
+		dvols=`deadvols $dm_name $dg_name`
+		draid=`deadraids $dm_name $dg_name`
+		alldead="${dvols}${dvols:+ }${draid}"
+
+		if [ ! -z "$avols" ] 
+		then
+			export avols dm_name; egettxt "
+The following volumes have storage on ${dm_name}:
+
+$avols
+
+These volumes are still usable, but the the redundancy of
+those volumes is reduced. Any RAID-5 volumes with storage on 
+the failed disk may become unusable in the face of further 
+failures." vxvmshm:621
+		fi
+
+		if [ ! -z "$dvols" ]
+		then
+			 export dvols dm_name; egettxt "
+The following volumes:
+
+$dvols
+
+have data on $dm_name but have no other usable mirrors on other
+disks. These volumes are now unusable and the data on them is
+unavailable. These volumes must have their data restored." vxvmshm:623
+
+		fi
+
+		if [ ! -z "$draid" ]
+		then
+			export draid dm_name; egettxt "
+
+The following RAID-5 volumes:
+
+$draid
+
+have storage on $dm_name and have experienced other failures. These
+RAID-5 volumes are now unusable and the data on them is unavailable.
+These RAID-5 volumes must have their data restored." \
+vxvmshm:627
+		fi
+	) | mailx -s "$_ms" "$recipients"
+
+	return $vxassist_ret
+}
+
+
+# Checkdetach - Look for failed objects and send the administrator mail
+
+checkdetach()
+{
+	faildisks=/tmp/hs-4$$		# list of failed disks
+	plexlist=/tmp/hs-5$$		# list of detached plexes
+	reloc_dm_list=/tmp/hs-6$$	# list of dm's from which to relocate
+	raidlist=/tmp/hs-7$$		# list of failed raid disks
+	recoverlist=/tmp/hs-8$$		# list of volumes to recover
+	failsd_list=/tmp/sd-1$$         # list of failed subdisks
+	vxassist_res=/tmp/hs-vxas$$     # vxassist output
+	vxrecover_res=/tmp/hs-rec$$     # vxrecover otuput
+	tmpfile=/tmp/hs-9$$
+	tmpfile2=/tmp/hs-t$$
+	rm -f $faildisks
+
+	trap "rm -f $failsd_list $faildisks $plexlist $reloc_dm_list $raidlist $recoverlist $vxassist_res $vxrecover_res" 1 2 3
+
+	_ms="`egettxt \"Volume Manager failures on host \`uname -n\`\" vxvmshm:565`"
+
+	rm -f $recoverlist
+	vxprint -AQdF '%name %nodarec %dgname' 2> /dev/null | \
+		awk '$2=="on" {print " " $1 " " $3}' > $faildisks
+	d=`awk '{print " " $1}' < $faildisks`
+
+	# Create a list of failed raid subdisks and their dg and volume
+	# Then check each volume.  If it is not detached we can relocate
+	# the failed subdisk, so add it to the list to relocate.  Otherwise,
+	# mail an error message.
+
+	rm -f $reloc_dm_list $raidlist
+	vxprint -AQse 'assoc->pl_layout=RAID  
+		&& (sd_kdetach || sd_nodevice)
+		&& assoc->assoc->v_kstate=ENABLED' -F '%name %dg_name'\
+		| sed -e '/^$/d' >$tmpfile
+	cat $tmpfile | \
+	while read sd_name dg_name
+	do
+		dm_name=`vxprint -g $dg_name -F "%dm_name" $sd_name`
+		v_name=`vxprint -g $dg_name -F "%v_name" $sd_name`
+		echo $dm_name $dg_name $v_name >>$reloc_dm_list
+	done
+	
+	  # create a list of disabled raid volumes
+	 vxprint -AQve 'aslist->pl_layout=RAID  
+                && aslist->aslist->sd_kdetach 
+		&& v_kstate!=ENABLED' -F %name | sed -e '/^$/d' >$tmpfile
+	 cat $tmpfile |
+         while read vol_name
+         do
+	         (egettxt "\
+\\nRaid volume $vol_name experienced a failure, but no relocation
+will be done as the volume has been detached or disabled 
+\\n" vxvmshm:597
+                ) | mailx -s "$_ms" "$recipients"
+         done
+
+	# create a list of bad plexes then send mail about failed disks
+	# and bad plexes
+	p=`vxprint -AQpe '(pl_kstate==DETACHED || 
+		pl_nodarec) && (pl_state!="LOG" &&
+		!aslist->sd_is_log)' -F %name 2>/dev/null`
+	
+	lp=`vxprint -AQpe '(pl_kstate==DETACHED || pl_nodarec) 
+		&& (pl_state=="LOG" || aslist->sd_is_log)' -F %name`
+
+	failing_d=`vxprint -AQdF '%name %failing' | awk '$2=="on" {print $1}'`
+
+
+	if [ ! -z "$d" ] || [ ! -z "$p" ]  || [ ! -z "$lp" ] || [ ! -z "$failing_d" ]
+	then
+		( egettxt "\
+Failures have been detected by the VERITAS Volume Manager:" \
+vxvmshm:235
+		[ -z "$d" ] || \
+			d="$d" egettxt "\\nfailed disks:\\n$d" vxvmshm:601
+		[ -z "$p" ] || \
+			p="$p" egettxt "\\nfailed plexes:\\n$p" vxvmshm:603
+		[ -z "$lp" ] || \
+			lp="$lp" egettxt "\\nfailed log plexes:\\n$lp" vxvmshm:602
+		[ -z "$failing_d" ] || \
+			failing_d="$failing_d" egettxt "\\nfailing disks:\\n$failing_d" vxvmshm:606
+		[ -s "$d" ] && egettxt "\
+
+The Volume Manager will attempt to find spare disks, relocate failed
+subdisks and then recover the data in the failed plexes. 
+" vxvmshm:619
+		) | mailx -s "$_ms" "$recipients"
+	fi
+
+	# create a list of detached plexes (or plexes with no da record)
+	# and their dg and volume
+	vxprint -AQpe 'pl_kstate==DETACHED || pl_nodarec' \
+		-F '%name %dgname %vname' 2>/dev/null |\
+		sed -e '/^$/d' > $plexlist
+
+	# Detached plex check
+
+	cat $plexlist | \
+ 	while read pl_name dg_name v_name
+	do
+	    # skip this plex if it isn't associated
+	    if [ X$v_name = "X-" ]
+	    then
+		continue
+
+	    fi
+
+	    # Is this a raid log plex
+
+            if [ X$pl_name = X`vxprint -Qp -g $dg_name -e 'pl_state=="LOG" 
+				&& pl_name=="'$pl_name'"' -F %name` ] 		
+	    then 
+		vxassist -g $dg_name addlog $v_name spare=yes > $vxassist_res 2>&1 
+		vxassist_ret=$?
+		grep ERROR $vxassist_res 
+		if [ $? -eq 1 -a $vxassist_ret -eq 0 ]
+		then 
+			vxplex -g $dg_name -o rm dis $pl_name
+			(egettxt "\
+\\nRaid log $pl_name in volume $v_name failed.
+A new raid log for volume $v_name was created.
+\\n" vxvmshm:596
+               		) | mailx -s "$_ms" "$recipients"
+		else 
+			(export vxassist_res; egettxt "\
+\\nRaid log $pl_name failed, 
+creation of new raid log for volume $v_name failed.
+\\n" vxvmshm:595
+cat $vxassist_res
+			) | mailx -s "$_ms" "$recipients"
+		fi 
+
+		            # is this a DRL plex 
+	    elif [ X$pl_name = X`vxprint -Qp -g $dg_name -e 'pl_name=="'$pl_name'" 
+				&& aslist->sd_is_log' -F %name` ]
+            then 		
+		vxplex -g $dg_name -o rm dis $pl_name
+                vxassist -g $dg_name addlog $v_name spare=yes  > $vxassist_res 2>&1 
+		vxassist_ret=$?
+		grep ERROR $vxassist_res 
+		if [ $? -eq 1 -a $vxassist_ret -eq 0 ]
+                then 
+			(egettxt "\
+\\nRemoved detached DRL plex $pl_name, 
+a new DRL log for volume $v_name was created.
+\\n" vxvmshm:599
+	                ) | mailx -s "$_ms" "$recipients"
+                 else 
+			(export vxassist_res; egettxt "\
+\\nDRL $pl_name detached, Creating new DRL for volume $v_name failed.
+\\n" vxvmshm:594; cat $vxassist_res
+			) | mailx -s "$_ms" "$recipients"
+                 fi
+
+		    # This must be mirror vol plex
+            elif [ X$pl_name = X`vxprint -Qp -g $dg_name -e 'pl_name=="'$pl_name'" 
+				&& (!aslist->sd_is_log && pl_state!="BADLOG"
+				    && pl_state!="LOG")' -F %name` ] 
+		then  
+
+		
+			goodpl_name=`vxprint -Qp -g $dg_name -e 'pl_state!="LOG" 
+					&& pl_v_name=="'$v_name'" 
+                		        && pl_kstate==ENABLED && 
+					!pl_log' -F %name`
+			vxprint -Qs -g $dg_name -e '(sd_relocate || sd_nodevice)
+				&& sd_pl_name="'$pl_name'"' -F %name > $failsd_list
+
+			# A disk failure will not mark the subdisks with a relocate
+			# but it is disabled, we should move them too.
+			cat $failsd_list | \
+			while read failsd_name
+			do
+
+			# If a failed plex has a good mirror, save the name of the
+		    	# subdisk, dg, and volume, so it can be relocated.
+
+			    if [ ! -z "$goodpl_name" ] 
+			    then 
+
+				dm_name=`vxprint -g $dg_name -F '%dm_name' $failsd_name`
+				echo $dm_name $dg_name $v_name >>$reloc_dm_list
+				offset=`vxprint -g $dg_name -F '%dev_offset' $failsd_name`
+				len=`vxprint -g $dg_name -F '%len' $failsd_name`
+				da_name=`vxprint -g $dg_name -F '%da_name' $failsd_name`
+				( egettxt "\
+\\nAttempting to relocate subdisk $failsd_name from plex $pl_name.
+Dev_offset $offset length $len dm_name $dm_name da_name $da_name.
+The available plex $goodpl_name will be used recover the data. 
+\\n" vxvmshm:593
+				) | mailx -s "$_ms" "$recipients"
+	
+			    else
+
+				( egettxt "\
+\\nUnable to relocate failed subdisk from plex $pl_name because no
+suitable mirror was found from which to recover data. 
+\\n" vxvmshm:600
+				) | mailx -s "$_ms" "$recipients"
+			    fi 
+			done
+	      fi  
+		
+	done
+
+		# attempt relocation of all dms in the list
+		if [ -s $reloc_dm_list ]
+		then
+			# remove dups if multiple subdisks on dm failed
+			sort <$reloc_dm_list >$tmpfile
+			uniq <$tmpfile >$reloc_dm_list
+			cat $reloc_dm_list | \
+			while read dm_name dg_name v_name
+			do
+				# if relocation works then add volume to
+				# list of volumes to recover
+				try_reloc $dm_name $dg_name $v_name"$@"
+				ret=$?
+				if [ $ret -eq 0 ]
+				then
+					echo $dg_name $v_name >>$recoverlist
+					(
+					cat $resultfile | \
+					while read a b sd_name c newsd_name
+					do
+						export sd_name newsdname
+						egettxt "\
+Volume $v_name Subdisk $sd_name relocated to $newsd_name,
+but not yet recovered.\\n" vxvmshm:560
+					done
+					) | mailx -s "$_ms" "$recipients"
+				fi
+			done
+		fi
+                if [ -s $recoverlist ]
+                then
+			sort <$recoverlist >$tmpfile
+			uniq <$tmpfile >$recoverlist
+                        cat $recoverlist | \
+                        while read dg_name v_name
+                        do
+                                if [ -n "$o_args" ]
+				then
+				    vxrecover -g $dg_name -o $o_args $v_name -s  > $vxrecover_res 2>&1 
+				    ret=$?
+				    grep ERROR $vxrecover_res
+				else
+				    vxrecover -g $dg_name $v_name -s > $vxrecover_res 2>&1 
+				    ret=$?
+				    grep ERROR $vxrecover_res
+				fi
+                                if [ $ret -ne 0 -o $? -ne 1 ]
+				then
+					(export dg_name v_name vxrecover_res; egettxt "\
+Failure recovering $v_name in disk group $dg_name.\n" vxvmshm:234
+cat $vxrecover_res
+					) | mailx -s "$_ms" "$recipients"
+				else
+					(export dg_name v_name vxrecover_res; egettxt "\
+Recovery complete for volume $v_name in disk group $dg_name.\n" vxvmshm:321 \
+					) | mailx -s "$_ms" "$recipients"
+                                fi
+                        done
+		fi
+}
+ 
+# Get events from vold, waiting for 15 seconds of quiescence before
+# checking for failed objects.
+ 
+docheck=yes
+vxnotify -f -w 15 | while read code more
+do
+	[ -z "$verbose" ] || echo "Code: $code"
+	case $code in
+	waiting)    if [ "$docheck" = yes ]
+			then
+				checkdetach "$@"
+				docheck=no
+			fi;;
+	detach|relocate|more|connected)
+                docheck=yes;;
+	esac
+
+done

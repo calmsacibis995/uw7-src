@@ -1,0 +1,51 @@
+#ident	"@(#)menutool	15.1"
+
+function menutool
+{
+	typeset OIFS="$IFS" IFS="$IFS" y i j item wid file= respfile=
+	while [ -n "$1" ]
+	do
+		case "$1" in
+		-d)
+			;;
+		-f)
+			shift
+			file=$1
+			;;
+		-o)
+			shift
+			respfile=$1
+			;;
+		esac
+		shift
+	done
+	. $file
+	case "$_FORM" in
+	*//*)
+		formtool -f "$file" -o $respfile
+		return $?
+		;;
+	'')
+		returntool "$@"
+		return $?
+		;;
+	esac
+	footer "$GENERIC_MENU_FOOTER"
+	open_window 0 3 79 20 -noborder
+	wid=$CURWIN
+	IFS="$nl"
+	set -- $_TOP
+	IFS="$OIFS"
+	let y=$#+2
+	open_menu -x 1 -y $y
+	wprintf "$wid" "$_TOP"
+	let i=1
+	IFS="$nl"
+	for item in ${_FORM}
+	do
+		add_menu_item -help "helpwin" -select "RETURN_VALUE=$i; wclose $wid" "${item}"
+		let i=i+1
+	done
+	msg "$_BOT"
+	run_menu -exit "echo \"RETURN_VALUE=\$RETURN_VALUE\" > $respfile"
+}

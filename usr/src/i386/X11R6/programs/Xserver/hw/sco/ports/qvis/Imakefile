@@ -1,0 +1,125 @@
+/*
+ * @(#) Imakefile 11.1 97/10/22
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+#include <Server.tmpl>
+
+
+
+HDRS = qvisHW.h qvisDefs.h qvisMacros.h qvisProcs.h
+
+SRCS =	qvisCmap.c qvisCursor.c qvisData.c qvisGC.c \
+	qvisImage.c qvisInit.c qvisScreen.c qvisWin.c \
+	qvisRectOps.c qvisBres.c qvisGlyph.c qvisSpans.c \
+	qvisGlCache.c qvisAssem.s qvisMono.c
+
+OBJS =	qvisCmap.o qvisCursor.o qvisData.o qvisGC.o \
+	qvisImage.o qvisInit.o qvisScreen.o qvisWin.o \
+	qvisRectOps.o qvisBres.o qvisGlyph.o qvisSpans.o \
+	qvisGlCache.o qvisAssem.o qvisMono.o
+
+       DDXLIBS = libqvis.a
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+       MONDIR=$(USRLIBDIR)/grafinfo/moninfo
+
+DEFINES = -DNDEBUG
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -D VOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+        -I$(SERVERSRC)/hw/sco/ports/wd \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(qvis,$(OBJS))
+SharedXDriverTarget(qvis,6.0,$(OBJS),shared,..)
+LintLibraryTarget(qvis,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(qvis,$(DDXLIBS))
+InstallNamedProg(qvisconf.sh,qvisconf.sh,$(USRLIBDIR)/vidconf/scripts)
+
+
+#else /* USLArchitecture */
+
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(INCLUDESRC) \
+	 -I$(FONTSRC)/include
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(qvis,$(OBJS))
+ProfiledLibraryTarget(qvis,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(qvis,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(qvis,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(qvis,$(OBJS))
+LintLibraryTarget(qvis,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(qvis,$(DDXLIBS))
+
+InstallNamedProg(qvisconf.osr5,qvisconf.sh,$(USRLIBDIR)/vidconf/scripts)
+
+#endif /* USLArchitecture */
+
+
+
+InstallGrafFile(./grafinfo/compaq,qvis1024.xgi,compaq)
+InstallGrafFile(./grafinfo/compaq,qvis1024.tmpl,compaq)
+InstallGrafFile(./grafinfo/compaq,qvis1280.xgi,compaq)
+InstallGrafFile(./grafinfo/compaq,qvis1280.tmpl,compaq)
+
+DependTarget()
+

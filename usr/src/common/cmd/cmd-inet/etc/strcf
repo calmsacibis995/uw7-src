@@ -1,0 +1,168 @@
+#ident "@(#)strcf	1.4"
+#ident "$Header$"
+#
+# tp - configure transport provider (i.e. tcp, udp, icmp)
+# usage: tp devname
+#
+tp {
+	p = open $1
+	ip = open /dev/ip
+	plink p ip
+	close p
+}
+
+#
+# linkint - link interface to ip or arp
+# usage: linkint top bottom ifname flags
+#
+linkint {
+	x = plink $1 $2
+	sifname $1 x $3 $4
+}
+
+#
+# cenetb - configure ethernet-type interface for cloning driver with
+#	one major per interface.  This version assumes less about
+#	node names.
+# usage: cenetb ip-fd dev if
+#
+# THIS FUNCTION IS NO LONGER USED (see add_interface).
+cenetb {
+	onerror cenetb_fail
+	dev = open $2
+	addr = dlbind dev 0x800		# For Ethernet encoding
+	linkint $1 dev $3 0x4042
+	dev2 = open $2
+	addr = dlbind dev2 0x806		# For Ethernet encoding
+	arp = open /dev/arp
+	sifhrd	arp ether		# hardware interface is ethernet 
+	linkint arp dev2 $3 0x4042
+	sifaddr arp $3 addr
+	close arp
+	label cenetb_fail
+}
+
+#
+# c802b - configure ethernet-type interface for cloning driver with
+#	one major per interface.  This version sets up 802.n framing.
+# usage: c802b ip-fd dev if
+#
+# THIS FUNCTION IS NO LONGER USED (see add_interface_SNAP).
+c802b {
+	onerror c802b_fail
+	dev = open $2
+	addr = dlbind dev 0xaa		# For IEEE802 encoding
+	dlsubsbind dev 0x800
+	linkint $1 dev $3 0x4042
+	dev2 = open $2
+	addr = dlbind dev2 0xaa		# For IEEE802 encoding
+	dlsubsbind dev2 0x806
+	arp = open /dev/arp
+	sifhrd	arp ieee		# hardware interface is ieee802  
+	linkint arp dev2 $3 0x4042
+	sifaddr arp $3 addr
+	close arp
+	label c802b_fail
+}
+
+#
+# loopback - configure loopback device
+# usage: loopback ip-fd
+#
+# THIS FUNCTION IS NO LONGER USED (see add_loop).
+loopback {
+	dev = open /dev/llcloop
+	addr = dlbind dev 0x800
+	linkint $1 dev lo0 0x4048
+}
+
+#
+# boot - boot time configuration.
+#
+boot {
+	#
+	# queue params
+	#
+	initqp /dev/udp rq 8192 49152
+	initqp /dev/ip muxrq 8192 49152 muxwq 8192 49152
+	initqp /dev/tcp muxrq 8192 49152 muxwq 8192 49152
+	#
+	# transport
+	#
+	tp /dev/tcp
+	tp /dev/udp
+	tp /dev/icmp
+	tp /dev/igmp
+	tp /dev/ipip
+	tp /dev/rip
+
+# interfaces are added to the /etc/confnet.d/interface file
+# from scripts under /etc/confnet.d
+#	DO NOT ADD INTERFACES NOT HERE!!  Even if slink gets them,
+#	ifconfig will not.
+}
+
+#
+# add_interface - configure ethernet-type interface for cloning driver with
+#         one major per interface.  Similar to cenet except we are given
+#	  arguments that are allready concatinated with major device
+#	  number (such as emd0).
+#	  We will also assume that boot{} has already run and
+#	  we will open /dev/ip ourselves and link up underneath it.
+# usage: add_interface compat_ip_reserved devpath ifname
+#
+add_interface {
+	dev = open $2
+	addr = dlbind dev 0x800		# For Ethernet encoding
+	ip = open /dev/ip
+	linkint ip dev $3 0x4042
+	close ip
+	dev2 = open $2
+	addr = dlbind dev2 0x806	# For Ethernet encoding
+	arp = open /dev/arp
+	sifhrd	arp ether		# hardware interface is ethernet 
+	linkint arp dev2 $3 0x4042
+	sifaddr arp $3 addr
+	close arp
+	close dev2
+}
+
+#
+# add_interface_SNAP - configure ethernet-type interface for cloning driver
+#	with one major per interface.  Similar to cenet except we are given
+#	arguments that are allready concatinated with a major device number
+#	(such as emd0).  We assume that boot{} has already run.  We will use
+#	iplinkint to bind the device to the SNAP SAP for ip and link devpath
+#	under IP, and will open devpath, and use arplinkint to bind it to
+#	the SNAP SAP for arp and link it under arp.
+# usage: add_interface compat_ip_reserved devpath ifname
+#
+add_interface_SNAP {
+	dev = open $2
+	addr = dlbind dev 0xaa		# For IEEE802 encoding
+	dlsubsbind dev 0x800
+	ip = open /dev/ip
+	linkint ip dev $3 0x4042
+	close ip
+	dev2 = open $2
+	addr = dlbind dev2 0xaa		# For IEEE802 encoding
+	dlsubsbind dev2 0x806
+	arp = open /dev/arp
+	sifhrd	arp ieee		# hardware interface is ieee802  
+	linkint arp dev2 $3 0x4042
+	sifaddr arp $3 addr
+	close arp
+	close dev2
+}
+
+# usage: add_loop compat_ip_reserved devicename  interfacename
+#	  We will assume that boot{} has already run and
+#	  we will open /dev/ip ourselves and link up underneath it.
+add_loop {
+	dev = open $2
+	addr = dlbind dev 0x800
+	ip = open /dev/ip
+	linkint ip dev $3 0x4048
+	close ip
+	close dev
+}

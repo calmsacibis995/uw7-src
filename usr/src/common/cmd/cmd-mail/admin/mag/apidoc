@@ -1,0 +1,95 @@
+#ident "@(#)apidoc	11.1"
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#===============================================================================
+
+Documentation of Internal "ma" API (back end).
+
+ma_cf_valid(path) - check if valid cf file (checksum matches).
+	returns "ok" or "fail"
+ma_cf_open(path) - parse and read in cf file, parse does complete checking.
+	returns "ok" or "fail" or "parserr"
+ma_cf_write() - write changes to the "open" cf file.
+	returns "ok" or "fail"
+ma_cf_close() - free data structures associated with last read in cf.
+
+The following routines are called after ma_cf_open and before ma_cf_close.
+Plural names return lists, singular names return strings.
+Channel routines have _ch_ in the name.
+Baduser and Badhost channels must have host= set.
+Baduser channel can have any name and keys off table type.
+Badhost channel keys off of the name for the GUI.
+
+ma_machine_name_get() - return string.
+ma_machine_name_set(str) - set machine name.
+ma_machine_name_default() - return default machine name.
+	FQDN only for machine name.
+
+ma_alternate_names_get() - returns tcl list, zero element list for alternates.
+	FQDN or not is ok.
+ma_alternate_names_set(list) - pass in list like get.
+
+ma_from_domain_get() - returns str.
+ma_from_domain_set(str) - set domain.
+
+ma_aliases_get() - returns tcl list of alias files and nis maps.
+ma_aliases_set(list)
+	[class:][flags]filename - examples "nis: -a -b -c mail.aliases"
+
+ma_domain_table_enabled_get() - return "0" or "1" for disabled or enabled.
+ma_domain_table_enabled_set(str) - pass in 0 or 1.
+ma_domain_table_file_get() - return domain table name for display purposes.
+
+ma_ch_names_get() - return list of configured channels, the channel name
+	"domain" is illegal.
+
+ma_ch_create(chname) - create a new blank channel of name given,
+	return ok, conflict means name conflict, badname means bad characters
+	in the name.
+ma_ch_delete(chname) - remove channel name given.
+
+ma_ch_rename(src,dst) - rename a channel
+	return ok, conflict means name conflict, badname means bad characters
+	in the name.
+
+ma_ch_sequence_get(chname) - get sequence number of channel (ordering number).
+ma_ch_sequence_set(chname,number) - set sequence number, caller verifies value.
+	The baduser channel must always go last if it is present,
+	and it's name cannot change.
+
+ma_ch_table_type_get(chname) - get channel table type:
+				baduser DNS UUCP remote local file.
+ma_ch_table_type_set(chname,type)
+
+ma_ch_table_file_get(chname) - get pathname to file for channel.
+ma_ch_table_file_set(chname,file) - always settable, ignored for non-file types.
+
+ma_ch_equate_get(chname,equate) - return string or zero len string.
+	equate names are single upper-case characters: P,F,S,R,A,E,M,L,U,N
+	Three predefined delivery agents (A=) local,smtp,uucp (by other names).
+ma_ch_equate_set(chname,equate,value) - pass in str or zero len str to remove.
+
+ma_ch_host_get(chname) - get host= parameter as a string, zero len is no host=.
+ma_ch_host_set(chname,str) - set host= string, zero len string is remove.
+	host= is ignored for file table channel types.
+
+Message Store config file (/etc/default/mail only) editing routines.
+ma_ms1_open(path) - return ok, file, or parserr.
+ma_ms1_write() - returns ok or fail.
+ma_ms1_close() - dealloc resources from last open.
+
+ma_ms1_get(keyword) - all keywords are potentially present, zero length strings
+	are explicitly stored that way in the config file.
+ma_ms1_set(keyword,value) - pass in new value.
+ma_ms1_default(keyword) - return default value for keyword, no change config.
+ma_ms1_verify(keyword,value) - ok, fail, verify is legal value for keyword.

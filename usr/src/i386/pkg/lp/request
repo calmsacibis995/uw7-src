@@ -1,0 +1,76 @@
+#ident	"@(#)request	1.2"
+#ident  "$Header$"
+
+trap "exit 3" 1 2 3 15
+
+environ=$1
+>${environ}
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+
+[ "$UPDEBUG" = YES ] && set -x
+
+export PKGINSTALL_TYPE AUTOMERGE INSTALL_MODE
+
+#  set INSTALL_MODE to CUSTOM, if not set
+
+[ "$INSTALL_MODE" ] || INSTALL_MODE=CUSTOM
+
+PKGINSTALL_TYPE=NEWINSTALL
+AUTOMERGE=NULL
+
+[ "$UPDEBUG" = YES ] && goany
+
+#chkpkgrel, returns a code, indicating which version of this pkg is installed.
+#Return code 2 indicates overlay of the same or older version. For overlay,
+#existence of the file $UPGRADE_STORE/$PKGINST.ver indicates presence of older
+#version. This file contains the old version.
+
+#	${SCRIPTS}/chkpkgrel returns    0 if pkg is not installed
+#					1 if pkg if unknown version
+#					2 if pkg is SVR4.2
+#					4 if pkg is SVR4.0 V4
+#					9 if newer pkg is installed
+
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	9)	exit 3	;; #pkgrm newer pkg before older pkg can be installed.
+	*)	;;
+esac
+
+
+[ "$PKGINSTALL_TYPE" = NEWINSTALL ] || {
+	AUTOMERGE=Yes	
+	[ "$INSTALL_MODE" = CUSTOM ] && {
+     	# this scripts returns 0 for mergefiles, 1 for donot merge
+		${SCRIPTS}/chkmrgfiles "${NAME}"
+		[ $? = 1 ] && AUTOMERGE=No
+	
+	}
+}
+
+# NOTES APPLYING to default response file:
+# ONLYVAR should be defined in the default response file. It has meaning 
+# only for the set request script. Append the line ONLYVAR=UPNOVER into
+# the default response file, in case it is recreated and overwritten 
+# by using a  common means to create response: "sh request reponse"
+# That is type, echo ONLYVAR=UPNOVER >> ${MENU_RESP}
+
+# PKGINSTALL_TYPE should not be set in the default response file
+
+echo AUTOMERGE=\"${AUTOMERGE}\" >> ${environ}
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${environ}
+echo INSTALL_MODE=\"${INSTALL_MODE}\" >> ${environ}
+
+[ "$UPDEBUG" = YES ] && goany
+
+############# End  UPGRADE AND OVERLAY #######################
+
+exit 0

@@ -1,0 +1,399 @@
+#!/usr/bin/ksh
+#==============================================================================
+# ldapinfo
+#
+# EXIT CODES (specific to ldapinfo)
+#
+#	100 - Cannot include ldaptabProcedures (not ldapinfo specific)
+#	101 - invalid arguments passed to ldapinfo
+#	102 - need to specify daemon to view/configure in ldaptab
+#	103 - no value given to set parameter to
+#	104 - cannot set this parameter
+#	105 - no such parameter
+#
+# Revision History:
+#
+# L000	18th Oct 1997	tonylo
+#	Added ldapinfo -v basicinfo -d n
+#
+#------------------------------------------------------------------------------
+LDAPTABPROCS=/usr/lib/ldap/ldaptabProcedures
+
+if [ -f $LDAPTABPROCS ]
+then
+	. $LDAPTABPROCS
+else
+	pfmt -s nostd -g ldapmisc:3 "Fatal error, cannot find file %s\n" $LDAPTABPROCS
+	exit 100
+fi
+
+#====================================================================== XXX ===
+# displayAllParameters
+#
+# display all the viewable parameters
+#------------------------------------------------------------------------------
+getAllLdapInfoParameters() {
+
+cat <<'END'
+aclfile         - return path of the file containing acl info
+attributefile   - return path of file containing attribute info
+config_dn       - 
+daemoninfo      - display all info on particular parameter
+dbfiles         - return all the database cfg files 
+                  (need #SCO_GUI_DATABASE <name> label)
+dbinfo          - return names and files of daemons databases
+defaultaccess   - 
+defaultreferral -
+masterfile      - path of master configuration file for daemon
+monitor_dn      -
+name            - name of the daemon
+identifier      - identifier of the daemon
+noofdaemons     - number of daemons in ldaptab
+objectclassfile - return path of file containing object class info
+phonetic        -
+port            - port on which daemon is attached
+schemacheck     - returns whether schemachecking is on or off
+sizelimit       -
+startatboot     - does the daemon start at boot time
+status          - daemon status
+sysloglevel     - syslog level for daemon
+timelimit       -
+type            -
+END
+}
+
+
+usage()  {
+	pfmt -s nostd -g ldapmisc:33 "Usage: %s [-V] -v parameter [-d daemonno]\n" $1
+	pfmt -s nostd -g ldapmisc:34 "Usage: %s -s parameter=value -d daemonno\n" $1
+}
+
+#====================================================================== XXX ===
+#                                    MAIN
+#------------------------------------------------------------------------------
+# Check for no arguments
+if [ $# -eq 0 ]; then usage $0; exit 101; fi
+
+# Get command line arguments
+# -v 	the ldap value being enquired about
+# -d	the daemon number
+
+vflag=
+dflag=
+iflag=
+sflag=
+while [ $# != 0 ]
+do
+	name=$1
+	case $name in
+	-v) 
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 101; fi
+		vflag=1
+		vval="$1";;
+	-d)
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 101; fi
+		dflag=1
+		dval="$1";;
+	-s)
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 101; fi
+		sflag=1
+		sval="$1";;
+	-i)
+		shift
+		if [ $# -eq 0 ]; then argexpected $name; usage $0; exit 101; fi
+		iflag=1
+		ival="$1";;
+	-V)
+		getAllLdapInfoParameters
+		exit 0;;
+	-\?)	
+		usage $0
+		exit 0;;
+	*)
+		pfmt -s nostd -g ldapmisc:11 "Unrecognised argument: %s\n" $name
+		usage $0
+		exit 101;;
+	esac
+	shift
+done
+
+# Check whether both -s and -v are specified
+if [ ! -z "$sflag" ] && [ ! -z "$vflag" ]
+then
+	pfmt -s error -g ldapmisc:35 "Cannot use both -v and -s arguments\n"
+	exit 101
+fi
+
+# Get the number of daemons from the ldaptab file
+NumberOfDaemons=`commentFilter $LDAPTAB | wc -l`
+[ "$vflag" == 1 ] && [ "$vval" = "noofdaemons" ] && {
+	echo $NumberOfDaemons; exit 0;
+}
+
+if [ "$NumberOfDaemons" -eq 0 ] 
+then
+	pfmt -s info -g ldapmisc:43 "No slapd daemons configured\n"
+	exit 102
+fi
+
+if [ "$NumberOfDaemons" -eq 1 ] && [ -z "$dflag" ]
+then
+	dflag=1
+	dval=1
+	iflag=1
+	canReadLDAPTAB
+	ival=`commentFilter $LDAPTAB	| \
+		printLine 1		| awk -F ":" '{print $1; exit;}' `
+else
+	# Check that -d <n> option has been specified, if not exit
+	[ -z "$dflag" ] && [ -z "$iflag" ] && {
+		pfmt -s info -g ldapmisc:42 "More than one daemon in ldaptab, need to specify which daemon to view/configure with -i or -d options\n"
+		usage
+		exit 102
+	}
+	if [ -z "$iflag" ] && [ ! -z "$dflag" ]
+	then
+		canReadLDAPTAB
+		daemonNumberIsValid $dval -e
+		ival=`commentFilter $LDAPTAB	| \
+			printLine "$dval"		| \
+			awk -F ":" '{print $1; exit;}' `
+	fi
+fi
+
+
+# Find out the parameter, may need to parse the parameter if -s is used
+if [ "$vflag" == 1 ]; then 
+	# Viewing the value of a parameter
+	parameter=$vval;
+else
+	# Setting the value of a parameter
+
+	# When setting the value of a parameter, $sval will be in the format:
+	# "parameter=value", we to set parameter to the value of "parameter"
+	# and set the value of sval to "value"
+
+	checkforequals=${sval##*=*}
+	if [ -z "$checkforequals" ]
+	then
+		parameter=${sval%%=*}
+		sval=${sval#*=}
+	else
+		pfmt -s error -g ldapmisc:36 "No value given to set %s to\n" "$sval"
+		exit 103
+	fi
+
+	UID=`id -u`
+	if [ "$UID" != 0 ]
+	then
+		pfmt -s info -g ldapmisc:2 "You must be root to run this command\n"
+	        exit 140
+	fi
+
+fi
+
+
+case "$parameter" in
+aclfile)
+	[ ! -z "$vflag" ] && getLabelledIncludeFileName "$ival" "#SCO_GUI_ACL" 0
+	[ ! -z "$sflag" ] && setLabelledIncludeFileName "$ival" "#SCO_GUI_ACL" "$sval"
+	;;
+
+attributefile)
+	[ ! -z "$vflag" ] && \
+		getLabelledIncludeFileName "$ival" "#SCO_GUI_ATTRIBUTES" 0
+	[ ! -z "$sflag" ] && \
+		setLabelledIncludeFileName "$ival" "#SCO_GUI_ATTRIBUTES" "$sval"
+	;;
+config_dn)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" config_dn 1
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" config_dn "$sval"
+	;;
+daemoninfo) 
+	[ ! -z "$vflag" ] && echo `commentFilter "$LDAPTAB" | printLine "$ival"`
+	[ ! -z "$sflag" ] && {
+		pfmt -s nostd -g ldapmisc:37 "Cannot set a value for parameter - %s\n" "$sval"
+		exit 104
+	}
+	;;
+dbfiles)
+	[ ! -z "$vflag" ] && getDatabaseFileNames "$ival"
+	[ ! -z "$sflag" ] && {
+		pfmt -s nostd -g ldapmisc:37 "Cannot set a value for this parameter - %s\n" "$sval"
+		exit 104
+	}
+	;;
+dbinfo)
+	[ ! -z "$vflag" ] && getAllDaemonDatabases "$ival"
+	[ ! -z "$sflag" ] && {
+		pfmt -s nostd -g ldapmisc:37 "Cannot set a value for this parameter - %s\n" "$sval"
+		exit 104
+	}
+	;;
+defaultaccess)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" defaultaccess 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" defaultaccess "$sval"
+	;;
+defaultreferral)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" referral 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" referral "$sval"
+	;;
+getcallername)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" getcallername 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" getcallername "$sval"
+	;;
+masterfile)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 3
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 3 "$sval"
+	}
+	;;
+monitor_dn)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" monitor_dn 1
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" monitor_dn "$sval"
+	;;
+name)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 1
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 1 "$sval"
+	}
+	;;
+identifier)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 1
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 1 "$sval"
+	}
+	;;
+objectclassfile)
+	[ ! -z "$vflag" ] && \
+		getLabelledIncludeFileName "$ival" "#SCO_GUI_OBJECTCLASSES" 0
+	[ ! -z "$sflag" ] && \
+		setLabelledIncludeFileName "$ival" "#SCO_GUI_OBJECTCLASSES" "$sval"
+	;;
+phonetic)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" phonetic 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" phonetic "$sval"
+	;;
+port)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 2
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 2 "$sval"
+	}
+	;;
+schemacheck)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" schemacheck 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" schemacheck "$sval"
+	;;
+sizelimit)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" sizelimit 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" sizelimit "$sval"
+	;;
+startatboot)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 5
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 5 "$sval"
+	}
+	;;
+status)
+	[ ! -z "$vflag" ] && getDaemonStatus "$ival"
+	[ ! -z "$sflag" ] && {
+		 pfmt -s nostd -g ldapmisc:37 "Cannot set a value for parameter - %s\n" "$sval"
+		exit 104
+	}
+	;;
+sysloglevel)
+	[ ! -z "$vflag" ] && {
+		getLDAPTABfield "$ival" 4
+	}
+	[ ! -z "$sflag" ] && { 
+		setLDAPTABfield "$ival" 4 "$sval"
+	}
+	;;
+timelimit)
+	[ ! -z "$vflag" ] && getMasterFileField  "$ival" timelimit 0
+	[ ! -z "$sflag" ] && setMasterFileField  "$ival" timelimit "$sval"
+	;;
+type)
+	[ ! -z "$vflag" ] && getDaemonType "$ival"
+        [ ! -z "$sflag" ] && {
+		pfmt -s nostd -g ldapmisc:37 "Cannot set a value for parameter - %s\n" "$sval"
+		exit 104
+	}
+        ;;
+# L000 vvv
+basicinfo)
+	[ ! -z "$vflag" ] && { 
+		# id
+		getLDAPTABfield "$ival" 1
+		# status
+		getDaemonStatus "$ival"
+		# type
+		getDaemonType "$ival"
+		# port
+		getLDAPTABfield "$ival" 2
+	}
+        [ ! -z "$sflag" ] &&  {
+		 pfmt -s nostd -g ldapmisc:37 "Cannot set a value for parameter - %s\n" "$sval"
+		exit 104
+	}
+	;;
+# L000 ^^^
+*)
+	# Try it on ldapdbinfo
+	typeset dbfiles=`getDatabaseFileNames "$ival"`
+	typeset dbname=""
+	for i in $dbfiles
+	do
+		dbname=$i
+		break
+	done
+	
+	if [ ! -z "$dbname" ]
+	then
+		typeset eVal=0
+		if [ ! -z "$vflag" ]
+		then
+			/usr/lib/ldap/ldapdbinfo -q -v "$parameter" -d "$dbname"
+			eVal=$?
+		elif [ ! -z "$sflag" ]
+		then
+			/usr/lib/ldap/ldapdbinfo \
+				-q -s "$parameter=$sval" -d "$dbname"
+			eVal=$?
+		fi
+
+		# Check if error was invalid argument
+		if [ $eVal != 123 ]
+		then
+			if [ $eVal != 0 ]
+			then
+				exit $eVal
+			fi
+			return 
+		fi
+	fi
+	pfmt -s nostd -g ldapmisc:38 "No such parameter - %s\n" "$parameter"
+	exit 105
+	;;
+esac
+
+if [ ! -z "$sflag" ]
+then
+	printf "%s=%s\n" "$parameter" "$sval"
+fi
+exit 0
+
+

@@ -1,0 +1,61 @@
+#!/bin/sh
+#ident "@(#)addNETCFGrole	28.1"
+#ident "$Header$"
+#
+# Add NETCFG role to owner
+# 
+#       Copyright (C) 1997 The Santa Cruz Operation, Inc.  
+#           All Rights Reserved.
+#
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+
+# Check if this is a new user for the TFM database
+/bin/adminuser $OWN > /dev/null
+if [ $? -ne 0 ]
+then
+	/bin/adminuser -n $OWN
+fi
+
+# Check to make sure the NETCFG role is defined
+/bin/adminrole NETCFG > /dev/null
+if [ $? -ne 0 ]
+then
+	/bin/adminrole -n NETCFG
+fi
+
+# Get the current list of roles
+OLDROLES=`LANG=C /bin/adminuser $OWN | grep roles | cut -f 2 -d: `
+
+echo $OLDROLES | grep -Fq "<none>"
+if [ $? = 0 ]
+then
+	OLDROLES=""
+fi
+
+if [ "$OLDROLES" = "" ]
+then
+	NEWROLES=NETCFG
+else
+	#Check to see if NETCFG is already a role
+	echo $OLDROLES | grep NETCFG > /dev/null
+	if [ $? = 0 ]
+	then
+		NEWROLES=$OLDROLES
+	else
+		NEWROLES=$OLDROLES,NETCFG
+	fi
+fi
+
+# echo "OLDROLES=$OLDROLES"
+# echo "NEWROLES=$NEWROLES"
+
+/bin/adminuser -o $NEWROLES $OWN
+
+
+

@@ -1,0 +1,90 @@
+#ident	"@(#)nas:common/mkdeps	1.13"
+#
+# common assembler rules and dependencies
+#
+# included by all assembler Makefiles
+#
+
+o=o
+C	= ../common
+INCLIST	= -I. -I.. -I../../inc/common $(NUMINC)
+YFLAGS	= -lt
+INS	= ../../sgs.install
+
+PRODUCTS= $(SGS)as
+
+COMOBJS	= dirs.$o eval.$o expr.$o gram.$o main.$o objf.$o sect.$o syms.$o
+
+.SUFFIXES: .ln
+
+.c.o:
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $<
+
+.c.ln:
+	$(LINT) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $<
+
+all:	$(PRODUCTS)
+
+include ../../fpemu/common/fp.mkdeps
+FPEFATAL= fatal
+
+include ../../intemu/common/mkdeps
+
+$(SGS)as: $(COMOBJS) $(MACHOBJS) $(FP_OBJS) $(NUMOBJS)
+	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) $(COMOBJS) $(MACHOBJS) \
+		$(FP_OBJS) $(NUMOBJS) $(OBJFLIB) $(LIBSGS)
+
+lintit:
+	$(MAKE) o=ln CFLAGS="$(CFLAGS) $(LINTFLAGS)" \
+		CC="$(LINT)" LINT="$(LINT)" llib-las.ln
+
+llib-las.ln: $(COMOBJS) $(MACHOBJS) $(FP_OBJS) $(NUMOBJS)
+	$(LINT) -o as $(CFLAGS) $(COMOBJS) $(MACHOBJS) $(FP_OBJS) $(NUMOBJS)
+
+install:: all
+	cp $(SGS)as as.bak
+	$(STRIP) $(SGS)as
+	/bin/sh $(INS) 755 $(OWN) $(GRP) $(CCSBIN)/$(SGS)as $(SGS)as
+	mv as.bak $(SGS)as
+
+clean::
+	rm -f $(COMOBJS) $(COMOBJS:.$o=.ln) $(MACHOBJS) $(MACHOBJS:.$o=.ln)
+	rm -f $(FPEOBJS) $(FPEOBJS:.$o=.ln) $(NUMOBJS) $(NUMOBJS:.$o=.ln)
+
+clobber:: clean
+	rm -f $(SGS)as llib-las.ln as.bak
+
+$(COMOBJS): $C/as.h
+
+# explicit rules are necessary for make to handle sources
+# not in the current directory!
+
+dirs.$o: $C/dirs.c align.h amode.h \
+		$C/dirs.h $C/eval.h $C/expr.h $C/objf.h $C/sect.h $C/syms.h
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $C/dirs.c
+
+eval.$o: $C/eval.c $C/eval.h $C/expr.h $C/gram.h $C/sect.h $C/syms.h
+	$(CC) $(INCLIST) $(FP_INC) $(CFLAGS) -c $(DEFLIST) $C/eval.c
+
+expr.$o: $C/expr.c amode.h $C/eval.h $C/expr.h $C/sect.h $C/stmt.h $C/syms.h
+	$(CC) $(INCLIST) $(FP_INC) $(CFLAGS) -c $(DEFLIST) $C/expr.c
+
+gram.$o: $C/gram.c parse.c amode.h $C/dirs.h $C/expr.h $C/gram.h $C/syms.h
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $C/gram.c
+
+main.$o: $C/main.c amode.h $C/dirs.h $C/eval.h $C/expr.h $C/gram.h \
+		$C/main.h $C/objf.h $C/sect.h $C/syms.h \
+		$(CPUINC)/sgs.h $(CPUINC)/paths.h
+	$(CC) $(INCLIST) -I$(CPUINC) $(CFLAGS) -c $(DEFLIST) $C/main.c
+
+objf.$o: $C/objf.c amode.h target.h \
+		$C/eval.h $C/expr.h $C/objf.h $C/sect.h $C/syms.h
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $C/objf.c
+
+sect.$o: $C/sect.c align.h amode.h $C/eval.h $C/expr.h \
+		$C/objf.h $C/relo.h $C/sect.h $C/stmt.h $C/syms.h
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $C/sect.c
+
+syms.$o: $C/syms.c align.h amode.h \
+		$C/eval.h $C/expr.h $C/objf.h $C/sect.h $C/syms.h
+	$(CC) $(INCLIST) $(CFLAGS) -c $(DEFLIST) $C/syms.c

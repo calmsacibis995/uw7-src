@@ -1,0 +1,1669 @@
+#!/sbin/sh
+#ident  "@(#)nics_config	15.4	98/01/18"
+
+# nics_config -- ISL UI module: system configures selected NICs
+
+RESMGR=/sbin/resmgr
+
+# used to determine if this script should be run at all
+function skip_test
+{
+	[ -n "$debug" ] && set -x
+	from_help="$(svar get help_topic)"
+	[ "$direction" == "NEXT" -o "$from_help" == "nics_config" ] || ii_exit $direction
+	[[ "${module}" == "ii_config" ]] || {
+		UnixWare_PKGS=$(ivar get UnixWare_PKGS)
+		[[ " $UnixWare_PKGS " == *" nics "* ]] || ii_exit $direction
+
+		# don't offer the hardware config screens if install from
+		# network. This has already been done.
+		SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+		[ "$SEC_MEDIUM_TYPE" = "tcp"  -o \
+		  "$SEC_MEDIUM_TYPE" = "spx" ] && \
+			ii_exit $direction
+
+		# if we've been asked to defer configuration, skip on by.
+		NICS_CHOICE=$(svar get NICS_CHOICE)
+		[ "$NICS_CHOICE" = "DEFER_CONFIG" ] && ii_exit $direction
+	}
+}
+
+# used to peform anything important this script has to
+# accomplish in a non-interactive manner. Only called
+# if skip_$this_module_name is set in the ifile.
+function skip_func
+{
+	:
+	# do what ever is necessary to accomplish the silent config.
+	# perhaps we should check $direction (set in common.rc) to
+	# see if we should do something.
+
+	# no need to ii_exit, this is done in common.rc after return
+	# from this function
+}
+
+. /isl/ui_modules/common.rc
+
+# process the request to backup in the interview screens
+function go_prev
+{
+	[ -n "$debug" ] && set -x
+	nic_hw_update "preserve"
+	ii_exit PREV
+}
+
+# process the request to show help for this interview screen
+function go_help
+{
+	[ -n "$debug" ] && set -x
+
+	# must set both because the ivar set here will be
+	# removed before returning from help module. later
+	# testing of whether or net we're going previous
+	# because of a return from help must be kept in
+	# a separate variable, thus svar.
+	ivar set help_topic nics_config
+	svar set help_topic nics_config
+
+	# make sure the configuration as currently presented
+	# is preserved. Note, it is possible to get into a
+	# loop here, because nic_hw_update can get you to a
+	# place that calls go_prev(). We'll have to guard
+	# against this.
+	nic_hw_update "preserve"
+	ii_exit HELP
+}
+
+function ii_get_key
+{
+	[ -n "$debug" ] && set -x
+
+	DRIVER_NAME=$(ivar get NICS_DRIVER_NAME)
+	KEY=$(ivar get NICS_KEY)
+	SLOT=$(ivar get NICS_SLOT)
+
+	[ -n "${KEY}" ] && ${RESMGR} -k ${KEY} -p MODNAME -v ${DRIVER_NAME}
+
+} # end of ii_get_key
+
+function ii_add_key
+{
+	[ -n "$debug" ] && set -x
+	DRIVER_NAME=$(ivar get NICS_DRIVER_NAME)
+	IRQ=$(ivar get NICS_IRQ)
+	IO=$(ivar get NICS_IO)
+	START=${IO%%-*}
+	END=${IO##*-}
+	IO="${START} ${END}"
+	RAM=$(ivar get NICS_RAM)
+	START=${RAM%%-*}
+	END=${RAM##*-}
+	RAM="${START} ${END}"
+	II_DMA=$(ivar get NICS_DMA)
+	[ -z "${RAM}" ] && RAM="- -"
+	[ -z "${IO}" ] && IO="- -"
+	[ -z "${II_DMA}" ] && II_DMA="-1"
+
+        #
+        # For non-autoconfigurable card, we have to build the entry by
+        # hand for the resource manager.
+        #
+        typeset JUNK
+
+        # If the IRQ is set to 2, we need to make it 9 for UnixWare.
+        [ "${IRQ}" = "2" ] && { 
+		IRQ=9
+		# changing 2 to 9 breaks first reboot configuration
+		# of the NIC when the bcfg file doesn't contain 9
+		# in its list of valid vectors. Strictly speaking,
+		# we should probably not do this conversion at all,
+		# but changing to much behavior at this point could
+		# cause other problems. Comment it out!
+		#ivar set NICS_IRQ 9
+	}
+
+        # Get the RM key so that we can modify this driver
+        ${RESMGR} | grep " ${DRIVER_NAME} " | read KEY JUNK
+
+	[[ -z "$KEY" ]] && {
+		# assumes that there is only one device with this name in the
+		# resmgr. Gotta watch out when the user tries to reconfigure
+		# an ISA card. Could wind up with 2 resmgr entries.
+		${RESMGR} -a -p MODNAME -v "${DRIVER_NAME}"
+
+		# Get the RM key so that we can modify this driver
+		${RESMGR} | grep " ${DRIVER_NAME} " | read KEY JUNK
+	}
+
+	[[ -z "$KEY" ]] && return
+
+        ${RESMGR} -k ${KEY} -p IRQ -v "${IRQ}"
+        ${RESMGR} -k ${KEY} -p IOADDR -v "${IO}"
+        ${RESMGR} -k ${KEY} -p MEMADDR -v "${RAM}"
+        ${RESMGR} -k ${KEY} -p DMAC -v "${II_DMA}"
+
+	SLOT="-"
+
+        KEY_ADDED=1
+	ivar set KEY_ADDED "1"
+	ivar set NICS_KEY "${KEY}"
+
+} # end of ii_add_key
+
+function ii_do_netinst
+{
+	[ -n "$debug" ] && set -x
+
+	# make /etc/inst/nd directory to put dlpimdi file in from nics.z
+	# this is also the place where dlpid will write its pipe file dlpidPIPE
+	[ -d /etc/inst/nd ] || mkdir -p /etc/inst/nd
+
+	typeset ETH_MAJ=72              #  Major number for NIC Drivers
+	typeset jRET=0			#  config return status
+
+	SEC_MEDIUM_TYPE=$(ivar get SEC_MEDIUM_TYPE)
+	NICS_CONFIG_FILE=$(ivar get NICS_CONFIG_FILE)
+	NICS_DRIVER_NAME=$(ivar get NICS_DRIVER_NAME)
+	NICS_NAME=$(ivar get NICS_NAME)
+
+	unset TYPE
+
+	# the bcfg file is in $IIROOT/config.
+	# We have to source it in here to get a few of the bits
+	# of information that didn't get stored in the ifile
+	# during card selection.
+	CONFIG_DIR=${IIROOT}/config
+	. ${CONFIG_DIR}/${NICS_CONFIG_FILE} > /dev/null 2>&1
+
+	# take this parameter from the bcfg file instead of ivar.
+	NICS_TYPE=$TYPE
+
+	#
+	#  Add the driver and then configure all parms
+	#  If RAM Addr, I/O Addr, or DMA are not set, set
+	#  them to values the Resource Manager can use.
+	#
+	# assumption here is that these values are already
+	# verified. No need to go and check correctness.
+	#
+	NICS_RAM=$(ivar get NICS_RAM)
+	NICS_IO=$(ivar get NICS_IO)
+	NICS_DMA=$(ivar get NICS_DMA)
+	NICS_KEY=$(ivar get NICS_KEY)
+	[ -z "${NICS_RAM}" ] && NICS_RAM="- -"
+	[ -z "${NICS_IO}" ] && NICS_IO="- -"
+	[ -z "${NICS_DMA}" ] && NICS_DMA="-1"
+
+	KEY_ADDED=0
+	if [ -n "${NICS_KEY}" ]
+	then
+		${RESMGR} -k ${NICS_KEY} -p MODNAME -v ${DRIVER_NAME}
+		(( $? )) && jRET=1
+	else
+		# EISA, MCA, and PCI cards may be completely autoconfigured.
+		case ${BUS} in
+		EISA|MCA|PCI)
+			if [ "${ADDRM}" = "true" -o "${AUTOCONF}" = "false" ]
+			then
+				ii_add_key
+			else
+				ii_get_key
+			fi
+			;;
+		*)
+			ii_add_key
+			;;
+		esac
+		NICS_KEY=$KEY
+		[ -z "${KEY}" ] && jRET=1
+	fi
+
+	(( $jRET )) && {
+		FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${RESMGR_FAIL}"
+		# failure here means key wasn't added above. No cleanup
+		# necessary.
+		return 1
+	}
+
+	#
+	# If there was a Custom string, use that.
+	#
+	NICS_CUSTOM_NUM=${CUSTOM_NUM:-0}
+	[ -n "${NICS_CUSTOM_NUM}" ] && {
+		strcnt=1
+		while [ "$strcnt" -le "$NICS_CUSTOM_NUM" ]
+		do
+			ii_cust_val=$(ivar get NICS_CUST_VAL[${strcnt}])
+			ii_cust_pname=$(ivar get NICS_CUST_PNAME[${strcnt}])
+			ii_custom=$(ivar get NICS_CUSTOM[${strcnt}])
+
+			${RESMGR} -k ${NICS_KEY} \
+				  -p "${ii_cust_pname},s" \
+				  -v "${ii_cust_val}"
+			(( $? )) && jRET=1
+
+			${RESMGR} -k ${NICS_KEY} \
+				  -p "${ii_cust_pname}_,s" \
+				  -v "${ii_custom}"
+			(( $? )) && jRET=1
+
+			let strcnt+=1
+		done
+	}
+
+	# add in some additional information for ndcfg to use later on
+	# the idea is to pretend as if ndcfg added this card to the system.
+	# use a delimiter because someday we might have spaces in NAME= in
+	# netinstall we must use delimiter for NIC_CUST_PARM since parms are
+	# delimited by spaces
+	${RESMGR} -k ${NICS_KEY} -p "ENTRYTYPE" -v "1"    # no typing needed
+	(( $? )) && jRET=1
+	if [ "${NICS_TYPE}" = "MDI" ]
+	then
+	   ${RESMGR} -k ${NICS_KEY} -p "NDCFG_UNIT,n" -v "0"
+	   (( $? )) && jRET=1
+	   ${RESMGR} -k ${NICS_KEY} -p "DEV_NAME,s" \
+	   	-v "/dev/mdi/${NICS_DRIVER_NAME}0"
+	   (( $? )) && jRET=1
+	   ${RESMGR} -k ${NICS_KEY} -p "DRIVER_TYPE,s" -v "MDI"
+	   (( $? )) && jRET=1
+	   ${RESMGR} -k ${NICS_KEY} -p "BCFGPATH,s" -v "/etc/inst/nd/mdi/${NICS_DRIVER_NAME}/${NICS_CONFIG_FILE}"
+	   (( $? )) && jRET=1
+	else
+	   ${RESMGR} -k ${NICS_KEY} -p "DEV_NAME,s" \
+	   	-v "/dev/${NICS_DRIVER_NAME}_0"
+	   (( $? )) && jRET=1
+	   ${RESMGR} -k ${NICS_KEY} -p "BCFGPATH,s" -v "/etc/inst/nics/drivers/${NICS_DRIVER_NAME}/${NICS_CONFIG_FILE}.bcfg"
+	   (( $? )) && jRET=1
+	   ${RESMGR} -k ${NICS_KEY} -p "DRIVER_TYPE,s" -v "DLPI"
+	   (( $? )) && jRET=1
+	fi
+
+	NIC_IS_ISA=$(ivar get NIC_IS_ISA)
+	if [ "${NIC_IS_ISA}" = "1" ]
+	then
+		# since BRDBUSTYPE is known to libresmgr we don't need a ,n
+		${RESMGR} -k ${NICS_KEY} -p "BRDBUSTYPE" -v "1"
+		(( $? )) && jRET=1
+	fi
+
+	#
+	# Put "IICARD" in resmgr for nics installation later, and save
+	# parameters. Add additional NICS resmgr values at this point.
+	${RESMGR} -k ${NICS_KEY} -p IICARD,s -v 1
+	(( $? )) && jRET=1
+	topo=$(ivar get NICS_TOPOLOGY)
+	${RESMGR} -k ${NICS_KEY} -p TOPOLOGY,s -v "${topo:-ETHER}"
+	(( $? )) && jRET=1
+
+	(( $jRET )) && {
+	    FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_RESMGR_FAIL}"
+	    return 1
+	}
+
+	# if we aren't configuring for netinstall, return now.
+	[[ "${module}" == "nics_config" ]] && return $jRET
+
+	#
+	#  First part is the common section:
+	#       Get hardware information via menus ii_hw_select and ii_hw_config
+	#       Make device nodes
+	#       Reserve space in device table with idmodreg
+	#       Configure networking hardware
+	#
+
+	#
+	#  cpio in the config files (from the nics pkg) so we can generate
+	#  menus for selecting/configuring nics.
+	#
+	cd ${IIROOT}
+	NICS_EXTRACT_LIST=""
+	testlist="$(cat /tmp/common.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			NICS_EXTRACT_LIST="${testlist}"
+			break
+		}
+	done
+	testlist="$(cat /tmp/${SEC_MEDIUM_TYPE}.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			NICS_EXTRACT_LIST="${NICS_EXTRACT_LIST} ${testlist}"
+			break
+		}
+	done
+
+	# Get driver from netinstall floppies.
+	# Look at map file to see where this NIC driver resides.
+	nicline=$(grep " ${NICS_DRIVER_NAME} " /tmp/floppy_map)
+	set -- $nicline
+	floppy_number=$1
+	nic_driver=$2
+	ddi_version=${3:-7}
+	svar set NICS_DDI_VERSION "${ddi_version}"
+	NICS_DDI_VERSION="${ddi_version}"
+	[ ${NICS_DDI_VERSION%%[.a-zA-Z]*} -ge 8 ] && {
+		FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${CANT_SUPPORT_DDI8} ${NICS_DDI_VERSION}"
+		return 1
+	}
+
+	[[ ${floppy_number} == 1 ]] && {
+		testlist="$(cat /tmp/${NICS_DRIVER_NAME}.list)"
+		for file in ${testlist}
+		do
+		    [ -f $file ] || {
+		    	NICS_EXTRACT_LIST="${NICS_EXTRACT_LIST} ${testlist}"
+		    	break
+		    }
+		done
+	}
+
+	[ -n "$NICS_EXTRACT_LIST" ] && {
+	    DISPWIN=${CURWIN}
+	    set -- ${NICS_EXTRACT_LIST}
+	    extract_cnt=$#
+	    cnt_extracted=0
+	    gauge_start $extract_cnt -title "${COPYING_UTILS}" -above 4
+	    PROGRESS=$CURWIN
+	    cpio -ivdDZI /dev/rdsk/f0 ${NICS_EXTRACT_LIST} 2>> /tmp/stderr |&
+		while read -p x
+                do
+			gauge_add
+			(( cnt_extracted += 1 ))
+                done
+	    call sleep 2
+	    wclose $PROGRESS
+	    #wclose ${DISPWIN}
+	}
+
+	[[ $cnt_extracted != $extract_cnt ]] && {
+	    FAILURE_MESSAGE=`eval echo "${INETINST_NET_FAILURE} ${II_ERR_UNLOAD_NIC}"`
+	    return 1
+	}
+
+	II_FLOP_ERR=0
+	closed_dispwin=0
+	curr_floppy_number=1
+	while [ $curr_floppy_number -ne $floppy_number ]
+	do
+		unset IDSTRING
+
+		wclose ${DISPWIN}
+	    	MESSAGE="\"${INETINST_ANOTHER_FLOPPY}${NICS_NAME}\""
+	    	if [ ${II_FLOP_ERR} != 0 ]
+	    	then
+	    	    	eval display -w "${MESSAGE}" \
+	    	    		-bg $ERROR_BG -fg $ERROR_FG
+	    	else
+	    	    	eval display -w "${MESSAGE}"
+	    	fi
+	    	msg ""
+	    	footer "${WELCOME_FOOTER}"
+	    	set_hotkey 9 "ii_exit PREV"
+	    	input_handler
+
+		#
+		# Let the user know we're busy loading in driver
+		# and making devices
+		#
+		#wclose ${CURWIN}
+		display "${INETINST_LOADING_MODULES}" -above 1 -below 3
+		DISPWIN=${CURWIN}
+	    	footer "${GENERIC_WAIT_FOOTER}"
+
+		rm -f /tmp/netflop.label
+		cpio -iDZuI /dev/rdsk/f0t > /tmp/stderr 2>&1
+		[ -f /tmp/netflop.label ] && {
+		    read IDSTRING < /tmp/netflop.label
+		    [ "$IDSTRING" = "${REL_FULLNAME} ${floppy_number}" ] && {
+			NICS_EXTRACT_LIST="$(cat /tmp/${NICS_DRIVER_NAME}.list)"
+			set -- ${NICS_EXTRACT_LIST}
+			extract_cnt=$#
+			cnt_extracted=0
+			gauge_start $extract_cnt -title \
+				"${COPYING_DRIVERS}" -above 4
+			PROGRESS=$CURWIN
+			cpio -ivdDZI /dev/rdsk/f0 ${NICS_EXTRACT_LIST} 2>> /tmp/stderr |&
+				while read -p x
+				do
+					gauge_add
+				done
+			call sleep 2
+			wclose $PROGRESS
+			wclose $DISPWIN
+			closed_dispwin=1
+			break
+		    }
+		}
+		II_FLOP_ERR=1
+	done 
+
+	(( $closed_dispwin )) && {
+		display "$INETINST_COPY_WAIT" -above 1 -below 3
+		DISPWIN=${CURWIN}
+		msg ""
+		footer "$LONG_WAIT_FOOTER"
+	}
+
+	# this should be quick. No need to build another screen here.
+	cd ${IIROOT}/etc/conf/mod.d
+	for MODULE in *
+	do
+		[ -h /etc/conf/mod.d/${MODULE} ] || \
+		    ln -s ${IIROOT}/etc/conf/mod.d/${MODULE} /etc/conf/mod.d/${MODULE}
+	done
+	[ -h /etc/conf/pack.d ] || \
+		ln -s ${IIROOT}/etc/conf/pack.d /etc/conf/
+	#msg ""
+	#footer ""
+
+	cd /
+
+	# copy dlpimdi file if present
+	[ "${TYPE}" == "MDI" ] && {
+		echo "net0:${NICS_DRIVER_NAME}0:N:0::N" > /etc/inst/nd/dlpimdi
+	}
+
+	#
+	#  In case of driver dependencies, make sure that all the drivers we
+	#  loaded in have a link into /etc/conf/mod.d
+	#
+	[ -h /etc/conf/mod.d/${NICS_DRIVER_NAME} ] || {
+		ln -s ${IIROOT}/etc/conf/mod.d/${NICS_DRIVER_NAME} /etc/conf/mod.d/${NICS_DRIVER_NAME}
+	}
+
+	> /tmp/mod_register
+	[ "$NICS_TYPE" = "MDI" ] && \
+		cp ${IIROOT}/etc/conf/nics_register > /tmp/mod_register
+	echo "5:1:${NICS_DRIVER_NAME}:${ETH_MAJ}" >> /tmp/mod_register
+	${IIROOT}/etc/conf/bin/idmodreg -f /tmp/mod_register
+	(( $jRET )) && {
+		FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_IDMODREG_FAIL}"
+		return 1
+	}
+
+	#
+	# Now create common symbolic links/directories necessary for network
+	# install. Moved here from below because some things needed libthread
+	# before it was getting linked into /usr/lib.
+	#
+	typeset iilibs
+	[ -h /etc/netconfig ] || ln -s ${IIROOT}/etc/netconfig /etc/netconfig
+	[ -h /etc/services ] || ln -s ${IIROOT}/etc/services /etc/services
+	[ -h /usr/bin/cat ] || ln -s ${IIROOT}/usr/bin/cat /usr/bin/cat
+	[ -h /usr/bin/dd ] || ln -s ${IIROOT}/usr/bin/dd /usr/bin/dd
+	[ -h /usr/sbin/pkgcat ] || \
+		ln -s ${IIROOT}/usr/sbin/pkgcat /usr/sbin/pkgcat
+
+	for iilibs in ${IIROOT}/usr/lib/*.so ${IIROOT}/usr/lib/*.so.2
+	do
+		[ -h /usr/lib/${iilibs##*/} ] || ln -s ${iilibs} /usr/lib/
+	done
+
+	for iilibs in /usr/lib/*.so
+	do
+		[ -h ${iilibs}.1 ] || ln -s ${iilibs} ${iilibs}.1
+	done
+
+	# log files are created here.
+	[ -d /var/sadm/dist ] || mkdir -p /var/sadm/dist
+
+	# we unload net0 at the end so we must remember to reload as necessary
+	[ "${NICS_TYPE}" = "MDI" ] && {
+		modadmin -s > /tmp/modadmin.$$
+		for MODULE in dlpi dlpibase
+		do
+		    grep "${MODULE}$" /tmp/modadmin.$$ > /dev/null 2>&1
+		    (( $? )) && {
+		        modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		        jRET=$?
+		        (( $jRET )) && {
+			    FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_MODLOAD_FAIL} ${MODULE}"
+			    rm -f /tmp/modadmin.$$
+			    return 1
+		        }
+		    }
+		done
+
+		modadmin -l ${IIROOT}/etc/conf/mod.d/net0
+		jRET=$?
+		(( $jRET )) && {
+		    FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_MODLOAD_FAIL} net0"
+		    rm -f /tmp/modadmin.$$
+		    return 1
+		}
+	        rm -f /tmp/modadmin.$$
+	}
+
+	#
+	#  Make device node for networking hardware, making sure first that the
+	#  device node does not already exist.
+	#
+	cd /
+	rm -f /dev/net0 2>/dev/null
+
+    jRET=0
+    if [ "${NICS_TYPE}" = "MDI" ]
+    then
+
+	[ -d /dev/mdi ] || mkdir -p /dev/mdi 2>/dev/null
+	# nodes for ddi 8 drivers are handled by mknodd
+	[ ${NICS_DDI_VERSION%%[.a-zA-Z]*} -lt 8 ] && {
+           rm -f /dev/mdi/${NICS_DRIVER_NAME}0 2>/dev/null
+
+	   # MDI drivers don't use cloning driver.
+	   ${IIROOT}/usr/sbin/mknod /dev/mdi/${NICS_DRIVER_NAME}0 c ${ETH_MAJ} 0
+	   (( $? )) && jRET=1
+
+	   # major 7 is cloning driver
+	   ${IIROOT}/usr/sbin/mknod /dev/net0 c 7 79
+	   (( $? )) && jRET=1
+	}
+
+    else
+	# nodes for ddi 8 drivers are handled by mknodd
+	[ ${NICS_DDI_VERSION%%[.a-zA-Z]*} -lt 8 ] && {
+	    rm -f /dev/${NICS_DRIVER_NAME}_0 2>/dev/null
+	    ${IIROOT}/usr/sbin/mknod /dev/${NICS_DRIVER_NAME}_0 c 7 ${ETH_MAJ}
+	    (( $? )) && jRET=1
+	}
+    fi
+
+	#
+	# Configure the Resource Manager to know about the selected Network
+	# Interface Card using the resmgr command.
+	#
+	while read drvname isc unit ipl itype irq ports porte mems meme dma
+	do
+		[ "${drvname}" = "${NICS_DRIVER_NAME}" ] &&  break
+	done < ${IIROOT}/etc/conf/sdev_list
+
+	#
+	# Set IPL from sdev_list file. Since this info comes from a file
+	# off the netinstall diskette, it can't be done earlier. Besides,
+	# it's only used if the card is really used for net installation.
+	# Let the postinstall script for nics take care of the other cases.
+	#
+	${RESMGR} -k ${NICS_KEY} -p IPL -v "${ipl}"
+	(( $? )) && jRET=1
+
+	#
+	# Before setting ITYPE, make sure it's not already set.
+	# Some EISA cards set it, and we shouldn't replace it.
+	#
+	${RESMGR} -k ${NICS_KEY} -p ITYPE | read JUNK
+	[ "${JUNK}" = "-" ] && {
+		${RESMGR} -k ${NICS_KEY} -p ITYPE -v "${itype}"
+		(( $? )) && jRET=1
+	}
+
+        ${RESMGR} -k ${NICS_KEY} -p UNIT -v "${unit}"
+	(( $? )) && jRET=1
+
+	#
+	# Now load the networking card's driver.  If it fails, let user
+	# try again with the methods selection screen.
+	#
+	[ ${NICS_DDI_VERSION%%[.a-zA-Z]*} -ge 8 ] && {
+		MDEV_FILE="/etc/conf/mdevice.d/${NICS_DRIVER_NAME}"
+		[ -d /etc/conf/mdevice.d ] || mkdir -p /etc/conf/mdevice.d
+		echo '$version 2' > ${MDEV_FILE}
+		echo '$interface'" ddi $NICS_DDI_VERSION" >> ${MDEV_FILE}
+		echo '$interface mdi 2' >> ${MDEV_FILE}
+		echo "$NICS_DRIVER_NAME - h" >> ${MDEV_FILE}
+
+		SDEV_FILE="/etc/conf/sdevice.d/${NICS_DRIVER_NAME}"
+		[ -d /etc/conf/sdevice.d ] || mkdir -p /etc/conf/sdevice.d
+		echo '$version 2' > ${SDEV_FILE}
+		echo "$NICS_DRIVER_NAME Y 0 6 1 0 0 0 0 0 -1" >> ${SDEV_FILE}
+
+		NODE_FILE="/etc/conf/node.d/${NICS_DRIVER_NAME}"
+		[ -d /etc/conf/node.d ] || mkdir -p /etc/conf/node.d
+		if [ "${NICS_TYPE}" = "MDI" ]
+		then
+			echo '$maxchan 1' > ${NODE_FILE}
+			echo "${NICS_DRIVER_NAME} mdi/${NICS_DRIVER_NAME}%i c:0 0 root root 600" >> ${NODE_FILE}
+		fi
+	}
+	modadmin -l ${IIROOT}/etc/conf/mod.d/${NICS_DRIVER_NAME}
+	(( $? )) && jRET=1
+	if [ "${jRET}" != "0" ]
+	then
+		FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_MODLOAD_FAIL} ${NICS_DRIVER_NAME}"
+		return 1
+	fi
+
+	#
+	# Set NIC resmgr key for source routing modules (token ring and fddi).
+	# only needed for ISL net installs.
+	#
+	[[ "${NICS_TYPE}" == "MDI" ]] && {
+		resmgr -m net0 | grep "^net0" > /dev/null 2>&1
+		(( $? )) && {
+			${RESMGR} -a -p MODNAME -v "net0"
+			(( $? )) && jRET=1
+		}
+		${RESMGR} -m net0 -p DLPIDRIVERKEY,n -v ${NICS_KEY}
+		(( $? )) && jRET=1
+	}
+
+	[ "${jRET}" != "0" ] && {
+	    FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_RESMGR_FAIL}"
+	    return 1
+	}
+
+	#
+	#  If the networking card had extra files that need to be in place,
+	#  put them in the right place here.  (ie: for pumping w/microcode)
+	#
+	[ ! -z "${EXTRA_FILES}" ] && {
+		OIFS=${IFS}
+		IFS=${nl}
+		for MODULE in ${EXTRA_FILES}
+		do
+			# NOTE: "${MODULE%/*}" is like 'dirname ${MODULE}'
+			dir=${MODULE%/*}
+			[ ! -d $dir ] && mkdir -p $dir
+			ln -s ${IIROOT}/${MODULE} ${MODULE}
+		done
+		IFS=${OIFS}
+	}
+
+	#
+	#  If the networking card had a command that needed to be run after
+	#  loading the driver, do that here.  (ie: for pumping w/microcode)
+	#
+	[ ! -z "${CONFIG_CMDS}" ] && {
+		OIFS=${IFS}
+		IFS=${nl}
+		for MODULE in ${CONFIG_CMDS}
+		do
+			eval ${MODULE} > /dev/null 2>&1
+			(( $? )) && jRET=1
+		done
+		IFS=${OIFS}
+	}
+
+	# We want to be able to restart!
+	# This means being able to stop and restart dlpid as necessary,
+	# and to detect if we have to do so.
+	# What are the conditions:
+	#	1) no previous errors occurred
+	#	2) the NIC didn't changed since dlpid started
+	#	3) dlpid not yet started
+	#
+	if [ "${NICS_TYPE}" = "MDI" ]
+	then
+		# kick start dlpid - leave debugging file in /tmp in case
+		# anything happens
+		${IIROOT}/usr/sbin/dlpid -l /tmp/dlpid.log \
+			-i "${NICS_DRIVER_NAME}0"
+		dlpid_found=0
+		dlpid_loop_count=0
+		while [ dlpid_loop_count -lt 5 ]
+		do
+			[ -f /etc/dlpid.pid ] && {
+				dlpid_found=1
+				break
+			}
+			(( dlpid_loop_count += 1 ))
+			call sleep 3
+		done
+		(( $dlpid_found )) || jRET=1
+	else
+		< /dev/${NICS_DRIVER_NAME}_0 > /dev/null 2>&1
+		(( $? )) && jRET=1
+	fi
+
+	# if we return 1 here that means that function
+	# ii_do_netinst will return 1 which means that
+	# function netinst (which calls ii_do_netinst)
+	# will error and ii_exit PREV
+	[ "${jRET}" != "0" ] && {
+	    FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_NICCFG_FAIL}"
+	    return 1
+	}
+
+	#
+	#  Set the uname.  Everybody needs this info
+	#
+	NODE=$(ivar get NODE)
+	${IIROOT}/usr/bin/uname -S ${NODE}
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		FAILURE_MESSAGE="${INETINST_NET_FAILURE} ${INETINST_UNAME_FAIL}"
+		return 1
+	}
+
+	#
+	#  Now we're configured.  Place the common files in the list to be
+	#  copied to the hard drive when we chroot /mnt. This is a list of
+	#  files used by copy2hd to cpio from the RAM disk to the newly created
+	#  hard disk.
+	#
+	if [ "$NICS_TYPE" == "MDI" ]
+	then
+		dev_name=dev/mdi/${NICS_DRIVER_NAME}0
+	else
+		dev_name=dev/${NICS_DRIVER_NAME}_0
+	fi
+	while read FILENAME
+	do
+		grep "^${FILENAME}$" /hd.list > /dev/null 2>&1
+		(( $? )) && echo ${FILENAME} >> /hd.list
+	done <<-EOFILES
+	${dev_name}
+	etc/services
+	etc/netconfig
+	usr/sbin/pkgcat
+	usr/lib/libnsl.so
+	usr/lib/libsocket.so.2
+	usr/lib/libthread.so
+	usr/lib/libnsl.so.1
+	usr/lib/libthread.so.1
+	usr/bin/cat
+	usr/bin/dd
+	usr/bin/uname
+	EOFILES
+
+	cd ${IIROOT}
+
+	print -u2 "========== Leaving ii_do_netinst ====="
+	return $jRET
+}
+
+function netinst
+{
+	print -u2 "========== In netinst =========="
+	[ -n "${debug}" ] && set -x
+
+	typeset IIROOT=/.extra.d
+	typeset MNTROOT=/flpy2		# Mount point of Netinstall Floppy
+
+	cd ${IIROOT}
+
+	[[ "${module}" == "ii_config" ]] && {
+		# get rid of remnants of previous magic floppy mount
+		sh_umount $MNTROOT >/dev/null 2>&1
+		rm -f /usr/lib/libcrypt.so* >/dev/null 2>&1
+
+		typeset DONE=0
+		typeset II_FLOP_ERR=0
+		typeset MESSAGE=${INETINST_INSERT_FLOPPY}
+		cancel_nics_install=0
+
+		while [ ${DONE} -eq 0 ]
+		do
+		    if [ ${II_FLOP_ERR} != 0 ]
+		    then
+			display -w "${MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+		    else
+			display -w "${MESSAGE}"
+		    fi
+
+		    set_hotkey 9 "cancel_nics_install=1; return 0"
+
+		    footer "$WELCOME_FOOTER"
+		    msg ""
+		    input_handler
+
+		    # The user has decided that it isn't time to load the
+		    # first network floppy, or hasn't yet created the
+		    # floppy and wants to back up.
+		    #
+		    [ "${cancel_nics_install}" == "1" ] && {
+			# TODO - somewhat problematic. This currently
+			# tries to unload the modules, but they aren't
+			# yet loaded. This causes a delay in netinst_clean.
+			# Maybe we need a netinst_clean RESMGR.
+			netinst_clean ERROR
+			ii_exit PREV
+		    }
+
+		    #wclose $CURWIN
+
+		    display "${EXAMINING_DISKETTE}"
+		    footer "${GENERIC_WAIT_FOOTER}"
+
+		    rm -f /tmp/netflop.label
+		    cpio -iuvDZI /dev/rdsk/f0t >> /tmp/stderr 2>&1
+		    (( $? )) || {
+			read IDSTRING < /tmp/netflop.label
+			REL_FULLNAME=$(ivar get REL_FULLNAME)
+			if [ "${IDSTRING}" = "${REL_FULLNAME} 1" ]
+			then
+				DONE=1
+			fi
+		    }
+		    MESSAGE="${INETINST_INSERT_AGAIN}${INETINST_INSERT_FLOPPY}"
+		    II_FLOP_ERR=1
+		    wclose $CURWIN
+		done
+
+		display "$INETINST_COPY_WAIT" -above 1 -below 3
+		msg ""
+		footer "$LONG_WAIT_FOOTER"
+	}
+
+	cd /
+
+	ii_do_netinst
+	II_RET=$?
+
+	# If the ii_do_netinst script fails, then we bail.
+	# if we save a pointer to the offending code, we can use this
+	# as a generic error message.
+	# No cleanup has happened yet. We don't really know just
+	# how much configuration actually took place in ii_do_netinst
+	(( ${II_RET} )) && {
+		wclose $DISPWIN
+		display -w "${FAILURE_MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		netinst_clean ERROR
+		ii_exit PREV
+	}
+
+	msg ""
+	footer ""
+	svar set nics_status 1
+
+} #end of netinst()
+
+#
+#  generate menus from previously saved selection
+#  so the user can configure the parms for their board.
+#
+function nic_hw_config
+{
+	[ -n "${debug}" ] && set -x
+
+	NICS_CONFIG_FILE=$(svar get NICS_CONFIG_FILE)
+	NICS_DRIVER_NAME=$(svar get NICS_DRIVER_NAME)
+	CONFIG_DIR=${IIROOT}/config
+
+	unset MY_DMA MY_RAM MY_IO MY_IRQ MY_BUS
+	unset DMAS RAMS IOS IRQS BUSES
+	unset NICS_DMA NICS_RAM NICS_IO NICS_IRQ
+
+
+	. ${CONFIG_DIR}/${NICS_CONFIG_FILE} > /dev/null 2>&1
+
+	# DRIVER_NAME comes from bcfg file
+	# get the default value for parameters from the appropriate
+	# place: ifile, sfile, or tmp PARM file
+	[ -f /tmp/${DRIVER_NAME}.dma ] && {
+                case $restore_from_where in
+                1) # from the svar
+                        NICS_DMA=$(svar get NICS_DMA)
+                        ;;
+                2) # from the ivar
+                        NICS_DMA=$(ivar get NICS_DMA)
+                        ;;
+                *)
+                        read NICS_DMA junk < /tmp/${DRIVER_NAME}.dma
+                        ;;
+                esac
+		MY_DMA="$NICS_DMA"
+		chk_dma
+		(( $? )) && read NICS_DMA junk < /tmp/${DRIVER_NAME}.dma
+			
+	}
+	[ -f /tmp/${DRIVER_NAME}.ramaddr ] && {
+                case $restore_from_where in
+                1) # from the svar
+                        NICS_RAM=$(svar get NICS_RAM)
+                        ;;
+                2) # from the ivar
+                        NICS_RAM=$(ivar get NICS_RAM)
+                        ;;
+                *)
+                        read NICS_RAM junk < /tmp/${DRIVER_NAME}.ramaddr
+                        ;;
+                esac
+		MY_RAM="$NICS_RAM"
+		chk_ram
+		(( $? )) && read MY_RAM junk < /tmp/${DRIVER_NAME}.ramaddr
+			
+	}
+	[ -f /tmp/${DRIVER_NAME}.ioaddr ] && {
+                case $restore_from_where in
+                1) # from the svar
+                        NICS_IO=$(svar get NICS_IO)
+                        ;;
+                2) # from the ivar
+                        NICS_IO=$(ivar get NICS_IO)
+                        ;;
+                *)
+                        read NICS_IO junk < /tmp/${DRIVER_NAME}.ioaddr
+                        ;;
+                esac
+		MY_IO="$NICS_IO"
+		chk_io
+		(( $? )) && read MY_IO junk < /tmp/${DRIVER_NAME}.ioaddr
+			
+	}
+	[ -f /tmp/${DRIVER_NAME}.irq ] && {
+                case $restore_from_where in
+                1) # from the svar
+                        NICS_IRQ=$(svar get NICS_IRQ)
+                        ;;
+                2) # from the ivar
+                        NICS_IRQ=$(ivar get NICS_IRQ)
+                        ;;
+                *)
+                        read NICS_IRQ junk < /tmp/${DRIVER_NAME}.irq
+                        ;;
+                esac
+		MY_IRQ="$NICS_IRQ"
+		chk_irq
+		(( $? )) && read MY_IRQ junk < /tmp/${DRIVER_NAME}.irq
+			
+	}
+
+	# from the bcfg file
+	NICS_CUSTOM_NUM=${CUSTOM_NUM}
+	#
+	# Determine width of this menu
+	#
+	integer II_WIDTH=18		# Width of RAM Address input field
+	integer II_WIDTH_MAX=0
+
+
+	(( ${NICS_CUSTOM_NUM:-0} )) && {
+		typeset param_cnt=1
+		while [ "$param_cnt" -le "$NICS_CUSTOM_NUM" ]
+		do
+                        OIFS=${IFS}
+                        IFS=${nl}
+			set -- ${CUSTOM[param_cnt]}
+			(( ${#4} > II_WIDTH_MAX )) && II_WIDTH_MAX=${#4}
+                        IFS=${OIFS}
+                    case $restore_from_where in
+                    1) # from the svar
+                        param[$param_cnt]=$(svar get NICS_CUSTOM[$param_cnt])
+                        ;;
+                    2) # from the ivar
+                        param[$param_cnt]=$(ivar get NICS_CUSTOM[$param_cnt])
+                        ;;
+                    *)
+                        OIFS=${IFS}
+                        IFS=${nl}
+                        set -- ${CUSTOM[param_cnt]}
+                        param_names[$param_cnt]=$3 # Parameter names
+                        IFS=${OIFS}
+                        param[$param_cnt]=${param_names[param_cnt]%% *}
+		        [[ "$3" == "__STRING__" ]] || {
+			    param_names[${param_cnt}]="$3"
+			    check_custom ${param_cnt}
+			    (( $? )) && {
+			        param[$param_cnt]=${param_names[param_cnt]%% *}
+			    }
+		        }
+                        ;;
+                    esac
+                    let param_cnt+=1
+		done
+	}
+
+	svar set NICS_CUSTOM_NUM ${CUSTOM_NUM:-0}
+
+	integer II_HW_LEN=2
+	[ -f /tmp/${DRIVER_NAME}.dma ] && let II_HW_LEN+=1
+	[ -f /tmp/${DRIVER_NAME}.ramaddr ] && let II_HW_LEN+=1
+	[ -f /tmp/${DRIVER_NAME}.ioaddr ] && let II_HW_LEN+=1
+	[ -f /tmp/${DRIVER_NAME}.irq ] && let II_HW_LEN+=1
+	[ -n "$CUSTOM_NUM" ] && let II_HW_LEN+=${CUSTOM_NUM}
+
+
+	(( ${#INETINST_IRQ_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_IRQ_PROMPT} ))
+	(( ${#INETINST_IO_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_IO_PROMPT} ))
+	(( ${#INETINST_RAM_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_RAM_PROMPT} ))
+	(( ${#INETINST_DMA_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_DMA_PROMPT} ))
+	(( ${#INETINST_CABLE_PROMPT} > II_WIDTH_MAX )) &&
+		(( II_WIDTH_MAX = ${#INETINST_CABLE_PROMPT} ))
+	(( II_WIDTH += II_WIDTH_MAX ))
+
+	#This is in case the title is the widest piece of the form.
+	(( ${#INETINST_HW_CONF_TITLE} + ${#DRIVER_NAME} + 5 > II_WIDTH )) &&
+		(( II_WIDTH = ${#INETINST_HW_CONF_TITLE} + ${#DRIVER_NAME} + 5 ))
+
+	open_form
+	typeset HWFID=$FID
+
+	# if the board can have IRQ selected, add that field.
+	if [ -f /tmp/${DRIVER_NAME}.irq ]
+	then
+		add_field -ix ${II_WIDTH_MAX}+2 \
+		    -exit 'chk_irq' -entry 'footer "$INETINST_OPTION_FOOTER"' \
+		    -p "${INETINST_IRQ_PROMPT}" -choice "do_irq" -ilen 3 MY_IRQ
+	else
+		MY_IRQ=""
+	fi
+
+	# if the board can have I/O Address selected, add that field.
+	if [ -f /tmp/${DRIVER_NAME}.ioaddr ]
+	then
+		add_field -ix ${II_WIDTH_MAX}+2 \
+		    -exit 'chk_io' -entry 'footer "$INETINST_OPTION_FOOTER"' \
+		    -p "${INETINST_IO_PROMPT}" -choice "do_io" -ilen 14 MY_IO
+	else
+		MY_IO=""
+	fi
+
+	# if the board can have RAM Address selected, add that field.
+	if [ -f /tmp/${DRIVER_NAME}.ramaddr ]
+	then
+		add_field -ix ${II_WIDTH_MAX}+2 \
+		    -exit 'chk_ram' -entry 'footer "$INETINST_OPTION_FOOTER"' \
+		    -p "${INETINST_RAM_PROMPT}" -choice "do_ram" -ilen 14 MY_RAM
+	else
+		MY_RAM=""
+	fi
+
+	# if the board can have DMA Channel selected, add that field.
+	if [ -f /tmp/${DRIVER_NAME}.dma ]
+	then
+		add_field -ix ${II_WIDTH_MAX}+2 \
+		    -exit 'chk_dma' -entry 'footer "$INETINST_OPTION_FOOTER"' \
+		    -p "${INETINST_DMA_PROMPT}" -choice "do_dma" -ilen 3 MY_DMA
+	else
+		MY_DMA=""
+	fi
+
+	# snarfed from nics pkg request script for CUSTOM keywords.
+	# first, parse all the stuff in CUSTOM
+	if [ -n "$CUSTOM_NUM" ]
+	then
+                tmp=1
+                while [ "$tmp" -le "$CUSTOM_NUM" ]
+                do
+		    OIFS=${IFS}
+		    IFS=${nl}
+		    set -- ${CUSTOM[$tmp]}
+		    rm_param[$tmp]=$1		# Resmgr parameter name
+		    param_vals[$tmp]=$2		# Parameter values
+		    param_names[$tmp]=$3	# Parameter names
+		    display[$tmp]=$4		# Parameter descriptor
+		    helpfile[$tmp]=$5		# Help file name
+		    title[$tmp]=$6		# Title of field
+		    optlevel[$tmp]=$7		# option level (advanced/basic)
+		    topology[$tmp]=$8		# applies to topology(ies)
+		    applic[$tmp]=$9		# applicability
+
+		    IFS=${OIFS}
+
+		    NICS_TOPOLOGY=$(svar get NICS_TOPOLOGY)
+		    [[ " ${topology[tmp]} " == *" ${NICS_TOPOLOGY} "* ]] && {
+
+
+			MSG_OPT=${display[$tmp]}
+		        if [ "${param_names[tmp]}" == "__STRING__" ]
+		        then
+			  [[ "${param[tmp]}" == "__STRING__" ]] && \
+				param[$tmp]=""
+		          add_field param[$tmp] -ix ${II_WIDTH_MAX}+2 -ilen 14 \
+		            -p "${display[$tmp]}" \
+		            -entry 'footer "$GENERIC_FOOTER"' \
+		            -exit "check_custom $tmp"
+		        else
+		          add_field param[$tmp] -ix ${II_WIDTH_MAX}+2 -ilen 14 \
+		            -choice "do_param $tmp" -p "${display[$tmp]}" \
+		            -entry 'footer "$INETINST_OPTION_FOOTER"' \
+		            -exit "check_custom $tmp"
+		        fi
+		    }
+		    let tmp+=1
+                done
+        fi
+
+	place_window -right 1 ${II_WIDTH} ${II_HW_LEN} -bg $COMBO2_BG \
+		-current 'footer "$INETINST_OPTION_FOOTER"' -fg $COMBO2_FG \
+		-title "${INETINST_HW_CONF_TITLE} - ${DRIVER_NAME}"
+	run_form $HWFID
+
+	set_hotkey 1 "go_help"
+	set_hotkey 9 "go_prev"
+	direction=NEXT
+
+	input_handler
+	nic_hw_update validate
+}
+
+function test_4_changes
+{
+	[ -n "${debug}" ] && set -x
+
+	vars_2_check="NICS_CONFIG_FILE NICS_DRIVER_NAME NICS_NAME NICS_BUS
+		NICS_TYPE NIC_IS_ISA NICS_IRQ NICS_IO NICS_DMA NICS_RAM
+		NICS_TOPOLOGY NICS_CUSTOM_NUM"
+
+	# if NICS_TYPE not set, then this is the fist time configuring
+	# the NIC. We need to distinguish between the first time config
+	# and subsequent reconfigs.
+	ivarval=$(ivar get NICS_TYPE)
+	nics_status=$(svar get nics_status)
+	[[ -z "${ivarval}" ]] && return 2
+	[[ "${nics_status:-0}" == 0 ]] && {
+		# make sure the variable is set
+		nics_status=0
+		svar set nics_status 0
+		return 2
+	}
+
+	for var in $vars_2_check
+	do
+		svarval=$(svar get ${var})
+		ivarval=$(ivar get ${var})
+		[[ "${svarval}" != "${ivarval}" ]] && return 1
+	done
+
+	svar_custom_num=$(svar get NICS_CUSTOM_NUM)
+	nics_custom_cnt=1
+
+	while [ $nics_custom_cnt -le ${svar_custom_num:-0} ]
+	do
+		ivar_custom=$(ivar get NICS_CUSTOM[$nics_custom_cnt])
+		svar_custom=$(svar get NICS_CUSTOM[$nics_custom_cnt])
+		[[ "${ivar_custom}" != "${svar_custom}" ]] && return 1
+
+		ivar_custom=$(ivar get NICS_CUST_PNAME[$nics_custom_cnt])
+		svar_custom=$(svar get NICS_CUST_PNAME[$nics_custom_cnt])
+		[[ "${ivar_custom}" != "${svar_custom}" ]] && return 1
+
+		ivar_custom=$(ivar get NICS_CUST_VAL[$nics_custom_cnt])
+		svar_custom=$(svar get NICS_CUST_VAL[$nics_custom_cnt])
+		[[ "${ivar_custom}" != "${svar_custom}" ]] && return 1
+
+		(( nics_custom_cnt += 1 ))
+	done
+
+	return 0
+}
+
+#
+#  Write the configuration parms out to disk for the other scripts' use.
+#
+function nic_hw_update
+{
+	[ -n "${debug}" ] && set -x
+	
+	#
+	#  Make sure form is completely filled in with valid values
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	CUSTOM_NUM=$(svar get NICS_CUSTOM_NUM)
+
+	[[ "$1" == "validate" ]] && {
+		[ -f /tmp/${ETH_HW}.irq ] && {
+			chk_irq
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${INETINST_IRQ_PROMPT}"
+				let II_ERR+=1
+			}
+		}
+		[ -f /tmp/${ETH_HW}.ioaddr ] && {
+			chk_io
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${INETINST_IO_PROMPT}"
+				let II_ERR+=1
+			}
+		}
+		[ -f /tmp/${ETH_HW}.ramaddr ] && {
+			chk_ram
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${INETINST_RAM_PROMPT}"
+				let II_ERR+=1
+			}
+		}
+		[ -f /tmp/${ETH_HW}.dma ] && {
+			chk_dma 
+			[ $? != 0 ] && {
+				II_FLD[${II_ERR}]="${INETINST_DMA_PROMPT}"
+				let II_ERR+=1
+			}
+		}
+
+		[ -n "$CUSTOM_NUM" ] && {
+			typeset param_cnt=1
+			NICS_TOPOLOGY=$(svar get NICS_TOPOLOGY)
+			while [ "$param_cnt" -le "$CUSTOM_NUM" ]
+			do
+			        [[ " ${topology[param_cnt]} " == *" ${NICS_TOPOLOGY} "* ]] && {
+					check_custom ${param_cnt}
+					[ $? != 0 ] && {
+						II_FLD[${II_ERR}]="${display[$param_cnt]}"
+						let II_ERR+=1
+					}
+				}
+				let param_cnt+=1
+			done
+		}
+
+		if [ ${II_ERR} != 0 ]
+		then
+			eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+			return 1
+		fi
+	}
+
+	svar set NICS_IO  "${MY_IO}"
+	svar set NICS_RAM "${MY_RAM}"
+	svar set NICS_IRQ "${MY_IRQ}"
+	svar set NICS_DMA "${MY_DMA}"
+
+	#
+	#  If we have one or more CUSTOM keywords, add to the parms file.
+	#
+	typeset loc_param PARAM_STRING XTRA_PARAMS
+	typeset param_cnt=1
+
+       	while [ "$param_cnt" -le "$CUSTOM_NUM" ]
+	do
+	    XTRA_PARAMS=${param_vals[param_cnt]}
+            for i in ${param_names[param_cnt]}
+            do
+		echo ${XTRA_PARAMS} | read PARAM_STRING XTRA_PARAMS
+		[ -z "${param[param_cnt]}" ] && param[$param_cnt]="$i"
+                if [ "$i" = "${param[param_cnt]}" -o "$i" == "__STRING__" ]
+                then
+			[ "$i" = "__STRING__" ] && PARAM_STRING="$i"
+			svar set NICS_CUST_VAL[${param_cnt}] "$PARAM_STRING"
+			svar set NICS_CUSTOM[${param_cnt}] "${param[param_cnt]}"
+			svar set NICS_CUST_PNAME[${param_cnt}] \
+				"${rm_param[param_cnt]}"
+                        break
+                fi
+            done
+	    let param_cnt+=1
+	done
+
+	# if the user has changed values previously set, warn them that this
+	# action will wipe out previous settings.
+	save_svar_2_ivar=0
+	if [ "${module}" == "ii_config" ]
+	then
+		test_4_changes
+		nics_parms_modified=$?
+		(( $nics_parms_modified == 2 )) && {
+			nics_parms_modified=0
+			save_svar_2_ivar=1
+		}
+
+		(( ${nics_parms_modified} )) && {
+			display "${NICS_PARMS_MODIFIED}" -above 1 -below 4 \
+				-bg $ERROR_BG -fg $ERROR_FG
+			msg ""
+			footer "$GENERIC_FOOTER"
+			DISPWIN=${CURWIN}
+
+			reconfig_nic=0
+			open_radio -entry 'footer "$GENERIC_FOOTER"' \
+				-fg $COMBO2_FG -bg $COMBO2_BG
+
+			integer IIRID=$RID
+
+			add_radio "${NICS_PARMS_OVERWRITE}" \
+				-entry 'reconfig_nic=1'
+			add_radio "${NICS_PARMS_PRESERVE}" \
+				-entry 'reconfig_nic=0'
+			IIROW=2
+				
+			radio_runparms $IIRID $IIROW
+
+			place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+				-below 1 -above 4 -fg $COMBO2_FG \
+				-bg $COMBO2_BG -title "${RECONFIG_NIC_TITLE}"
+
+			run_radio $IIRID 0 $IIROW
+			input_handler
+
+			(( $reconfig_nic )) || {
+				ii_exit PREV
+			}
+
+			smt=$(ivar get SEC_MEDIUM_TYPE)
+			prot_status=$(svar get ${smt}_status)
+			(( $prot_status )) && {
+				display -w "$INETINST_RECONF_PROTOCOL"
+				input_handler
+			}
+
+			# have to stop the driver to affect the change
+			# netinst_clean should be responsible for removing
+			# all the resmgr attributes and stopping all the
+			# deamons holding the card open
+			wclose $DISPWIN
+			display "${INETINST_REMOVE_CONFIG}"
+			DISPWIN=${CURWIN}
+			netinst_clean ERROR
+			svar set nics_status 0
+			svar set tcp_status 0
+			svar set spx_status 0
+			ivar set NICS_KEY ""
+			KEY_ADDED=0
+			ivar set NICS_SLOT ""
+			unset NICS_KEY NICS_SLOT
+			save_svar_2_ivar=1
+		}
+	else
+		netinst_clean ERROR
+		svar set nics_status 0
+		ivar set NICS_KEY ""
+		KEY_ADDED=0
+		ivar set NICS_SLOT ""
+		unset NICS_KEY NICS_SLOT
+		save_svar_2_ivar=1
+	fi
+
+	# will copy the current sfile settings to the ifile only if the
+	# parameters have been modified, or have never been set (first
+	# time through.
+	(( $save_svar_2_ivar )) && {
+		ivar set NICS_CONFIG_FILE "$(svar get NICS_CONFIG_FILE)"
+		ivar set NICS_DRIVER_NAME "$(svar get NICS_DRIVER_NAME)"
+		ivar set NICS_NAME "$(svar get NICS_NAME)"
+		ivar set NICS_BUSTYPES "$(svar get NICS_BUSTYPES)"
+		ivar set NICS_BUS "$(svar get NICS_BUS)"
+		ivar set NICS_KEY "$(svar get NICS_KEY)"
+		ivar set NICS_SLOT "$(svar get NICS_SLOT)"
+		ivar set NICS_TYPE "$(svar get NICS_TYPE)"
+		ivar set NIC_IS_ISA "$(svar get NIC_IS_ISA)"
+		ivar set NICS_IRQ "$(svar get NICS_IRQ)"
+		ivar set NICS_IO "$(svar get NICS_IO)"
+		ivar set NICS_DMA "$(svar get NICS_DMA)"
+		ivar set NICS_RAM "$(svar get NICS_RAM)"
+		ivar set NICS_TOPOLOGY "$(svar get NICS_TOPOLOGY)"
+		ivar set NICS_DDI_VERSION "$(svar get NICS_DDI_VERSION)"
+
+		NICS_CUSTOM_NUM=$(svar get NICS_CUSTOM_NUM)
+		[ -z "${NICS_CUSTOM_NUM}" ] && NICS_CUSTOM_NUM=0
+		ivar set NICS_CUSTOM_NUM "${NICS_CUSTOM_NUM}"
+		
+		nics_custom_cnt=1
+		while [ $nics_custom_cnt -le $NICS_CUSTOM_NUM ]
+		do
+			ivar set NICS_CUSTOM[$nics_custom_cnt] \
+				"$(svar get NICS_CUSTOM[$nics_custom_cnt])"
+			ivar set NICS_CUST_PNAME[$nics_custom_cnt] \
+				"$(svar get NICS_CUST_PNAME[$nics_custom_cnt])"
+			ivar set NICS_CUST_VAL[$nics_custom_cnt] \
+				"$(svar get NICS_CUST_VAL[$nics_custom_cnt])"
+			(( nics_custom_cnt += 1 ))
+		done
+
+		# commit the variables from memory to the ifile
+		ivar save
+
+		[[ "$1" != "preserve" ]] && {
+			wclose $DISPWIN
+			netinst
+		}
+	}
+
+	return 0
+}
+
+#
+# do_param - supply the customized parameter choices
+#
+function do_param
+{
+	[ -n "$debug" ] && set -x
+        typeset loc=$1
+        CHOOSE_TITLE="${title[$loc]}"
+        CHOOSE_FOOTER="${INETINST_GENERIC_DIRECTIONS}"
+	set -A param_list ${param_names[$loc]}
+	param_choice="${param_list[0]}"
+	for i in ${param_list[@]}
+	do
+		[[ ${param[$loc]} == $i ]] && param_choice="${i}"
+	done
+        choose -f "$param_choice" ${param_names[$loc]}
+}
+
+#
+#  Radio box to select IRQ
+#
+function do_irq
+{
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	IRQ_CHOICES=$(cat /tmp/${ETH_HW}.irq)
+	if [ -z "${IRQS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A IRQS ${IRQ_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_IRQ_PROMPT"
+	CHOOSE_FOOTER="$INETINST_IRQ_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	DFLT_IRQ=${IRQS[0]}
+	[ ! -z "${MY_IRQ}" ] && DFLT_IRQ=${MY_IRQ}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_IRQ" "${IRQS[@]}"
+}
+
+
+#
+#  Radio box to select I/O Address Range (port)
+#
+function do_io
+{
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	IO_CHOICES=$(cat /tmp/${ETH_HW}.ioaddr)
+	if [ -z "${IOS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A IOS ${IO_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_IO_PROMPT"
+	CHOOSE_FOOTER="$INETINST_IO_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_IO}" ] && DFLT_IO=${MY_IO}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_IO" "${IOS[@]}"
+}
+
+
+#
+#  Radio box to select RAM Address Range (memory)
+#
+function do_ram
+{
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	RAM_CHOICES=$(cat /tmp/${ETH_HW}.ramaddr)
+	if [ -z "${RAMS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A RAMS ${RAM_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_RAM_PROMPT"
+	CHOOSE_FOOTER="$INETINST_RAM_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_RAM}" ] && DFLT_RAM=${MY_RAM}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_RAM" "${RAMS[@]}"
+}
+
+#
+#  Radio box to select DMA for Bus Mastering cards
+#
+function do_dma
+{
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	DMA_CHOICES=$(cat /tmp/${ETH_HW}.dma)
+	if [ -z "${DMAS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A DMAS ${DMA_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_DMA_PROMPT"
+	CHOOSE_FOOTER="$INETINST_SDMA_DIRECTIONS"
+	#
+	# if a choice was already made, use that as default.
+	#
+	[ ! -z "${MY_DMA}" ] && DFLT_DMA=${MY_DMA}
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_DMA" "${DMAS[@]}"
+}
+
+#
+#  Exit function to check validity of RAM Address selection
+#
+function chk_ram
+{
+	typeset chk_ret=0
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	grep "^${MY_RAM}$" /tmp/${ETH_HW}.ramaddr > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_RAM}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of I/O Address selection
+#
+function chk_io
+{
+	typeset chk_ret=0
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	grep "^${MY_IO}$" /tmp/${ETH_HW}.ioaddr > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_IO}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of IRQ selection
+#
+function chk_irq
+{
+	[ -n "${debug}" ] && set -x
+	typeset chk_ret=0
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	grep "^${MY_IRQ}$" /tmp/${ETH_HW}.irq >> /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_IRQ}"
+	fi
+	return $chk_ret
+}
+
+#
+#  Exit function to check validity of DMA selection
+#
+function chk_dma
+{
+	typeset chk_ret=0
+	ETH_HW=$(svar get NICS_DRIVER_NAME)
+	grep "^${MY_DMA}$" /tmp/${ETH_HW}.dma > /dev/null 2>&1
+	chk_ret=$?
+	if [ $chk_ret -ne 0 ] 
+	then
+		errmsg "${INETINST_BAD_DMA}"
+	fi
+	return $chk_ret
+}
+
+#
+# check that user's selection is acceptable
+#
+function check_custom
+{
+	[ -n "${debug}" ] && set -x
+
+        typeset loc=$1
+	[[ "${param[loc]}" == "__STRING__" ]] && param[$loc]=""
+
+	if [ "${param_names[$loc]}" == "__STRING__" ]
+	then
+		# empty is OK
+		[ -z "${param[loc]}" ] && {
+			param[$loc]="__STRING__"
+			return 0
+		}
+
+		# cannot preserve curly braces or quotes
+		[[ "${param[loc]}" == *[{\"}]* ]] && {
+			msg "${II_BADCHARS}"
+			return 1
+		}
+
+		# everything else is OK
+		return 0
+	else
+		for i in ${param_names[$loc]}
+		do
+			if [ "$i" = "${param[$loc]}" ]
+			then
+				return 0
+			fi
+		done
+	fi
+        return 1
+}
+
+#
+# Main
+#
+
+. /etc/inst/locale/${LANG}/menus/net_wrapper.txtstrings > /dev/null 2>&1
+
+LCC=$(svar get LAST_CARD_CONFIGURED)
+NICS_DRIVER_NAME=$(svar get NICS_DRIVER_NAME)
+
+# Use the contents of svar as defaults for parameter fields
+restore_from_where=1
+[[ "${LCC}" != "${NICS_DRIVER_NAME}" ]] && {
+        ivar_NICS_DRIVER_NAME=$(ivar get NICS_DRIVER_NAME)
+        [[ "${NICS_DRIVER_NAME}" == "${ivar_NICS_DRIVER_NAME}" ]] && {
+                # the defaults should be taken from the ivar file
+                restore_from_where=2
+        } || {
+                # the defaults should be taken from the bcfg file
+                restore_from_where=0
+        }
+}
+LCC=${NICS_DRIVER_NAME}
+svar set NICS_DRIVER_NAME ${NICS_DRIVER_NAME}
+
+typeset IIROOT=/.extra.d
+
+mustconfig=$(svar get NICS_MUSTCONFIG)
+if [ $mustconfig -ne 0 ]
+then
+	nic_hw_config
+else
+	nic_hw_update validate
+fi
+
+#
+# Done
+#
+ii_exit $direction
+

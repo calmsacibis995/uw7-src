@@ -1,0 +1,662 @@
+<!doctype linuxdoc system>
+
+<article>
+<title> README for XFree86 3.1.2 on NetBSD
+<author>Rich  Murphey,
+David Dawes,
+Marc  Wandschneider,
+Mark  Weaver,
+Matthieu Herrb
+<Date>Last modified on: 27 Jan 1996
+
+<toc>
+
+<sect>What and Where is XFree86?
+
+<p>
+XFree86 is a port of X11R6 that supports several versions of
+Intel-based Unix.  It is derived from X386 1.2, which was the X server
+distributed with X11R5.  This release consists of many new features
+and performance improvements as well as many bug fixes.  The release
+is available as source patches against the X Consortium X11R6 code, as
+well as binary distributions for many architectures.
+
+See the <url url="COPYRIGHT.html" name="Copyright Notice">.
+
+The sources for XFree86 are available by anonymous ftp from:
+
+<url name="ftp.XFree86.org:/pub/XFree86/current"
+url="ftp://ftp.XFree86.org/pub/XFree86/current">
+
+Binaries for NetBSD 1.1 and NetBSD-current are available from:
+
+<url name="ftp.XFree86.org:/pub/XFree86/current/binaries/NetBSD"
+url="ftp://ftp.XFree86.org/pub/XFree86/current/binaries/NetBSD">
+<p>
+<url name="ftp.laas.fr:/pub/ii/NetBSD/XFree86-3.1.2"
+url="ftp://ftp.laas.fr/pub/ii/NetBSD/XFree86-3.1.2">
+<p>
+<url name="ftp.iastate.edu:/pub/XFree86/XFree86-3.1.2"
+url="ftp://ftp.iastate.edu/pub/XFree86/XFree86-3.1.2">
+<p>
+<url name="ftp.eecs.umich.edu:/BSD/XFree86"
+url="ftp://ftp.eecs.umich.edu/BSD/XFree86">
+
+Other versions:
+
+Binaries built with NetBSD 1.1 are not compatible with earlier
+versions. 
+
+If you're still running NetBSD 0.9 or 1.0, you should think about
+upgrading to a newer version of NetBSD first.
+
+If you don't, you'll have to build XFree86 from the sources.  XFree86
+3.1.2 compiles cleanly under NetBSD 1.0; it has not been tested with
+NetBSD 0.9. Binaries built on 1.0 will work on 1.1.
+
+XFree86 3.1.2 also builds on NetBSD/sparc. See section <ref id="sparc"
+name="Building on NetBSD/sparc"> for details.
+
+<sect>Bug Reports for This Document
+
+<p>
+Send email to <em/matthieu@laas.fr/ (Matthieu Herrb) or
+<em/XFree86@XFree86.org/ if you have comments or suggestions about
+this file and we'll revise it.
+
+<sect>Installing the Binaries
+
+<p>
+The binary distribution is composed of a number of  tar archives
+which are the executables, servers, fonts, libraries, include files,
+man pages, config files, and the server link kit.  The full distribution
+takes over 55MB of disk space.  
+
+All archives are now made using the NetBSD package tools. We recommend
+that you install these tools first.  All packages can be installed
+using <tt/pkg_add/.
+
+Note that many clients were moved from the X11R6 distribution to the
+``contrib'' area. However, they are still distributed with the
+XFree86 binary distribution. 
+
+    The contents of the packages are:
+
+<descrip>
+<tag/REQUIRED:/
+    <descrip>
+    <tag/X312doc/ READMEs and XFree86 specific man pages.
+    <tag/X312bin/ all of the executable X client applications and shared libs
+    <tag/X312font/ the misc and 75dpi fonts
+    <tag/X312lib/ data files needed at runtime
+    <tag/X312cfg/ customizable xinit, xdm, and fs runtime configuration files.
+    </descrip>
+
+    Choose at least one of the following to match your hardware:
+
+    <descrip>
+    <tag/X312svga/  the 8-bit pseudo-color X server for Super VGA cards
+    <tag/X312vg16/ the 4-bit pseudo-color X server for VGA &amp; SVGA cards.
+    <tag/X312mono/  the Monochrome X Server
+    <tag/X3128514/  the X server for IBM 8514/A and compatible boards
+    <tag/X312agx/   the X server for AGX boards
+    <tag/X312mc8/ the X server for ATI Mach8 graphics boards
+    <tag/X312mc32/ the X server for ATI Mach32 graphics boards
+    <tag/X312mc64/ the X server for ATI Mach64 graphics boards
+    <tag/X312p9k/	the X server for P9000 based boards
+    <tag/X312s3/ 	the X server for S3 based boards
+    <tag/X312w32/	the X server for et4000w32 based boards
+    </descrip>
+
+<tag/OPTIONAL:/
+
+    <descrip>
+    <tag/X312fs/ the font server with man pages.
+    <tag/X312prog/ the X11 header files and static libraries needed only 
+		  for compiling other X applications
+    <tag/X312man/ man pages except XFree86 specific ones in the doc archive
+    <tag/X312xfnt/ the other fonts (100dpi, scaled, Japanese, Chinese, etc)
+    <tag/X312link/ X server reconfiguration kit
+    </descrip>
+</descrip>
+
+If this is your first time, then you can safely install all of the
+packages.  As a minimal install, you'll need doc, bin, fonts lib,
+config, and one X server.
+
+<sect1> Installing the packages with <tt/pkg_add/
+
+<p>
+<enum>
+<item> Become ``root''.
+
+<item> For each package that you want to install type:
+<tscreen><verb>
+ # pkg_add <pkg>.tgz
+</verb></tscreen>
+If you don't have enough room in /usr/X11R6 you can specify another
+directory by using the <tt/-p/ option to <tt/pkg_add/. See
+<em/pkg_add(8)/ for details. Then make a symbolic link
+<tt>/usr/X11R6</tt> to this directory.
+
+</enum>
+
+Continue with item <ref id="install-cont" name="Additional Setup">
+below. 
+  
+<sect1>Installing the packages without <tt/pkg_add/
+<p>
+    To unpack and install the archives:
+<enum>
+<item> Create some destination directory in which you'd like the
+       X distribution to live.  <tt>/usr/X11R6</tt> is recommended, but if that
+       partition is full (as it is on my machine), then just create an
+       alternate directory, and sym-link <tt>/usr/X11R6</tt> to this place.
+
+    ie, on my machine, I do the following:
+<tscreen><verb>
+    % cd /usr/local
+    % mkdir X11R6
+    % ln -s /usr/local/X11R6 /usr/X11R6
+</verb></tscreen>
+
+<item> You must be logged in as root to unpack the archives and use a
+	``umask'' value of 022.  Typing ``<tt/umask 022/'' sets it.
+	<em/Caution:/ If you do not extract the files as user ``root''
+	with the correct umask you may not be able to run XFree86.
+	The X server needs special permissions that are only granted
+	to the root user.
+
+	Assuming that the destination directory for XFree86 3.1.2 is
+	<tt>/usr/X11R6</tt>, run the following from wherever all the archive
+	files are (replace <tt>/usr/X11R6</tt> with wherever you wish them to
+	go if that isn't the place):
+<tscreen><verb>
+ cd /usr/X11R6
+
+ tar xzf X312doc.tgz
+ tar xzf X312bin.tgz
+ tar xzf X312lib.tgz 
+ tar xzf X312font.tgz
+ tar xzf X312man.tgz
+
+ tar xzf X312link.tgz
+ tar xzf X312prog.tgz
+ tar xzf X312xfnt.tgz
+ tar xzf X312fs.tgz
+ tar xzf X312cfg.tgz
+
+</verb></tscreen>
+	And unpack the server(s) you need:
+<tscreen><verb>
+ tar xzf X312<server>.tgz
+</verb></tscreen>
+</enum>
+
+<sect1>Additional setup <label id="install-cont">
+<p>
+<enum>
+<item>Set the <tt/XWINHOME/ environment
+variable to the path where you installed XFree86. Under csh  type:
+<tscreen><verb>
+ setenv XWINHOME /usr/X11R6
+</verb></tscreen>
+
+       under sh  type
+<tscreen><verb>
+ XWINHOME=/usr/X11R6 
+ export XWINHOME
+</verb></tscreen>
+
+	(Replace <tt>/usr/X11R6</tt> by the appropriate dir if necessary).
+
+       Also, don't forget to include these lines in your <tt/.login/
+       or <tt/.profile/ for permanent use.
+
+<item> Create a symbolic link in <tt>&dollar;{XWINHOME}/bin</tt> named
+       ``<tt/X/'' that points to the server that matches your video
+	card: See the <em/XF86_*/ man pages for hardware details. For
+	example, if you have an ET4000 based SVGA card:
+
+<tscreen><verb>
+ cd $XWINHOME/bin
+ rm -f X
+ ln -s XF86_SVGA X
+</verb></tscreen>
+
+<item> Install support for the shared libraries: add the following lines at 
+        the end of <tt>/etc/rc.local</tt>:
+
+<tscreen><verb>
+ if [ -d /usr/X11R6/lib ]; then
+    echo 'Adding X shared libraries'
+    ldconfig /usr/X11R6/lib
+ fi
+</verb></tscreen>
+
+<item> Reboot your machine to take all previous modifications into
+	account.
+</enum>
+
+If X was already installed on your machine and you have customized
+your xinit or xdm runtime configuration scripts, omit the config
+archive or unpack it elsewhere and extract only that which you need.
+
+<quote>
+    <bf/NOTE:/ you don't need to uncompress the fonts files in
+    <tt>lib/X11/fonts</tt>. If you want to uncompress them anyway,
+    don't forget to run ``<tt/mkfontdir/'' in each directory after
+    that.
+</quote>
+
+<sect> Installing Xdm, the display manager
+
+<p>
+Since xdm is dynamically linked against -lcrypt, there's no issue on
+export restriction outside US for this binary distribution of xdm: it
+does not contain the DES encryption code. So it's now included in the
+bin package.
+
+To start the display manager, log in as root on the console and type:
+``<tt/xdm -nodaemon/''.
+
+You can start xdm automatically on bootup by disabling the console getty
+adding the following code to <tt>/etc/rc.local</tt>:
+
+<tscreen><verb>
+  if [ -x /usr/X11R6/bin/xdm ]; then
+    echo -n ' xdm'; /usr/X11R6/bin/xdm
+  fi
+</verb></tscreen>
+
+To disable the console getty, change ``<bf/on/'' to ``<bf/off/'' in
+the console entry in <tt>/etc/ttys</tt>:
+
+<tscreen><verb>
+ ttyv0	"/usr/libexec/getty Pc"	pc	off secure
+</verb></tscreen>
+
+
+<sect> Configuring X for Your Hardware
+
+<p>
+The <tt/XF86Config/ file tells the X server what kind of monitor,
+video card and mouse you have.  You <em/must/ create it to tell the
+server what specific hardware you have.
+
+You'll need info on your hardware:
+<itemize>
+<item> Your mouse type, baud rate and it's /dev entry.
+<item> The video card's chipset (e.g. ET4000, S3, etc).
+<item> Your monitor's sync frequencies.
+</itemize>
+
+XFree86 3.1 and later releases uses a new configuration file format.
+
+The recommended way to generate an <tt/XF86Config/ file is to use the
+<tt/xf86config/ utility.  Also, there is a sample file installed as
+<tt>/usr/X11R6/lib/X11/XF86Config.eg</tt>, which can be used as a
+starting point.
+
+For details about the <tt/XF86Config/ file format, refer to the
+<em>XF86Config(4/5)</em> manual page.
+
+In order to protect your hardware from damage, the server will no
+longer read <tt>XF86Config</tt> files from a user's home directory,
+but requires that it be in <tt>/etc/XF86Config</tt>,
+<tt>/usr/X11R6/lib/X11/XF86Config.hostname</tt> or
+<tt>/usr/X11R6/lib/X11/XF86Config</tt>.
+
+Once you've set up a XF86Config file, you can fine tune the video
+modes with the <tt>xvidtune</tt> utility. 
+
+If you have a <tt>Xconfig</tt> file for XFree86 2.x, use reconfig to
+translate part of
+it into the new format:
+<verb>
+   # reconfig <Xconfig >XF86Config
+</verb>
+and complete the rest according to the <tt>XF86Config</tt> man page and the
+<tt>XF86Config.sample</tt> file as a template.
+
+
+If your mouse does not work try using <tt>kermit</tt> or <tt>tip</tt>
+to connect to the mouse serial port and verify that it does indeed
+generate characters.
+
+<sect1> Configuring a PS/2 mouse for XFree86 on NetBSD
+
+<p>
+The NetBSD pms mouse driver handles PS/2 style mice as
+Busmouse. Specify the protocol `busmouse' in the mouse section of your
+<tt/XF86Config/ file if you're using a PS/2 mouse.
+
+<sect> Running X
+
+<p>
+8mb of memory is a recommended minimum for running X.  The server,
+window manager and an xterm take about 4 Mb of memory themselves.  On
+a 4Mb system that would leave nothing left over for other applications
+like gcc that expect a few meg free.  X will work with 4Mb of memory,
+but in practice compilation while running X can take 5 or 10 times as
+long due to constant paging.
+
+The easiest way for new users to start X windows is to type: ``<tt/startx
+>&amp; startx.log/''.  Error messages are lost unless you redirect them
+because the server takes over the screen.
+
+To get out of X windows, type: ``<tt/exit/'' in the console xterm.
+You can customize your X by creating <tt/.xinitrc/, <tt/.xserverrc/,
+and <tt/.twmrc/ files in your home directory as described in the xinit
+and startx man pages.
+
+<sect> Kernel Support for X
+
+<p>
+To make sure X support is enabled under NetBSD, the following
+line must be in your config file in <tt>/sys/arch/i386/conf</tt>:
+
+<tscreen>
+ options XSERVER, UCONSOLE
+</tscreen>
+
+The server supports the two standard NetBSD/i386 console drivers:
+pccons and pcvt. They are detected at runtime and no configuration of
+the server itself is required.
+
+The pccons driver is the most widely tested and is the console driver
+contained in the NetBSD binary distribution's kernels.
+
+The pcvt console driver is bundled with NetBSD. The pcvt X
+mode is compatible with the pccons driver X mode. It offers several
+virtual consoles and international keyboard support. In order to use
+this driver, change the line:
+
+<tscreen>
+ device          pc0     at isa? port "IO_KBD" irq 1
+</tscreen>
+
+to
+
+<tscreen>
+ device         vt0     at isa? port "IO_KBD" irq 1
+</tscreen>
+
+in your kernel config file, and rebuild and install your kernel.
+
+Syscons and codrv are not bundled with NetBSD 1.1. They are
+available by anonymous FTP from a number of sites. They are not
+supported by the XFree86 binary distribution anymore. You can compile
+support for them by adding -DSYSCONS_SUPPORT or -DCODRV_SUPPORT to
+<tt/XFree86ConsoleDefines/ in <tt/xf86site.def/. See the section <ref
+id="console-drivers" name="Console drivers"> for details.
+
+
+If using pccons you get the message:
+<tscreen><verb>
+> Fatal server error:
+> xf86OpenConsole: CONSOLE_X_MODE_OFF failed (Inappropriate ioctl for device)
+> Was expecting pccons driver with X support
+> Check your kernel's console driver configuration and /dev entries
+> 
+</verb></tscreen>
+
+then delete <tt>/dev/ttyv0</tt>. I don't know why ``<tt/MAKEDEV/''
+move <tt>/dev/ttyqf</tt> to <tt>/dev/ttyv0</tt>. (from Hung-Chi Chu
+<em/hcchu@r350.ee.ntu.edu.tw/)
+
+
+<sect1>Aperture Driver
+<p>
+By default NetBSD 0.9C and higher include the BSD 4.4 kernel security
+feature that disable access to the <tt>/dev/mem</tt> device when in
+multi-users mode. But XFree86 servers can take advantage (or require)
+linear access to the display memory.
+
+The P9000, Mach64 and AGX servers require linear memory access, other
+accelerated servers can take advantage of it, but do not require it.
+
+There are two ways to allow XFree86 to access linear memory:
+<enum>
+<item> Disable the kernel security feature by adding
+   `option INSECURE' in the kernel configuration file and build a new
+   kernel. 
+
+   On NetBSD-1.0 you have to disable kernel security by initializing
+   the ``<bf/securelevel/'' variable to <bf/-1/ in
+   <tt>/sys/kern/kern_sysctl.c</tt>, line 205. For more informations,
+   see the comments in <tt>/usr/include/sys/systm.h</tt>.
+
+<item> Install the NetBSD aperture driver:
+   <enum>	
+   <item> add the following lines to the end of <tt>/etc/rc.local</tt>:
+<tscreen><verb>
+ KERNDIR=/usr/X11R6/lib/X11/kernel
+ if [ -f ${KERNDIR}/ap.o ]; then
+   modload -o ${KERNDIR}/ap -e ap -p ${KERNDIR}/apinstall ${KERNDIR}/ap.o
+ fi
+</verb></tscreen>
+    The distributed ap.o won't work with NetBSD 1.0. In this case,
+    unpack <tt>xc/programs/Xserver/hw/xfree86/etc/apNetBSD.shar</tt>
+    and recompile it.
+	
+    <item> Reboot your system. XFree86 will auto-detect the aperture
+       driver if available.
+    </enum>
+
+    <bf/Warning:/ if you boot another kernel than <tt>/netbsd</tt>,
+    loadable kernel modules can crash your system. Always boot in
+    single user mode when you want to run another kernel.
+
+<quote>
+   <bf/Caveat:/ the NetBSD aperture driver only allows one access at a time
+   (so that the system is in the same security state once X is
+   launched). This means that if you run multiple servers on multiples
+   VT, only the first one will have linear memory access.
+   Use 'option INSECURE' if you need more that one X server at a time.
+</quote>
+
+</enum>
+
+
+<sect1>MIT-SHM
+<p>
+NetBSD 1.0 and later supports System V shared memory. If XFree86 
+detects this support in your kernel, it will support the MIT-SHM
+extension.
+
+    To add support for system V shared memory to your kernel add the
+    lines:
+
+<tscreen><verb>
+ # System V-like IPC
+ options         SYSVMSG
+ options         SYSVSEM
+ options         SYSVSHM
+</verb></tscreen>
+ 
+    to your kernel config file. Then from <tt>/sys/arch/i386/config</tt>, type:
+
+<tscreen><verb>
+ # rm -f ../compile/<KERNEL-NAME>/*
+ # config <KERNEL-NAME>
+ # cd ../compile/<KERNEL-NAME>
+ # make depend 
+ # make
+</verb></tscreen>
+
+ Then install your new kernel and re-boot:
+
+<tscreen><verb>
+ # cp /netbsd /onetbsd
+ # cp netbsd /
+ # reboot
+</verb></tscreen>
+
+
+<sect> Rebuilding the XFree86 Distribution
+
+<p>
+The server link kit allow you to rebuild just the X server with a
+minimum amount of disk space.  Just unpack it, make the appropriate
+changes to the <tt/xf86site.def/, type ``<tt>./mkmf</tt>'' and
+``<tt/make/'' to link the server.  See <tt>/usr/X11R6/lib/Server/README</tt>
+for more info.
+
+See <url url="INSTALL.html" name="INSTALL"> for instructions on unbundling and
+building the source distribution.
+
+You should configure the distribution by editing
+<tt>xc/config/cf/xf86site.def</tt>  before compiling.  To compile the
+sources, invoke ``<tt/make World/'' in the xc directory.
+
+<sect1>Console drivers<label id="console-drivers">
+
+<p>
+XFree86 3.1.2 has a configuration option to select the console
+drivers to use in <tt/xf86site.def/:
+<itemize>
+<item> if you're using pccons put:
+<tscreen><verb>
+ #define XFree86ConsoleDefines -DPCCONS_SUPPORT
+</verb></tscreen>
+<item> if you're using pcvt put:
+<tscreen><verb>
+ #define XFree86ConsoleDefines -DPCVT_SUPPORT
+</verb></tscreen>
+<item> if you're using syscons put:
+<tscreen><verb>
+ #define XFree86ConsoleDefines -DSYSCONS_SUPPORT
+</verb></tscreen>
+<item> if you're running codrv put:
+<tscreen><verb>
+ #define XFree86ConsoleDefines -DCODRV_SUPPORT
+</verb></tscreen>
+</itemize>
+If you don't define <bf/XFree86ConsoleDefines/ in <tt/xf86site.def/ the
+pccons and pcvt drivers will be supported.
+
+<sect1>console.h and ioctl_pc.h files:
+
+<p>
+If you want to build a server supporting codrv and you
+don't already have the corresponding header file 
+<tt/ioctl_pc.h/ installed in <tt>/usr/include/machine</tt>, then
+install the copy that is supplied in
+<tt>xc/programs/Xserver/hw/xfree86/etc</tt>.  If you run
+NetBSD-current you probably want to install it in
+<tt>/usr/src/sys/arch/i386/include</tt> too, so that it get
+reinstalled each time you make install in <tt>/usr/src/include</tt>.
+
+If you have installed the  codrv console driver, this
+file should be taken from your installed version of the driver.
+
+The <tt/console.h/ file for syscons isn't distributed with XFree86
+anymore. You should get it from the syscons distribution.
+
+<sect1> Support for shared libs under NetBSD 1.0 and later
+
+<p>
+    By default XFree86 3.1.2 builds for NetBSD with shared libraries 
+    support. If you're building on 0.9 or don't want shared libraries 
+    add the following line to <tt/xf86site.def/:
+
+<tscreen>	
+ #define BuildBsdSharedLibs 	NO
+</tscreen>
+
+<sect1>Building on NetBSD/sparc<label id="sparc">
+
+<p>
+XFree86 3.1.2 also compiles on NetBSD/sparc. The Sun server
+patches from Dennis Ferguson and Matthew Green have been integrated in
+<tt>xc/programs/Xserver/hw/sun</tt>.  Small
+modifications to <tt/xf86site.def/ are needed:
+<itemize>
+<item> Set all variables defining the servers to build to
+<bf/NO/. (The variables controlling the Sun servers to build
+<bf/Xsun24Server/, <bf/XsunServer/ and <bf/XsunMonoServer/ are
+defined at the end of <tt/NetBSD.cf/.)
+<item> Set <bf/ServerToInstall/ to the sun server of your
+choice. (Xsun or XsunMono).
+<item> Look at other applicable options in the <url name="INSTALL document"
+url="INSTALL.html">.
+</itemize>
+
+Problems with this port should be reported to the
+<em/port-sparc@NetBSD.Org/ mailing list or directly to me
+<em/matthieu@laas.fr/ rather than to the xfree86 mailing list. 
+
+<sect>Building New X Clients
+
+<p>
+The easiest way to build a new client (X application) is to use
+<tt/xmkmf/ if an <tt/Imakefile/ is included in the sources.  Type
+``<tt/xmkmf -a/'' to create the Makefiles, check the configuration if
+necessary and type ``<tt/make/''.  Whenever you install additional man
+pages you should update <tt/whatis.db/ by running ``<tt>makewhatis
+/usr/X11R6/man</tt>''.
+
+To avoid the ``Virtual memory exhausted'' message from cc while
+compiling, increase the data and stack size limits (in csh type ``<tt/limit
+datasize 32M/'' and ``<tt/limit stacksize 16M/'').
+
+Note: Starting with XFree86 2.1 and NetBSD 0.9A, the symbol
+<bf/__386BSD__/ no longer gets defined either by the compiler or via the
+X config files for *BSD systems.  When porting clients to *BSD
+systems, make use of the symbol <bf/BSD/ for code which is truly
+BSD-specific.  The value of the symbol can be used to distinguish
+different BSD releases.  For example, code specific to the Net-2 and
+later releases can use:
+
+<tscreen>                   
+#if (BSD >= 199103)
+</tscreen>
+
+To ensure that this symbol is correctly defined, include
+<tt>&lt;sys/param.h&gt;</tt> in the source that requires it.  Note that
+the symbol <bf/CSRG_BASED/ is defined for *BSD systems in XFree86 3.1.1
+and later.  This should be used to protect the inclusion of
+<tt>&lt;sys/param.h&gt;</tt>.
+
+For code that really is specific to a particular i386 BSD port, use
+<bf/__FreeBSD__/ for FreeBSD, <bf/__NetBSD__/ for NetBSD,
+<bf/__386BSD__/ for 386BSD, and <bf/__bsdi__/ for BSD/386.
+
+Another note: If you get the message:
+
+<tscreen>                   
+ ld.so: undefined symbol _XtCvtStringToFont 
+</tscreen>
+
+at run-time, you've stumbled on a semantic weakness of the NetBSD 
+dynamic linker. Applications that use libXmu also need libXt. If the
+client uses a standard <tt/Imakefile/, this dependency will probably by
+included in the Makefile automagically -- you'll not see the
+problem. Otherwise, just add ``<tt/-lXt/'' to your library list in the
+Imakefile or Makefile and relink.
+
+<sect> Thanks
+<p>
+Many thanks to:
+<itemize>
+<item> <bf/Pace Willison/ for providing the initial port to 386BSD.
+<item> <bf/Amancio Hasty/ for fixing cursor restoration, mouse bugs
+and many others. 
+<item> <bf/Christoph Robitschko/ for fixing <tt/com.c/ and thus select().
+<item> <bf/Nate Williams/ for the patchkit support for X.
+<item> <bf/Rod Grimes/ and <bf/Jack Velte/ of Walnut Creek Cdrom for use
+  of their machines in preparing the FreeBSD binary release.
+</itemize>
+
+<verb>
+$XFree86: xc/programs/Xserver/hw/xfree86/doc/sgml/NetBSD.sgml,v 3.18 1996/01/28 07:30:36 dawes Exp $
+
+
+
+
+
+$XConsortium: NetBSD.sgml /main/9 1996/01/28 08:05:37 kaleb $
+</verb>
+
+</article>

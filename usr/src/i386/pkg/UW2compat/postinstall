@@ -1,0 +1,202 @@
+#!/usr/bin/sh
+#ident	"@(#)udk-uwcompat:i386/pkg/UW2compat/postinstall	1.9"
+
+# UDK postinstall script
+
+FAILURE=1	# fatal error
+
+EXITRC=0
+EXIT_REBOOT=10
+
+. $PTFVARS
+
+PKGMSG={$PKGINST}.pkg
+
+rm_tmp_ents() {
+
+	grep "^${PKGTMP}[ /]" ${CONTENTS} |awk '{print $1}' |
+		sort |removef $PKGINST - >/dev/null 2>&1
+	removef -f $PKGINST >/dev/null 2>&1
+}
+#
+
+patch_error() {
+	message -d `pfmt -s error -g ${PGKMSG}:8 "%s: Patch of the net driver has failed\n" ${PKGINST} 2>&1`
+	exit $FAILURE
+}
+
+[ -f /usr/bin/Nuname ] && {
+	(cd /usr/bin;
+		/usr/bin/mv Nuname uname)
+	/usr/bin/rm -f /etc/systemid
+	removef ${PKGINST} /usr/bin/Nuname > /dev/null 2>&1
+	installf ${PKGINST} /usr/bin/uname f 0555 bin bin > /dev/null 2>&1
+}
+[ -f /usr/lib/Nlibsocket.so.1 ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibsocket.so.1 libsocket.so.1;
+		/usr/bin/ln -f libsocket.so.1 libsocket.so.2)
+	removef ${PKGINST} /usr/lib/Nlibsocket.so.1 > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libsocket.so.1 f 0444 root bin > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libsocket.so.2=/usr/lib/libsocket.so.1 l > /dev/null 2>&1
+}
+
+
+[ -f /usr/lib/Nlibthread.so ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibthread.so libthread.so;
+		/usr/bin/ln -f libthread.so libthread.so.1)
+	removef ${PKGINST} /usr/lib/Nlibthread.so > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libthread.so f 0555 bin bin > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libthread.so.1=/usr/lib/libthread.so l > /dev/null 2>&1
+}
+[ -f /usr/lib/NlibthreadT.so ] && {
+	(cd /usr/lib;
+		/usr/bin/mv NlibthreadT.so libthreadT.so;
+		/usr/bin/ln -f libthreadT.so libthreadT.so.1)
+	removef ${PKGINST} /usr/lib/NlibthreadT.so > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libthreadT.so f 0555 bin bin > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libthreadT.so.1=/usr/lib/libthreadT.so l > /dev/null 2>&1
+}
+[ -f /usr/lib/Nlibcrypt_i.so ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibcrypt_i.so libcrypt_i.so;
+		/usr/bin/ln -f libcrypt_i.so libcrypt.so;
+		/usr/bin/ln -f libcrypt_i.so libcrypt.so.1)
+	removef ${PKGINST} /usr/lib/Nlibcrypt_i.so > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcrypt_i.so f 0755 bin bin > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcrypt.so=/usr/lib/libcrypt_i.so l > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcrypt.so.1=/usr/lib/libcrypt_i.so l > /dev/null 2>&1
+}
+[ -f /usr/lib/Nlibcdfs.so ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibcdfs.so libcdfs.so)
+	removef ${PKGINST} /usr/lib/Nlibcdfs.so > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libcdfs.so f 0444 bin bin > /dev/null 2>&1
+}
+
+[ -f /usr/lib/Nlibc.so.1 ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibc.so.1 libc.so.1;
+		/usr/bin/ln -f libc.so.1 ld.so.1)
+	removef ${PKGINST} /usr/lib/Nlibc.so.1 > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libc.so.1 f 0755 bin bin > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/ld.so.1=/usr/lib/libc.so.1 l > /dev/null 2>&1
+}
+[ -f /usr/lib/Nlibdl.so.1 ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibdl.so.1 libdl.so.1)
+	removef ${PKGINST} /usr/lib/Nlibdl.so.1 > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libdl.so.1 f 0444 bin bin > /dev/null 2>&1
+}
+[ -f /usr/lib/Nlibnsl.so.1 ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Nlibnsl.so.1 libnsl.so.1)
+	removef ${PKGINST} /usr/lib/Nlibnsl.so.1 > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/libnsl.so.1 f 0755 bin bin > /dev/null 2>&1
+}
+
+# Install package inet related libraries
+#
+
+if [ $HAS_INET = "yes" ]; then
+    [ -f /usr/lib/Nresolv.so ] && {
+	(cd /usr/lib;/usr/bin/mv Nresolv.so resolv.so)
+	removef ${PKGINST} /usr/lib/Nresolv.so >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/resolv.so f 0444 root sys > /dev/null 2>&1
+    }
+    [ -f /usr/lib/Ntcpip.so ] && {
+	(cd /usr/lib;/usr/bin/mv Ntcpip.so tcpip.so)
+	removef ${PKGINST} /usr/lib/Ntcpip.so >/dev/null 2>&1
+	installf ${PKGINST} /usr/lib/tcpip.so f 0444 root sys > /dev/null 2>&1
+    }
+else
+	removef ${PKGINST} /usr/lib/Nresolv.so >/dev/null 2>&1
+	removef ${PKGINST} /usr/lib/Ntcpip.so >/dev/null 2>&1
+	/usr/bin/rm -f /usr/lib/Nresolv.so
+	/usr/bin/rm -f /usr/lib/Ntcpip.so
+fi
+
+# Install package NIS related library
+#
+if [ $HAS_NIS = "yes" ]; then
+[ -f /usr/lib/Ntcpip_nis.so ] && {
+	(cd /usr/lib;
+		/usr/bin/mv Ntcpip_nis.so tcpip_nis.so)
+	removef ${PKGINST} /usr/lib/Ntcpip_nis.so > /dev/null 2>&1
+	installf ${PKGINST} /usr/lib/tcpip_nis.so f 0444 root sys > /dev/null 2>&1
+}
+else
+	/usr/bin/rm -f /usr/lib/Ntcpip_nis.so
+fi
+
+# Now patch net drivers for rpcbind problem with new networking
+# libraries
+PATCH=/usr/sbin/pat
+DRIVER=/etc/conf/pack.d/net/Driver_atup.o
+MPDRIVER=/etc/conf/pack.d/net/Driver_mp.o
+
+REBUILD=0
+for fname in ${DRIVER} ${MPDRIVER}
+do
+	if [ -f ${fname} ]
+	then
+		REBUILD=1
+		pfmt -s info -g ${PGKMSG}:9 "%s: patching ${fname}\n" ${PKGINST}
+		${PATCH} ${fname} ti_statetbl+21 7f .. = 7f 00 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error
+		}
+		${PATCH} ${fname} ti_statetbl+2a 7f .. = 7f 09 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error 
+		}
+		${PATCH} ${fname} ti_statetbl+44 7f = 00 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error 
+		}
+		${PATCH} ${fname} ti_statetbl+4d 7f = 00 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error 
+		}
+		${PATCH} ${fname} ti_statetbl+55 7f = 00 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error 
+		}
+		${PATCH} ${fname} ti_statetbl+5e 7f = 09 > /dev/null 2>&1
+		[ $? -ne 0 ] && { patch_error 
+		}
+	fi
+done
+
+PFMT10="The attempt to rebuild the kernel has failed.\n\tErrors have been written to the file %s.\n"
+
+if [ $REBUILD = "1" ]
+then
+	TMP=/tmp/UW2compat.$$
+	/etc/conf/bin/idbuild 2> $TMP
+	if [ $? -ne 0 ]; then
+		pfmt -s error -g ${PKGMSG}:10 "$PFMT10" $TMP 2>&1
+		exit $FAILURE
+	fi
+	rm $TMP
+fi
+
+# if the $PKGTMP directory is present...
+#	1) removef the contents file entries for the temporarily installed
+#	   files
+#	2) installf -f to "finalize" the contents file updates for the
+#	   actual file names
+
+[ -d ${PKGTMP} ] && {
+	rm_tmp_ents
+	installf -f $PKGINST
+}
+
+# get the $CONTENTS file info re the files we installed
+
+grep "^/.*${PKGINST}" ${CONTENTS} | \
+	awk '($2 == "f" || $2 == "v") {print $1, $7, $8, $9}' | \
+	sed -e "/.var.sadm.pkg..ptfupdate/d" >$FILEINFO
+
+if [ $REBUILD = "1" ]
+then
+	exit $EXIT_REBOOT
+else
+	exit $EXITRC
+fi

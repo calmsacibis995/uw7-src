@@ -1,0 +1,63 @@
+
+Test Suite for ETET, See ETET Test Plan Version 0.5 (tet_root/doc/testplan)
+
+To run this;  sh runtest
+
+This test suite utilizes the tet_root/contrib/api and tet_root/contrib/napi
+test suites.
+
+The default location for perl is assumed to be /bin/perl.
+If you perl is not located there, or is not symlinked, the run
+review the script fixperl and run it
+	sh fixperl
+
+(the default for fixperl is to change the path to /usr/local/gnu/perl
+ from /bin/perl)
+	
+To run this suite, ensure the following
+(note a script runtest is also provided to do this for you)
+
+
+	TET_ROOT  and TET_TMP_DIR are set correctly and exported
+
+	TET_ROOT=/home/etet  
+	TET_TMP_DIR=/tmp
+	TET_EXTENDED=true
+	export TET_ROOT TET_TMP_DIR TET_EXTENDED
+
+	PATH includes $TET_ROOT/bin and the current directory, so tcc and
+	the api suite buildtools can be found.
+
+	PATH=$PATH:$TET_ROOT/bin:.
+	export PATH
+
+Then type
+	tcc -e -p contrib/suite
+
+
+KNOWN PROBLEMS:
+
+
+This test suite is still under revision
+and some changes  for increased portability are expected to be made.
+
+There have been a couple of problems observed:
+
+(i) One observed problem occurs with the type of shell used for 
+the test contrib/api/src/stest1. If /bin/sh is used then on many
+implementations the ETET (e*) API tests will fail due to corrupted
+writes to journal files. The problem is as follows:
+
+Common implementations of "sh" are not POSIX compliant
+in append mode writes. Hence if ">>" is used in a shell script
+to write to a file, the "sh" utility will open the file in WRITE mode
+and seek to EOF before it writes any output, whcih can create
+timing windows that allow journal file corruption. The Korn shell
+does not have this problem since it opens the file in O_APPEND mode, 
+which does an internal seek to EOF before each write allowing no other 
+system activity  between the seek and the write.
+
+
+
+If you want to test the ksh API, see the release notes for how
+to replace the XPG3 Shell API with the Korn Shell API.

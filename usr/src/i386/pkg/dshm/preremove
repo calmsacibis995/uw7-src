@@ -1,0 +1,30 @@
+#ident	"@(#)pkg.dshm:preremove	1.1"
+
+FAILURE=1	# fatal error
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+ERROR=/tmp/$1.err
+
+exitstat=0
+
+MODULE=segshm
+
+${CONFBIN}/idcheck -p ${MODULE}
+RESULT="$?"
+if [ "${RESULT}" -ne "100" -a "${RESULT}" -ne "0" ]; then
+	${CONFBIN}/idinstall -gs  ${MODULE} | \
+			     /usr/bin/sed -e 's/Y/N/' > System 2> ${ERROR};
+	${CONFBIN}/idinstall -us  ${MODULE} > ${ERROR} 2>&1;
+	${CONFBIN}/idinstall -P ${PKGINST} -dop  ${MODULE} > ${ERROR} 2>&1;
+fi
+
+${CONFBIN}/idbuild
+if [ "$?" -ne "0" ]; then
+	exit ${FAILURE}
+else
+	exitstat=10
+fi
+
+exit ${exitstat}

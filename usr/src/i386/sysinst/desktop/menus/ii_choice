@@ -1,0 +1,70 @@
+#ident	"@(#)ii_choice	15.1"
+
+# Generate/display the menu of valid media/network installation types
+function ii_choice
+{
+	typeset NUM_SELECTIONS inst_wid mid
+	typeset TAPE=false CDROM=false TCP=true SPX=true
+
+	if $BACK_END_MANUAL 
+	then
+		NUM_SELECTIONS=2 ## only CDROM and Cancel are available.
+		CDROM=true; TCP=false; SPX=false
+	else
+		NUM_SELECTIONS=3 ## TCP, SPX, and Cancel are always choices.
+		[ -c /dev/rmt/tape1 ] && {
+			(( NUM_SELECTIONS += 1 ))
+			TAPE=true
+		}
+		[ -b /dev/cdrom1 ] && {
+			(( NUM_SELECTIONS += 1 ))
+			CDROM=true
+		}
+	fi
+	(( NUM_SELECTIONS += 1 )) ## Add 1 to get a blank line above first item.
+
+	place_window INETINSTWIDTH+5 ${NUM_SELECTIONS} -title "$INETINST_CHOICE" -current 'footer "$INETINST_MENU_FOOTER"'
+	inst_wid=$CURWIN
+
+	open_menu -exit 'errmsg "$NOMEDIA"; false' -x 3 -y 1
+	mid=$MID
+
+	$TAPE && add_menu_item -select "SEC_MEDIUM_TYPE=tape; ii_choice_update $inst_wid" -entry 'msgnoerr $INETINST_TAPE_PROMPT' -help "helpwin media.tape" "$INETINST_TAPE"
+	$CDROM && add_menu_item -select "SEC_MEDIUM_TYPE=cdrom; ii_choice_update $inst_wid" -entry 'msgnoerr $INETINST_CDROM_PROMPT' -help "helpwin media.cdrom" "$INETINST_CDROM"
+	$TCP && add_menu_item -select "SEC_MEDIUM_TYPE=tcp; ii_choice_update $inst_wid" -entry 'msgnoerr $INETINST_TCP_PROMPT' -help "helpwin media.tcp" "$INETINST_TCP"
+	$SPX && add_menu_item -select "SEC_MEDIUM_TYPE=spx; ii_choice_update $inst_wid" -entry 'msgnoerr $INETINST_SPX_PROMPT' -help "helpwin media.ipx" "$INETINST_SPX"
+	add_menu_item -select halt -entry 'msgnoerr $CANCEL_PROMPT' -help 'helpwin caninst' "$CANCEL3"
+
+	run_menu $mid 0
+}
+
+# Update the /tmp/ii.parms file with the selected media type.
+function ii_choice_update
+{
+	wclose $1
+	msg
+	footer
+	echo "SEC_MEDIUM_TYPE=\"$SEC_MEDIUM_TYPE\"">>/tmp/ii.parms
+	return 0
+}
+
+function confirm_medium
+{
+	CHOOSE_FOOTER="$GENERIC_FOOTER"
+	choose -f -e -exit confirm_medium_exit -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$CONFIRM_yes" "$CONFIRM_yes" "$CONFIRM_no"
+}
+
+function confirm_medium_exit
+{
+	case $CHOICE in
+	$CONFIRM_yes)
+		CORRECT_MEDIUM=true
+		;;
+	$CONFIRM_no)
+		CORRECT_MEDIUM=false
+		;;
+	esac
+	msg
+	footer
+	return 0
+}

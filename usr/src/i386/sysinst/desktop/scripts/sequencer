@@ -1,0 +1,304 @@
+#!/usr/bin/ksh
+
+#ident  "@(#)sequencer	15.1	97/12/19"
+
+#
+# This sequencer implements a pushdown automota finite state machine.
+# (ohhhhhh.... math!)  Each ui or install module is a state. 
+# Transitioning to a state means executing that module. 
+# When the module exits, the return code is used
+# as a symbol of input, which the sequencer uses to tell which state/module
+# to transition to next. 
+# The first (and only) command line argument must be the filename of the
+# "map file". A map file specifies the states and the transitions. 
+# It must define ksh varaibles. "start_module", "stop_module" and
+# "module_path" are the minimum required. If module bar should come after
+# module foo, when foo exits with a value of n, then the following varaible
+# should be set: foo[n]=bar. Don't specify backwards links. If the special
+# exit code of PREV (see exit_codes.ksh) is encountered, the sequencer
+# uses its stack of module names to go back to the previous module.
+#
+
+# Initialize screen
+
+export INIT_SCREEN=true
+
+. /etc/inst/locale/C/menus/global.txtstrings
+. /etc/inst/scripts/winrc
+. /etc/inst/scripts/scr_init
+unset INIT_SCREEN
+function usage
+{
+	echo "Usage: $0 map-file"
+	exit 1
+}
+
+
+#
+#------------------------------------------------------------------
+#
+#    This implements a stack of names/symbols.
+#    There are next_item items in the stack. The stack is stored in an
+#    array the_stack[]. The next free space available is the_stack[next_item].
+#    The top of the stack is the_stack[next_item-1].
+#
+
+function stack_init
+{
+	(( next_item = 0 ))
+}
+
+function stack_push
+{
+	the_stack[$next_item]=$1
+	(( next_item = next_item + 1 ))
+}
+
+#
+# Take the name of a variable to write to. Pop the stack.
+# Then set the specified variable to the value.
+# This code must not be run in a sub-shell, so next_item can be
+# modified. That's why the syntax is:
+#	stack_pop varname
+# instead of:
+#	varname=`stack_pop`      (using stdout).
+#
+function stack_pop
+{
+	typeset item
+	if (( next_item < 1 ))
+	then	
+		/isl/ui_modules/seq_error 1
+		exit 1
+	else
+		(( next_item = next_item - 1 ))
+		item=${the_stack[$next_item]}
+		eval $1=$item
+	fi
+}
+
+#
+# Returns 0 if the stack is empty, 1 otherwise.
+#
+function stack_empty
+{
+	(( next_item < 1 ))
+}
+
+#
+#----------------------------------------------------------------------
+#
+
+#
+# Check to be sure that the module passed in as $1 (full pathname)
+# really exists, and that we can exec it.
+#
+function check_module
+{
+	if [ ! -f $1 ] 
+	then
+		/isl/ui_modules/seq_error 2 $1
+		return 1
+	fi
+	if [ ! -x $1 ] 
+	then
+		/isl/ui_modules/seq_error 3 $1
+		return 1
+	fi
+	return 0
+}
+
+#
+# Usage: check_transition current_module exit_code
+# This function checks to be sure that the module that just exited, exited
+# with a valid exit code. If the exit code is less than the min legal code,
+# or grater than the max legal code, it must be illegal, probably the result
+# of a premature exit, or falling through to the end.
+# Otherwise, we check for a transition (that was set when we read in 
+# the map file). If there is no transition for the given module and exit code,
+# then there probably was a programming error, or the map file is out of
+# date. Or just an unlucky error caused a weird exit value.
+# If there is no transition, exit the sequencer. Otherwise, just return
+# normally.
+#
+function check_transition
+{
+	if (( ($2 < $MIN_EXIT_CODE) || ($2 > $MAX_EXIT_CODE) ))
+	then
+		/isl/ui_modules/seq_error 4 $1 $2
+		return 1
+	fi
+	var=\${$1[$2]}
+	next=`eval echo $var`
+	if [ "$next" = "" ]
+	then
+		/isl/ui_modules/seq_error 5 $1 $2
+		return 1
+	fi
+	return 0
+}
+
+
+#
+# Usage: lookup_transition current_module exit_code
+# This looks up the module to run next and outputs it's name to stdout.
+#
+function lookup_transition
+{
+	var=\${$1[$2]}
+	next=`eval echo $var`
+	echo $next
+}
+
+#
+# Be sure the stack is not empty, cause we are about to pop it.
+#
+function check_stack
+{
+	if stack_empty
+	then
+		/isl/ui_modules/seq_error 6 $current_module $code
+		exit 1
+	fi
+}
+
+#
+#--------------------------------------------------------------------
+#
+#                      Main
+#
+#
+# Always do a debugging trace. The log won't get tooooo big, and it'll
+# be really helpfull to debug a problem. When we ship, maybe turn this off.
+#
+
+. /isl/ivar.ksh
+if ivar check DEBUG_ALL
+then
+	exec 2>> /tmp/log/sequencer
+	set -x
+else
+	exec 2> /dev/null
+	set +x
+fi
+ivar stop
+echo "Sequencer starting $1" 1>&2
+
+#
+# Check input
+#
+[ $# -eq 1 ] || usage
+[ -f $1 ] || usage
+
+#
+# Turn off control-c etc...
+#
+stty intr '^@'
+
+#
+# Define symbolic exit code names
+#
+. /isl/exit_codes.ksh
+
+#
+# Define the states and transitions between states. This reads the map file.
+#
+. $1
+
+
+#
+# Start sequencing!
+#
+stack_init
+current_module=$start_module
+direction=NEXT
+while [ "$current_module" != "$stop_module" ]
+do
+	#
+	# Be sure the module exists
+	#
+	check_module $module_path/$current_module
+	if (( $? != 0 ))
+	then
+		if [ "$current_module" = "$start_module" ]
+		then
+			/isl/ui_modules/seq_error 7
+			exit 1
+		else
+			check_stack
+			stack_pop current_module
+			continue
+		fi
+	fi	
+
+	#
+	# RUN THE MODULE
+	#
+	$module_path/$current_module $direction 2>/dev/null
+	code=$?
+	#
+	# Should we go back?
+	#
+	if (( code == PREV ))
+	then
+		#
+		# Go back to the previous module we were just in.
+		#
+		direction=PREV
+		check_stack
+		stack_pop current_module       # modifies current_module
+	else
+		#
+		# Move on to the next module. 
+		# PREV is a special case that we handle (see above). All other
+		# cases are handled here.
+		#
+		direction=NEXT
+		#
+		# Save the module we just ran, so we can come back later.
+		#
+		stack_push $current_module
+		#
+		# Be sure the transition we are about to do is legal.
+		#
+		check_transition $current_module $code
+		if (( $? != 0 ))
+		then
+
+		# Recover by going to previous module. 
+			direction=PREV
+		# Pop the module we just pushed
+			stack_pop current_module
+		# Now pop previous module
+			check_stack
+			stack_pop current_module
+		else
+			#
+			# Transition to the next state.
+			#
+			current_module=`lookup_transition $current_module $code`
+			#
+			# pop modules off to get back to some prior
+			# module.  Emulates a sub-sequencer.  Yes, it's
+			# kind of cheesy.
+			#
+			if [[ "$current_module" = "pop{"*"}" ]]; then
+				dest="${current_module##*\{}"
+				dest="${dest%%\}}"
+				while [[ "$dest" != "$current_module" ]]
+				do
+					check_stack
+					stack_pop current_module
+				done
+			fi
+		fi
+	fi
+done
+
+#
+# Sucess!
+#
+exit 0
+
+	
+

@@ -1,0 +1,367 @@
+#!/sbin/sh
+#ident  "@(#)osmp	15.1	97/12/19"
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	IFILE_PSM=`ivar get PSMINDEX`
+
+        # If PSMINDEX is not set ...
+        if [ -z $IFILE_PSM ]
+	then
+                #
+                # ... call ourselves again, interactively.
+                #
+                ivar set silent_$module "false"
+                ivar set skip_$module "false"
+                . /isl/ui_map
+                exec $module_path/$module $direction
+	fi
+}
+
+
+choose_PSM ()
+{
+	[ -n "$debug" ] && set -x
+
+	integer i=0
+
+	MAXCHOICEROWS=4
+	open_radio
+	radio_id=$RID
+	for CHOICE in "${PSMARRAY[@]}"
+	do
+		add_radio "$CHOICE" -entry "PSM=\"$CHOICE\"; msg \"${PSM_DESC[i]}\";PSMINDEX=$i"
+		(( i += 1 ))
+	done
+	(( i < MAXCHOICEROWS )) && ((MAXCHOICEROWS=i))
+	radio_runparms $radio_id $MAXCHOICEROWS
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT -above 15 -below 1 -title "$PSM_ENTRY"
+	run_radio $radio_id $PSMINDEX 4
+
+	footer "$PSM_RFOOTER"
+	set_hotkey 9 go_back
+	input_handler
+	echo "PSMINDEX=$PSMINDEX" > /tmp/psmindex
+}
+
+select_PSM ()
+{
+	[ -n "$debug" ] && set -x
+	if [ -z "${PSMARRAY}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS="$nl"
+		set -A PSMARRAY ${PSMLIST0}
+		IFS="$OIFS"
+	fi
+
+	PSMINDEX=0
+	case ${DIR} in
+
+		compaq) PSMINDEX=1;;
+		mps) PSMINDEX=2;;
+		abon) PSMINDEX=3;;
+#		tricord) PSMINDEX=3;;
+		cbus) 
+			case ${CBUS_OEM} in
+				101|102) PSMINDEX=3;;
+				103)	PSMINDEX=4;;
+				104)	PSMINDEX=5;;
+			esac
+			;;
+#		ast) PSMINDEX=7;;
+#		olivetti) PSMINDEX=8;;
+#		acer) PSMINDEX=9;;
+
+	esac
+	
+	IFILE_PSM=`ivar get PSMINDEX`
+	[ -n "$IFILE_PSM" ] && PSMINDEX=$IFILE_PSM
+
+	PSM="${PSMARRAY[${PSMINDEX}]}"
+	echo "PSM=${PSM}" > /tmp/psm
+	echo "PSMINDEX=${PSMINDEX}" > /tmp/psmindex
+	export PSM PSMINDEX
+
+	# message if we're on boot floppy must note PSM add-on
+	# floppy install as an option.  If OSMP is being
+	# installed as an add-on later (after boot flop install
+	# complete, then the message about the PSM floppy is
+	# different
+	
+	if [ "${ON_BOOTS}" = "FALSE" ]
+	then
+		NOPSM_MSG="${ADD_NOPSM_MSG}"
+		PSM_MSG2="${ADD_PSM_MSG2}"
+	fi
+
+	if [ "${PSMINDEX}" = "0" ]
+	then
+		display "$NOPSM_MSG" -above 1 -below 10
+	else
+	   	display "$PSM_MSG" -above 1 -below 10
+	fi
+	typeset wid=$CURWIN
+	footer "${PSM_FOOTER}"
+	choose_PSM
+	wclose $wid
+	footer ""
+}
+
+function go_back {
+	ii_exit PREV
+}
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+# Don't need to worry about UPGRADE case for UW2.0 since the OSMP
+# is new in UW2.0
+
+#SCRIPTS=/usr/sbin/pkginst
+#. ${SCRIPTS}/updebug
+
+. /isl/ui_modules/common.rc
+
+[ -n "$debug" ] && set -x
+
+# Check if osmp has been installed. If not then exit
+
+INSTPKGS=`ivar get INSTPKGS`
+INSTPKGS=" $INSTPKGS "
+[[ $INSTPKGS = *" osmp "* ]] || ii_exit $direction
+ 
+
+
+#export PKGINSTALL_TYPE 
+
+#PKGINSTALL_TYPE=NEWINSTALL
+
+#[ "$UPDEBUG" = YES ] && goany
+
+#chkpkgrel, returns a code, indicating which version of this pkg is installed.
+#Return code 2 indicates overlay of the same or older version. For overlay,
+#existence of the file $UPGRADE_STORE/$PKGINST.ver indicates presence of older
+#version. This file contains the old version.
+
+#	${SCRIPTS}/chkpkgrel returns    0 if pkg is not installed
+#					1 if pkg if unknown version
+#					2 if pkg is UnixWare 2.1
+#					4 if pkg is UnixWare 1.1 and ilk
+#					6 if pkg is UnixWare 2.01 and ilk
+#					9 if newer pkg is installed
+
+#${SCRIPTS}/chkpkgrel osmp
+#PKGVERSION=$?
+PKGVERSION=99		# Don't know what this means, just making sure that 
+			# Gemini ISL works properly.
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	6)	PKGINSTALL_TYPE=UPGRADE2;;
+	9)	exit 3	;; #pkgrm newer pkg before older pkg can be installed.
+	*)	;;
+esac
+
+#[ "$UPDEBUG" = YES ] && goany
+
+[ "${PKGINSTALL_TYPE}" = "OVERLAY" -o "${PKGINSTALL_TYPE}" = "UPGRADE2" ] && {
+
+	# restore type to "atup" in case install fails; postinstall
+	# of this package will restore it to "mp"
+	/etc/conf/bin/idtype atup 1>/dev/null 2>&1
+
+#	[ "$UPDEBUG" = YES ] && {
+#		echo "about to check on oempsm package"
+#		goany
+#	}
+
+	# now remove the "oempsm" package, if it exists
+	pkginfo -i oempsm 1>/dev/null 2>&1
+	rc=$?
+	[ "${rc}" = "0" ] && {
+		pkgrm -n oempsm 1>/dev/null 2>&1
+		rc=$?
+		[ "$UPDEBUG" = YES ] && {
+		  echo "return code from pkgrm of oempsm was " ${rc}
+		  goany
+		}
+	}
+
+	#now check to see whether a PSM installed by OSMP is already
+	#configured
+
+#	for i in ast mps cbus compaq tricord olivetti acer
+	for i in mps compaq abon
+	do
+		/etc/conf/bin/idcheck -p $i
+		rc=$?
+		[ "$UPDEBUG" = YES ] && {
+		  echo "idcheck of " $i " returned " ${rc}
+		  goany
+		}
+
+		[ "${rc}" != "0" -a "${rc}" != "100" ] && {
+		  # driver was configured;  remove it if sdevice contains
+		  # $interface psm (watch out for silly name conflict)
+
+		  if grep interface /etc/conf/mdevice.d/$i | grep psm
+		  then
+			/etc/conf/bin/idinstall -P osmp -d $i
+		  fi 1>/dev/null 2>&1
+		}
+	done
+
+	
+}
+
+#[ "$UPDEBUG" = YES ] && goany
+
+############# End  UPGRADE AND OVERLAY #######################
+
+# detect if being invoked via boot floppy!
+
+#if [ -f /etc/inst/scripts/pdiconfig ]
+#then
+#	ON_BOOTS=TRUE
+#else
+#	ON_BOOTS=FALSE
+#fi
+ON_BOOTS=TRUE
+
+# For DEBUGGING!
+# echo ON_BOOTS is $ON_BOOTS
+#
+
+# Call autodetect to install appropriate modules.
+unset DIR OTHERS CBUS_OEM AUTODETECT_RETCODE
+/usr/bin/autodetect 1>/dev/null 2>&1
+AUTODETECT_RETCODE=$?
+case ${AUTODETECT_RETCODE} in
+	1 )
+		DIR=compaq
+		OTHERS="mps abon"
+		;;
+	10 )
+		DIR=abon
+		OTHERS="mps compaq"
+		;;
+	6 | 7 )
+		DIR=mps
+		OTHERS="compaq abon"
+		;;
+	101|102 )
+		DIR=cbus
+		CBUS_OEM=${AUTODETECT_RETCODE}
+		OTHERS="ast mps compaq tricord olivetti acer"
+		;;
+	103 )
+		DIR=cbus
+		CBUS_OEM=103
+		OTHERS="ast mps compaq tricord olivetti acer"
+		;;
+	104 )
+		DIR=cbus
+		CBUS_OEM=104
+		OTHERS="ast mps compaq tricord olivetti acer"
+		;;
+#	2 )
+#		DIR=ast
+#		OTHERS="mps cbus compaq tricord olivetti acer"
+#		;;
+
+#	3 )
+#		DIR=acer
+#		OTHERS="mps cbus compaq tricord olivetti"
+#		;;
+
+#	4 )
+#		DIR=tricord
+#		OTHERS="ast mps cbus compaq olivetti acer" 
+#		;;
+#	8 )
+#		DIR=olivetti
+#		OTHERS="ast mps cbus compaq tricord acer" 
+#		;;
+	*)
+		OTHERS="mps compaq abon"
+		;;
+esac
+
+#
+#	Not called from boot floppy, 
+#	so set up winxksh environment.
+#
+
+# silent mode boot floppy installation support
+# if the variable SILENT_PSM is set, its value will be an index used to
+# select the PSM.  Valid index values do not have an asterisk:
+# Note that autodetect has not been updated to find audobon HW.
+#
+#	Index		PSM
+#	  1		Compaq TriFlex PSM (ProLiant, SystemPro)
+#	  2		MP Specification 1.1&1.4
+#	  3*		Tricord PowerFrame 
+#	  4*		Corollary Cbus-I XM Symmetric, Cbus-II
+#	  5*		IBM 720 PC SERVER Corollary Cbus-II
+#	  6*		OLIVETTI SNX200/400 Corollary Cbus-II
+#	  7*		AST Manhattan SMP (5x<CPU>)
+#	  8*		Olivetti LSX 5050
+#	  9*		AcerAltos 17000, AcerFrame
+#	  10		Data General NUMALiiNE
+#
+# check if ${SILENT_INSTALL} = true.  If the variable "SILENT_PSM"
+# is set, Set PSMINDEX to its value.
+# otherwise, check to see if autodetect determined the box was MP
+# Specification compliant, in which case the PSMINDEX is 2, otherwise,
+# set PSMINDEX to 1 (Compaq ProLiant)
+
+if [ "${ON_BOOTS}" = "TRUE" ] && [ "${SILENT_INSTALL}" = "true" ]
+then
+	if [ "${SILENT_PSM}" != "" ]
+	then
+		PSMINDEX=${SILENT_PSM}
+	else
+	   if [ "${PLATFORM}" = "compaq" ]
+	   then
+		if [ "$DIR" = "mps" ]
+		then
+			PSMINDEX=2	# MP Specification v1.1 and 1.4
+		else
+			PSMINDEX=1	# Compaq ProLiant
+		fi
+	   fi
+	fi
+	
+	IFILE_PSM=`ivar get PSMINDEX`
+	[ -n $IFILE_PSM ] && PSMINDEX=$IFILE_PSM
+
+	echo "PSMINDEX=$PSMINDEX" > /tmp/psmindex
+else
+
+	#
+	# Just
+	#	1. prompt the user for PSM selection,
+	#	2. store her/his choice under #	/tmp/psm and /tmp/psmindex, and
+	#       3. Boot floppies will (1) execute /tmp/osmp.req.sh
+	#                             (2) rm /tmp/osmp.req.sh # IMPORTANT!!!!
+	#                             (3) execute /tmp/osmp.post.sh 
+
+	
+	select_PSM
+fi
+
+#
+#	Reset tty and clean up the screen 
+#
+#[ "${ON_BOOTS}" = "FALSE" ]  && . /tmp/osmp_winexit
+
+# do the following so that the return code from this script, when
+# executed from the request script, returns 0
+#echo > /dev/null
+
+ivar set PSMINDEX $PSMINDEX
+ii_exit NEXT

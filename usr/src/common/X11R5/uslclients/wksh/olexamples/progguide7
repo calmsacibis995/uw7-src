@@ -1,0 +1,88 @@
+#!/usr/bin/wksh -openlook
+
+do_ps() {	# $1=reschedule flag
+	sv $TEXT string:"`ps $OPTIONS`      "
+	if [ "$1" ]
+	then ato $TOPLEVEL 20000 do_ps
+	fi
+}
+
+prop_apply() {
+	# dataprint prints out NAME=VALUE pairs, where NAME is the
+	# name of the widget and VALUE in the case of a checkbox is 
+	# either the word "set" or "unset".  By calling eval
+	# on the results of the dataprint, we set up environement
+	# variables holding each value.
+
+	SAVEPROP="`dataprint $PROP_UCA`"
+	eval "$SAVEPROP"
+	OPTIONS=""
+	if [ $long = set ]
+	then OPTIONS="$OPTIONS -l"
+	fi
+	if [ $all = set ]
+	then OPTIONS="$OPTIONS -a"
+	fi
+	if [ $sys = set ]
+	then OPTIONS="$OPTIONS -e"
+	fi
+	if [ $demon = set ]
+	then OPTIONS="$OPTIONS -d"
+	fi
+	do_ps
+	cbclear $PROP_UCA
+}
+
+prop_reset() {
+	datareset $PROP_UCA "$SAVEPROP"
+	SAVEPROP="`dataprint $PROP_UCA`"
+	cbclear $PROP_UCA
+}
+
+FACTORY_SETTINGS="long=unset
+all=unset
+sys=unset
+demon=unset"
+
+prop_reset_factory() {
+	datareset $PROP_UCA "$FACTORY_SETTINGS"
+	prop_apply $1
+}
+
+do_properties() {
+	if [ ! "$PROP" ]
+	then
+		cps PROP prop popupWindowShell $TOPLEVEL \
+			apply:'prop_apply'	\
+			reset:'prop_reset'	\
+			resetFactory:'prop_reset_factory'
+		sv $PROP_UCA allowChangeBars:true
+		cmw LONG long checkBox $PROP_UCA \
+			label:"Long Listing: "
+		cmw ALL all checkBox $PROP_UCA   \
+			label:"All Processes:"
+		cmw SYS sys checkBox $PROP_UCA   \
+			label:"System Wide:  "
+		cmw DEMON demon checkBox $PROP_UCA   \
+			label:"System Demons:"
+		mnsetup $PROP		# set up mnemonics
+		cbsetup $PROP_UCA	# set up change bars
+		prop_reset_factory
+	fi
+	SAVEPROP=`dataprint $PROP_UCA`
+	pu $PROP GrabNone
+}
+
+oi TOPLEVEL ps ps -openlook "$@" 
+
+cmw FORM form form $TOPLEVEL
+cmw WINDOW window scrolledWindow $FORM \
+	viewHeight:200 viewWidth:300
+cmw TEXT text staticText $WINDOW font:fixed
+cmw CA ca controlArea $FORM `under $WINDOW 10` center:true
+
+addbuttons $CA	"Run PS" do_ps  "Properties..." do_properties
+
+do_ps true
+rw $TOPLEVEL
+ml

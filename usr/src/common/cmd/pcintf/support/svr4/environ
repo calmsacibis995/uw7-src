@@ -1,0 +1,30 @@
+#ident	"@(#)pcintf:support/svr4/environ	1.1"
+#!/bin/sh
+#	dossvr environment
+
+umask 002
+
+# pciFileLimit is used as an argument to ulimit in pcistart; it will not
+# affect RS232 PCI users.
+
+pciFileLimit=`ulimit -f`
+[ "$pciFileLimit" -lt 8192 ] && pciFileLimit=8192	# 4MB min recommended
+
+. /etc/TIMEZONE
+
+# PRINTPROG is the default print program and PRINTPATH is a list of directories
+# the system should search for print programs.  The print program specified for
+# PRINTPROG, as well as the print programs invoked by the user with the PRINTER
+# command, must reside in one of these directories.  Change these variables to
+# specify the desired default print program and search paths.  If you do not
+# define PRINTPROG, the server attempts to execute /usr/pci/bin/pciprint.  A
+# sample pciprint program is in the host-side distribution.
+
+PRINTPROG=/usr/pci/bin/pciprint			export PRINTPROG
+PRINTPATH=/bin:/usr/bin				export PRINTPATH
+
+# LANG, NLSPATH and LCSPATH just affect PCI server messages on the host.
+
+LANG=En						export LANG
+NLSPATH=/usr/pci/%N/%L.%C:/usr/pci/%N/%L.lmf	export NLSPATH
+LCSPATH=/usr/pci/lib				export LCSPATH

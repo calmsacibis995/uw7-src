@@ -1,0 +1,465 @@
+/* 
+ *  @(#) m386-25.xgi 2.0 92/09/24 
+ *
+ *  Copyright (C) 1992 Olivetti  Spa.
+ *
+ */
+
+/* ************************************************************************* *
+ *  olivetti/m386-25.XGI GrafInfo File for Olivetti m386-25 Computer         *
+ *                                                                           *
+ *  OLIVETTI.m386-25.VGA.640x480-16-60    VGA       640X480  16-colors  60Hz *
+ *  OLIVETTI.m386-25.VGA.640x480-16-72    VGA       640X480  16-colors  72Hz *
+ *  OLIVETTI.m386-25.SVGA.1024-768-16-60  SUPER VGA 1024X768 16-colors  60Hz *
+ *                                                                           *
+ *                         CHIP SET  C&T 452A                                *
+ * ************************************************************************  */
+
+VENDOR OLIVETTI      "OLIVETTI"
+ MODEL  m386-25       "m386-25    VGA/SVGA"
+  CLASS  VGA           "VGA"
+   MODE   640x480-16-60  "640x480  16 colors 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+     DATA
+        {
+        XDRIVER     = "mw";
+        VISUAL      = "PseudoColor";
+        DEPTH       = 4;
+        DEVTYPE     = 01;
+        DEVTECH     = 0x0D;         /* VGA */
+        PIXBYTES    = 80;
+        PIXWIDTH    = 640;
+        PIXHEIGHT   = 480;
+        PIXBITS     = 1;
+        PIXPLANES   = 4;
+        MAPTYPE     = "EGA";
+        }
+
+     PROCEDURE   SetGraphics
+        {
+
+        /* sequencer */
+        r0 = 0x1;   /* reset */
+        r1 = 0x1;
+        r2 = 0xF;
+        r3 = 0x0;
+        r4 = 0x6;
+        bout(5, 0x3C4, 0x3C5);
+
+        /* misc output reg */
+        out(0x3C2,0xE3);  
+
+        /* remove sequencer reset */
+        r0 = 0x3; bout(1,0x3C4,0x3C5);
+
+
+        /* Feature Control register */
+        out(0x3DA,0x00);    
+
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x0);
+
+        /* crtc */
+        r0  = 0x5F; r1  = 0x4F; r2  = 0x50; r3  = 0x82;
+        r4  = 0x54; r5  = 0x80; r6  = 0x0B; r7  = 0x3E;
+        r8  = 0;    r9  = 0x40; r10 = 0;    r11 = 0;
+        r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;
+        r16 = 0xEA; r17 = 0x8C; r18 = 0xDF; r19 = 0x28;
+        r20 = 0;    r21 = 0xE7; r22 = 0x04; r23 = 0xE3;
+        r24 = 0xFF;
+        bout( 25, 0x3d4, 0x3D5 );
+
+        /* graphics controller */
+        r0 = 0x0;
+        r1 = 0x0;
+        r2 = 0x0;
+        r3 = 0x0;
+        r4 = 0x0;
+        r5 = 0x00;
+        r6 = 0x5;
+        r7 = 0x0F;
+        r8 = 0xFF;
+        bout( 9, 0x3CE, 0x3CF );
+
+        /* attribute controller */
+        in(r63,0x3DA);   /* reset f/f */
+
+        /* palette */
+        r0  = 00;    r1  = 01;   r2  = 02;   r3  = 03;
+        r4  = 04;    r5  = 05;   r6  = 0x14; r7  = 07;
+        r8  = 0x38;  r9  = 0x39; r10 = 0x3A; r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D; r14 = 0x3E; r15 = 0x3F;
+
+        /* attribute controller */
+        r16 = 01; r17 = 00; r18 = 0x0F; r19 = 00;
+        
+        bout( 20, 0x3C0, 0x3C0 );
+
+        /* enable double sized planes */
+        out(0x3c0,0x36); out(0x3C0,0x10);
+
+        /* palette mask */
+        out( 0x3C6, 0xFF);
+
+        /* enable palette */
+        out( 0x3C0, 0x20);
+
+        }
+
+      PROCEDURE SetText
+         {
+
+        /* unprotect crtc regs 0-7 */
+        out( 0x3D4,0x11);   out(0x3D5,0x20);
+
+        in(r63,0x3DA);                   /* reset attr F/F */
+        out(0x3C0,0);                    /* disable palette */
+
+
+        r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+        bout( 5, 0x3C4, 0x3C5 );          /* sequencer regs */
+
+        out(0x3C2,0x67);                 /* misc out reg   */
+
+        
+        r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+       
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x20);
+
+        r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+        r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+        r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+        r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+        r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+        r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+        r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+        r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+        r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+        in(r63,0x3DA);                   /* reset attr F/F */
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+        bout(20,0x3C0,0x3C0);
+
+        out(0x3C0,0x20);                 /* enable palette */
+        }
+
+/* **************************************************************** */
+
+VENDOR OLIVETTI      "OLIVETTI"
+ MODEL  m386-25       "m386-25    VGA/SVGA"
+  CLASS  VGA            "VGA"
+   MODE   640x480-16-72  "640x480  16 colors 72Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+    
+      DATA
+         {
+         XDRIVER     = "mw";
+         VISUAL      = "PseudoColor";
+         DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;        /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+     PROCEDURE   SetGraphics
+        {
+
+        /* sequencer */
+        r0 = 0x1;      /* reset */
+        r1 = 0x9;      /* divide input clock by 2 ( ~32MHz ) */
+        r2 = 0xF;
+        r3 = 0x0;
+        r4 = 0x6;
+        bout(5, 0x3C4, 0x3C5);
+
+        /* misc output reg */
+        out(0x3C2,0xEB);  
+
+        /* remove sequencer reset */
+        r0 = 0x3; bout(1,0x3C4,0x3C5);
+
+
+        /* Feature Control register */
+        out(0x3DA,0x02);
+
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x0);
+
+        /* crtc */
+        r0  = 0x63; r1  = 0x4F; r2  = 0x50; r3  = 0x86;
+        r4  = 0x55; r5  = 0x9A; r6  = 0x06; r7  = 0x3E;
+        r8  = 0;    r9  = 0x40; r10 = 0;    r11 = 0;
+        r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;
+        r16 = 0xE8; r17 = 0x8B; r18 = 0xDF; r19 = 0x28;
+        r20 = 0;    r21 = 0xDF; r22 = 0x02; r23 = 0xE3;
+        r24 = 0xFF;
+        bout( 25, 0x3d4, 0x3D5 );
+
+        /* graphics controller */
+        r0 = 0x0;
+        r1 = 0x0;
+        r2 = 0x0;
+        r3 = 0x0;
+        r4 = 0x0;
+        r5 = 0x00;
+        r6 = 0x5;
+        r7 = 0x0F;
+        r8 = 0xFF;
+        bout( 9, 0x3CE, 0x3CF );
+
+        /* attribute controller */
+        in(r63,0x3DA);   /* reset f/f */
+
+        /* palette */
+        r0  = 00;   r1  = 01;   r2  = 02;   r3  = 03;
+        r4  = 04;   r5  = 05;   r6  = 0x14; r7  = 07;
+        r8  = 0x38; r9  = 0x39; r10 = 0x3A; r11 = 0x3B;
+        r12 = 0x3C; r13 = 0x3D; r14 = 0x3E; r15 = 0x3F;
+
+        /* attribute controller */
+        r16 = 01; r17 = 00; r18 = 0x0F; r19 = 00;
+        
+        bout( 20, 0x3C0, 0x3C0 );
+
+        /* enable double sized planes */
+        out(0x3c0,0x36); out(0x3C0,0x10);
+
+        /* palette mask */
+        out( 0x3C6, 0xFF);
+
+        /* enable palette */
+        out( 0x3C0, 0x20);
+
+        }
+
+    PROCEDURE SetText
+        {
+
+        /* unprotect crtc regs 0-7 */
+        out( 0x3D4,0x11);   out(0x3D5,0x20);
+
+        in(r63,0x3DA);                   /* reset attr F/F */
+        out(0x3C0,0);                    /* disable palette */
+
+
+        r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+        bout( 5, 0x3C4, 0x3C5 );          /* sequencer regs */
+
+        /* Feature Control register */
+        out(0x3DA,0x00);
+
+        out(0x3C2,0x67);                  /* misc out reg   */
+
+        
+        r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+       
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x20);
+
+        r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+        r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+        r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+        r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+        r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+        r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+        r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+        r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+        r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+        out(0x3D6,0x05); out(0x3D7,0x00);
+
+        in(r63,0x3DA);                   /* reset attr F/F */
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+        bout(20,0x3C0,0x3C0);
+
+        out(0x3C0,0x20);                 /* enable palette */
+        }
+
+/* **************************************************************** */
+
+VENDOR OLIVETTI        "OLIVETTI"
+ MODEL  m386-25         "m386-25    VGA/SVGA"
+  CLASS  SVGA            "SVGA"
+   MODE   1024x768-16-60  "1024x768 16 colors 60Hz"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+         XDRIVER     = "mw";
+         VISUAL      = "PseudoColor";
+         DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;    /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+      }
+
+      PROCEDURE   SetGraphics
+         {
+
+         /* sequencer */
+         r0 = 0x1;   /* reset */
+         r1 = 0x1;
+         r2 = 0xF;
+         r3 = 0x0;
+         r4 = 0x6;
+         bout(5, 0x3C4, 0x3C5);
+
+         /* misc output reg */
+         out(0x3C2,0x2B);  
+
+         /* remove sequencer reset */
+         r0 = 0x3; bout(1,0x3C4,0x3C5);
+
+         /* Feature Control registers */
+         out(0x3DA, 0x02);
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x0);
+
+
+         /* crtc */
+         r0  = 0xA3; r1  = 0x7F; r2  = 0x80; r3  = 0x86;
+         r4  = 0x87; r5  = 0x81; r6  = 0x23; r7  = 0xFD;
+         r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+         r12 = 0x00; r13 = 0x00; r14 = 0x0E; r15 = 0x87;
+         r16 = 0x02; r17 = 0x85; r18 = 0xFF; r19 = 0x40;
+         r20 = 0x00; r21 = 0x00; r22 = 0x23; r23 = 0xE3;
+         r24 = 0xFF;
+         bout( 25, 0x3d4, 0x3D5 );
+
+         /* graphics controller */
+         r0 = 0x0;
+         r1 = 0x0;
+         r2 = 0x0;
+         r3 = 0x0;
+         r4 = 0x0;
+         r5 = 0x0;
+         r6 = 0x1;
+         r7 = 0xF;
+         r8 = 0xFF;
+         bout( 9, 0x3CE, 0x3CF );
+
+
+         /* attribute controller */
+         in(r63,0x3DA);   /* reset f/f */
+
+         /* palette */
+         r0  = 00;   r1  = 01;   r2  = 02;   r3  = 03;
+         r4  = 04;   r5  = 05;   r6  = 0x14; r7  = 07;
+         r8  = 0x38; r9  = 0x39; r10 = 0x3A; r11 = 0x3B;
+         r12 = 0x3C; r13 = 0x3D; r14 = 0x3E; r15 = 0x3F;
+
+         /* attribute controller */
+         r16 = 01; r17 = 00; r18 = 0x0F; r19 = 00;
+
+         bout( 20, 0x3C0, 0x3C0 );
+
+
+         /* palette mask */
+         out( 0x3C6, 0xFF);
+
+         /* enable palette */
+         out( 0x3C0, 0x20);
+
+         /* enable extended registers */
+
+         out(0x3D6,0x04);
+         out(0x3D7,0x06);
+         out(0x3D6,0x06);
+         out(0x3D7,0x6E);
+         out(0x3D6,0x0B);
+         out(0x3D7,0x01);
+         out(0x3D6,0x28);
+         out(0x3D7,0x02);
+
+         out(0x3D6,0x10);
+         out(0x3D7,0x0);
+         out(0x3D6,0x11);  
+         out(0x3D7,0x0);	
+
+        }
+
+    PROCEDURE SetText
+         {
+
+         /* unprotect crtc regs 0-7 */
+         out( 0x3D4,0x11);   out(0x3D5,0x20);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout( 5, 0x3C4, 0x3C5 );          /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x20);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* End of File - m386-25.XGI */

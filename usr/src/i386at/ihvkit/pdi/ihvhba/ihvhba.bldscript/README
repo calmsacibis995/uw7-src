@@ -1,0 +1,101 @@
+#ident	"@(#)ihvkit:pdi/ihvhba/ihvhba.bldscript/README	1.3"
+
+
+This README provides a detailed description of the process involved in
+building the IHV Host Bus Adapter (HBA) floppy.  A brief overview of the
+role of the IHV HBA floppy during UnixWare installation is provided along
+with a detailed description of the contents of the floppy.  A background
+knowledge of the following is assumed:
+
+1) Driver Software Packages.
+2) Loadable Modules.
+3) UnixWare packaging and installation mechanisms.
+
+
+IHV-HBA and UnixWare Installation
+---------------------------------
+
+The IHV HBA floppy contains a set of standard files and driver software
+packages (DSPs) for all vendor provided HBA drivers. The IHV HBA floppy
+is used during two distinct phases of the installation process: The first 
+phase of installation process demand-loads all the pre-configured loadable 
+images of HBA drivers that are present on the HBA floppy.  The loadable
+modules are necessary for installing the operating system on hard disk
+devices connected to the Host Bus Adapter.  The second phase optionally
+installs the DSPs for HBA drivers that were successfully loaded in the
+first phase.
+
+
+Mandatory Files and Scripts
+---------------------------
+
+The shell script "bldscript" generates the HBA floppy based on a number of
+important files and scripts that are present in the working directory. 
+Furthermore, "bldscript" also copies the files and scripts to appropriate 
+directories on the IHV HBA floppy. The list of files are:
+
+HBAINST:  A shell script that selectively installs the Driver package
+software for all the HBA drivers that are were successfully loaded during
+the installation phase.
+
+pkglist:  An ASCII file that contains a list of all the HBA packages contained
+on any given HBA floppy.
+
+load.name:  A file that contains an ASCII string uniquely identifying the
+HBA floppy.
+
+loadmods:  A pre-formatted file required by UnixWare's demand load mechanism.
+
+
+Standard Driver Software Package
+--------------------------------
+
+To use the "bldscript", you are expected to provide a standard set of
+driver and packaging related files and scripts.  All the files should be
+present in a pre-determined format under a directory that uniquely
+identifies the driver package.  Please use the example provided along with
+the README file for a detailed understanding of the expected format.  The
+list of files provided with the example and their usage is as follows:
+
+copyright:   Contains copyright information
+pkginfo:     Standard packaging information
+postinstall: Script to install the driver package
+preremove:   Script to remove the driver package
+prototype:   Identifies the different components of the package
+
+The Driver Software components including the Master, System, Space.c,
+Driver.o, Drvmap, disk.cfg along with the header files and loadable module 
+image should be present under the "tmp" directory under a sub-directory 
+that uniquely identifies the driver.
+
+
+Notes
+-----
+
+1) The load.name file should be unique across IHV HBA floppies and this
+should be done by uniquely initializing the variable "LOADNAME" (in
+"bldscript" before each HBA floppy is created.
+
+2) Ensure that ksh (/usr/bin/ksh) is installed before running this script.  
+ksh is part of the advanced commands package.  This can be verified by
+executing pkginfo:
+  
+	pkginfo -l cmds
+
+3) Ensure that the packaging tools are installed as well. This can be 
+verified by executing pkginfo: 
+
+	pkginfo -l softint 
+
+4) The Drvmap file is needed and should be made available only on
+UnixWare 2.x.  The packaging scripts should be modified to exclude this on
+UnixWare 1.1 systems.
+
+Example
+-------
+The example provided in this directory is a DSP for a UnixWare 2.0 Sony
+CD-ROM driver.  To get better acquainted with this process, run the bldscript
+in the current directory and generate the IHV-HBA floppy.  However, because
+of differences in the idtools and Driver.o files of UnixWare 1.1 and 2.x, the
+IHV HBA floppy produced cannot be used to install the driver on a UnixWare 1.1
+system.

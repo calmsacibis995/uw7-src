@@ -1,0 +1,72 @@
+#ident	"@(#)ii_spx_config	15.1"
+
+#
+#  ii_spx_config
+#  Reads in a list of Install Servers found by sap_nearest, which was
+#  called by netinst.  The first entry it reads is the nearest Install
+#  Server, which is used as the default.  After that are up to 19 other
+#  Install Servers.
+#
+
+#
+#
+#  Write the configuration parms out to disk for the other scripts' use.
+#
+function ii_spx_update {
+	echo "${SERVER_NAME}" | read JUNK SERVER_NAME
+	echo "SERVER_NAME=\"$SERVER_NAME\"" >> /tmp/ii.parms
+	return
+}
+
+#
+#  Radio box to select Install Server from list of all that were found.
+#
+function do_servers
+{
+	SERVER_CHOICES=`cat /tmp/ii.ALL`
+	if [ -z "${SERVERS}" ]
+	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A SERVERS ${SERVER_CHOICES}
+		IFS="$OIFS"
+	fi
+	CHOOSE_TITLE="$INETINST_SPX_SERVER"
+	CHOOSE_FOOTER="$INETINST_SERVER_DIRECTIONS"
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_SERVER" "${SERVERS[@]}"
+	msg "${INETINST_SPX_EXPLAIN}"
+}
+
+#
+#  Generate a menus to select Install Server from all servers found by
+#  sap_nearest and written to /var/spool/sap/in/0x4.
+#
+function ii_spx_config
+{
+exec 2>>/tmp/ii_look
+	> /tmp/ii.ALL
+	read DFLT_SERVER ADDR HOPS SVC < /var/spool/sap/in/0x4
+	export DFLT_SERVER
+	echo "[$HOPS] $DFLT_SERVER" > /tmp/ii.NEAR
+	read SERVER_NAME < /tmp/ii.NEAR
+
+	MAXCOLS=0
+	while read SERVER ADDR HOPS SVC
+	do
+		echo "[$HOPS] $SERVER" >> /tmp/ii.ALL
+		COLS=$(echo "[$HOPS] $SERVER")
+		COLS=${#COLS}
+		[ ${COLS} -gt ${MAXCOLS} ] && MAXCOLS=${COLS}
+	done < /var/spool/sap/in/0x4
+	let MAXCOLS=${MAXCOLS}+1
+
+	open_form -exit ii_spx_update
+	SPXFID=$FID
+
+	place_window ${#INETINST_SPX_SERVER}+2+${MAXCOLS}+2 3 -fg $COMBO2_FG -bg $COMBO2_BG -current 'footer "$GENERIC_FORM_FOOTER"; msg "${INETINST_SPX_EXPLAIN}"' -title "$INETINST_SPX_TITLE"
+
+	add_field -help 'helpwin net.server' -entry "msgnoerr ${INETINST_SPX_EXPLAIN}" -choice "do_servers" -p "${INETINST_SPX_SERVER}" -ilen ${MAXCOLS} SERVER_NAME
+	run_form $SPXFID
+}
+
+

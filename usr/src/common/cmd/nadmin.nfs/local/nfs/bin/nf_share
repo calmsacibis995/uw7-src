@@ -1,0 +1,77 @@
+#!/usr/bin/sh
+#ident	"@(#)nf_share	1.2"
+#ident  "$Header$"
+/usr/bin/rm /var/tmp/sh_msg$$ 2>/dev/null
+
+#TFADMIN added later ..
+
+CMD="/usr/sbin/share -F nfs -o anon=$ID"
+
+if [ "$AUTH" = "secure" ]
+then
+	CMD="$CMD,secure"
+fi
+
+if [ "$ROCLIENT" ]
+then
+	if [ "$ROCLIENT" = "all" ]
+	then
+		RO_LIST="ro"
+	else
+		RO_LIST=`echo "ro=$ROCLIENT" | /usr/bin/tr -s '\012' ':'`
+	fi
+	CMD="$CMD,$RO_LIST"
+fi
+
+if [ "$RWCLIENT" ]
+then
+	if [ "$RWCLIENT" = "all" ]
+	then
+		RW_LIST="rw"
+	else
+		RW_LIST=`echo "rw=$RWCLIENT" | /usr/bin/tr -s '\012' ':'`
+	fi
+	CMD="$CMD,$RW_LIST"
+fi
+
+if [ "$ROOTCLIENT" ]
+then
+	ROOT_LIST=`echo "root=$ROOTCLIENT" | /usr/bin/tr -s '\012' ':'`
+	CMD="$CMD,$ROOT_LIST"
+fi
+
+CMD="$CMD $DIR"
+CMD1="$CMD"
+
+if [ "$IMM" = "yes" ]
+then
+	CMD="$TFADMIN $CMD"
+	eval `echo "$CMD"` 2>/var/tmp/sh_err$$
+	if [ $? -eq 0 ]
+	then
+		echo "\nThe local directory $DIR is being shared with remote systems via NFS." >> /var/tmp/sh_msg$$
+	else
+		echo "ERROR:  $DIR cannot be shared immediately via NFS." >/var/tmp/sh_msg$$
+		/usr/bin/sed s"/^.*://" < /var/tmp/sh_err$$>> /var/tmp/sh_msg$$
+	fi
+	/usr/bin/rm /var/tmp/sh_err$$
+fi
+
+if [ "$AUTO" = "yes" ]
+then
+	/usr/bin/sed "s/^#.*//g" /etc/dfs/dfstab | /usr/bin/tr -s '\011' '\040' >/var/tmp/fs_$$
+ 	/usr/bin/egrep -e "-F[ ]nfs.*[ ]$DIR$" /var/tmp/fs_$$ >/dev/null
+	if [ $? -eq 0 ]
+	then
+		echo "\nThe directory $DIR is currently being shared automatically.  Use the local_resources_modify task to change." >> /var/tmp/sh_msg$$
+	else
+		$TFADMIN cp /etc/dfs/dfstab /var/tmp/dfstab_$$
+		echo "$CMD1" >> /var/tmp/dfstab_$$
+		$TFADMIN cp /var/tmp/dfstab_$$ /etc/dfs/dfstab
+		/usr/bin/rm /var/tmp/dfstab_$$
+		echo "\nThe local directory $DIR will be shared automatically with remote systems when NFS begins operation." >> /var/tmp/sh_msg$$
+	fi
+	 /usr/bin/rm /var/tmp/fs_$$
+fi
+
+echo $$

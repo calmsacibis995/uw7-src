@@ -1,0 +1,746 @@
+/*
+ *	@(#) pl3.xgi 12.1 95/05/09 SCOINC
+ *
+ * Copyright (C) 1992-1994 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+/***************************************************************************
+ *     compaq/pl3.xgi - grafinfo file for Compaq ProLinea 3 (WD 90C11)     *
+ *                                                                         *
+ *                     COMPAQ.PL3.SVGA.1024x768-16-60                      *
+ *                     COMPAQ.PL3.SVGA.1024x768-16-43I                     *
+ *                     COMPAQ.PL3.SVGA.800x600-256-60                      *
+ *                     COMPAQ.PL3.VGA.800x600-16-60                        *
+ *                     COMPAQ.PL3.SVGA.640x480-256-60                      *
+ *                     COMPAQ.PL3.VGA.640x480-16-60                        *
+ *                                                                         *
+ ***************************************************************************/
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  SVGA      "SVGA"
+   MODE   1024x768-16-60  "1024x768 16-color 60Hz"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 1;
+         DEVTECH     = 0x0D;
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0xFF;  r3 = 0x00;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE7);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0xA3;  r1  = 0x7F;  r2  = 0x80;  r3  = 0x06; /* crtc */
+         r4  = 0x87;  r5  = 0x98;  r6  = 0x24;  r7  = 0xFD;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x01;  r17 = 0x88;  r18 = 0xFF;  r19 = 0x40;
+         r20 = 0x00;  r21 = 0x00;  r22 = 0x23;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+/*       r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F; */  /* 64K */
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x01;  r7  = 0x0F;     /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0B); out(0x3CF,0x84);  /* 4 X 128K planes */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x21);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x20);  /* 128K crtc addr counter width */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x21);  /* 16-bit I/O, 8 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x00);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  SVGA      "SVGA"
+   MODE   1024x768-16-43I  "1024x768 16-color 43Hz (interlaced)"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 1;
+         DEVTECH     = 0x0D;
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0xFF;  r3 = 0x00;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x23);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x99;  r1  = 0x7F;  r2  = 0x7F;  r3  = 0x1C; /* crtc */
+         r4  = 0x83;  r5  = 0x19;  r6  = 0x97;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x02;  r15 = 0x01;
+         r16 = 0x7F;  r17 = 0x83;  r18 = 0x7F;  r19 = 0x40;
+         r20 = 0x00;  r21 = 0x7F;  r22 = 0x96;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+/*       r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F; */  /* 64K */
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x01;  r7  = 0x0F;     /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0B); out(0x3CF,0x84);  /* 4 X 128K planes */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x34);  /* interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x2A);  /* interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x2B);  /* interlaced; latch VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x20);  /* 128K crtc addr counter width */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x10);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  SVGA      "SVGA"
+   MODE   800x600-256-60  "800x600 256-color 60Hz"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 1;
+         DEVTECH     = 4;
+         MAPTYPE     = "PARADISE_3_64K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x03;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x2F);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x7F;  r1  = 0x63;  r2  = 0x64;  r3  = 0x82; /* crtc */
+         r4  = 0x6B;  r5  = 0x1B;  r6  = 0x72;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x58;  r17 = 0x8C;  r18 = 0x57;  r19 = 0x64;
+         r20 = 0x40;  r21 = 0x58;  r22 = 0x71;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F; */  /* 64K */
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;     /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0B); in(r63,0x3CF);
+         and(r63,0x07); or(r63,0x88);       /* enable PR0B for bank-switch */
+         out(0x3CF,r63);                    /* 4 X 128K planes */
+         out(0x3CE,0x0E); out(0x3CF,0x01);  /* 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x00);  /* disable VGA memory map */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x21);  /* 16-bit I/O, 8 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         out(0x3CE,0x0B); in(r63,0x3CF);
+         and(r63,0xF7); out(0x3CF,r63);     /* disable PR0B */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  VGA       "VGA"
+   MODE   800x600-16-60  "800x600 16-color 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 1;
+         DEVTECH     = 0x0D;
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0x2F);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x7F;  r1  = 0x63;  r2  = 0x64;  r3  = 0x82; /* crtc */
+         r4  = 0x6B;  r5  = 0x1B;  r6  = 0x72;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x58;  r17 = 0x8C;  r18 = 0x57;  r19 = 0x32;
+         r20 = 0x00;  r21 = 0x58;  r22 = 0x71;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0B); out(0x3CF,0x44);  /* 4 X 64K planes */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  SVGA      "SVGA"
+   MODE   640x480-256-60  "640x480 256-color 60Hz"
+
+      MEMORY(0xA0000,0x20000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 1;
+         DEVTECH     = 4;
+         MAPTYPE     = "PARADISE_3_64K";
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x01;  r2 = 0xFF;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x53;  r5  = 0x9F;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x01;  r15 = 0xE2;
+         r16 = 0xEA;  r17 = 0x8C;  r18 = 0xDF;  r19 = 0x50;
+         r20 = 0x40;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F; */  /* 64K */
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;     /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0B); in(r63,0x3CF); 
+         and(r63,0x07); or(r63,0x88);       /* enable PR0B for bank-switch */
+         out(0x3CF,r63);                    /* 4 X 128K planes */
+         out(0x3CE,0x0E); out(0x3CF,0x01);  /* 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x00);  /* disable VGA memory map */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x21);  /* 16-bit I/O, 8 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x41;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         out(0x3CE,0x0B); in(r63,0x3CF); 
+         and(r63,0xF7); out(0x3CF,r63);     /* disable PR0B */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR COMPAQ    "Compaq"
+ MODEL PL3        "ProLinea 3 (WD 90C11)"
+  CLASS  VGA       "VGA"
+   MODE   640x480-16-60  "640x480 16-color 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 1;
+         DEVTECH     = 0x0D;
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x06;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEA;  r17 = 0x8C;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         /* set extended regs */
+         out(0x3CE,0x0F); out(0x3CF,0x05);  /* unlock PR0-PR4 */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x29); out(0x3D5,0x05);  /* unlock PR11-PR17 */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x06); out(0x3C5,0x48);  /* unlock PR21-PR32 */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         in(r63,0x3DA);                  /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* set extended regs */
+         out(0x3CE,0x0E); out(0x3CF,0x00);  /* disable 256 colors */
+         out(0x3D4,0x2C); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2D); out(0x3D5,0x00);  /* non-interlaced */
+         out(0x3D4,0x2E); out(0x3D5,0x20);  /* latched VCLK1, VCLK2 */
+         out(0x3D4,0x2F); out(0x3D5,0x42);  /* VGA memory map */
+         out(0x3C4,0x10); out(0x3C5,0x25);  /* 16-bit I/O, 4 level FIFO */
+         out(0x3C4,0x12); out(0x3C5,0x04);  /* USR0, USR1 control */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }

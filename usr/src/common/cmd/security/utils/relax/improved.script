@@ -1,0 +1,102 @@
+#ident  "@(#)improved.script	1.4"
+#ident  "$Header$"
+
+#!/sbin/sh
+#******************************************************************************
+#	improved.script
+#------------------------------------------------------------------------------
+# Comments:
+# improved security profile shell script
+#
+#------------------------------------------------------------------------------
+#       @(#)improved.script	9.1	97/08/30
+# 
+#       Copyright (C) The Santa Cruz Operation, 1996.
+#       This Module contains Proprietary Information of
+#       The Santa Cruz Operation, and should be treated as Confidential.
+#------------------------------------------------------------------------------
+#  Revision History:
+#
+#	Thu Dec 19 15:30:34 PST 1996	louisi
+#		Created file.
+#
+#===============================================================================
+UMASK=077
+# to deny at/cron access by default, the allow file must be present
+CREATE=allow
+REMOVE=deny
+RSTCHOWN=1
+CONSOLE_SECURITY=0
+
+test -f /etc/shadow || /etc/pwconv		# fix up /etc/shadow if needed
+
+# fix up default umasks
+
+for file in /etc/cshrc /etc/profile
+do
+	/bin/sed "s/.*umask.*/umask $UMASK/" < $file > $file-t
+	/bin/cat $file-t > $file
+	/bin/rm -f $file-t
+done
+
+# specify default at/cron usability
+
+for util in at cron
+do	
+	if [ ! -f /etc/cron.d/$util.$CREATE ]
+	then
+	    /bin/touch /usr/lib/cron/$util.$CREATE
+	    /bin/chown bin:bin /usr/lib/cron/$util.$CREATE
+	    /bin/chmod 644 /usr/lib/cron/$util.$CREATE
+	fi
+	/bin/rm -f /etc/cron.d/$util.$REMOVE
+done
+
+# configure kernel appropriately (checking if a change was in fact made)
+unset ROOT
+cd /etc/conf/cf.d
+../bin/idtune -f RSTCHOWN $RSTCHOWN 
+../bin/idtune -f CONSOLE_SECURITY $CONSOLE_SECURITY
+../bin/idbuild > /dev/null 2>&1
+
+
+# Enable remote printing access
+LPSYSTEMS="/etc/lp/Systems"
+if [ -r $LPSYSTEMS ] 
+then
+    cat $LPSYSTEMS | sed '1,$s/^\#\+/\+/g' | \
+		sed '1,$s/^\#\*/\*/g' > $LPSYSTEMS-t
+    chown lp:lp $LPSYSTEMS-t
+    chmod 664 $LPSYSTEMS-t
+    mv $LPSYSTEMS-t $LPSYSTEMS
+    rm -f $LPSYSTEMS-t 
+fi
+
+# Disable/Enable inet services
+INETCONF=/etc/inet/inetd.conf
+if [ -r /etc/inet/inetd.conf ] 
+then
+    cat $INETCONF | sed '1,$s/^tftp/\#tftp/g' | \
+    		sed '1,$s/^finger/\#finger/g' | \
+    		sed '1,$s/^systat/\#systat/g' | \
+    		sed '1,$s/^netstat/\#netstat/g' | \
+		awk '
+		/^\#shell/ && $6 ~ /.*in\.tcpd/ { sub(/^\#shell/,"shell") }
+		/^\#login/ && $6 ~ /.*in\.tcpd/ { sub(/^\#login/,"login") }
+		/^\#exec/ && $6 ~ /.*in\.tcpd/ { sub(/^\#exec/,"exec") }
+		/^\#ftp/ && $6 ~ /.*in\.tcpd/ { sub(/^\#ftp/,"ftp") }
+		/^\#telnet/ && $6 ~ /.*in\.tcpd/ { sub(/^\#telnet/,"telnet") }
+		/.*/ { print } ' | \
+    		sed '1,$s/^mountd/\#mountd/g' | \
+    		sed '1,$s/^ypupdated/\#ypupdated/g' | \
+    		sed '1,$s/^rusersd/\#rusersd/g' | \
+    		sed '1,$s/^walld/\#walld/g' | \
+    		sed '1,$s/^sprayd/\#sprayd/g' > $INETCONF-t
+    chown root:sys $INETCONF-t
+    chmod 664 $INETCONF-t
+    mv $INETCONF-t $INETCONF
+    rm -f $INETCONF-t
+fi
+
+echo "You must reboot the system to complete this change"
+echo "to the system security configuration."

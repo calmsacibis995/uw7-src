@@ -1,0 +1,249 @@
+#ident	@(#):mkxenv	16.2	97/12/05	
+#ident	"$Header$"
+echo "START `basename $0` `date`"
+
+Cpu=$1
+Root=$2
+Tools=$3
+Mach=$4
+Work=$5
+Pfx=$6
+
+set +e
+
+cd ${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}
+
+#
+#	Note below, the default parameters are relative
+#	to TOOLS.
+#
+
+echo "$0: Running Cross pathedit"
+(
+	echo n		# Answering NO to building native CCS
+	echo y		# Answering YES to building with default parameter
+	echo y		# Answering YES to parameters question
+) | sh ./pathedit ${Cpu} ${Root} ${Tools} ${Mach} ${Work} ${Pfx}
+
+echo "$0: Building cross make (${Cpu}make)"
+cd ${Root}/usr/src/${Work}/cmd/make
+make -f make.mk YACC=yacc
+cp make ${Tools}/usr/ccs/bin/${Cpu}make
+make -f make.mk clobber
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+
+${Tools}/usr/ccs/bin/${Cpu}make -P -f sgs.mk clobber \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+${Tools}/usr/ccs/bin/${Cpu}make -P -f sgs.mk install \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${TOOLS}/etc/lib.rulefile
+
+
+#
+#	Get an install command into xenv
+#
+if [ -d "${Root}/usr/src/${Work}/cmd/install" ]
+then
+	cd ${Root}/usr/src/${Work}/cmd/install
+	cp install.sh ${Tools}/bin/install
+else
+	cp /etc/install ${Tools}/bin
+fi
+
+#	Put the chmod here so we'll stop on error
+#	(if Tools/bin/install is not there)
+
+chmod 0755 ${Tools}/bin/install
+
+#
+#	Put mkmerge in cross-environment and set permissions.
+#
+if [ ! -f "${Root}/usr/src/${Mach}/mkmerge/mkmerge" ]
+then
+	(cd ${Root}/usr/src/${Mach}/mkmerge; make -f mkmerge.mk)
+fi
+ 
+cp ${Root}/usr/src/${Mach}/mkmerge/mkmerge ${Tools}/bin
+chmod 0755 ${Tools}/bin/mkmerge
+
+#
+#	Populate $TOOLS/etc with the OS version of rulefiles.
+#	Populate $TOOLS/etc with uts.rulefile and depend.rules
+#
+
+[ -d ${Tools}/etc ] || mkdir -p ${Tools}/etc
+cp ${Root}/usr/src/${Work}/build/rulefiles/* ${Tools}/etc
+cp ${Root}/usr/src/${Work}/uts/uts.rulefile ${Tools}/etc
+cp ${Root}/usr/src/${Work}/uts/depend.rules ${Tools}/etc
+cp ${Root}/usr/src/${Work}/l10ntools/l10n.cmdrules ${Tools}/etc
+cp ${Root}/usr/src/${Work}/subsys/scoadmin/scoadmin.cmdrules ${Tools}/etc
+
+#
+#	Place a crossenv front end script which points to
+#	the OS CMDRULES, LIBRULES, and UTSRULES while we're at it.
+#
+
+[ -d ${Tools}/usr/ccs/bin ] || mkdir -p ${Tools}/usr/ccs/bin
+cp ${Root}/usr/src/${Work}/build/xenv/i386osenv ${Tools}/usr/ccs/bin/i386osenv
+
+chmod 755 ${Tools}/usr/ccs/bin/i386osenv
+
+#
+#	Make xenv version of Function Relocator
+#
+
+cd ${Root}/usr/src/${Work}/cmd/fur
+${Tools}/usr/ccs/bin/${Cpu}osenv make -f fur.mk clobber install CMDRULES=${Tools}/etc/xcmd.rulefile
+
+[ -d ${Tools}/usr/ccs/bin ] || mkdir -p ${Tools}/usr/ccs/bin
+cp ${Root}/${Mach}/usr/ccs/bin/${Cpu}fur ${Tools}/usr/ccs/bin/${Cpu}fur
+
+
+#
+#       Make xenv version of localedef
+#
+
+cd ${ROOT}/usr/src/${WORK}/cmd/localedef
+${TOOLS}/usr/ccs/bin/${CPU}env make -f localedef.mk xenv_install CMDRULES=${Tools}/etc/xcmd.rulefile
+
+
+if [ "${BUILDNWUXENV}" != scp ]
+then
+	echo "$0: Installing NetWare header files"
+	cd ${Root}/usr/src/${Work}/nwu
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f nwu.mk headinstall
+fi
+
+if [ "${BUILDNWUXENV}" = scp ]
+then
+	echo "$0: Installing Network header files for SCP"
+	cd ${Root}/usr/src/${Work}/nwu
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f nwu.scp.mk headinstall
+fi
+
+#
+#	Make xenv libraries
+#
+echo "$0: Making Cross Environment Libraries"
+
+# We need to build and install the libs into $TOOLS.  However, the makefiles
+# are set up to install into $ROOT/$MACH.  Therefore, we set ROOT=$TOOLS and
+# MACH='.' into a copy of the library rulefile and pass that in as $OSRULES
+
+ROOT=${Tools}
+export ROOT
+
+sed -e "1,\$s/^MACH[ 	]*=.*/MACH = ./" ${Tools}/etc/lib.rulefile >  ${Tools}/etc/xenv.rulefile
+
+cd ${Root}/usr/src/${Work}/cmd/sgs
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -P -f sgs.mk libs \
+	CMDRULES=${Root}/usr/src/${Work}/cmd/sgs/xenv/${Cpu}/sgsrules \
+	OSRULES=${Tools}/etc/xenv.rulefile
+
+if [ "${BUILDNWUXENV}" != scp ]
+then
+	echo "$0: Building NetWare components of Cross Environment"
+	cd ${Root}/usr/src/${Work}/nwu
+	ROOT=${Root} ${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f nwu.mk install_xenv
+fi
+
+if [ "${BUILDNWUXENV}" = scp ]
+then
+	echo "$0: Installing NetWare components of Cross Environment for SCP"
+	cd ${Root}/usr/src/${Work}/nwu
+	ROOT=${Root} ${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f nwu.scp.mk install_xenv
+fi
+
+#
+#	Make native Function Relocator
+#	with ROOT set back to ${Root}
+#
+
+cd ${Root}/usr/src/${Work}/cmd/fur
+ROOT=${Root} ${Tools}/usr/ccs/bin/${Cpu}osenv make -f fur.mk clobber install
+
+echo "$0: Making Cross xcplibs"
+
+cd ${Root}/usr/src/${Work}/xcplib
+
+for l in libx lxcurses lxtermlib
+do
+	cd $l
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f ${l}.mk install \
+		ROOT=${Tools} MACH=.
+	cd ..
+done
+
+# Don't add X11R6 config files and other things to xenv if other libs
+# are not all installed.
+
+if [ ! -f ${TOOLS}/usr/lib/zzzzz ]
+then
+	echo "ERROR: ${USRLIB}/zzzzz does not exist."
+	echo "       all libs did not build successfully"
+	exit 1
+fi
+
+# Make sure "ROOT" == "Root"
+ROOT=${Root}
+export ROOT
+
+# Add L10N build tools to xenv
+cd ${Root}/usr/src/${Work}/l10ntools
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f l10ntools.mk install_xenv
+
+# Add X11R6 config files and other things to xenv
+cd ${Root}/usr/src/${Work}/X11R6
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make install_xenv
+
+# Add Motif config files and other things to xenv
+if [ "${BUILDMOTIFXENV}" != scp ]
+then
+	cd ${Root}/usr/src/${Work}/subsys/motif
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make install_xenv
+fi
+
+if [ "${BUILDMOTIFXENV}" = scp ]
+then
+	echo "$0: Installing motif subsys files for SCP"
+	cd ${Root}/usr/src/${Work}/subsys/motif
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f submotif.scp.mk install
+fi
+# Add tcl to xenv
+cd ${Root}/usr/src/${Work}/subsys/tclds
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make install_xenv
+
+# Add Netscape Server Plugin api to xenv
+cd ${Root}/usr/src/${Work}/subsys/netscape/nsapi
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f nsapi.mk install_xenv
+
+# Add SCOHelp api to xenv
+cd ${Root}/usr/src/${Work}/subsys/scohelp/helpapi
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f helpapi.mk install_xenv
+
+# Add SCOadmin developer files to xenv
+cd ${Root}/usr/src/${WORK}/subsys/scoadmin
+${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make xenv_install
+
+# Add Licensing developer files to xenv
+if [ "${BUILDLICXENV}" != scp ]
+then
+	cd ${Root}/usr/src/${WORK}/subsys/license
+	chmod 555 gembuild
+	${Tools}/usr/ccs/bin/${Cpu}env ./gembuild 
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make install_xenv
+fi
+
+if [ "${BUILDLICXENV}" = scp ]
+then
+	cd ${Root}/usr/src/${WORK}/subsys/license
+	${Tools}/usr/ccs/bin/${Cpu}env ${Cpu}make -f license.scp.mk install
+fi
+
+set -e
+
+echo "ENDED `basename $0` `date`"
+exit 0

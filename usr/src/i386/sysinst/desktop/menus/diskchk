@@ -1,0 +1,111 @@
+#ident	"@(#)diskchk	15.1"
+function set_diskchk
+{
+	typeset do_halt=false
+	typeset root_dir=/.extra.d
+
+	for i in 0 1
+	do
+		if [ ${RESETGEOM[i]} = "$Yes" ]
+		then
+			reset_geometry $i
+			do_halt=true
+		fi
+	done
+
+	$do_halt && halt	#fall on sword
+
+	for i in 1 2
+	do
+		let disk=i-1
+		case "${DISKCHK[i]}" in
+		$Yes)
+			eval HD${disk}OPT=" "
+			;;
+		$No)
+			eval HD${disk}OPT=-n
+			;;
+		esac
+	done
+	return 0
+}
+
+function choose_diskchk
+{
+	choose  ${chkit[$1]} "$No" "$Yes"
+}
+function choose_bootsector
+{
+	choose  $bootit "$No" "$Yes"
+}
+function choose_resetgeo
+{
+	choose  ${resgeom[$1]} "$No" "$Yes"
+}
+function check_reset
+{
+#	check_reset(disk)
+	typeset disk=$1
+	typeset _G
+
+	if check_yesno ${resgeom[$1]}
+	then
+		if [ ${RESETGEOM[$1]} = "$No" ]
+		then
+			RESETGEOM[$1]="$resp"
+			if [ ${RESETGEOM[$1]} = "$Yes" ]
+			then
+				eval display -w "\"${BADDISK_INFO[3]}\"" -below 4 -bg $MAGENTA -fg $WHITE
+				_G=$CURWIN
+				input_handler
+				wclose $_G
+			fi
+		else
+			RESETGEOM[$1]="$resp"
+		fi
+		return 0
+	else
+		return 1
+	fi
+
+}
+function diskchk
+{
+	typeset -x resp
+	[ -n "$DCHKFID" ] && destroy_form $DCHKFID
+	open_form -exit set_diskchk 
+	let DCHKFID=$FID
+	setup_table -rows 6 -cols 2 -titles DISKCHK_TITLE -widths DISKCHK_WIDTH
+	next_field_prompt "$DCHK_1"
+	chkit[1]=${DISKCHK[1]}
+	next_field -help 'helpwin surfanalys diskopts' -exit 'check_yesno ${chkit[1]} && DISKCHK[1]=$resp' -entry msgnoerr -choice "choose_diskchk 1" chkit[1]
+	if (( NDISKS > 1 )) && (( FSTOT[2] > 0 ))
+	then
+		next_row
+		next_field_prompt "$DCHK_2"
+		chkit[2]=${DISKCHK[2]}
+		next_field -help 'helpwin surfanalys diskopts' -exit 'check_yesno ${chkit[2]} && DISKCHK[2]=$resp' -entry msgnoerr -choice "choose_diskchk 2" chkit[2]
+	fi
+	next_row
+	next_field_prompt "$DO_BOOTSECTOR"
+	bootit=$BOOTSECTOR
+	next_field -help 'helpwin bootcode diskopts' -exit 'check_yesno $bootit && BOOTSECTOR=$resp' -entry msgnoerr -choice "choose_bootsector 2" bootit
+
+	next_row
+	next_field_prompt "${DO_GEOM_RESET[0]}"
+	resgeom[0]=${RESETGEOM[0]}
+	next_field -help 'helpwin resetgeo diskopts' -exit 'check_reset 0' -entry msgnoerr -choice "choose_resetgeo 0" resgeom[0]
+
+	if (( NDISKS > 1 ))
+	then
+		next_row
+		next_field_prompt "${DO_GEOM_RESET[1]}"
+		resgeom[1]=${RESETGEOM[1]}
+		next_field -help 'helpwin resetgeo diskopts' -exit 'check_reset 1' -entry msgnoerr -choice "choose_resetgeo 1" resgeom[1]
+	fi
+
+	let DCHKTABLE_WIDTH=TABLE_WIDTH
+	place_window $DCHKTABLE_WIDTH+2 7 -fg $COMBO2_FG -bg $COMBO2_BG -title "$DISKCHK_ENTRY" -current 'footer "$GENERIC_FORM_FOOTER"'
+	typeset wid=$CURWIN
+	run_form $DCHKFID
+}

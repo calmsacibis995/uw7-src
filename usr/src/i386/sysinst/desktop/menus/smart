@@ -1,0 +1,384 @@
+#!/usr/bin/winxksh
+#ident	"@(#)smart	15.1"
+
+eval PRODUCT_ID=\$${SET_NAME}_PRODUCT_ID
+
+function get_serial_id
+# Arg 1 is the product id
+# Arg 2 is the serial number
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset product_id=$1 tmp_serial_num=$2
+	integer serial_num_len=10
+
+	(( ${#tmp_serial_num} > serial_num_len )) && {
+		faultvt "$0: $FAULTVT_INTERN_ERR1"
+		halt
+	}
+	until (( ${#tmp_serial_num} == serial_num_len ))
+	do
+		tmp_serial_num=0$tmp_serial_num
+	done
+	print $product_id$tmp_serial_num
+}
+
+function get_smart_key
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	if [ -z "$SerialNumber" ] || [ -z "$SerialID" ] || [ -z "$ActKey" ]
+	then
+		get_license
+	else
+		key_check silent || {
+			footer "$WELCOME_FOOTER"
+			display -w "$BAD_KEY_IN_IFILE" -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+			footer
+			get_license
+		}
+	fi
+	[ "${SerialID%????????????}" = "$PRODUCT_ID" ] && print "SerialNumber=$SerialNumber\nSerialID=$SerialID\nActKey=$ActKey" > /tmp/serial.save
+}
+
+function key_check
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset VAL_RESULT product_id
+
+	[ "$1" = "silent" ] || {
+		msg
+		footer
+	}
+	for product_id in $PRODUCTS
+	do
+		SerialID=$(get_serial_id $product_id $SerialNumber)
+		VAL_RESULT=$(validate_key $SerialID $ActKey)
+		(( $? == 0 )) || {
+			display -w " $INV_KEY $nl$INSTERR" -bg $ERROR_BG -fg $ERROR_FG
+			halt
+		}
+		(( VAL_RESULT == 0 )) && return 0
+	done
+	[ "$1" = "silent" ] || {
+		footer "$AGAIN_KEY"
+		display -w "$BAD_KEY" -bg $ERROR_BG -fg $ERROR_FG
+	}
+	return 1
+}
+	
+function get_license
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset KEY_FID KEY_DISP_WIN
+
+	get_num_from_flop
+	display "$KEY_DISPLAY" -below 4
+	KEY_DISP_WIN=$CURWIN
+	place_window 2+KEY_WIDTH+2+16+2 5 -current 'footer "$KEY_FOOTER"' -fg $COMBO2_FG -bg $COMBO2_BG -title "$PRODUCT_NAME" -above 6
+	set_hotkey 9 halt
+	if [ -z "$KEY_FID" ]
+	then
+		open_form -exit 'key_check'
+		KEY_FID=$FID
+		add_field -gray -ilen 16 -p "$SERIAL_PROMPT2" -px 2 -py 1 -ix 2+KEY_WIDTH+2 -iy 1 "SerialNumber"
+		add_field -help 'helpwin act_key' -ilen 16 -p "$KEY_PROMPT" -px 2 -py 3 -ix 2+KEY_WIDTH+2 -iy 3 "ActKey"
+	fi
+	run_form $KEY_FID
+	input_handler
+	wclose $KEY_DISP_WIN
+	wclose $WCURRENT
+	return 0
+}
+
+function get_num_from_flop
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	while :
+	do
+		# If we already know the serial number from unixware.dat, don't prompt
+		# for the license floppy.
+		[ -z "$SerialNumber" ] || break
+		display -w "$LICENSE_FLOP_PROMPT"
+		input_handler
+		display "$FLOP2_READ"
+		footer "$GENERIC_WAIT_FOOTER"
+		sh_mount -r -F dosfs /dev/dsk/f0t /sysmnt > /dev/null 2>&1 || {
+			wclose
+			footer
+			beep
+			continue
+		}
+		[ -s /sysmnt/serial.txt ] || {
+			sh_umount /sysmnt
+			wclose
+			footer
+			beep
+			continue
+		}
+
+# 'serial.txt' is a DOS file, so it could have a ^M at the end
+# so add ^M to the list of separators, to strip it off if it is there
+# then it has to be read with 'read', because $(<file) doesn't get
+# the string length correct, even though the string is...
+
+		OIFS="$IFS"
+		IFS="${IFS}$(print -n '\015')"
+		read SerialNumber </sysmnt/serial.txt
+		IFS="$OIFS"
+		sh_umount /sysmnt
+		wclose
+		footer
+		break
+	done
+	return 0
+}
+
+function cpq_load
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	export CPQ_HBA_LIST=$(cd /cd-rom/.cpq.mods; print *)
+	typeset module
+
+	for module in $CPQ_HBA_LIST
+	do
+		call symlink /cd-rom/.cpq.mods/$module /etc/conf/mod.d/$module
+		[ -d /cd-rom/.cpq.pkgs/$module/root/tmp/$module ] || {
+			faultvt " $FAULTVT_INTERN_ERR2 /cd-rom/.cpq.pkgs/$module/root/tmp/$module"
+			halt
+		}
+		(
+			cd /cd-rom/.cpq.pkgs/$module/root/tmp/$module
+			[ -f Drvmap ] && cp Drvmap /etc/conf/drvmap.d/$module
+			[ -f Master ] && cp Master /etc/conf/mdevice.d/$module
+			[ -f System ] && cp System /etc/conf/sdevice.d/$module
+		)
+	done
+	/sbin/dcu -S # Expensive, so don't put inside "for" loop.
+	for module in $CPQ_HBA_LIST
+	do
+		modreg 6 $module
+		sh_modadmin -l $module > /dev/null 2>&1 || {
+			NOT_LOADED_MODS="$NOT_LOADED_MODS $module"
+			continue
+		}
+		LOADED_MODS="$LOADED_MODS $module"
+	done
+}
+
+function load_dosfs
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+
+	call symlink /cd-rom/.extras.d/fs/dosfs /etc/conf/mod.d/dosfs
+	modreg 4 dosfs
+	sh_modadmin -l dosfs || {
+		faultvt "$FS_LOAD_FAILED"
+		halt
+	}
+}
+
+function read_ifile
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	integer i
+	typeset found=false line OIFS="$IFS"
+
+	call unlink /tmp/unixware.dat
+	for i in 1 2 3 4
+	do
+		[ "${PARTTYPE[$i]}" = "$SYSCONFIG" ] && {
+			found=true
+			break
+		}
+	done
+	$found || {
+		return 1
+	}
+	SYSCONFIGPART=$i
+	sh_mount -r -F dosfs ${BLOCK_DISK_NODES[0]%s0}p${SYSCONFIGPART} /sysmnt \
+	  > /dev/null 2>&1 || {
+		return 1
+	}
+	[ -s /sysmnt/unixware.dat ] || {
+		sh_umount /sysmnt
+		return 1
+	}
+	# unixware.dat is a DOS file, so treat CR (octal 15) as a separator, too.
+	IFS="${IFS}$(print -n '\015')"
+	sh_grep '=' /sysmnt/unixware.dat | 
+	while read line
+	do
+		print export ${line%%=*}=\"${line#*=}\"
+	done > /tmp/unixware.dat # Save the unixware.dat file for later use.
+	sh_grep "IFILE_USED=\"YES\"" /tmp/unixware.dat >/dev/null && {
+		#
+		# This is a used ifile.
+		#
+		sh_umount /sysmnt
+		call unlink /tmp/unixware.dat
+		return 1
+	}
+	IFS="$OIFS"
+	sh_umount /sysmnt
+	return 0
+}
+
+function smart
+{
+	[ -n "$SH_VERBOSE" ] && set -x
+	typeset partition
+	export SILENT_INSTALL=true
+	export SEC_MEDIUM_TYPE=cdrom
+	export PLATFORM=compaq
+
+	cat /smartmsg1
+	floppy2 1	# load the HBA drivers from the boot floppy image
+	/etc/scsi/bmkdev > /dev/null  # create dev nodes
+	get_cdrom   # mount the CD
+	#
+	# Once the CD-ROM is loaded, try extracting the 2nd boot floppy
+	# image if this installation uses two boot floppies.
+	#
+	[ -s /usr/bin/ls ] || get_boot2
+	cpq_load	# load Compaq-specific drivers from the CD
+	make_devs	# create nodes again, because we might have more devices
+			# after having loaded the Compaq-specific drivers
+
+	# We need to read the ifile now so that allinit uses the txtstrings 
+	# for the proper language. fdinit is called first to read the disk
+	# geometry and determine which partition is the "System" partition
+	# that contains the ifile.
+	fdinit
+	load_dosfs	# load dosfs module needed to read system partition 
+			# and license diskette
+	read_ifile || {
+		BACK_END_MANUAL=true
+		SILENT_INSTALL=false
+		return 1
+	}
+
+	# Normally we use the value of LANG from the ifile to determine the 
+	# language for the installation screens. However, if this is a Japanese back-end
+	# CD, we must install in Japanese. (Note: LANG in the ifile is set to the
+	# system locale selection which might not be ja.)
+	[ "$INST_LANG" = "ja" ] || eval $(sh_grep "^export LANG=" /tmp/unixware.dat)
+
+	find_intl_txt
+
+	. $LANGDEP_SCRIPTS/txtstrings
+
+	# check whether disk is large enough
+	minimum_hw || {
+		BACK_END_MANUAL=true
+		SILENT_INSTALL=false
+		return 1
+	}
+
+	allinit
+
+	# Initialize all partitions to "unused". Variables for desired
+	# partitions will be reset when the unixware.dat file is dotted in.
+	for partition in 1 2 3 4 5 6 7 8
+	do
+		PARTSTART[partition]=
+		PARTEND[partition]=
+		PARTLENGTH[partition]=
+		PARTMB[partition]=
+		PARTSTATUS[partition]=
+		PARTTYPE[partition]="$unused"
+	done
+
+	# Initialize all file systems and slices to "off". These will
+	# be reset when the unixware.dat file is dotted in.
+        for SL in $VTOC_SLICES 5
+        do
+                SLTYPE[SL]="$off"
+        done
+
+	# Now put all the ifile variables in the environment and
+	# internationalize when necessary.
+	. /tmp/unixware.dat
+	for partition in 1 2 3 4 5 6 7 8
+	do
+		if [ "${PARTSTATUS[partition]}" = "Active" ]
+		then
+			PARTSTATUS[partition]="$Boot"	
+		else
+			PARTSTATUS[partition]="$NonBoot"	
+		fi
+	done
+	for SL in $VTOC_SLICES 5
+	do
+		if [ "${SLTYPE[SL]}" = "off" ] 
+		then
+			SLTYPE[SL]="$off"
+		elif [ "${SLTYPE[SL]}" = "slice" ] 
+		then
+			SLTYPE[SL]="$slice"
+		fi
+	done
+
+	# If there is no Active Unix System partition on disk 0,
+	# fsinit will be rerun by useanswers and wipe out all the
+	# Ifile filesystem info. Do a subset of initialization that 
+	# fsinit would have done and set fsinit_done flag.
+	[ -f /tmp/fsinit_done ] || {
+		OLDIFS=$IFS
+		typeset IFS="${tab}"
+		while read line
+		do
+			case "$line" in
+			\#*)
+				;;
+			*)
+				set -- $line
+				SL=$6
+				SLFS[$SL]="$1"
+			esac
+		done </etc/disk.ele
+		IFS=$OLDIFS
+		>/tmp/fsinit_done
+	}
+
+	[ "$INST_LANG" = "ja" ] && {
+		export LANG=ja
+		export LC_CTYPE=ja
+	}
+
+	if [ "$INSTALL_TYPE" != "NEWINSTALL" ] ||
+	  [ "$INSTALL_MODE" != "AUTOMATIC" ]
+	then
+		unset NODE
+		call unlink /tmp/unixware.dat
+		BACK_END_MANUAL=true
+		SILENT_INSTALL=false
+		return 1
+	fi
+	{
+		print export SILENT_INSTALL=$SILENT_INSTALL
+		print export SYSCONFIGPART=$SYSCONFIGPART
+		print export PLATFORM=$PLATFORM
+	} >> /tmp/unixware.dat
+
+	# SerialNumber and SerialID are set in the unixware.dat file
+	eval ActKey=\$${PRODUCT_ID}_KEY
+	eval SerialID=\$${PRODUCT_ID}_SerialID
+	eval PRODUCTS=\$${PRODUCT_ID}_PRODUCTS
+
+	BOOTSECTOR=$Yes # Overwrite system master boot code
+	HD0OPT=-n	# Do not do surface analysis on disk 1
+	HD1OPT=-n	# Do not do surface analysis on disk 2
+	export TZ=:$TIMEZONE # Set the time zone
+
+	compaq=1	# Turn on the compaq support package
+	(( CPU_COUNT > 1 )) && osmp=1	# Turn on the osmp package
+
+	case $INSTALL_LIST in
+	*SDK*)
+		ccs=1 # Turn on the ccs package.
+		;;
+	esac
+
+	kill -USR1 1 # Tell /sbin/init to ignore ctrl-alt-del
+	return 0
+}

@@ -1,0 +1,34 @@
+#ident	"@(#)config	1.8"
+#ident	"$Header$"
+#version 1
+#order:FullCmdPath:OveridingCmdPath:[YyNn]:FullRequiredConfigFile:cmd_options:
+# the semantics are to run the command FullCmdPath with cmd_options when
+# there is a Y or y in the 3rd field and the FullRequiredConfigFilePath
+# is null or it exists.
+# Do Not run the command if the OveridingCmdPath was able to run by above
+# criteria.  These examples are all from the 1.1 /etc/inet/rc.inet file.
+#only run /usr/eac/bin/initsock when /usr/eac/bin/initsock exists.
+1:/usr/eac/bin/initsock::y:/usr/eac/bin/initsock::
+1a:/usr/sbin/inconfig::y:/etc/inet/inet.dfl::
+2:/usr/sbin/syslogd::y:/etc/syslog.conf::
+5:/usr/sbin/in.named::y:/etc/inet/named.boot::
+3:/usr/sbin/in.pppd::y:/etc/inet/ppphosts::
+# The next line can be read:
+# If field 3 is a Y, and /etc/inet/gated.conf exists, then run
+# /usr/sbin/in.gated with no optional arguments.
+4a:/usr/sbin/in.gated::Y:/etc/inet/gated.conf::
+# The next line can be read:
+# If field 3 is a Y and /usr/sbin/in.gated was not run, then run
+# /usr/sbin/in.routed
+4b:/usr/sbin/in.routed:/usr/sbin/in.gated:Y:::
+#4c:/usr/sbin/route::n::add default router_placeholder:
+6:/usr/sbin/in.xntpd::y:/etc/inet/ntp.conf::
+7:/usr/bin/sh::y:/etc/inet/rc.inet:/etc/inet/rc.inet start:
+# By default start address allocation and dhcp servers 
+8a:/usr/sbin/in.aasd::y:/etc/inet/aasd.conf::
+#8b:/usr/sbin/in.dhcpd::y:/etc/inet/dhcpd.conf:-t 0:
+# Entry to start bootpd, comment-out dhcpd line
+#9a:/usr/sbin/in.bootpd::y:/etc/inet/bootptab:-t 0:
+# Entries to start both bootpd and dhcpd, comment out dhcpd entry
+#9b:/usr/sbin/in.bootpd::y:/etc/inet/bootptab:-t 0 -S -P bootps-alt:
+#9c:/usr/sbin/in.dhcpd::y:/etc/inet/dhcpd.conf:-t 0 -b bootps-alt:

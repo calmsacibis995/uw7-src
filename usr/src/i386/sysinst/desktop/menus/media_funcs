@@ -1,0 +1,150 @@
+#ident	"@(#)media_funcs	15.1"
+
+function media_funcs_err
+# arg 1 is the message to display.
+{
+	display -w "$1" -bg $ERROR_BG -fg $ERROR_FG
+	footer "$WELCOME_FOOTER"
+	input_handler
+	footer
+}
+
+function check_for_cdrom
+# arg 1 is the full name of a CD-ROM device (like /dev/cdrom1)
+{
+	# If this is the first CD-ROM, then it might still be spinning up.
+	# Unfortunately, there's no way to tell the difference between an empty
+	# CD-ROM and one that's in the process of spinning up.  So, if the
+	# check_devs fails, try again after ten seconds.
+	#
+	# If this is *not* the first CD-ROM, then we've already slept for ten
+	# seconds (in a previous call), so don't sleep again.
+	case "$1" in
+	*cdrom1)
+		if check_devs -g $1
+		then
+			return 0
+		else
+			call sleep 10
+		fi
+		;;
+	esac
+	check_devs -g $1
+	return $?
+}
+
+function retension_tape
+{
+	if [ "$SEC_MEDIUM_TYPE" != tape ] || [ -f /tmp/retension_done ]
+	then
+		return 1
+	fi
+	display "$RETENSION_WAIT"
+	footer "$GENERIC_WAIT_FOOTER"
+	/sbin/tapeop -t $SEC_MEDIUM
+	footer
+	wclose
+	> /tmp/retension_done
+	return 0
+}
+
+function get_cdrom
+{
+	ismount /cd-rom && return 0
+	typeset cdrom_win i FOUND FIRST
+	$SILENT_INSTALL || {
+		display "$CDROM_MSG"
+		cdrom_win=$CURWIN
+	}
+	FIRST=true
+	while :
+	do
+		FOUND=false
+		for i in /dev/cdrom?
+		do
+			check_for_cdrom ${i} && {
+				SEC_MEDIUM=$i
+				FOUND=true
+				break
+			}
+		done
+		$FOUND || {
+			$FIRST && {
+				FIRST=false
+				display -w "$cdrom_prompt"
+				footer "$WELCOME_FOOTER"
+				input_handler
+				footer
+				continue
+			}
+			media_funcs_err "$CDROM_OPEN_ERROR"
+			continue
+		}
+		sh_mount -r -F cdfs $SEC_MEDIUM /cd-rom || {
+			media_funcs_err "$CDROM_MOUNT_ERROR"
+			continue
+		}
+		[ -s /cd-rom/${SET_NAME}.image ] || {
+			sh_umount /cd-rom
+			media_funcs_err "$CDROM_ERROR"
+			continue
+		}
+		break
+	done
+	$SILENT_INSTALL || wclose $cdrom_win
+	return 0
+}
+
+function get_tape
+{
+	typeset tape_win i FOUND FIRST
+	display "$TAPE_MSG"
+	tape_win=$CURWIN
+	FIRST=true
+	while :
+	do
+		FOUND=false
+		for i in /dev/rmt/tape?
+		do
+			check_devs -g ${i} && {
+				SEC_MEDIUM=$i
+				FOUND=true
+				break
+			}
+		done
+		$FOUND || {
+			$FIRST && {
+				FIRST=false
+				display -w "$tape_prompt"
+				footer "$WELCOME_FOOTER"
+				input_handler
+				footer
+				continue
+			}
+			media_funcs_err "$TAPE_OPEN_ERROR"
+			continue
+		}
+		cdecl "char [512]" tape_hdr=
+		call -c read 0 tape_hdr 512 < $SEC_MEDIUM
+		(( _RETD == 512 )) || {
+			media_funcs_err "$TAPE_READ_ERROR"
+			continue
+		}
+		# The newline in the string below is intentional.
+		call -c strncmp tape_hdr "# PaCkAgE DaTaStReAm:zip
+${SET_NAME}" 27
+		(( _RETD == 0 )) || {
+			media_funcs_err "$TAPE_ERROR"
+			continue
+		}
+		break
+	done
+	wclose $tape_win
+	return 0
+}
+
+function get_diskette
+{
+	#NY diskette installation is not implemented.
+	return 0
+}

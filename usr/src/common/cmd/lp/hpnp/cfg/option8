@@ -1,0 +1,92 @@
+#!/bin/ksh
+#ident	"@(#)option8	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+
+LPINTF="/usr/spool/lp/admins/lp/interfaces"
+
+while [ 0 ]
+do
+  getspoolname "option8hp" "$1" ""
+  if [ $? != 0 ]
+  then
+    exit
+  fi
+
+  SPOOLNAME=`cat -- $TMP/SPOOLNM`
+  rm -- "$TMP/SPOOLNM"
+
+  #  Check if this peripheral is in spooler.  If not give message
+  #  and prompt to enter peripheral name.
+
+  if [ -f "$LPINTF/$SPOOLNAME" ]
+  then
+    break
+  else
+    echo "\nPrinter $SPOOLNAME is not part of the spooler."
+  fi
+done
+      
+echo "\nReady to remove the spooler destination. All print requests will be"
+echo "cancelled for the spooler destination being removed."
+
+while [ 0 ]
+do
+  echo "\nOK to continue? (y/n/q default=y) $NL"
+  read -r OK
+  if [ -z "$OK" -o "$OK" = "y" ]
+  then
+    break
+  fi
+  if [ "$OK" = "n" -o "$OK" = "q" ]
+  then
+    exit 1
+  fi
+  if [ "$OK" = "?" ]
+  then
+    echo "\nEnter \"y\" to remove the spooler destination."
+    echo "\nEnter \"q\" or \"n\" to return to the main menu."
+  fi
+done
+
+echo "" >> $LOG
+echo "Removing $SPOOLNAME from spooler" >> $LOG
+echo "" | tee -a -- $LOG
+
+echo /usr/bin/cancel $SPOOLNAME | tee -a $LOG
+/usr/bin/cancel "$SPOOLNAME" | tee -a -- $LOG
+
+# give it couple of seconds to process the request
+echo "Waiting to ensure printer has gone off-line"
+sleep 5
+
+echo /usr/sbin/lpadmin -x $SPOOLNAME | tee -a -- $LOG
+/usr/sbin/lpadmin -x "$SPOOLNAME"
+
+if [ -f "$LPINTF/model.orig/$SPOOLNAME" ]
+then
+  echo rm $LPINTF/model.orig/$SPOOLNAME | tee -a -- $LOG
+  rm -- "$LPINTF/model.orig/$SPOOLNAME"
+fi
+
+echo "" | tee -a -- $LOG
+echo "The spooler destination $SPOOLNAME has been removed from the spooler."
+echo "Press the return key to continue ... $NL"
+read -r RESP
+
+exit 0
+

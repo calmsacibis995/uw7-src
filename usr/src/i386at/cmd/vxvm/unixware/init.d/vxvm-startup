@@ -1,0 +1,150 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/init.d/vxvm-startup.sh	1.2 3/3/97 03:26:15 - cmd.vxvm:unixware/init.d/vxvm-startup.sh
+#ident	"@(#)cmd.vxvm:unixware/init.d/vxvm-startup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+# This startup script must be run before bcheckrc.  This starts all
+# volumes without performing any recovery.  bcheckrc requires that
+# the stand and var volumes be started, but we might as well start
+# all of them now.
+
+PATH=/sbin:/usr/bin:/etc/vx/sbin
+export PATH
+
+if [ ! -d /usr/lib ]
+then
+	ln -s /etc/lib /usr/lib 2>/dev/null
+fi
+
+# if the volume manager hasn't yet been initialized, don't bother
+# starting vold.  The install-db file indicates that initialization
+# has NOT yet happened.
+
+# First mount a seperate /usr read-only.
+
+(
+usrmnt=
+usrvol=
+while read dev rdev mpoint fstype more
+do
+	case $mpoint in
+	/usr )
+		usrmnt="/etc/fs/$fstype/mount -r $dev $mpoint"
+		case $dev in
+		/dev/vx/dsk/*)
+			usrvol="`expr "\$dev" : '/dev/vx/dsk/\(.*\)'`"
+			;;
+		*)      
+			continue
+			;;
+		esac
+		;;
+	*)      
+		continue
+		;;
+	esac
+done
+[ -n "$usrmnt" ] && {
+	[ -n "$usrvol" ] && {
+		echo "VxVM starting special volumes..."
+		/sbin/vxconfigd -k -m enable
+		vxrecover -n -s -g rootdg $usrvol 2> /dev/null
+	}
+	$usrmnt 2> /dev/null
+	#ret=$?
+	#echo "$usrmnt returned $ret"
+}
+
+# function to unmount a seperate /usr file system before exiting the
+# script.  This requires the stopping of vxconfigd so that /usr will be
+# unreferenced.
+
+undoit()
+{
+	[ -n "$usrmnt" ] && {
+		vxdctl stop
+		/sbin/umount /usr
+		ret=$?
+	} 2> /dev/null
+	#echo "/usr umounted with $ret in vxvm-startup"
+}
+
+. ${VOLBIN:=/usr/lib/vxvm/lib}/vxcommon
+
+if [ -f "$mkdbfile" ]
+then
+	undoit
+	exit 0
+fi
+
+# start an error daemon, if there isn't one already running
+if [ ! -x /usr/sbin/vxiod ]; then
+	egettxt \
+	"vxvm: Volume error recovery daemon is not executable
+	Extended I/O error recovery is disabled" \
+	vxvmshm:664
+else
+	case "`/usr/sbin/vxiod`" in
+	"0 "*) /usr/sbin/vxiod set 2;;
+	esac
+fi
+if [ ! -x /usr/sbin/vxconfigd ]; then
+	egettxt \
+	"vxvm: Volume configuration daemon is not executable
+	No volumes started" \
+	vxvmshm:663
+	undoit
+	exit
+fi
+
+# restart vold (if it is currently running) to force a rebuild of
+# /dev/vx/dsk, and /dev/vx/rdsk directories
+/usr/sbin/vxdctl enable 2> /dev/null
+if [ $? -eq 4 ]; then
+	/sbin/vxconfigd -k -m enable
+fi
+
+# Reattach drives that were inaccessible when vold first started, to
+# handle loadable disk drivers.  Also, start volumes, but don't
+# perform plex recovery.  Wait until we go multi-user to do that.
+if [ "X`/usr/sbin/vxdctl mode 2> /dev/null`" = "Xmode: enabled" ]; then
+	if [ -d /usr/lib ]
+	then
+		/usr/lib/vxvm/bin/vxreattach
+	fi
+	/usr/sbin/vxrecover -n -s
+else
+	egettxt \
+	"vxvm: Vxconfigd is not enabled for transactions
+	No volumes started" \
+	vxvmshm:665
+	undoit
+	exit
+fi
+
+undoit
+) < /etc/vfstab
+
+#
+# Check to see if a dump is on the device before
+# allowing swap volume synchronization to happen.
+#
+test -x /sbin/dumpcheck && /sbin/dumpcheck

@@ -1,0 +1,35 @@
+#ident	"@(#)ftpconversions	1.2"
+#
+# ftpd conversions database, see ftpconversions(4tcp).
+#
+# When a conversion requires more than one command, use the pipeline command
+# which connects the standard output of each command but the last to the
+# standard input of the next command by a pipe(2). As a filename may contain
+# the '|' character, to stop the creation of a pipe to a program whose name
+# was specified as part of the filename, pipeline must be told the number of
+# pipes to create (using the -n option which defaults to 1 if not specified)
+# and the %s magic cookie must appear before the first '|'character.
+#
+# To support GNU zip compression and decompression, install gzip and replace
+# /opt/bin/gzip below with the pathname it was installed under. To allow the
+# creation of .tar.gz and .cpio.gz archives, uncomment the appropriate lines
+# below.
+#
+# To support zip compression and archiving, install Info-ZIP's Zip and replace
+# /opt/bin/zip below with the pathname it was installed under.
+#
+# To support extraction of zip archives, install Info-ZIP's UnZip and replace
+# /opt/bin/unzip below with the pathname it was installed under.
+#
+ :.Z:   :  :/bin/compress -cd %s:T_REG|T_ASCII:O_UNCOMPRESS:UNCOMPRESS
+ :  :   :.Z:/bin/compress -c %s:T_REG:O_COMPRESS:COMPRESS
+ :.gz:  :   :/opt/bin/gzip -cd %s:T_REG|T_ASCII:O_UNCOMPRESS:GUNZIP
+ :   :  :.gz:/opt/bin/gzip -9 -c %s:T_REG:O_COMPRESS:GZIP
+ :.zip: :    :/opt/bin/unzip -p %s:T_REG|T_ASCII:O_UNCOMPRESS:UNZIP
+ :    : :.zip:/opt/bin/zip -r - %s:T_REG|T_DIR:O_COMPRESS|O_TAR:ZIP
+ :    : :.tar:/bin/tar -cf - %s:T_REG|T_DIR:O_TAR:TAR
+ :    : :.cpio:/etc/inet/pipeline /bin/find %s | /bin/cpio -oc:T_REG|T_DIR:O_TAR:CPIO
+ :    : :.tar.Z:/etc/inet/pipeline /bin/tar -cf - %s | /bin/compress -c:T_REG|T_DIR:O_COMPRESS|O_TAR:TAR+COMPRESS
+ :    : :.cpio.Z:/etc/inet/pipeline -n 2 /bin/find %s | /bin/cpio -oc | /bin/compress -c:T_REG|T_DIR:O_COMPRESS|O_TAR:CPIO+COMPRESS
+# :    : :.tar.gz:/etc/inet/pipeline /bin/tar -cf - %s | /opt/bin/gzip -9 -c:T_REG|T_DIR:O_COMPRESS|O_TAR:TAR+GZIP
+# :    : :.cpio.gz:/etc/inet/pipeline -n 2 /bin/find %s | /bin/cpio -oc | /opt/bin/gzip -9 -c:T_REG|T_DIR:O_COMPRESS|O_TAR:CPIO+GZIP

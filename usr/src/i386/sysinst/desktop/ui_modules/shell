@@ -1,0 +1,60 @@
+#!/sbin/sh
+
+#ident	"@(#)shell	15.1	98/03/04"
+
+
+. /funcrc
+. /isl/exit_codes.ksh
+. /isl/ivar.ksh
+if ivar check debug_shell 
+then
+	exec 2>> /tmp/log/shell
+	set -x
+	date 1>&2
+	debug=True
+fi
+
+function dump_to_disk
+{
+	echo -n "Insert a disk to write to and press return ->"
+	read junk
+	echo /isl/ifile | cpio -o 
+	echo "rc=$?"
+}
+
+stty sane
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "; echo " "
+echo
+echo "Shell Module"
+echo "----- ------"
+echo " "
+ivar dump
+echo " "
+echo "ii_exit PREV, ii_exit NEXT, exit [n]    to exit."
+echo "DUMP to write ifile to a disk."
+echo
+
+while true
+do
+	echo -n "shell module> "
+	read line
+	case $line in
+		DUMP)	dump_to_disk;;
+		NEXT)	exit $NEXT;;
+		PREV)	exit $PREV;;
+		exit)	exit $NEXT;;
+		*)	set +x; eval $line 2>&1
+			rc=$?
+			[ "$rc" -ne 0 ] && echo " (rc = $rc)"
+			[ -n "$debug" ] && set -x
+			:;;
+	esac
+done
+exit $NEXT
+
+

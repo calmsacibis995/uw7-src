@@ -1,0 +1,129 @@
+#ident	"@(#)snmp	1.2"
+#ident	"$Header$"
+#	Copyright (c) 1990, 1991, 1992, 1993 Novell, Inc. All Rights Reserved.
+#	Copyright (c) 1984, 1985, 1986, 1987, 1988, 1989, 1990 Novell, Inc. All Rights Reserved.
+#	  All Rights Reserved
+#
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#
+#
+# Copyrighted as an unpublished work.
+# (c) Copyright 1989 INTERACTIVE Systems Corporation
+# All rights reserved.
+#
+
+#      @(#)snmp	1.2 INTERACTIVE SNMP  source
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG 
+fi
+LABEL="UX:$0"
+CAT=uxrc
+USAGE="$0 [ start | stop ]"
+
+#
+# SNMP start/stop script
+#
+
+PATH=/etc:/bin:/usr/bin:/usr/sbin
+
+case "$1" in
+'start')
+	if [ -z "$_AUTOBOOT" ]
+	then
+		#This is not autoboot.
+		psout="`ps -e | egrep '(in\.snmpd|hostmibd)' 2>&1`"
+		psout2="`ps -e | egrep nwumpsd 2>&1`"
+		psout3="`ps -e | egrep npsd 2>&1`"
+	
+		case "$psout" in
+		*in.snmpd* )
+			pfmt -l $LABEL -s info -g $CAT:138 "SNMP already running.  SNMP start aborted.\n"
+			exit 1
+			;;
+
+		* )
+		# If there is no "in.snmpd" in "$psout", then
+		# "$psout" is either the null string or contains one or more
+		# lines with the command name hostmibd.  The loop covers the
+		# pathological case that more than one hostmibd is running.
+
+			if [ "$psout" ]
+			then
+				set -- $psout
+				if [ $? -eq 0 ]
+				then
+					while [ $# -gt 0 ]
+					do
+						kill -9 $1
+						shift 6
+					done
+				fi
+			fi
+
+			LC_MESSAGES="$LANG" in.snmpd		
+			LC_MESSAGES="$LANG" hostmibd 1>/dev/null 2>/dev/null 
+
+		# Let's check if npsd is running, then decide if we want to
+		# run nwumpsd.
+			if [ "$psout3" -a -z "$psout2" ]
+			then  
+				checknwcm="`LC_MESSAGES="$LANG" /usr/sbin/nwcm -v nwumps`"
+				if [ "$checknwcm" = "nwumps=on" ]
+				then
+					LC_MESSAGES="$LANG" nwumpsd 1>/dev/null 2>/dev/null 
+				fi
+			fi
+
+		esac
+	else
+		# This is autoboot.
+		LC_MESSAGES="$LANG" in.snmpd
+		LC_MESSAGES="$LANG" hostmibd 1>/dev/null 2>/dev/null &
+	fi
+
+	;;
+'stop')
+	# Let's check if nwumd is running, then decide if we want to
+	# stop Network Management.
+
+	psout4="`ps -e | egrep nwumd`"
+
+	if [ -n "$psout4" ]
+	then  
+	pfmt -l $LABEL -s info -g $CAT:196 "You must take down the NetWare Server before stopping SNMP.  SNMP stop aborted.\n"
+	exit 1
+	fi
+
+	if [ -z "$_AUTOKILL" ]	
+	then
+		kill -9 `/usr/bin/ps -e | /usr/bin/sed -n \
+			-e'/ hostmibd$/s/[^0-9 \t].*//p' \
+			-e'/ nwumpsd$/s/[^0-9 \t].*//p' \
+			-e'/ in\.snmpd$/s/[^0-9 \t].*//p'` 2>/dev/null
+		exec rm -rf /tmp/snmpd.pid	2>/dev/null
+	else
+		exec rm -rf /tmp/snmpd.pid	2>/dev/null
+	fi
+	;;
+
+*)
+	pfmt -l $LABEL -s action -g $CAT:4 "Usage: %s\n" "$USAGE"
+	exit 1
+	;;
+esac
+
+exit 0
+
+

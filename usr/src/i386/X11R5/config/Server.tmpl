@@ -1,0 +1,44 @@
+/*
+ * Server imakefile info  - this contains any special redefinitions, etc.
+ * that Imakefiles in the server subtree will need.
+ */
+
+XCOMM $XConsortium: Server.tmpl,v 1.5 91/05/06 19:00:26 rws Exp $
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)' 'CC=$(CC)' 'CCOPTIONS=$(CCOPTIONS)' 'ANSICCOPTIONS=$(ANSICCOPTIONS)'
+
+#ifndef ServerCcCmd
+#define ServerCcCmd CcCmd
+#endif
+#ifndef ServerCCOptions
+#if UslLocalityTuning
+#define ServerCCOptions DefaultCCOptions -Wa,-r -Di386 -Dasm=__asm
+#else
+#define ServerCCOptions DefaultCCOptions -Di386 -Dasm=__asm
+#endif
+#endif
+#ifndef ServerDefines
+#define ServerDefines StandardDefines
+#endif
+#ifndef ServerCDebugFlags
+#  if Not_Esmp
+#define ServerCDebugFlags OptimizedCDebugFlags -DNO_ALLOCA -DNOT_ESMP
+#  else
+#define ServerCDebugFlags OptimizedCDebugFlags -DNO_ALLOCA
+#  endif
+#endif
+
+         CC = ServerCcCmd
+  CCOPTIONS = ServerCCOptions
+STD_DEFINES = ServerDefines
+CDEBUGFLAGS = ServerCDebugFlags
+CDEBUGFLAGS = ServerCDebugFlags
+EXT_DEFINES = ExtensionDefines
+
+XCOMM if you want the display library to be archive (ie: not shared) library,
+XCOMM uncomment the next line.
+XCOMM #define ARCHIVE_DISPLIB
+
+#ifdef UseInstalled
+   EXTRA_INCLUDES = -I$(TOP) -I$(TOP)/server/ddx/si -I$(ROOT)$(MACH)$(INC) -I$(ROOT)$(MACH)$(DESTDIR)/$(INCDIR)
+#endif /* UseInstalled */

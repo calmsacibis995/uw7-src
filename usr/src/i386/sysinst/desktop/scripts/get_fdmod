@@ -1,0 +1,25 @@
+#ident	"@(#)get_fdmod	15.1"
+
+function get_fdmod
+{
+	typeset root_dir
+
+	case $SEC_MEDIUM_TYPE in
+	cdrom)
+		root_dir=/cd-rom/.extra.d
+		;;
+	tape|diskette|tcp|spx)
+		get_tools '*extra.d/etc/conf/mod.d/fd'
+		root_dir=/.extra.d
+		;;
+	esac
+	cd $root_dir/etc/conf/mod.d
+	call symlink $root_dir/etc/conf/mod.d/fd /etc/conf/mod.d/fd
+	sh_modadmin -l fd || {
+		faultvt "$FD_LOAD_FAILED"
+		halt
+	}
+	call unlink /etc/conf/mod.d/fd
+	[ "$root_dir" = "/.extra.d" ] && sh_rm -rf $root_dir/etc/conf/mod.d
+	cd /
+}

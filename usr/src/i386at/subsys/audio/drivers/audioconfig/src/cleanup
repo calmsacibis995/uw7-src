@@ -1,0 +1,103 @@
+#!/bin/tcl
+#
+#	@(#)	@(#)cleanup	7.6	11/14/97	10:40:15
+#
+# Clean up partial configuration in case config mgr crashes.
+# Adapted from "proc SystemFileRemove" in "audioconfig.osa.procs"
+#
+# georgec 9/16/97
+#
+
+echo "Reset audio configuration: "
+
+source /usr/lib/PnP.tlib
+
+	set systemfile /usr/lib/audio/drivers/System
+	set newsystemfile /usr/lib/audio/drivers/System.new
+	#set drivers [keylget attrValueList enabled_drivers]
+	set newheader "\$version 2\n"
+
+	#######
+	# The code below is meant to just remove the device described
+	# in $attrValueList.  Unfortunately, it doesn't always work
+	# right.  (Multiple adds and deletes of a device are producing
+	# duplicated entries in System.)  So since we're only supporting
+	# one card in this release anyway, removing a card will remove
+	# _all_ entries from the System file.
+	#######
+	#if {[file isfile $systemfile]} {
+	#	set newhandle [open $newsystemfile w]
+	#	for_file line $systemfile {
+	#		set match 0
+	#		# this check should just check the driver name
+	#		# once we have a more modular driver set
+	#		if {[lindex $line 0] == "oss"} {
+	#			foreach driver $drivers {
+	#				if {[cindex $driver end] == \
+	#				    [lindex $line 2]} {
+	#					set match 1
+	#					break
+	#				}
+	#			}
+	#		}
+	#		if {!$match} {
+	#			puts $newhandle $line
+	#		}
+	#	}
+	#	close $newhandle
+	#	# should catch these
+	#	exec rm -f $systemfile
+	#	exec mv $newsystemfile $systemfile
+	#} else {
+		echo "Reset $systemfile ... "
+		set handle [open $systemfile w]
+		puts $handle $newheader
+		close $handle
+	#}
+
+	# Right now, we'll just remove the oss cfg file.
+	set cfgfile /usr/lib/audio/drivers/devices.cfg
+	echo "$cfgfile ... "
+	exec /bin/rm -f $cfgfile
+
+	echo "/etc/conf/sdevice.d/oss ... "
+	exec cat /dev/null > /etc/conf/sdevice.d/oss
+
+	# Remove ourselves from the res manager (if we're there)
+	# This will have to be modified when we add support for >1 card.
+	echo "Clean up resmgr ... "
+	RMopen rw
+	if { ![catch { RMgetbrdkey oss 0 } rmkey] } {
+		RMdelkey $rmkey
+	}
+
+	# Remove responsibility for us from the PnP driver
+	#if { [keylget attrValueList bustype] == "PNP" } {
+		PnPremoveDevice oss 0
+		echo "PnP driver ... "
+	#}
+	RMclose
+
+	echo "Unload oss driver ... "
+	if {[catch "exec /sbin/modadmin -U oss" ret]} {}
+
+	# Make sure the resmgr database is in sync
+	echo "Sync resmgr ..."
+	if { [ catch "exec echo quit | /usr/sbin/ndcfg" ret]} {}	# For some reason, this
+						# is necessary.  Otherwise
+						# changes get stuck in a
+						# buffer somewhere (?).
+	exec /etc/conf/bin/idconfupdate
+
+# Additional cleaning
+
+	echo "Reset /usr/lib/audio/audioconfig/audioconfig.cfg ... "
+	exec echo "audioconfig:" > /usr/lib/audio/audioconfig/audioconfig.cfg
+
+ 	# Remove link to soundon
+	echo "Removing /etc/rc2.d/S96soundon ..."
+        exec rm -f /etc/rc2.d/S96soundon
+
+	# Have to do this manually
+	eval exec rm -f [glob /dev/mixer* /dev/audio* /dev/midi* /dev/dsp* /dev/sndstat /dev/music /dev/sequencer* /dev/dmdsp* /dev/dmmidi* /dev/dmfm*]
+	echo "Done."

@@ -1,0 +1,299 @@
+#!/usr/bin/sh --
+# @(#)cmd.vxvm:common/voladm/inst.custom.sh	1.2 3/3/97 03:22:36 - cmd.vxvm:common/voladm/inst.custom.sh
+#ident	"@(#)cmd.vxvm:common/voladm/inst.custom.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOL_SCRIPTS_LIB:-/usr/lib/vxvm/lib}/vxcommon
+
+bail()
+{
+	if not [ -f $reconfigfile ]; then
+		rm -f $pcapfile $pcaplist $pnewfile $pnewlist
+	fi
+	quit 101
+}
+
+disknum=1
+defname=
+set_OS_variables
+set_rootdisk
+
+[ -d $STATEDIR ] || volmkdirs
+
+#
+# Create egrep patterns from the files that ensure that only
+# the disk or controller specified is excluded.
+#
+cntrl_egrep=
+disk_egrep=
+
+if [ -f $CNTRL_EXCLUDE_FILE ]
+then
+	for cntrl in `cat $CNTRL_EXCLUDE_FILE`
+	do
+		add_cntrlr_expression $cntrl cntrlr_egrep
+	done
+fi
+
+if [ -f $DISK_EXCLUDE_FILE ]
+then
+	for disk in `cat $DISK_EXCLUDE_FILE`
+	do
+		add_device_expression $disk disk_egrep
+	done
+fi
+
+voladm_menu_push Custom
+voladm_begin_screen -M vxvmshm:561 "Volume Manager Custom Installation"
+voladm_help_push yorn.help
+
+first_disk=no
+
+if [ -z "$rootdisk" ]
+then
+	rdev=$root_bdev ewritemsg -M vxvmshm:394 \
+'The device containing your root file system, $rdev, does not
+  appear to a standard disk device.  As a result, we do not cannot tell
+  which disk is your boot disk.  For example, if the root file system
+  is on an ODS meta device disk, then encapsulation is very likely to
+  corrupt your system.
+
+  Be careful to avoid installing VxVM on your root disk.  If you have
+  any other disks that are used with Online Disk Suite, you must also
+  avoid installing VxVM on those disks as well.'
+else
+	#
+	# Check if the exclude files exclude the boot disk.
+	#
+	rootdisk_excluded=no
+	dogi_name_daname $rootdisk i
+
+	if [ -n "$cntrl_egrep" ]
+	then
+		echo $i | egrep -s -e "$cntrl_egrep"
+		if [ $? -eq 0 ]
+		then
+			rootdisk_excluded=yes
+			export rootdisk CNTRL_EXCLUDE_FILE; \
+			ewritemsg -M vxvmshm:376 \
+"The $rootdisk disk is your Boot Disk. This disk has been excluded
+  by the $CNTRL_EXCLUDE_FILE file."
+			voladm_continue -n
+		fi
+	fi
+
+	if [ -n "$disk_egrep" ]
+	then
+		echo $i | egrep -s -e "$disk_egrep"
+		if [ $? -eq 0 ]
+		then
+			rootdisk_excluded=yes
+			export rootdisk DISK_EXCLUDE_FILE; \
+			ewritemsg -M vxvmshm:377 \
+"The $rootdisk disk is your Boot Disk. This disk has been excluded
+  by the $DISK_EXCLUDE_FILE file."
+			voladm_continue -n
+		fi
+	fi
+
+	if [ "$rootdisk_excluded" = "no" ]
+	then
+		export rootdisk; ewritemsg -M vxvmshm:375 \
+"The $rootdisk disk is your Boot Disk.  You can not add it as a new
+  disk.  If you encapsulate it, you will make your root filesystem
+  and other system areas on the Boot Disk into volumes.  This is
+  required if you wish to mirror your root filesystem or system
+  swap area."
+
+		voladm_help_push inst.boot.help
+		if voladm_yorn -M vxvmshm:221 "Encapsulate Boot Disk" n; then
+			voladm_help_push inst.dmname.help
+			defname=rootdisk
+			_riput=`disk="$rootdisk" egettxt \
+				"Enter disk name for $disk" vxvmshm:227`
+			read_input "$_riput" "<name>" $defname
+			if vxencap -N ${input}=${rootdisk}
+			then
+				echo
+				first_disk=yes
+				voladm_continue
+			else
+				ewritemsg -M vxvmshm:379 \
+"The Boot Disk could not be encapsulated.  You can continue, in
+  which case other disks on your system will be initialized, or
+  you can cancel the installation now."
+				voladm_yorn -M vxvmshm:131 \
+					"Cancel the installation" y && bail
+			fi
+			voladm_help_pop
+		fi
+		voladm_help_pop
+	fi
+fi
+
+voladm_help_push inst.custom.help
+
+exec < $RDIR/cntrls
+while read cntrl cntrlinfo; do
+
+	voladm_menu_push $cntrl
+	voladm_begin_screen -M vxvmshm:561 "Volume Manager Custom Installation"
+	export cntrl; \
+	egettxt "Generating list of attached disks on $cntrl...." vxvmshm:238
+
+
+	echo >&2
+	disks_on_controller $cntrl |
+	while read i
+	do
+		twirl >&2
+		dogi_slice_to_device $i dev
+		dogi_device_rawpath $dev rawpath
+		STAT_SDI_NAME=
+		eval `vxparms -s $rawpath 2> /dev/null`
+		if [ "X$STAT_SDI_NAME" = "X$i" ]; then
+			if [ -n "$cntrl_egrep" ]
+			then
+				echo $i | egrep -s -e "$cntrl_egrep"
+				if [ $? -eq 0 ]
+				then
+					export $dev; \
+					egettxt "<excluding $dev>" \
+					vxvmshm:88 >&2
+					continue
+				fi
+			fi
+			if [ -n "$disk_egrep" ]
+			then
+				echo $i | egrep -s -e "$disk_egrep"
+				if [ $? -eq 0 ]
+				then
+					export dev; \
+					egettxt "<excluding $dev>" \
+					vxvmshm:88 >&2
+					continue
+				fi
+			fi
+			if dogi_root_device $dev
+			then
+				disk="$dev"; \
+				egettxt "<excluding root disk $disk>"  \
+				vxvmshm:89 >&2
+				continue
+			fi
+			echo $dev
+		fi
+	done > $RDIR/$cntrl
+
+	# remove twirl character
+	echo " \b\c" >&2
+
+	if [ ! -s $RDIR/$cntrl ]
+	then
+		export cntrl; \
+		egettxt "No disks were found attached to controller $cntrl !" \
+		vxvmshm:290
+		voladm_continue
+		voladm_menu_pop
+		continue
+	fi
+
+	export cntrl; ewritemsg -M vxvmshm:383 \
+"The Volume Manager has detected the following disks on controller ${cntrl}:"
+
+	voladm_list_display -cn `cat $RDIR/${cntrl}`
+
+	voladm_menu <<-!
+	Installation options for controller $cntrl
+	1 inst.allcap vxvmshm:257 Install all disks as pre-existing disks. (encapsulate)
+	2 inst.allinit vxvmshm:256 Install all disks as new disks. (discards data on disks!)
+	3 inst.one vxvmshm:260 Install one disk at a time.
+	4 nul vxvmshm:265 Leave these disks alone.
+
+	!
+
+	case $VOLADM_MENU_SELECT in
+		nul)	voladm_menu_pop 
+			continue ;;
+
+	          *) 
+		voladm_menu_call $VOLADM_BIN/$VOLADM_MENU_SELECT  \
+		"Custom"   \
+		$cntrl
+		ret=$?
+	esac
+
+	voladm_menu_pop
+	[ $ret = 101 -o $ret = 100 ] && quit $ret
+done
+
+voladm_help_pop
+
+while (true) ; do
+
+> $tmpfile1
+> $tmpfile2
+[ -f $pnewlist ] && sed -e 's/ -[yn]//' \
+			-e 's/.*/&	New Disk/' < $pnewlist >> $tmpfile1
+[ -f $pcaplist ] && sed -e 's/.*/&	Encapsulate/' < $pcaplist >> $tmpfile1
+xcmd sort $tmpfile1 > $tmpfile2
+
+if [ ! -s "$tmpfile2" ]
+then
+	ewritemsg -M vxvmshm:284 "No actions were specified, exiting."
+	echo ""
+	bail
+fi
+
+voladm_begin_screen -M vxvmshm:561 "Volume Manager Custom Installation"
+ewritemsg -M vxvmshm:431 "The following is a summary of your choices."
+(echo ""; sed 's/^/	/' $tmpfile2; echo "") | voladm_display
+
+if voladm_yorn -M vxvmshm:262 "Is this correct" y
+then
+#  Yes
+	xcmd touch $reconfigfile
+	sync
+	quit 0
+else
+#  No
+	while(true) ; do
+		_riput=`egettxt "Enter disk to be removed from your choices. Hit return when done." vxvmshm:228`
+		read_input "$_riput" "<name>"
+		if [ "X$input" = "X" ] ; then
+			break;
+		else
+			if  grep "^${input} -[ny]\$" $pnewlist > /dev/null 2> /dev/null ; then
+				grep -v "^${input} -[ny]\$" $pnewlist > $tmpfile1
+				mv $tmpfile1 $pnewlist
+				continue
+			fi
+			if  grep \^${input}\$ $pcaplist > /dev/null 2> /dev/null ; then
+				grep -v \^${input}\$ $pcaplist > $tmpfile2
+				mv $tmpfile2 $pcaplist
+				continue
+			fi
+			export $input; ewritemsg -M vxvmshm:179 "Disk $input not found in your choices."
+		fi
+	done
+fi
+
+done

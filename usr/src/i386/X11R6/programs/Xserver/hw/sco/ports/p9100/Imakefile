@@ -1,0 +1,130 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:29:16
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ * Modification History
+ *
+ * S000, 12-May-95
+ *      create
+ */
+
+#include <Server.tmpl>
+
+#if !defined(PassCDebugFlags)
+#define PassCDebugFlags
+#endif
+#define IHaveSubdirs
+
+SRCS =	p9100Cmap.c p9100Cursor.c p9100Data.c p9100GC.c \
+	p9100Image.c p9100Init.c p9100Screen.c p9100Win.c \
+	p9100RectOps.c p9100Font.c \
+	p9100Mono.c p9100OpMono.c p9100Clip.c p9100Tile.c \
+	p9100Stip.c p9100Bres.c p9100Clock.c p9100Crt525.c \
+        p9100Crt485.c p9100Cfg.c
+
+OBJS =	p9100Cmap.o p9100Cursor.o p9100Data.o p9100GC.o \
+	p9100Image.o p9100Init.o p9100Screen.o p9100Win.o \
+	p9100RectOps.o p9100Font.o \
+	p9100Mono.o p9100OpMono.o p9100Clip.o p9100Tile.o \
+	p9100Stip.o p9100Bres.o p9100Clock.o p9100Crt525.o \
+        p9100Crt485.o p9100Cfg.o
+
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+    SUBDIRS = vlb
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -DFAST_OPAQUE_DRAW -DVOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libp9100.a
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+#ifndef SCP_PRODUCT
+p9100OpMono.o: p9100OpMono.c
+	LibObjCompile(shared,-DOPAQUE -Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile(-DOPAQUE)
+
+includes:: p9100OpMono.c
+
+clean::
+	$(RM) p9100OpMono.c
+
+p9100OpMono.c: p9100Mono.c
+	RemoveFile($@)
+	$(LN) $? $@
+
+NormalLibraryTarget(p9100,$(OBJS))
+SharedXDriverTarget(p9100,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(p9100,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(p9100,libp9100.a,p9100Init.c)
+
+#else
+
+STD_DEFINES = ServerDefines -DFAST_OPAQUE_DRAW
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libp9100.a -lc
+
+NormalLibraryObjectRule()
+NormalLibraryTarget(p9100,$(OBJS))
+DynamicObjectRule(p9100,$(DDXLIBS))
+ObjectFromSpecialSource(p9100OpMono,p9100Mono,-DOPAQUE)
+
+-lc :
+	touch ./-lc
+
+#endif
+
+
+MakeSubdirs($(SUBDIRS))
+InstallSubdirs($(SUBDIRS))
+
+InstallGrafFile(grafinfo/diamond,viperse.xgi,diamond)
+InstallGrafFile(grafinfo/diamond,viperse.tmpl,diamond)
+
+InstallNamedProg(grafinfo/diamond/viperse.sh,viperse,$(USRLIBDIR)/vidconf/scripts)
+
+InstallGrafFile(grafinfo/diamond,viperpro.xgi,diamond)
+InstallGrafFile(grafinfo/diamond,viperpro.tmpl,diamond)
+
+InstallNamedProg(grafinfo/diamond/viperpro.sh,viperpro,$(USRLIBDIR)/vidconf/scripts)
+
+InstallNamedNonExec(grafinfo/diamond/viperse.AOF,viperse,$(USRLIBDIR)/vidconf/AOF/ID/diamond)
+InstallNamedNonExec(grafinfo/diamond/viperpro.AOF,viperpro,$(USRLIBDIR)/vidconf/AOF/ID/diamond)
+InstallNamedNonExec(grafinfo/diamond/viperse.unq,viperse,$(USRLIBDIR)/vidconf/AOF/UNIQUE/diamond)
+InstallNamedNonExec(grafinfo/diamond/viperpro.unq,viperpro,$(USRLIBDIR)/vidconf/AOF/UNIQUE/diamond)
+
+DependTargetSCP(p9100Init.c)
+DependSubdirs($(SUBDIRS))
+
+CleanSubdirs($(SUBDIRS))
+
+clean::
+	$(RM) ./-lc

@@ -1,0 +1,179 @@
+#ident	"@(#)asktime	15.1"
+
+function chk_tz
+{
+	case "$nl${NASAtz}$nl${EURtz}$nl${ASIAAUStz}$nl" in
+	*"$nl$TIMEZONE_ID$tab"*)
+		return 0
+	esac
+	errmsg "$TIME_ERR_TZ"
+	return 1
+}
+
+function do_date
+{
+	cdecl 'int *' clock=$CLOCK
+	call uadmin 8 $CORRECTION
+	call -c stime clock
+	export TZ=:$TIMEZONE
+}
+
+function do_tz
+{
+	typeset area="$CHOICE"
+	if [ -z "$area" ]
+	then
+		return 0
+	fi
+	typeset OIFS="${IFS}" IFS="${nl}" line=0 tzchoices i
+	case "$area" in
+	"$NASAname")
+		set -A tzchoices $NASAtz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	"$EURname")
+		set -A tzchoices $EURtz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	"$ASIAAUSname")
+		set -A tzchoices $ASIAAUStz
+		IFS="$OIFS"
+		for i in "${tzchoices[@]}"
+		do
+			IFS="${tab}"
+			set -- $i
+			IFS="$OIFS"
+			tzchoices[line]=$1
+			let line+=1
+		done
+		;;
+	esac
+	IFS="$OIFS"
+	CHOOSE_TITLE="$TZ_CHOICE_TITLE"
+	CHOOSE_FOOTER="$TZ_CHOICE_FOOTER"
+ 	choose -f "$TIMEZONE_ID" "${tzchoices[@]}"
+	if [ -n "$CHOICE" ]
+	then
+		TIMEZONE_AREA=$area
+	else
+		unset CHOICE
+	fi
+	return 0
+}
+
+function do_area_tz
+{
+	typeset CHOOSE_TITLE="$AREA_CHOICE_TITLE"
+	CHOOSE_FOOTER="$AREA_CHOICE_FOOTER"
+	choose -exit 'do_tz' -e -f "$TIMEZONE_AREA" "$NASAname" "$EURname" "$ASIAAUSname"
+}
+
+function timecalc
+{
+	typeset month
+	set -A month 0 31 28 31 30 31 30 31 31 30 31 30 31
+	typeset OIFS="$IFS" ALL tz_all j
+
+	# Find the TIMEZONE from the TIMEZONE_ID
+	ALL="${NASAtz}$nl${EURtz}$nl${ASIAAUStz}"
+	IFS="${nl}"
+	set -A tz_all $ALL
+	IFS="$OIFS"
+	for j in "${tz_all[@]}"
+	do
+		IFS="${tab}"
+		set -- $j
+		IFS="$OIFS"
+		[ "$TIMEZONE_ID" = $1 ] && {
+			TIMEZONE=$2
+			break
+		}
+	done	
+
+	call strdup "TZ=:$TIMEZONE"
+	call -c putenv $_RETX
+	call tzset
+	integer clock=0 i
+	i=1970
+	while (( i < 19$YEAR ))
+	do
+		if (( i % 4 ))
+		then
+			clock=clock+365
+		else
+			clock=clock+366
+		fi
+		i=i+1
+	done
+	if (( ! ( YEAR % 4 ) && ( MONTH >= 3) ))
+	then
+		clock=clock+1
+	fi
+	i=MONTH-1
+	while (( i != 0 ))
+	do
+		clock=clock+${month[i]}
+		i=i-1
+	done
+	clock=clock+DAY-1
+	clock=clock'*'24
+	clock=clock+HOUR
+	clock=clock'*'60
+	clock=clock+MINUTE
+	clock=clock'*'60
+	cdecl 'int *' timezone='&timezone' altzone='&altzone'
+	typeset tmp
+	cdecl 'int *' usetime=$clock
+	call -c localtime usetime
+	cprint -v DST tm.tm_isdst
+	if (( DST ))
+	then
+		cprint -v tmp altzone
+	else
+		cprint -v tmp timezone
+	fi
+	clock=clock+tmp
+	CORRECTION=$tmp
+	CLOCK=$clock
+	do_date
+}
+
+function asktime
+{
+	typeset RIGHT
+	if [ "$1" = "center" ]
+	then
+		RIGHT=1
+		BELOW=1
+	else
+		RIGHT=0
+		BELOW=0
+	fi
+	place_window -right $RIGHT -below $BELOW $TIME_WIN_LEN+2 8 -current 'footer "$TIME_DIRECTIONS"' -fg $COMBO2_FG -bg $COMBO2_BG -title "$TITLE_TIME"
+	clockinit
+	open_form -exit timecalc
+	TIMEFID=$FID
+	add_field -help 'helpwin dtyear datetime' -exit 'numrange $YEAR 70 99' -ilen 2 -p "$Year" -px 1 -py 1 -ix $TIME_COL1_LEN+3 YEAR
+	add_field -help 'helpwin dtmonth datetime' -exit 'numrange $MONTH 1 12' -ilen 2 -p "$Month" MONTH
+	add_field -help 'helpwin dtday datetime' -exit 'numrange $DAY 1 31' -ilen 2 -p "$Day" DAY
+	add_field -help 'helpwin dthour datetime' -exit 'numrange $HOUR 0 23' -ilen 2 -p "$Hour" HOUR
+	add_field -help 'helpwin dtminute datetime' -exit 'numrange $MINUTE 0 59' -ilen 2 -p "$Minute" MINUTE
+	add_field -help 'helpwin dttimezone datetime' -choice do_area_tz -exit chk_tz -ilen $MAXTZ_NAME -p "$Timezone" TIMEZONE_ID
+	run_form $TIMEFID
+}

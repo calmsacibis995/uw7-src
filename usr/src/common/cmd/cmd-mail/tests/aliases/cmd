@@ -1,0 +1,1522 @@
+#!/bin/sh
+#
+#******************************************************************************
+#
+#	ident @(#) cmd 11.2 97/12/04 
+#
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#******************************************************************************
+#
+# Automated test suite for cmd-line options of aliases editor client.
+#
+# Attempts to achieve complete branch coverage of aliasFile.tcl and 
+# aliases.tcl.
+#
+# Refer to cmd.plan for test setup and instructions.
+# 
+#******************************************************************************
+
+#
+# utility routines
+#
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo "$TEST: BEGIN"
+		${name}$i
+		echo "$TEST: END"
+		echo ""
+	done
+}
+
+passfail() \
+{
+	result=$1
+	if [ $# -eq 2 ]
+	then
+		message=$2
+	fi
+
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: $message : FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -f ${TMPDIR}/*
+}
+
+regexp()
+{
+	str=$@
+	echo $str | sed -e 's/\\/\\\\/g'
+}
+
+#
+# test cases
+#
+
+aliases_cmd_core_usage() 
+{
+	cleanup
+	fail=1
+
+	# test missing -f flag
+	$PROGRAM 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing -f flag"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing -f flag-- no Usage message"
+		fail=0
+	fi
+
+	# test missing argument to -f flag
+	cleanup
+	$PROGRAM -f 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing -f argument"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing -f argument -- no Usage message"
+		fail=0
+	fi
+
+	# test missing -f flag, but have -h flag
+	$PROGRAM -h foo.pdev.sco.com 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing -f flag (but have -h flag)"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing -f flag (but have -h flag) -- no Usage message"
+		fail=0
+	fi
+
+	# test missing argument to -h flag
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -h 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing -h argument"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing -h argument -- no Usage message"
+		fail=0
+	fi
+
+	# test error when file specified is a directory
+	cleanup
+        tmpfile=$TMPDIR
+	$PROGRAM -f $tmpfile -a newAlias:user1 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "file is a directory"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "file is a directory  -- no Usage message"
+		fail=0
+	fi
+
+	# test error when invalid database class is specified
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f "foobar:$tmpfile" -a newAlias:user1 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "invalid database"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "invalid database -- no Usage message"
+		fail=0
+	fi
+	if [ -f $tmpfile ]
+	then
+		passfail 1 "invalid database -- $tmpfile should not exist"
+		fail=0
+	fi
+	if [ -f ${tmpfile}.db ]
+	then
+		passfail 1 "invalid database -- ${tmpfile}.db should not exist"
+		fail=0
+	fi
+
+	# test missing recipient list for -a
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -a newAlias 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing recipient list for -a"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing recipient list for -a  -- no Usage message"
+		fail=0
+	fi
+
+	# test missing alias list for -s
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -s user 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing alias list for -s"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing alias list for -s  -- no Usage message"
+		fail=0
+	fi
+
+	# test missing user for -s
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -s :alias1,alias2 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing user for -s"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing user for -s  -- no Usage message"
+		fail=0
+	fi
+
+	# test blank user for -s
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -s " 	:alias1,alias2" 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "blank user for -s"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "blank user for -s  -- no Usage message"
+		fail=0
+	fi
+
+	# test missing user for -r
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -r :alias1,alias2 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing user for -r"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing user for -r  -- no Usage message"
+		fail=0
+	fi
+
+	# test missing alias list for -r
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -r user 1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "missing alias list for -r"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "missing alias list for -r  -- no Usage message"
+		fail=0
+	fi
+
+	# test too many command line arguments
+	cleanup
+        tmpfile=$TMPDIR/aliases.usage
+	$PROGRAM -f $tmpfile -a "newAlias:user1,user2,user3" extraArg \
+		1>$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		passfail 1 "too many args in cmd line"
+		fail=0
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "too many args in cmd line  -- no Usage message"
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_core_relative_pathname()
+{
+	cleanup
+	fail=1
+
+	currentDir=`pwd`
+	tmpDir=$currentDir/tmp
+	if [ ! -d $tmpDir ]
+	then
+		mkdir -p $tmpDir
+	fi
+
+	testfile=$TESTFILEDIR/aliases.1
+	# make the test file passed in a relative path!
+	tmpfile=tmp/aliases.relative_pathname
+	expected=$TMPDIR/aliases.relative_pathname.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	# add an alias with one member
+	echo "testalias1: member1" >> $expected
+
+	$PROGRAM -f $tmpfile -a testalias1:member1 \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $? -ne 0 ]
+	then
+		passfail 1 "relative pathname -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		return
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "relative pathname"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+	
+aliases_cmd_core_database_class()
+{
+	cleanup
+	fail=1
+
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.database_class
+	expected=$TMPDIR/aliases.database_class.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	echo "myNewAlias: member1, member2, member3" >> $expected
+
+	$PROGRAM -f "hash:$tmpfile" -a "myNewAlias:member1,member2,member3" \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "database class  -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		return
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	# check that database exists
+        if [ ! -f ${tmpfile}.db ]
+        then
+		passfail 1 "Database ${tmpfile}.db is missing"
+                fail=0
+        fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_core_add_alias()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.add_alias
+	expected=$TMPDIR/aliases.add_alias.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	# add an alias with one member
+	echo "testalias1: member1" >> $expected
+
+	$PROGRAM -f $tmpfile -a testalias1:member1 \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add alias with 1 member -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		return
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add alias with one member"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+	
+
+	# add an alias with several members
+	echo "testalias2: member1, member2, member3" >> $expected
+	$PROGRAM -f $tmpfile -a testalias2:member1,member2,member3 \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add alias with several members -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add alias with several members"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_core_add_non_user_alias()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.add_non_user_alias
+	expected=$TMPDIR/aliases.add_non_user_alias.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	# test add alias with program, file path, :include:, \user type members
+
+	testAlias="testalias1"
+	testMembers='"|prgfoo -a -b -c arg1, arg2, arg3", /etc/mail/archives/testmail, :include:/file, \andrean, tester1, tester2, tester3, tester4, bill, bob, cathy, david, roger, roy'
+	echo 'testalias1: "|prgfoo -a -b -c arg1, arg2, arg3", /etc/mail/archives/testmail,\n	:include:/file, \andrean, tester1, tester2, tester3, tester4, bill, bob,\n	cathy, david, roger, roy'  >> $expected
+
+	$PROGRAM -f $tmpfile -a "${testAlias}:${testMembers}" \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+	
+aliases_cmd_core_delete_alias()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.delete_alias
+	expected=$TMPDIR/aliases.delete_alias.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	#
+	# delete one alias
+	#
+	sed '/^doprog:/d' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -d doprog 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "deleting one alias -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "delete one alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# now, delete two of them
+	#
+	cleanup
+	cp $testfile $tmpfile
+	sed '
+	/^doprog:/d
+	/^maintenance:/d' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -d doprog,maintenance 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "deleting two aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "deleting two aliases"
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_core_add_member()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.add_member
+	expected=$TMPDIR/aliases.add_member.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	#
+	# add a simple user name to one alias
+	#
+	sed '
+	s/^doprog:.*$/doprog: audrey, cathy, frank, harry, newUser, patrick,/
+	/^doprog:/a\
+	|"mailprog -a -b -c arg1, arg2"' $testfile > $expected
+	newUser="newUser"
+	$PROGRAM -f $tmpfile -s "$newUser:doprog" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add member to one alias -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add member to one alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# add a program member to more than one alias,
+	# and where that program member has a colon ":" in it
+	#
+	cleanup
+	cp $testfile $tmpfile
+	newUser='|"newPrg -a arg1 -b arg2:arg3 arg4, arg5"'
+	sed '
+	s/^doprog:.*$/doprog: audrey, cathy, frank, harry, patrick, |"mailprog -a -b -c arg1, arg2",/
+	/^doprog:/a\
+	|"newPrg -a arg1 -b arg2:arg3 arg4, arg5"
+	s/^mailengr-owner: kurth$/mailengr-owner: kurth, |"newPrg -a arg1 -b arg2:arg3 arg4, arg5"/' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -s "$newUser:doprog,mailengr-owner" \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add member to two aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add member to two aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# add an ":include:file" type of member to more than one alias
+	#
+	cleanup
+	cp $testfile $tmpfile
+	newUser=':include: "/file/path"'
+	sed '
+	s/^doprog:.*$/doprog: :include: "\/file\/path", audrey, cathy, frank, harry, patrick,/
+	/^doprog:/a\
+	|"mailprog -a -b -c arg1, arg2"
+	s/^\(mailengr-owner: \)\(kurth\)$/\1:include: "\/file\/path", \2/
+	' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -s "$newUser:doprog,mailengr-owner" \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add :include: member to two aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add :include: member to two aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# add a user name to an alias which already has that member--
+	# ensure there are no duplicates
+	#
+	cleanup
+	cp $testfile $tmpfile
+	cp $testfile $expected
+	$PROGRAM -f $tmpfile -s "kurth:mailengr-owner" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add duplicate member to alias -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add duplicate member to alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# add a user name to an alias which does not exist
+	#
+	cleanup
+	cp $testfile $tmpfile
+	cp $testfile $expected
+	$PROGRAM -f $tmpfile -s "kurth:nonexistent" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "add member to non-existent alias -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "add member to non-existent alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+	
+aliases_cmd_core_subscribe()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.2
+	tmpfile=$TMPDIR/aliases.subscribe
+	expected=$TMPDIR/aliases.subscribe.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	#
+	# subscribe a simple user name to all aliases
+	#
+	sed 's/^[^# 	\n].*/&, zeus/' $testfile > $expected
+	$PROGRAM -f $tmpfile -S zeus 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "subcribe one user to all aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "subscribe one user to all aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# subscribe a program member to all aliases
+	#
+	cleanup
+	cp $testfile $tmpfile
+	newUser='|"newPrg arg1, arg2"'
+	sed 's/^[^# 	\n].*/&, |"newPrg arg1, arg2"/' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -S "$newUser" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "subcribe program member to all aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "subscribe program member to all aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# subscribe more than one user to all aliases
+	#
+	cleanup
+	cp $testfile $tmpfile
+	sed 's/^[^# 	\n].*/&, yolanda, zeus/' $testfile > $expected
+	$PROGRAM -f $tmpfile -S "yolanda,zeus" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "subcribe one user to all aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "subscribe two users to all aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+	
+aliases_cmd_core_remove_member()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.2
+	tmpfile=$TMPDIR/aliases.remove_member
+	expected=$TMPDIR/aliases.remove_member.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	#
+	# remove a simple user name from one alias
+	#
+	sed '
+	s/^doprog:.*$/doprog: "|mailprog -a arg1, arg2", audrey, frank/' \
+	$testfile > $expected
+	$PROGRAM -f $tmpfile -r "cathy:doprog" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "remove member from one alias -- exit code 1"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "remove member from one alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# remove a program member from more than one alias
+	#
+	cleanup
+	cp $testfile $tmpfile
+	removeUser='"|mailprog -a arg1, arg2"'
+	sed '
+	s/^doprog:.*$/doprog: audrey, cathy, frank/
+	s/^mailengr-owner:.*$/mailengr-owner: kurth/' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -r "$removeUser:doprog,mailengr-owner" \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "remove program member from two aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "remove program member from two aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# remove a member name from an alias which does not contain that member
+	#
+	cleanup
+	cp $testfile $tmpfile
+	cp $testfile $expected
+	$PROGRAM -f $tmpfile -r "kurth:doprog" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "remove member from alias which doesn't have it-- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "remove member from alias which doesn't have it"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# remove a member name from a non-existent alias 
+	#
+	cleanup
+	cp $testfile $tmpfile
+	cp $testfile $expected
+	$PROGRAM -f $tmpfile -r "kurth:bogusAlias" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "remove member from non-existent alias -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "remove member from non-existent alias"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_core_retire()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.3
+	tmpfile=$TMPDIR/aliases.retire
+	expected=$TMPDIR/aliases.retire.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	#
+	# retire a simple user name from all aliases,
+	# where that user does not belong to all aliases
+	#
+	sed 's/, kurth//' $testfile > $expected
+	$PROGRAM -f $tmpfile -R kurth 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "retire a user from all aliases (not a member of all aliases) -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "retire a user from all aliases (not a member of all aliases)"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# retire a simple user name from all aliases,
+	# where that user does belong to all aliases
+	#
+	cleanup
+	cp $testfile $tmpfile
+	sed 's/, john//' $testfile > $expected
+	$PROGRAM -f $tmpfile -R john 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "retire a user from all aliases (was a member of all aliases) -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "retire a user from all aliases (was a member of all aliases)"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# retire a program member from all aliases
+	#
+	cleanup
+	cp $testfile $tmpfile
+	retire='"|mailprog -a arg1, arg2"'
+	sed 's/"|mailprog -a arg1, arg2", //' $testfile > $expected
+
+	$PROGRAM -f $tmpfile -R "$retire" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "retire program member from all aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "retire program member from all aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	#
+	# retire more than one member from all aliases
+	#
+	cleanup
+	cp $testfile $tmpfile
+	retire='john,"|mailprog -a arg1, arg2"'
+	sed '
+	s/, john//
+	s/"|mailprog -a arg1, arg2", //' $testfile > $expected
+	$PROGRAM -f $tmpfile -R "$retire" 1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "retire two members from all aliases -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "retire two members from all aliases"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_error_save()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.error_save
+	cp $testfile $tmpfile
+
+	# invoke an error in the save routine (SaveCB), by causing failure
+	# of Alias:Write (actually, a failure in Table:Write)
+	$PROGRAM -f $tmpfile -a "newAlias:user1,user2" \
+		-t aliases_cmd_error_save >$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -eq 0 ]
+	then
+		passfail 1 "exit code $ret; expected failure"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_error_newaliases()
+{
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.1
+	tmpfile=$TMPDIR/aliases.error_newaliases
+	cp $testfile $tmpfile
+
+	# invoke an error from newaliases (caused by creating a dummy
+	# newaliases with no perms) 
+	touch /tmp/newaliases
+	chmod a-rwx /tmp/newaliases
+	$PROGRAM -f $tmpfile -a "newAlias:user1,user2" \
+		-t aliases_cmd_error_newaliases >$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -eq 0 ]
+	then
+		passfail 1 "exit code $ret; expected failure"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_error_alias_load()
+{
+	cleanup
+	fail=1
+
+	tmpfile=$TMPDIR/aliases.error_alias_load
+
+	# invoke an error from Alias:Open
+	touch $tmpfile
+	$PROGRAM -f $tmpfile -a "newAlias:user1,user2" \
+		-t aliases_cmd_error_alias_load >$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -eq 0 ]
+	then
+		passfail 1 "exit code $ret; expected failure"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	# check that error message displayed
+	if [ ! -s $STDERR ]
+	then
+		passfail 1 "no error messages sent to $STDERR"
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_aliasFile_write() {
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.3
+	tmpfile=$TMPDIR/aliases.aliasFile_write
+	expected=$TMPDIR/aliases.aliasFile_write.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	# perform a simple modification, to ensure that write will 
+	# write out the file, then execute the write directly
+	echo "newAlias: newAliasMember" >> $expected
+	$PROGRAM -f $tmpfile \
+		-a "newAlias:newAliasMember" \
+		-t 'shortcut Alias:Write $MA_ALIAS_FILEID' \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $? -ne 0 ]
+	then
+		passfail 1 "Alias:Write -- exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	# check that write was successful
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1 "aliasFile write"
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+	
+aliases_cmd_aliasFile_defer_write() {
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.3
+	tmpfile=$TMPDIR/aliases.aliasFile_write
+	expected=$TMPDIR/aliases.aliasFile_write.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	# perform a simple modification, 
+	# then do the defer write, then try a write
+	# -- the write should not occur
+	$PROGRAM -f $tmpfile \
+		-a "newAlias:newAliasMember" \
+		-t 'shortcut Alias:DeferWrites $MA_ALIAS_FILEID' \
+		-t 'shortcut Alias:Write $MA_ALIAS_FILEID' \
+		-t 'shortcut exit' \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	# check that write was not successful
+	diff $expected $tmpfile >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+aliases_cmd_aliasFile_read() {
+	cleanup
+	fail=1
+
+	testfile=$TESTFILEDIR/aliases.4
+	tmpfile=$TMPDIR/aliases.aliasFile_read
+	expected=$TMPDIR/expected
+	cp $testfile $tmpfile
+
+	# Test file set up to invoke a branch in Alias:ReadCB
+	# -- an illegal alias (with no alias name) should be treated
+	# as a comment.
+	# Read in the testfile, list all the aliases, and exit.
+
+	echo "appendfile\ndoprog\nmailengr\nmailengr-owner\nmaintenance" > $expected
+	$PROGRAM -f $tmpfile -t 'shortcut Alias:List $MA_ALIAS_FILEID' \
+		1>$STDOUT 2>$STDERR
+	ret=$?
+	if [ $ret -ne 0 ]
+	then
+		passfail 1 "exit code $ret"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT: `cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR: `cat $STDERR`"
+		fi
+		fail=0
+	fi
+
+	# check that only the legal aliases are listed
+	list=`cat $STDOUT`
+	for word in $list
+	do
+		echo "$word" >> $STDOUT.temp
+	done
+	cat $STDOUT.temp | sort - > $STDOUT.sorted
+	diff $expected $STDOUT.sorted >$diffout
+	if [ $? -eq 1 ]
+	then
+		passfail 1
+		echo "< expected"
+		echo "> actual"
+		cat $diffout
+		fail=0
+	fi
+
+	if [ $fail -ne 0 ]
+	then
+		passfail 0
+	fi
+}
+
+#
+# main()
+#
+
+TEST=""
+
+if [ "$TESTDIR" = "" ]
+then
+	TESTDIR=`pwd`
+fi
+
+if [ "$PROGDIR" = "" ]
+then
+	PROGDIR=/etc/mail/admin
+fi
+
+PROGRAM=$PROGDIR/aliases
+TESTFILEDIR=$TESTDIR/testfiles
+TMPDIR=$TESTDIR/tmp
+STDOUT=$TMPDIR/out.stdout
+STDERR=$TMPDIR/out.stderr
+
+if [ ! -d $TMPDIR ]
+then
+	mkdir -p $TMPDIR
+fi
+
+# module prefix is composed of the client being tested (aliases)
+# and this test script name (cmd) -- used in case there are similar
+# test procedure names that must be differentiated in common code (like
+# the admin/lib files)
+modulePrefix="aliases_cmd_"
+
+core="usage relative_pathname database_class add_alias add_non_user_alias delete_alias add_member subscribe remove_member retire"
+error="save newaliases alias_load"
+aliasFile="write defer_write read"
+
+cleanup
+
+testlist ${modulePrefix}core_ $core
+testlist ${modulePrefix}error_ $error
+testlist ${modulePrefix}aliasFile_ $aliasFile

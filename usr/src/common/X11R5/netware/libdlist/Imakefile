@@ -1,0 +1,76 @@
+#ident	"@(#)Imakefile	1.3"
+
+/**/#	Copyright (c) 1990, 1991, 1992 UNIX System Laboratories, Inc.
+/**/#	Copyright (c) 1988, 1989, 1990 AT&T
+/**/#	  All Rights Reserved
+
+/**/#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF
+/**/#	UNIX System Laboratories, Inc.
+/**/#	The copyright notice above does not evidence any
+/**/#	actual or intended publication of such source code.
+
+
+#ifdef Release5
+#define DoNormalLib	NormalLibDt
+#include <Library.tmpl>
+#include <sv4Lib.tmpl>
+#endif
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+      DTILIBSRC = $(DTCLIENTSLIB)
+         DTILIB = $(DTILIBSRC)/libDtI.so
+          DTLIB = $(DTLIBSRC)/libDt.so
+
+       INCLUDES = -I../../../cmd/cmd-nw/include -I. -I.. -I$(LIBSRC) -I$(LIBSRC)/Xol -I$(DTILIBSRC) -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = $(DTILIB) $(DTLIB) XolClientLibs
+        DEPLIBS = $(DTILIB) $(DTLIB) XolClientDepLibs
+  SYS_LIBRARIES = -lgen -lm
+               LIBNAME = dlist 
+               LIB = lib$(LIBNAME).a
+              SPEC = libdlist
+
+          SRCS = \
+		dl_errormsg.c \
+		dl_genrand.c \
+		dl_getstr.c \
+		dl_i18n.c \
+		dl_initicon.c \
+		dl_issap.c \
+		dl_sap.c \
+		dl_xhost.c
+          OBJS = \
+		dl_errormsg.o \
+		dl_genrand.o \
+		dl_getstr.o \
+		dl_i18n.o \
+		dl_initicon.o \
+		dl_issap.o \
+		dl_sap.o \
+		dl_xhost.o
+          HEADERS = \
+		dl_common.h \
+		dl_fsdef.h \
+		dl_proto.h
+
+
+#if Release5
+LibraryObjectRule()
+#endif
+
+#if DoNormalLib
+NormalLibraryTarget($(LIBNAME),$(OBJS))
+#endif
+
+install::	all makeMCatalog
+InstallMsgCatalog(libdlist)
+
+makeMCatalog:
+	mkmsgs -o libdlist.str libdlist
+	[ -d $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES ] || \
+		mkdir -p $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES
+	cp libdlist $(ROOT)/$(MACH)/usr/lib/locale/C/LC_MESSAGES
+
+DependTarget()

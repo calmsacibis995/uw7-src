@@ -1,0 +1,92 @@
+#ident	"@(#)kern-i386at:proc/ipc/ipc.cf/Mtune	1.3.2.2"
+#ident	"$Header$"
+
+* Semaphore Configuration Parameters -------------
+
+*
+* Note: All data structures for the semaphore IPC are dynamically
+*	allocated as needed.  Feel free to be liberal.
+*
+*		Default	Min	Max
+*               -------	---	---
+* SEMMAP total # of entries in semaphore map (unused since SVR4.2).
+SEMMAP		0	0	0
+
+* SEMMNI total # of semaphore identifiers in system at one time.
+*	Now autotuned. (see $ROOT/etc/conf/autotune.d/ipc).
+
+* SEMMNS total # of semaphores in system.  Unenforced/unused.
+* Range of values left as-is in case old applications idtune it.
+SEMMNS	60	60	2500
+
+* SEMMNU total # of sem_undo structures in system at one time
+* (unenforced in SVR4.2, hence unused).  Now limited by (NPROC * SEMUME).
+SEMMNU		0	0	0
+
+* SEMMSL max # of semaphores per semaphore id.
+SEMMSL		 150	25	300
+
+* SEMOPM max # of operations per semop call.
+SEMOPM		10	10	20
+
+* SEMUME max # of undo entries per process (regulates size of a process'
+* array of struct sem_undo's).
+SEMUME		10	10	20
+
+* SEMVMX maximum value of a semaphore.
+* Do not change this lightly (this value must fit in a signed short word).
+SEMVMX		32767	32767	32767
+
+* SEMAEM adjust on exit max value.
+SEMAEM		16384	16384	16384
+
+* Shared Memory Parameters ----------
+
+* SHMMIN: minimum size for a single shared memory segment
+SHMMIN		1	1	1
+
+* SHMMAX: maximum size for a single shared memory segment
+SHMMAX		524288	131072	2147483647
+
+*SHMMNI: the total number of shared memory identifiers in the system 
+SHMMNI		100	10	1000
+
+*SHMSEG: the number of shared memory identifiers allowed per process 
+SHMSEG		6	6	15
+
+* SHMALL: Unused.
+SHMALL		512	256	2048
+
+* Dynamic Shared Memory Parameters ----------
+
+* DSHMMIN: minimum size for a single dynamic shared memory segment
+DSHMMIN		512	512	512
+
+* DSHMMNI: the total number of dynamic shared memory identifiers in the system 
+DSHMMNI		100	10	1000
+
+* DSHMSEG: the number of dynamic shared memory identifiers allowed per process 
+DSHMSEG		6	6	15
+
+* System V IPC Message Queue Parameters ---------------
+*
+* NOTE: In SVR4.2, MSGMAP is unused (we do not use resource maps),
+* all memory for message queues is dynamically allocated as needed.
+* It is suggested that MSGTQL be made relatively large to avoid
+* blocking for a message header reservation.  (MSGTQL is autotuned --
+* see $ROOT/etc/conf/autotune.d/ipc.)  MSGMNI, the maximum number of 
+* messages in the system, is also set in the autotune file.
+* The total amount of memory which can be allocated for message
+* queues is limited by (msginfo.msgssz * msginfo.msgseg).
+* Only the product of these two is important, neither is used on its own.
+* MSGMNB is the maximum number of bytes on a message queue.
+*
+*
+*		Default	Min	Max
+*		-------	---	---
+MSGMAP		0	0	0
+MSGMAX		2048	512	131072
+MSGMNB		4096	4096	131072
+MSGSSZ		16384	8192	1048576
+MSGSEG		1	1	1
+

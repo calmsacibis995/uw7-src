@@ -1,0 +1,162 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.deport.sh	1.2 3/3/97 03:18:33 - cmd.vxvm:common/voladm/disk.deport.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.deport.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push DeportDiskGroup
+voladm_help_push disk.deport.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:331 "Remove access to (deport) a disk group"
+	ewritemsg -M vxvmshm:551 \
+"Use this menu operation to remove access to a disk group that
+  is currently enabled (imported) by this system.  Deport a disk
+  group if you intend to move the disks in a disk group to another
+  system.  Also, deport a disk group if you want to use all of the
+  disks remaining in a disk group for some new purpose.
+
+  You will be prompted for the name of a disk group.  You will
+  also be asked if the disks should be disabled (offlined).  For
+  removable disk devices on some systems, it is important to
+  disable all access to the disk before removing the disk."
+
+	while true
+	do
+		_riput=`egettxt "Enter name of disk group" vxvmshm:229`
+		read_input "$_riput" "<group>,list" list
+		dgname=$input
+		if [ "X$dgname" = Xlist ] || [ "X$dgname" = Xl ]
+		then
+			(echo
+			egettxt  "GROUP        DISK/VOLUME         DEVICE/STATE LENGTH" vxvmshm:236
+			 vxprint -AQdv \
+		-F  "dm:%{dgname:-12} disk   %{name:-12} %{daname:-12} %len" \
+		-F "vol:%{dgname:-12} volume %{name:-12} %{kstate:-12} %len" |
+				grep -v "^rootdg "
+			 echo) | voladm_display
+			continue
+		fi
+		break
+	done
+	if [ "X$dgname" = Xrootdg ]
+	then
+		ewritemsg -M vxvmshm:450 "The rootdg disk group cannot be removed."
+		voladm_yorn -M vxvmshm:355 "Select a different disk group?" n &&
+			continue
+		break
+	fi
+	vxdg list "$dgname" > /dev/null 2> $tmpfile1
+	status=$?
+	if [ $status -ne 0 ]
+	then
+		if [ $status -eq 11 ]
+		then
+			export dgname; ewritemsg -M vxvmshm:466 "There is no active disk group named $dgname."
+
+		else
+			ewritemsg -M vxvmshm:511 "Unexpected error: `cat $tmpfile1`"
+		fi
+		voladm_yorn -M vxvmshm:355 "Select a different disk group?" n && continue
+		break
+	fi
+
+	vollist=
+	append_list vollist `vxprint -g "\$dgname" -ne v_open`
+	if [ ! -z "$vollist" ]
+	then
+		export vollist; ewritemsg -M vxvmshm:433 \
+"The following volumes are open or mounted as file systems:
+
+  	$vollist
+
+  A disk group with open or mounted volumes cannot be disabled.
+  If you want to disable the disk group, please stop any
+  applications that use these volumes and unmount any file systems
+  mounted on these volumes."
+		voladm_yorn -M vxvmshm:355 "Select a different disk group?" n && continue
+		break
+	fi
+
+	disklist=
+	devlist=
+	vxdisk -q list > $tmpfile1
+	exec 3<&0 < $tmpfile1
+	while read device type disk group status
+	do
+		if [ "X$dgname" = "X$group" ]
+		then
+			disklist="$disklist\t$disk on device $device\n"
+			append_list devlist $device
+		fi
+	done
+	exec 0<&3 3<&-
+	if [ -z "$disklist" ]
+	then
+		export dgname; ewritemsg -M vxvmshm:466 "There is no active disk group named $dgname."
+
+		voladm_yorn -M vxvmshm:355 "Select a different disk group?" n &&
+			continue
+		break
+	fi
+
+	export dgname disklist; ewritemsg -M vxvmshm:444 \
+"The requested operation is to disable access to the removable
+  disk group named $dgname.  This disk group is stored on the
+  following disks:\\n\n$disklist
+  You can choose to disable access to (also known as \\\"offline\\\")
+  these disks.  This may be necessary to prevent errors if
+  you actually remove any of the disks from the system."
+	voladm_yorn -M vxvmshm:161 \
+		"Disable (offline) the indicated disks?" n
+	if [ $? -eq 0 ]
+	then
+		offline=yes
+	else
+		offline=
+	fi
+
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn "Select a different disk group?" n \
+			&& continue
+		break
+	fi
+
+	doit vxdg deport "$dgname" 2> $tmpfile1
+	if [ $? -ne 0 ]
+	then
+		export tmpfile1; ewritemsg -M vxvmshm:511 "Unexpected error: `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:355 \
+		"Select a different disk group?" n || break
+	else
+		[ -n "$offline" ] && doit vxdisk offline $devlist 2> /dev/null
+		export dgname; ewritemsg -M vxvmshm:327 "Removal of disk group $dgname was successful."
+
+		voladm_yorn -M vxvmshm:164 \
+		"Disable another disk group?" n || break
+	fi
+done
+
+quit 0

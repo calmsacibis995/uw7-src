@@ -1,0 +1,3188 @@
+/* 
+ *    @(#) pro2s.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ * 
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for 
+ * purposes authorized by the license agreement provided they include 
+ * this notice and the associated copyright notice with any such product.  
+ * The information in this file is provided "AS IS" without warranty.
+ */
+
+/* *********************************************************************** *
+ * ORCHID/Pro2S.XGI - XEGIA(tm) GrafInfo File for Orchid ProDesigner IIs   *
+ *                                                                         *
+ *        Copyright (c) 1989 Metagraphics Software Corporation             *
+ *      269 Mount Hermon Road, PO 66779, Scotts Valley, CA 95066           *
+ *      Modified by Harry A. Haryanto, Orchid Technology                   *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                    Orchid.Pro2S.VGA.640x350-16                          *
+ *                    Orchid.Pro2S.VGA.640x480-16-60                       *
+ *                    Orchid.Pro2S.VGA.640x480-16-72                       *
+ *                    Orchid.Pro2S.SVGA.800x600-16-56                      *
+ *                    Orchid.Pro2S.SVGA.800x600-16-60                      *
+ *                    Orchid.Pro2S.SVGA.800x600-16-72                      *
+ *                    Orchid.Pro2S.SVGA.640x480-256-60                     *
+ *                    Orchid.Pro2S.SVGA.640x480-256-72                     *
+ *                    Orchid.Pro2S.SVGA.800x600-256-56                     *
+ *                    Orchid.Pro2S.SVGA.800x600-256-60                     *
+ *                    Orchid.Pro2S.SVGA.800x600-256-72                     *
+ *                    Orchid.Pro2S.SVGA.1024x768-256-45                    *
+ *                    Orchid.Pro2S.SVGA.1024x768-256-60                    *
+ *                    Orchid.Pro2S.SVGA.1024x768-256-70                    *
+ *                                                                         *
+ * *********************************************************************** */
+
+VENDOR ORCHID      "Orchid"
+ MODEL  PRO2S      "ProDesigner IIs"
+  CLASS  VGA         "VGA"
+   MODE   640x350-16-60    "640x350 16-color 60 Hz" /* VGA 640x350 16 color */
+
+      /* Developed for the Tseng labs ET4000 VGA chip set */
+
+      MEMORY(0xA0000,0x10000);         /* Base Address, Length       */
+      PORT(VGA);
+ 
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 350;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2= CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xa3); in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x54; r5  = 0x80; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x40; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x83; r17 = 0x85; r18 = 0x5d; r19 = 0x28;
+        r20 = 0x0f; r21 = 0x63; r22 = 0xba; r23 = 0xe3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+/* ********************************************************************* */
+
+
+VENDOR ORCHID      "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16-60   "640x480 16-color at 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xe3); in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x54; r5  = 0x80; r6  = 0x0b; r7  = 0x3e;
+        r8  = 0x00; r9  = 0x40; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0xea; r17 = 0x8c; r18 = 0xdf; r19 = 0x28;
+        r20 = 0x0 ; r21 = 0xe7; r22 = 0x04; r23 = 0xe3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+/*========================================================================*/
+
+VENDOR ORCHID      "Orchid"
+ MODEL  PRO2S    "ProDesigner IIs"
+  CLASS  VGA         "VGA"
+   MODE   640x480-16-72    "640x480 16-color at 72Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* clear CS2 */
+
+        out (0x3dd, 0);
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xeB);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x63; r1  = 0x4f; r2  = 0x50; r3  = 0x06;     /* crtc */
+        r4  = 0x56; r5  = 0x82; r6  = 0x06; r7  = 0x3e;
+        r8  = 0x00; r9  = 0x40; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0xe8; r17 = 0x8a; r18 = 0xdf; r19 = 0x28;
+        r20 = 0x0 ; r21 = 0xe4; r22 = 0x02; r23 = 0xc3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67);  in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+/*========================================================================*/
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-16-56    "800x600 16-color at 56Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the CLOCK cs0 and cs1 */
+        out (0x3c2, 0xEF);
+
+        in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7a;  r1  = 0x63;  r2  = 0x64;  r3  = 0x1d;     /* crtc */
+        r4  = 0x68;  r5  = 0x9a;  r6  = 0x78;  r7  = 0xf0;
+        r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+        r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+        r16 = 0x5c;  r17 = 0x8e;  r18 = 0x57;  r19 = 0x32;
+        r20 = 0x0 ;  r21 = 0x5b;  r22 = 0x75;  r23 = 0xc3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;    /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+/*========================================================================*/
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-16-60    "800x600 16-color at 60Hz"
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* clear bit 2 = CS2 */
+
+         /* Program the CLOCK cs0 and cs1 */
+        out (0x3c2, 0xe3);
+
+        in (r63, 0x3dd);
+
+
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7f; r1  = 0x63; r2  = 0x64; r3  = 0x02;     /* crtc */
+        r4  = 0x6a; r5  = 0x1d; r6  = 0x77; r7  = 0xf0;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x5d; r17 = 0x8f; r18 = 0x57; r19 = 0x32;
+        r20 = 0x0 ; r21 = 0x5b; r22 = 0x74; r23 = 0xc3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67);  in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+/*========================================================================*/
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-16-72    "800x600 16-color at 72Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;     /* VGA    */
+         PIXBYTES    = 100;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x06);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* Set bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xEF);
+
+        out (0x3dd, 0xae);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7a; r1  = 0x63; r2  = 0x64; r3  = 0x1d;     /* crtc */
+        r4  = 0x68; r5  = 0x9a; r6  = 0x78; r7  = 0xf0;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x5c; r17 = 0x8e; r18 = 0x57; r19 = 0x32;
+        r20 = 0x0 ; r21 = 0x5b; r22 = 0x75; r23 = 0xc3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67);  in (r63,0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID      "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA         "SVGA"
+   MODE   640x480-256-60   "640x480 256 colors at 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 04;     /* VGA */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xe3); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x54; r5  = 0x80; r6  = 0x0b; r7  = 0x3e;
+        r8  = 0x00; r9  = 0x40; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0xea; r17 = 0x8c; r18 = 0xdf; r19 = 0x50;
+        r20 = 0x60; r21 = 0xe7; r22 = 0x04; r23 = 0xab;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID      "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA         "SVGA"
+   MODE   640x480-256-72    "640x480 256 colors at 72Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 04;     /* VGA    ( flat,          linear )    */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 640;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xeb); out (0x3dd, 0x0);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x63; r1  = 0x4f; r2  = 0x50; r3  = 0x86;     /* crtc */
+        r4  = 0x56; r5  = 0x9b; r6  = 0x06; r7  = 0x3e;
+        r8  = 0x00; r9  = 0x40; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0xe8; r17 = 0x8a; r18 = 0xdf; r19 = 0x50;
+        r20 = 0x60; r21 = 0xe4; r22 = 0x02; r23 = 0xab;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out(0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-256-56    "800x600 256 colors at 56Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the CLOCK cs0 and cs1 */
+        out (0x3c2, 0xef); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7a; r1  = 0x63; r2  = 0x64; r3  = 0x1d;     /* crtc */
+        r4  = 0x68; r5  = 0x9a; r6  = 0x78; r7  = 0xf0;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x5c; r17 = 0x8e; r18 = 0x57; r19 = 0x64;
+        r20 = 0x60; r21 = 0x5b; r22 = 0x75; r23 = 0xab;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-256-60    "800x600 256 colors at 60Hz"
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* clear bit 2 = CS2 */
+
+         /* Program the CLOCK cs0 and cs1 */
+        out (0x3c2, 0xe3); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7f; r1  = 0x63; r2  = 0x64; r3  = 0x02;     /* crtc */
+        r4  = 0x6b; r5  = 0x1d; r6  = 0x77; r7  = 0xf0;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x5d; r17 = 0x8f; r18 = 0x57; r19 = 0x64;
+        r20 = 0x60; r21 = 0x5b; r22 = 0x74; r23 = 0xAB;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out(0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   800x600-256-72    "800x600 256 colors at 72Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* Set bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xef); out (0x3dd, 0x0);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x7d; r1  = 0x63; r2  = 0x64; r3  = 0x00;     /* crtc */
+        r4  = 0x6a; r5  = 0x1a; r6  = 0x98; r7  = 0xf0;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x77; r17 = 0x82; r18 = 0x57; r19 = 0x64;
+        r20 = 0x60; r21 = 0x5f; r22 = 0x91; r23 = 0xAB;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   1024x768-256-45  "1024x768 256 colors interlaced at 45Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* Set bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x27); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x80);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x99; r1  = 0x7f; r2  = 0x7f; r3  = 0x1d;     /* crtc */
+        r4  = 0x83; r5  = 0x17; r6  = 0x2f; r7  = 0xf5;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x08; r17 = 0x80; r18 = 0xff; r19 = 0x80;
+        r20 = 0x60; r21 = 0xff; r22 = 0x30; r23 = 0xAB;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   1024x768-256-60  "1024x768 256 colors non-inter at 60Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* Set bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xef); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0xa1; r1  = 0x7f; r2  = 0x80; r3  = 0x04;     /* crtc */
+        r4  = 0x86; r5  = 0x9e; r6  = 0x26; r7  = 0xfd;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x08; r17 = 0x8a; r18 = 0xff; r19 = 0x80;
+        r20 = 0x60; r21 = 0x04; r22 = 0x22; r23 = 0xAB;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+ 
+
+VENDOR ORCHID   "Orchid"
+ MODEL  PRO2S   "ProDesigner IIs"
+  CLASS  SVGA          "SVGA"
+   MODE   1024x768-256-70  "1024x768 256 colors non-inter at 70Hz"
+
+
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;
+         DEVTECH     = 4;             /* multi-bit, flat */
+         MAPTYPE     = "TSENG4000_2_64K";
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         }
+
+      PROCEDURE  SetGraphics
+         {
+
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Put the chip into the Graphics mode */
+        out (0x3ce, 0x06);
+        out (0x3cf, 0x05);
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x0f);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x0e);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x0a);    /* Set bit 2 = CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0xef); out (0x3dd, 0x00);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck2 */
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0xa1; r1  = 0x7f; r2  = 0x80; r3  = 0x04;     /* crtc */
+        r4  = 0x88; r5  = 0x97; r6  = 0x24; r7  = 0xf5;
+        r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x02; r17 = 0x88; r18 = 0xff; r19 = 0x80;
+        r20 = 0x60; r21 = 0xff; r22 = 0x25; r23 = 0xAB;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Clear CRTC 33 */
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+        r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+        r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+        r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* enable 128K linear bank select */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0f;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+         /* Clear the disable bit in Sequencer 1 */
+/*       out(0x3C4,0x1); out(0x3C5,0x1); */
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+      PROCEDURE  SetText
+         {
+         /* unprotect crtc regs 0 - 7 */
+         out (0x3d4, 0x11);
+         out (0x3d5, 0x20);
+
+         /* unprotect crtc reg 34 */
+         out (0x3BF, 0x03);
+         out (0x3D8, 0xA0);
+
+         /* Blank the screen while mode change */
+        in (r63, 0x3da);
+        out (0x3c0, 0x31);
+        out (0x3c0, 0x00);
+
+
+         /* Reset The Sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x01);
+
+         /* Program Sequencers 1-4 */
+        out (0x3c4, 0x1); out (0x3c5, 0x01);
+        out (0x3c4, 0x2); out (0x3c5, 0x03);
+        out (0x3c4, 0x3); out (0x3c5, 0x00);
+        out (0x3c4, 0x4); out (0x3c5, 0x02);
+
+         /* Program the crtc 34 first */
+        out (0x3d4, 0x34); out (0x3d5,0x08);    /* clear CS2 */
+
+         /* Program the cs0 and cs1 */
+        out (0x3c2, 0x67); in (r63, 0x3dd);
+
+         /* Program sequencer 6 and 7 */
+        out (0x3c4, 0x6); out (0x3c5, 0x1);
+        out (0x3c4, 0x7); out (0x3c5, 0xac);    /* clear mlck */
+
+
+
+        /* re-enable the sequencer */
+        out (0x3c4, 0x0); out (0x3c5, 0x3);
+
+         /* set Non-interlace or Interlaced */
+        out (0x3d4, 0x35); out (0x3d5, 0x0);
+
+          /* Program the crtcs 0-18 hex */
+         out(0x3D4,0x11); out(0x3D5,0x00);   /* unprotect crtc regs 0-7   */
+        r0  = 0x5f; r1  = 0x4f; r2  = 0x50; r3  = 0x82;     /* crtc */
+        r4  = 0x55; r5  = 0x81; r6  = 0xbf; r7  = 0x1f;
+        r8  = 0x00; r9  = 0x4f; r10 = 0x0d; r11 = 0x0e;
+        r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+        r16 = 0x9c; r17 = 0x8e; r18 = 0x8f; r19 = 0x28;
+        r20 = 0x1f; r21 = 0x96; r22 = 0xB9; r23 = 0xA3;
+        r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+        out (0x3d4, 0x33); out (0x3d5, 0);
+
+         /* Program ATC 16 */
+        in (r63, 0x3da);
+        out (0x3c0, 0x16); out (0x3c0,0);
+
+
+        r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+        r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+        r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+        r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+        r16 = 0x0c;  r17 = 0x00;  r18 = 0x0f;  r19 = 0x08; /* attr cntlr */
+        r20 = 0x00;  bout(21,0x3C0,0x3C0);           /* vga color select */
+
+         /* Program ATC 14 */
+         out(0x3C0,0x14); out(0x3C0,0x0);
+
+         /* Bank select OFF */
+         out(0x3CD,0x00);
+
+          /* program the GDCs */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0e;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+
+         /* palette mask */
+         out(0x3C6,0xFF);
+
+
+         /* disable access to extended registers */
+        out (0x3bf, 0x1); out (0x3d8, 0x29);
+
+
+        out (0x3c4, 1); out (0x3c5, 0);
+
+         /* reset attr ff */
+         in(r63,0x3DA);
+
+
+         out(0x3C0,0x20);                    /* enable palette       */
+         }
+
+
+/* End of File - ORCHID/PRO2S.XGI */
+/* End of File - ORCHID/PRO2S.XGI */

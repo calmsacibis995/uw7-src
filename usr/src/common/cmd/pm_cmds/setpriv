@@ -1,0 +1,75 @@
+#! /sbin/sh
+
+#ident	"@(#)setpriv	1.2"
+
+POST_CMD=
+Xflag="no"
+catalog=uxcore
+label=UX:setpriv
+ALL_FILES="Executing \"filepriv\" on ALL files in \"/etc/security/tcb/privs\" -- please wait"
+SOME_FILES="Executing \"filepriv\" for the following:\n"
+trap "/usr/bin/rm -f /tmp/$$*;exit"  0 1 2 3 15
+if type getopts | grep 'not found' > /dev/null
+then
+	eval set -- "`getopt x "$@"`"
+	if [ $? != 0 ]
+	then
+		pfmt -l $label -g $catalog:1 "Incorrect usage\\n"
+		pfmt -l $label -g $catalog:2 -s action "Usage: setpriv [ -x ] [ file ]\\n"
+		exit 2
+	fi
+	for i in $*
+	do
+		case $i in
+		-x)	Xflag="yes"; shift;;
+		--)	shift; break;;
+		esac
+	done
+else
+	while getopts x i
+	do
+		case $i in
+		x)	Xflag="yes";; 
+		\?)
+			pfmt -l $label -g $catalog:1 "Incorrect usage\\n"
+			pfmt -l $label -g $catalog:2 -s action "Usage: setpriv [ -x ] [ file ]\\n"
+			exit 2;;
+		esac
+	done
+	shift `expr $OPTIND - 1`
+fi
+if [ "$1" ]
+then
+	POST_CMD="/usr/bin/grep $1 /tmp/$$"
+fi
+/usr/bin/cat /etc/security/tcb/privs | 
+/usr/bin/sed -e "1,\$s/.*:%/\/sbin\/filepriv -/" -e "1,\$s/ixed,/ /" -e "1,\$s/nher,/ /" -e "1,\$s/%/ -/" -e "1,\$s/:/ /" > /tmp/$$
+if [ "$1" != "" ]
+then
+	if [ "$Xflag" = "no" ]
+	then
+		eval "$POST_CMD"
+	else
+		echo "$SOME_FILES"
+		eval "$POST_CMD | /usr/bin/sed -e 's/.* /	/'"
+		eval "$POST_CMD | /sbin/sh > /tmp/$$.1 2>&1"
+		if [ -s /tmp/$$.1 ]
+		then
+			echo ""
+			eval "/usr/bin/cat /tmp/$$.1 | /usr/bin/uniq"
+		fi
+	fi
+else
+	if [ "$Xflag" = "no" ]
+	then
+		/usr/bin/cat /tmp/$$
+	else
+		echo "$ALL_FILES"
+		eval "/usr/bin/cat /tmp/$$ | /sbin/sh > /tmp/$$.1 2>&1"
+		if [ -s /tmp/$$.1 ]
+		then
+			/usr/bin/sort /tmp/$$.1 > /tmp/$$.2
+			eval "/usr/bin/cat /tmp/$$.2 | /usr/bin/uniq"
+		fi
+	fi
+fi

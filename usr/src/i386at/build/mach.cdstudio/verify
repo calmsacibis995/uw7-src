@@ -1,0 +1,162 @@
+#!/usr/bin/ksh
+#ident	"@(#)oemcd:mach.cdstudio/verify	1.1"
+ERR=0
+argct=0
+cpq=0
+ja=0
+if [ "$1" = "-c" -o "$2" = "-c" ]
+then
+	let argct=argct+1
+	cpq=1
+fi
+if [ "$1" = "-j" -o "$2" = "-j" ]
+then
+	let argct=argct+1
+	ja=1
+fi
+
+if [ $argct -gt 0 ]
+then
+	shift $argct
+fi
+
+if [ ! -d $1 ]
+then
+	print -u2 "ERROR: cannot access $1"
+	exit 1
+fi
+
+cd $1
+
+for i in . .hba.flop
+do
+	if [ -d $i/lost+found ]
+	then
+		print -u2 "ERROR: $i/lost+found should not exist"
+		ERR=1
+	fi
+done
+
+DIRS=".extra.d as"
+CPQDIRS=".cpq.mods .cpq.pkgs .hba.flop .hba.boot .extras.d"
+[ $cpq -eq 1 ] && {
+	DIRS="${DIRS} ${CPQDIRS} .hba.boot/etc/conf/hbamod.d sdk odm umerge mpu cpqupd cim" 
+}
+
+# ja red box
+[ $cpq -eq 0 -a $ja -eq 1 ] && {
+	DIRS="${DIRS} usr/doc/Libraries/C/as usr/doc/Libraries/C/refman"
+	DIRS="${DIRS} usr/doc/Libraries/ja/as usr/doc/Libraries/ja/refman"
+}
+
+# efigs red box
+[ $cpq -eq 0 -a $ja -eq 0 ] && {
+	DIRS="${DIRS} usr/doc/Libraries/C/as usr/doc/Libraries/C/refman"
+	for i in de fr it es
+	do
+	DIRS="${DIRS} usr/doc/Libraries/$i/as usr/doc/Libraries/$i/refman.$i"
+	done
+}
+
+[ $cpq -eq 0 -a $ja -eq 1 ] && {
+	DIRS="${DIRS} jaSDKdocs jasup"
+
+}
+[ $cpq -eq 1 -a -d usr ] && {
+		print -u2 "ERROR: cpq cdrom does not contain usr"
+		ERR=1
+}
+
+for i in ${DIRS}
+do
+	if [ -d $i/$i -o -f $i/$i ]
+	then
+		print -u2 "ERROR: $i/$i should not exist"
+		ERR=1
+	fi
+	if [ ! -d $i ]
+	then
+		print -u2 "ERROR: cannot find $i/"
+		ERR=1
+	fi
+done
+
+FILES="as.image as/setinfo"
+[ $cpq -eq 1 ] && {
+	FILES="${FILES} sdk/setinfo odm/setinfo .extras.d/bin/install_more .t/h/i/s/i/s/a/d/e/e/p/p/a/t/h/zboot"
+}
+[ $cpq -eq 1 -a $ja -eq 1 ] && {
+	FILES="${FILES} .extras.d/fboot2"
+}
+
+xx=`find $FILES ! -perm -0444 -print`
+[ -s "$xx" ] && {
+	print -u2 "ERROR: following files not readable"
+	echo $xx
+	ERR=1
+}
+
+for i in  ${FILES}
+do
+if [ ! -f $i ]
+then
+	print -u2 "ERROR: cannot find $i"
+	ERR=1
+fi
+done
+
+
+X=/tmp/SET.$$
+for i in */setinfo
+do
+	sed -n '/^[a-zA-Z]/p' $i | cut -f1 >  $X
+	for j in $(<$X)
+	do
+		if [ ! -f $j/pkgmap -o ! -f $j/pkginfo ]
+		then
+			print -u2 "ERROR: cannot find $j pkg[map|info]"
+			ERR=1
+		fi
+	done
+done
+[ $cpq -eq 1 ] && {
+	for i in */pkginfo
+	do
+		grep ACTKEY $i > /dev/null
+		ret=$?
+		if [ $ret != 0 ]
+		then
+			if [ "$i" != "cim/pkginfo" -a "$i" != "cpqupd/pkginfo" ]
+			then
+				print -u2 "WARNING: fs copy $i does not contain ACTKEY"
+				ERR=1
+			fi
+		else
+			if [ "$i" = "cim/pkginfo" -o "$i" = "cpqupd/pkginfo" ]
+			then
+				print -u2 "WARNING: fs copy $i should not contain ACTKEY"
+				ERR=1
+			fi
+		fi
+	done
+
+	TDIR=/tmp/cpq.$$
+	mkdir -p $TDIR
+	pkgtrans -i $1/as.image $TDIR all > /dev/null 2>&1
+	HERE=~+
+	cd $TDIR
+	for i in */pkginfo
+	do
+		grep ACTKEY $i > /dev/null
+		ret=$?
+		if [ $ret != 0 ]
+		then
+			print -u2 "WARNING: image copy $i does not contain ACTKEY"
+			ERR=1
+		fi
+	done
+	cd $HERE
+	rm -rf $TDIR
+}
+
+exit $ERR

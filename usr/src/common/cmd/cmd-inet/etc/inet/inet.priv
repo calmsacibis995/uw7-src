@@ -1,0 +1,159 @@
+#!/sbin/sh
+#ident	"@(#)inet.priv	1.2"
+#ident "$Header$"
+
+# This script will make the Inet services unexecutable and unable
+# to inherit privileges, or to enable these file attributes.
+# The intent is if an administrator decides
+# that these services have an unacceptable security risk, the
+# services can be disabled.  Later, if the decision is reversed,
+# the services can be enabled.
+# 
+# Note that the Inet devices (tcp,udp,...) are still available for
+# other network services (RFS, BNU, Remote Execution) even when the
+# Inet services are disabled with this script.
+#
+# Since this script is based on pkgchk to change file attributes
+# when the services are enabled, the script must be invoked in
+# Maintenance Mode (that is, neither LPM nor MAC is running).
+# by root.
+
+Warning ()
+{
+	echo "#NOTE -e/Enable uses pkgchk, which requires Maintenance Mode."
+	echo "#NONE of the inet binaries should be executing or open."
+	echo "#NONE of the inet binaries should be executing or open."
+	echo "#Should be run as uid root for sacadm processing."
+}
+
+usage()
+{
+	echo "usage:\t$0 -d\t#Disable privileges from Inet services."
+	echo "\t$0 -e\t#Enable privileges to Inet services."
+	echo "\t$0 -l\t#List current Inet services privileges."
+	Warning
+	exit 1
+}
+
+INET_FILES="/usr/bin/finger
+/usr/bin/ftp
+/usr/bin/rcp
+/usr/bin/rdate
+/usr/bin/rlogin
+/usr/bin/rsh
+/usr/bin/ruptime
+/usr/bin/rwho
+/usr/bin/talk
+/usr/bin/telnet
+/usr/bin/tftp
+/usr/bin/whois
+/usr/sbin/in.comsat
+/usr/sbin/in.fingerd
+/usr/sbin/in.ftpd
+/usr/lib/iaf/in.login/scheme
+/usr/sbin/in.named
+/usr/sbin/in.rarpd
+/usr/sbin/in.rexecd
+/usr/sbin/in.rlogind
+/usr/sbin/in.rshd
+/usr/sbin/in.rwhod
+/usr/sbin/in.talkd
+/usr/sbin/in.telnetd
+/usr/sbin/in.tftpd
+/usr/sbin/in.tnamed
+/usr/sbin/inetd
+/usr/sbin/trpt"
+
+COMMA_FILES="`echo $INET_FILES|sed 's% %,%g'`"
+
+SAC=/etc/saf/_sactab
+FIELDS='inetd:[^:]*:'
+TMP=/usr/tmp/sacxflag.$$
+
+ADD_X_FLAG()
+{
+	if grep "^$FIELDS[^:x]*x"  >/dev/null $1
+	then	return 0
+	else	sed "s/^\($FIELDS\)/\1x/g" $1 >$TMP
+		cat <$TMP >$1
+		rm $TMP
+		ADD_X_FLAG $1
+	fi
+}
+
+DEL_X_FLAG()
+{
+	if grep "^$FIELDS[^:x]*x"  >/dev/null $1
+	then	sed "s/^\($FIELDS[^:x]*\)x/\1/g" $1 >$TMP
+		cat <$TMP >$1
+		rm $TMP
+		DEL_X_FLAG $1
+	else	return 0
+	fi
+}
+
+RETURN=0
+
+case "$1X" in
+
+	-dX)
+		/sbin/filepriv -d $INET_FILES
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: /sbin/filepriv
+			RETURN=$?
+		fi
+		/usr/bin/chmod 0 $INET_FILES
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: /usr/bin/chmod
+			RETURN=$?
+		fi
+		ADD_X_FLAG $SAC
+		if [ x$? != x0 ]
+		then	echo $0: insufficient privilege for $SAC processing
+			RETURN=$?
+		fi
+		/usr/bin/adminuser -r inetd root
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: adminuser
+			RETURN=$?
+		fi
+		exit $RETURN
+		;;
+
+	-eX)
+		DEL_X_FLAG $SAC
+		if [ x$? != x0 ]
+		then	echo $0: insufficient privilege for $SAC processing
+			RETURN=$?
+		fi
+                /usr/bin/adminuser -a inetd:/usr/sbin/inetd:allprivs root
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: adminuser
+			RETURN=$?
+		fi
+		/usr/sbin/pkgchk -f -p $COMMA_FILES inet
+		RETURN=$?
+		if [ x$RETURN != x0 ]
+		then	Warning
+		fi
+		exit $RETURN
+		;;
+
+	-lX)
+		echo "Current privileges and modes on the Inet services:"
+		/sbin/filepriv $INET_FILES
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: /sbin/filepriv
+			RETURN=$?
+		fi
+		/usr/bin/ls -l $INET_FILES
+		if [ x$? != x0 ]
+		then	echo $0: error/insufficient privilege: /usr/bin/ls -l
+			RETURN=$?
+		fi
+		exit $RETURN
+		;;
+
+	*X)	usage
+		;;
+esac

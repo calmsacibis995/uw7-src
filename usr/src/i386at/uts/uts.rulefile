@@ -1,0 +1,163 @@
+#ident	"@(#)kern-i386at:uts.rulefile	1.72.7.7"
+#ident	"$Header$"
+
+CPU = i386
+# MACH = i386at
+
+# RELEASE and VERSION initialize strings in svc/name.c that (if non-empty)
+# override at run time the REL and VER values assigned in name.cf/Space.c
+RELEASE =
+VERSION =
+
+PFX = $(CPU)
+SGS =
+
+AR = $(PFX)ar
+AS = $(PFX)as
+CC = $(PFX)cc
+C++C = $(PFX)CC
+FUR = :
+LD = $(PFX)ld
+M4 = $(PFX)m4 -B16384
+MAKE = $(PFX)make
+MCS = $(PFX)mcs
+LEX = $(PFX)lex
+LINT = $(PFX)lint
+LORDER = $(PFX)lorder
+NM = $(PFX)nm
+SED = sed
+SIZE = $(PFX)size
+STRIP = $(PFX)strip
+TIC = tic
+TSORT = $(PFX)tsort
+VPP = vpp
+YACC = $(PFX)yacc
+
+INS = install
+OWN = bin
+GRP = bin
+INCMODE = 644
+
+SHELL = /bin/sh
+AWK = /usr/bin/awk
+
+ARFLAGS =
+ASFLAGS =
+OPTIM_CFLAGS = -O
+CFLAGS = -Xa $(OPTIM_CFLAGS) -W2,-_s -Kno_host
+LDFLAGS = -s
+LFLAGS =
+LINTFLAGS = -Xa -k -n -s -Dlint
+VPP_VCFLAGS = -l
+VPP_VHFLAGS = -c ansi
+YFLAGS =
+
+CCSTYPE = ELF
+
+HCC = cc
+HAR = ar
+HAS = as
+HLD = ld
+HNM = nm
+CP = cp
+RM = rm
+SH = sh
+
+ETC = $(ROOT)/$(MACH)/etc
+INC = $(ROOT)/$(MACH)/usr/include
+CONF = $(ROOT)/$(MACH)/etc/conf
+IDINSTALL = $(KTOOL)/$(PFX)idinstall
+
+# needed for the crash command (now built for each MP related build)
+USRLIB=$(ROOT)/$(MACH)/usr/lib
+USRSBIN=$(ROOT)/$(MACH)/usr/sbin
+SBIN=$(ROOT)/$(MACH)/sbin
+SYMLINK=:
+
+DEVDEF =
+DEVINC1 =
+DEVINC2 =
+DDEBUG = -DDEBUG -D_KMEM_STATS -D_KMEM_HIST -D_MEM_RESV_STATS -DDKTEST 
+
+DMPSTATS = -D_MPSTATS
+
+SMAPFILES = smap smap-i386at
+GLOBALDEF = -D_KERNEL -D_KERNEL_HEADERS \
+		-D_LOCKTEST -DMERGE386 -DV86MODE -DEVGA -DIAPX386 \
+		$(DDEBUG) $(DMPSTATS) -DSTATIC=$(STATIC)
+GLOBALINC = -I$(KBASE) -I$(INC)
+DEFLIST = \
+	$(GLOBALDEF) \
+	$(LOCALDEF) \
+	$(DEVDEF)
+INCLIST = \
+	$(DEVINC1) \
+	$(LOCALINC) \
+	$(GLOBALINC) \
+	$(DEVINC2)
+
+MAKEARGS = \
+	ROOT='$(ROOT)' \
+	INC='$(INC)' \
+	AR='$(AR)' \
+	AS='$(AS)' \
+	CC='$(CC)' \
+	FUR='$(FUR)' \
+	LD='$(LD)' \
+	M4='$(M4)' \
+	MAKE='$(MAKE)' \
+	MCS='$(MCS)' \
+	LEX='$(LEX)' \
+	LINT='$(LINT)' \
+	LORDER='$(LORDER)' \
+	NM='$(NM)' \
+	STRIP='$(STRIP)' \
+	SIZE='$(SIZE)' \
+	TSORT='$(TSORT)' \
+	YACC='$(YACC)' \
+	INS='$(INS)' \
+	OWN='$(OWN)' \
+	GRP='$(GRP)' \
+	INCMODE='$(INCMODE)' \
+	ARFLAGS='$(ARFLAGS)' \
+	ASFLAGS='$(ASFLAGS)' \
+	CFLAGS='$(CFLAGS)' \
+	LDFLAGS='$(LDFLAGS)' \
+	LFLAGS='$(LFLAGS)' \
+	LINTFLAGS='$(LINTFLAGS)' \
+	YFLAGS='$(YFLAGS)' \
+	CONF='$(CONF)' \
+	IDINSTALL='$(IDINSTALL)' \
+	DEVINC1='$(DEVINC1)' \
+	DEVINC2='$(DEVINC2)' \
+	DEVDEF='$(DEVDEF)' \
+	DDEBUG='$(DDEBUG)' \
+	DMPSTATS='$(DMPSTATS)' \
+	RELEASE='$(RELEASE)' \
+	VERSION='$(VERSION)' \
+	STATIC='$(STATIC)'
+
+CCNUMA_MAKEARGS = \
+		KBASE='../$(KBASE)' \
+		GLOBALDEF='$(GLOBALDEF) -DCCNUMA ' \
+		$(MAKEARGS)
+
+.SUFFIXES: .ln .vc .vh
+
+.c.ln:
+	echo "\n$(DIR)/$*.c:" > $*.L
+	-$(LINT) $(LINTFLAGS) $(INCLIST) $(DEFLIST) \
+		-c -u $*.c >> $*.L
+
+.c.o:
+	$(CC) $(CFLAGS) $(INCLIST) $(DEFLIST) -c $<
+
+.s.o:
+	$(M4) -DKBASE=$(KBASE) $(DEFLIST) $< | \
+	$(AS) $(ASFLAGS) -o $@ -
+
+.vc.c:
+	$(VPP) $(VPP_VCFLAGS) $< $@
+
+.vh.h:
+	$(VPP) $(VPP_VHFLAGS) $< $@

@@ -1,0 +1,97 @@
+/*
+ *    @(#) mono.xgi 12.1 95/05/09  
+ *
+ * Copyright (C) 1991-1992 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+
+/* *********************************************************************** *
+ * HERCULES/MONO.XGI - XEGIA(tm) GrafInfo File for Hercules Monchrome Card *
+ *                                                                         *
+ *        Copyright (c) 1989 Metagraphics Software Corporation             *
+ *      269 Mount Hermon Road, PO 66779, Scotts Valley, CA 95066           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - *
+ *                                                                         *
+ *                    Hercules.Mono.HGA.720x350-2                          *
+ *                                                                         *
+ * *********************************************************************** */
+
+
+VENDOR HERCULES   "Hercules"
+ MODEL  MONO       "Monochrome Graphics Card"
+  CLASS  HGA        "HGA"
+   MODE   720x350-2  "720x350 Monochrome"   /* Hercules 720x350 2-color */
+
+      MEMORY (0xB0000,0x10000);           /* Base Address, Length */
+      PORT   (0x3B0-0x3BF);
+
+      DATA
+         {
+	 XDRIVER = "mw";
+	 VISUAL  = "StaticGray";
+	 DEPTH   = 1;
+         DEVTYPE     = 0;
+         DEVTECH     = 01;
+         PIXBYTES    = 90;
+         PIXWIDTH    = 720;
+         PIXHEIGHT   = 348;
+         PIXBITS     = 1;
+         PIXPLANES   = 1;
+         MAPTYPE     = "EGA";
+         INTERLEAVE  = 4;
+         INTERSIZE   = 0x2000;
+         }
+
+      PROCEDURE SetGraphics
+         {
+         out(0x3BF,0x03);               /* config, enable 2 graphic pages */
+         out(0x3B8,0x22);               /* mode, disable */
+
+         r0  = 53;  r1  = 45;  r2  = 46;  r3  = 07;   /* crtc regs */
+         r4  = 91;  r5  =  2;  r6  = 87;  r7  = 87;
+         r8  =  2;  r9  =  3;  r10 =  0;  r11 =  0;
+         r12 =  0;  r13 =  0;  r14 =  0;  r15 =  0;
+         bout(16,0x3B4,0x3B5);
+
+         out(0x3B8,0x2A);               /* mode - enable page 0 */
+      /* out(0x3B8,0xAA); */            /* mode - enable page 1 */
+         }
+
+
+      PROCEDURE SetText
+         {
+         out(0x3B8,0x22);               /* mode, disable */
+
+         r0  = 97;  r1  = 80;  r2  = 82;  r3  = 15;   /* crtc regs */
+         r4  = 25;  r5  =  6;  r6  = 25;  r7  = 25;
+         r8  =  2;  r9  = 13;  r10 = 11;  r11 = 12;
+         r12 =  0;  r13 =  0;  r14 =  0;  r15 =  0;
+         bout(16,0x3B4,0x3B5);
+
+         out(0x3B8,0x28);               /* mode - enable page 0 */
+      /* out(0x3B8,0xA8); */            /* mode - enable page 1 */
+         }
+
+	PROCEDURE BlankScreen
+	{
+		in (r0, 0x3b8);
+		and (r0, 0xf7);		/* zero video enable bit */
+		out (0x3b8, r0);
+	}
+
+	PROCEDURE UnBlankScreen
+	{
+	/* something unusual here, doing an 'in' from 3b8 and then */
+	/* 'or' with 0x08, then 'out' that value, does not work.  However, */
+	/* simply outputting the 0x2a to the port will turn the screen on. */
+		out (0x3b8, 0x2a);
+	}
+
+/* End of File - HERCULES/MONO.XGI */

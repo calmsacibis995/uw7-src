@@ -1,0 +1,118 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/voladm/vxdiskadd.sh	1.2 3/3/97 03:34:01 - cmd.vxvm:unixware/voladm/vxdiskadd.sh
+#ident	"@(#)cmd.vxvm:unixware/voladm/vxdiskadd.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+VOLADM_CURRENT_MENU=VolumeManager/Disk
+export VOLADM_CURRENT_MENU
+diskadd_lockfile=/var/spool/locks/.DISKADD.LOCK
+
+diskadd_lock_cleanup()
+{
+	rm -f $diskadd_lockfile
+}
+
+. $VOLADM_LIB/vxadm_lib.sh
+
+if [ $# -eq 0 ]
+then
+	ewritemsg -M vxvmshm:532 \
+"Usage: vxdiskadd disk-address-pattern-list...
+
+  Use this operation to add one or more disks to a disk group.  You can
+  add the selected disks to an existing disk group or to a new disk group
+  that will be created as a part of the operation. The selected disks may
+  also be added to a disk group as hot spares. The selected disks may also
+  be initialized without adding them to a disk group leaving the disks
+  available for use as replacement disks.
+
+  More than one disk or pattern may be entered at the prompt.  Here are
+  some disk selection examples:
+
+  all:		all disks
+  c3 c4b0t2:	all disks on both controller 3 and controller 4, bus 0, target 2
+  c3b0t4d2:	a single disk"
+
+	quit 0
+	
+fi
+
+if [ -f $diskadd_lockfile ]
+then
+	export diskadd_lockfile; ewritemsg -M vxvmshm:461 \
+"The vxdiskadd or vxdiskadm program is already being run and
+  these programs cannot run concurrently.  Please retry this at a
+  later time.  If you are certain that no other users are running
+  any of these programs, you can remove the file:
+
+	$diskadd_lockfile
+
+  Removing this file will allow you to run vxdiskadd.
+
+"
+	exit 1
+fi
+
+add_cleanup diskadd_lock_cleanup
+2> /dev/null > $diskadd_lockfile
+if [ $? -ne 0 ]
+then
+	diskadd_lockfile="$diskadd_lockfile" egettxt \
+		"$0: Cannot create lock file $diskadd_lockfile" \
+		vxvmshm:35 $0 "$@" >&2
+
+	exit 1
+fi
+
+check_exclude_files
+if [ $? -ne 0 ]
+then
+	ewritemsg -M vxvmshm:304 \
+	"Please correct the problem listed above before re-running vxdiskadd."
+	quit 0
+fi
+
+#
+# voladm_disk_device_list will set the environment variable
+# 'device_list' to all the disks that match the given input
+# disk addresses or patterns.
+#
+voladm_disk_device_list -i "$*"
+if [ $? -eq 1 ]
+then
+	quit 0
+fi
+
+if [ -z "$device_list" ]
+then
+	ewritemsg -M vxvmshm:294 \
+	"No matching disks were returned."
+	quit 0
+fi
+
+doit $VOLADM_BIN/disk.init $device_list
+
+egettxt "\nGoodbye." vxvmshm:612
+
+quit 0

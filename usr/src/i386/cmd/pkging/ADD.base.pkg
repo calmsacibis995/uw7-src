@@ -1,0 +1,412 @@
+#ident	"@(#)ADD.base.pkg	15.1"
+#ident  "$Header$"
+#
+#	Copyright (c) 1990  Intel Corporation
+#	All Rights Rreserved
+#
+#	INTEL CORPORATION PROPRIETARY INFORMATION
+#
+#	This software is supplied to AT & T under the terms of a license 
+#	agreement with Intel Corporation and may not be copied nor 
+#	disclosed except in accordance with the terms of that agreement.
+#
+
+
+trap '[ ! -s /etc/conf/bin/idbuild ] && mv /etc/conf/bin/S.idbuild /etc/conf/bin/idbuild; [ ! -s /etc/conf/bin/idreboot ] && mv /etc/conf/bin/S.idreboot /etc/conf/bin/idreboot;cat /etc/conf/sdevice.d/* >/etc/conf/cf.d/sdevice;remove_dummy; rm -f /etc/conf/bin/S.idbuild /etc/conf/bin/S.idreboot; exit 3' 1 2 3 15
+
+PATH=/sbin:/etc:/usr/sbin:/usr/bin
+export PATH
+set +e
+[ -f /opt/unix/PKG_INFO ] || {
+	echo "No pkginfo found"
+	exit 1
+
+}
+cd /
+. /opt/unix/PKG_INFO
+
+PKG_RESP_HOME=/opt/unix/pkg
+PKG_RESP=/opt/unix/resp
+PKG_DEFAULT=/tmp/.deflt.$$
+NTAPE='Ntape1:/dev/rmt/c0s0n:::desc="Cartridge Tape Drive" volume="cartridge tape" type="ctape" removable="true" mkdtab="false" capacity="120000" bufsize="20480" norewind="/dev/rmt/c0s0n" erasecmd="/usr/lib/tape/tapecntl -e" display="true" rewindcmd="/usr/lib/tape/tapecntl -w"'
+
+export PKG_HOME PKG_RESP PKG_DEFAULT 
+do_flush () {
+	STTY=`stty -g`
+	stty icanon
+	stty $STTY
+}
+make_default () {
+	cat >$PKG_DEFAULT <<-END
+	mail=root
+	instance=overwrite
+	partial=nocheck
+	runlevel=nocheck
+	idepend=ask
+	rdepend=nocheck
+	space=ask
+	setuid=nocheck
+	conflict=nocheck
+	list_files=nocheck
+	action=nocheck
+	basedir=default
+	END
+	#
+	# make sure to get the real type of f0t
+	#
+	/usr/sadm/sysadm/bin/mkdtab >/dev/null 2>&1 
+	sync
+}
+Get_list() {
+	list=$1
+	def=$2
+	[ -z $def ] && def=y
+	tmp=
+	for i in `eval echo \\$$list`
+	do
+		echo "\tInstall $i (default $def): \c"
+		read ans
+			case $def in
+			y) case $ans in
+					y*|Y*|'') tmp=" $tmp $i";;
+					 *) tmp=" $tmp skip";;
+				esac
+				;;
+			n) case $ans in
+					y*|Y*) tmp=" $tmp $i";;
+					 ''|*) tmp=" $tmp skip";;
+				esac
+				;;
+			esac
+	done
+	echo "${list}=\" $tmp \"" >/opt/unix/.${list}
+}
+Get_sys_type () {
+
+	/usr/sbin/flop_disk
+	case "$?" in
+		0) PKG_MEDIA=diskette1	
+		   echo "You are installing packages from floppy"
+		   echo "\nStrike ENTER when ready or DEL to cancel: \c"
+			read x
+			;;
+  		1) PKG_MEDIA=Ntape1 
+		   echo "Please insert the cartridge tape into the tape drive."
+		   echo "\nStrike ENTER when ready or DEL to cancel: \c"
+		   read x
+			;;
+	  100) echo "ADD.base.pkg utility has been canceled."
+			exit 1;;
+	esac
+	echo "\n"
+	rm -f /opt/unix/.[A-Z]*
+	echo "\n"	
+	while :
+	do
+		for i in $PKG_GROUPS
+		do
+			case $i in
+				HARDWARE) continue;;
+			esac
+			echo "\nThe $i Package Set contains the following packages:"
+			for j in `eval echo \\$$i`
+			do
+                if [ `expr length $j` -lt 6 ]
+                then
+                    echo "\t($j)\t\t`eval echo \$\`eval echo ${j}name\``"
+                else
+                    echo "\t($j)\t`eval echo \$\`eval echo ${j}name\``"
+                fi
+			done
+			echo "Do you wish to install any of these packages (default n): \c"
+			read ans
+			case $ans in
+			  y*|Y*) echo "\tInstall all packages (default y): \c"
+		  			read sel
+					case $sel in
+					 n*|N*)	Get_list $i y
+								;;
+						  ''|*)	echo "$i=\" `eval echo \\$$i` \"" >/opt/unix/.${i}
+						 		;;
+					esac
+					;;
+			esac
+		done
+		echo "\nPlease select from the following Hardware specific packages\n"
+		for j in `eval echo \\$HARDWARE`
+		do
+            if [ `expr length $j` -lt 6 ]
+            then
+                echo "\t($j)\t\t`eval echo \$\`eval echo ${j}name\``"
+            else
+                echo "\t($j)\t`eval echo \$\`eval echo ${j}name\``"
+            fi
+		done
+		echo "Do you wish to install any of these packages (default n): \c"
+		read ans
+		if [ "$ans" = "y" -o "$ans" = "Y" ]
+		then
+			Get_list HARDWARE n
+		fi
+		if [ ! -f /opt/unix/.BASIC -a ! -f /opt/unix/.NETWORK -a ! -f /opt/unix/.DEVELOPMENT -a ! -f /opt/unix/.EXTENDED -a ! -f /opt/unix/.HARDWARE ] 
+		then
+			echo "\nThere are no package selections:"
+		else	
+		echo "\nCurrent Package Selections:"
+		NUMLINE=0
+		SUM=0
+		export NUMLINE SUM
+		for i in $PKG_GROUPS
+		do
+			[ -f /opt/unix/.$i ] && {
+				echo "$i:"
+				SUM=`while read foo list
+				do
+					NUMLINE=$SUM
+					NUMLINE=\`expr $NUMLINE + 1\`
+					for i in $list
+					do
+						case $i in
+							skip|\") continue;;
+						esac
+						NUMLINE=\`expr $NUMLINE + 1\`
+						if [ \`expr $NUMLINE % 18\` -eq 0 ]  
+						then
+							echo "Press Enter to continue display" > /dev/tty
+							read ans < /dev/tty
+							NUMLINE=0
+						fi
+						echo "\t\`eval echo \$\\\`eval echo ${i}name\\\`\`" > /dev/tty
+					done
+					echo $NUMLINE
+				done </opt/unix/.$i`
+			}
+		done
+		fi
+		echo "\nIs this Correct (default n): \c"
+		read ans
+		case $ans in 
+			y*|Y*)	break;;
+		esac
+		rm -f /opt/unix/.[A-Z]*
+	done
+}
+
+####
+get_pkgs () {
+	echo "\n\nThe question session is complete."
+	echo "The packages you have selected will now be installed.\n"
+	if [ $PKG_MEDIA = "Ntape1" ];then
+		MACH=`uname -p`
+		echo "Searching for Packages, this may take some time.  \c"
+		tapecntl -w
+		if [ $? -ne 0 ]
+		then
+			cp /etc/conf/bin/S.idbuild  /etc/conf/bin/idbuild >/dev/null 2>&1
+			cp /etc/conf/bin/S.idreboot /etc/conf/bin/idreboot >/dev/null 2>&1
+			rm -f /etc/conf/bin/S.id*
+			rm -f $PKG_DEFAULT
+			echo "\n\nUnable to rewind tape."
+			exit 1
+		fi
+		case $MACH in
+			386/AT)	tapecntl -p2;;
+			386/MB2)tapecntl -p6;; 
+			386/MB1)tapecntl -p6;; 
+		esac
+		echo
+		PKG_OPT="-O"
+		if (grep '^Ntape' /etc/device.tab >/dev/null 2>&1 )
+		then
+			:
+		else
+			echo "$NTAPE" >>/etc/device.tab
+		fi
+	else
+		PKG_OPT=""
+	fi
+	IDCMD=/etc/conf/bin
+	[ -f $IDCMD/S.idbuild ] || cp $IDCMD/idbuild $IDCMD/S.idbuild
+	>$IDCMD/idbuild
+	[ -f $IDCMD/S.idreboot ] || cp $IDCMD/idreboot $IDCMD/S.idreboot
+	>$IDCMD/idreboot
+	buildflg=0
+	for i in $PKG_GROUPS
+	do
+		if [ -f /opt/unix/.$i ];then
+			. /opt/unix/.$i
+			echo "\nInstalling from The $i Package Set\n"		
+			for x in  `eval echo \\$$i`
+			do
+				case $x in
+					skip) [ $PKG_MEDIA = "Ntape1" ] && tapecntl -p1
+						  continue
+						  ;;
+				esac
+
+				while [ 1 ]
+				do
+				[ $PKG_MEDIA  != Ntape1 ] && echo "\nPlease insert the <$x> diskette\n"
+				if [ -f $PKG_RESP/$x ];then
+					pkgadd $PKG_OPT -d $PKG_MEDIA \
+						-r$PKG_RESP/$x -a$PKG_DEFAULT $x
+					resp=$?
+				else
+					pkgadd $PKG_OPT -d $PKG_MEDIA -a$PKG_DEFAULT $x
+					resp=$?
+				fi
+				if [ "$resp" = 10 -o "$resp" = 20 ]
+				then
+					buildflg=1
+				fi
+				if [ $PKG_MEDIA = "Ntape1" ];then
+					break
+				fi
+				case $resp in
+					0|10|20) break ;; 
+					1|11|21) echo "You may have inserted the wrong floppy."
+							 echo "You may check this floppy or insert another\
+floppy and try again."
+							 echo "If you don't wish to try again, the package\
+will be skipped."
+							 echo "Do you wish to try again (y/n) [y] ? \c"
+							 read ans
+							 case $ans in
+								y*|Y*) continue;;
+								n*|N*) echo "The $x package will not be installed";break;;
+								*|'') continue;;
+							 esac
+							 ;;
+					99) echo "There is an error with this floppy"
+						 echo "You may check this floppy or insert another\
+floppy and try again."
+						 echo "If you don't wish to try again, the package\
+will be skipped."
+				    	echo "Do you wish to try again (y/n) [y] ? \c"
+					 	read ans
+						case $ans in
+							y*|Y*) continue;;
+							n*|N*) echo "The $x package will not be installed";break;;
+							*|'') continue;;
+					   esac
+					   ;;
+					*) break
+					   ;;
+				esac
+				done
+			done
+		else
+			echo "\nSkipping $i Package Set\n"		
+			for x in `eval echo \\$$i`
+			do
+				[ $PKG_MEDIA = "Ntape1" ] && tapecntl -p1
+			done
+		fi
+	done
+	if [ $PKG_MEDIA = "Ntape1" ];then 
+		tapecntl -w
+		echo "It is safe to remove the cartridge tape."
+	fi
+
+	echo "Installation of selected packages is complete."
+	echo "Do you wish to install any floppy based packages"
+	echo "before the system is rebuilt and rebooted (y/n) [n] ?\c" 
+	read ans
+	case $ans in
+		y*|Y*) /usr/sbin/pkgadd -d diskette1 ;;
+	esac
+
+	cp /etc/conf/bin/S.idbuild  /etc/conf/bin/idbuild >/dev/null 2>&1
+	cp /etc/conf/bin/S.idreboot /etc/conf/bin/idreboot >/dev/null 2>&1
+	rm -f /etc/conf/bin/S.id*
+	rm -f $PKG_DEFAULT
+}
+
+make_dummy() {
+	pkg=$1
+	base=/var/sadm/pkg
+	if [ ! -f /opt/unix/.list ];then
+		for i in  $PKG_GROUPS
+		do
+			[ -f /opt/unix/.$i ] && cat /opt/unix/.$i >>/opt/unix/.list
+		done
+	fi
+	if  grep $pkg  /opt/unix/.list >/dev/null 2>&1 ;then
+		[ -d $base/$pkg ] || {
+			mkdir -p $base/$pkg
+			echo "CATEGORY=dummy" >$base/$pkg/pkginfo
+			touch /tmp/${pkg}.dummy
+		}
+	fi
+}
+remove_dummy() {
+	base=/var/sadm/pkg
+	[ -f /tmp/*.dummy ] && {
+		for i in /tmp/*.dummy
+		do
+			pkg=`basename $i .dummy`
+			rm -rf $base/$pkg /tmp/$i
+		done
+	}
+}
+make_response () {
+
+	IDCMD=/etc/conf/bin
+	[ -f $IDCMD/S.idbuild ] || cp $IDCMD/idbuild $IDCMD/S.idbuild
+
+	[ -d $PKG_RESP ] || mkdir $PKG_RESP
+	cd $PKG_RESP_HOME
+	[ "$PKG_RESP" ] && rm -f $PKG_RESP/*
+#
+# make sure any pkgs which will be installed are present for the
+# request scripts, currently other pkgs depend on 
+# fmli,oam, and face being present at request script time
+#
+# PCI needs inet
+	make_dummy fmli
+	make_dummy oam
+	make_dummy face
+	make_dummy inet
+
+	for i in  $PKG_GROUPS
+	do
+		if [ -f /opt/unix/.$i ];then
+			. /opt/unix/.$i
+			for x in `eval echo \\$$i`
+			do
+				do_flush
+				case $x in
+					skip) continue;;
+				esac
+				if [ -f $PKG_RESP_HOME/$x/install/request ];then
+					clear
+					pkgask -d $PKG_RESP_HOME -a $PKG_DEFAULT -r $PKG_RESP/$x $x
+					if [ $? -eq 0 ];then
+						sleep 3
+					else
+						#pkgask prints error msg.
+						#remove pkg from the list to
+						#not to install it
+						cat /opt/unix/.$i |sed "s/$x/skip/" >/tmp/.foo
+						cp /tmp/.foo /opt/unix/.$i
+						echo "Type Return to continue"
+						read cont
+					fi
+				fi
+			done
+		fi
+	done
+	remove_dummy 
+	cp /etc/conf/bin/S.idbuild  /etc/conf/bin/idbuild
+}
+rm -f /opt/unix/.list
+make_default
+Get_sys_type
+make_response
+get_pkgs
+if [ "$buildflg" = 1 ]
+then
+	/etc/conf/bin/idbuild
+fi
+sync
+

@@ -1,0 +1,195 @@
+#!/sbin/sh
+#ident	"@(#)boot2	15.1	97/12/19"
+
+. /isl/ui_modules/common.rc
+[ "$direction" = "PREV" ] && ii_exit PREV
+
+function good_files
+{
+[ -n "$debug" ] && set -x
+	dcu=/etc/dcu.d/locale/$LANG
+	menu=/etc/inst/locale/$LANG/menus
+	ls >> /tmp/log/lang.2 2>&1 \
+		$dcu/txtstrings $dcu/help/locale_hcf.z $dcu/config \
+		$menu/help/locale_hcf.z $menu/*.txtstrings
+	return $?
+}
+
+function noop
+{
+:
+}
+
+function show_err
+{
+[ -n "$debug" ] && set -x
+	footer
+	wclose $CURWIN
+	display -w "$1" -bg $ERROR_BG -fg $ERROR_FG
+	set_hotkey 1 noop
+	set_hotkey 9 noop
+	set_hotkey 10 noop
+	msg "$retry_msg"
+	input_handler
+}
+
+
+function get_boot2
+{
+[ -n "$debug" ] && set -x
+	typeset first
+	if [ "$FLOP2_IMAGE" = "/dev/rdsk/f0t" ]
+	then
+		first=true
+	else
+		first=false
+	fi
+	while :
+	do
+		msg "$wait_msg"
+		$first && {
+			if ivar check skip_lang
+			then
+				FLOP2_PROMPT="$FLOP2_PROMPT_NO_LANG"
+			else
+				set_hotkey 9 "ii_exit PREV"
+			fi
+			display -w "$FLOP2_PROMPT"
+			set_hotkey 1 noop
+			set_hotkey 10 noop
+			input_handler
+			first=false
+		}
+		[ "$FLOP2_IMAGE" = "/cd-rom/.extras.d/fboot2" ] || {
+		  display "$busy_msg1"
+		  msg
+		  cpio -ic -I $FLOP2_IMAGE >/dev/null 2>/dev/null 
+		  if [ $? -ne 0 ]
+		  then
+			show_err "$label_err"
+			msg "$retry_msg"
+			continue
+		  fi		
+		  msg
+	
+		  {
+			read FLOP_LABEL 
+			read BOOT2_FILES
+			read LANG_FILES
+		  } < /tmp/flop.label	
+			
+		  if [ "$FLOP_LABEL" != "${REL_FULLNAME} Boot Floppy 2" ]
+		  then
+			show_err "$wrong_disk"
+			continue
+		  fi
+		}
+		print -u2 About to read Boot Floppy 2
+		disk_error=0
+		wclose $CURWIN
+
+		if [ ! -s /usr/bin/ls ]	
+		then
+			PATTERN=""
+		else
+			PATTERN="*locale/$LANG*"
+			BOOT2_FILES=$LANG_FILES
+		fi
+
+		display "$FLOP2_READ" -above 1 -below 3
+		DISPLAY_WIN=$CURWIN
+		gauge_start $BOOT2_FILES -above 6 -below 1 -title "$GAUGE_TITLE"
+		(
+		cpio -icduvDZ -I ${FLOP2_IMAGE%t} $PATTERN 2>/dev/null || {
+			echo "### Aiee penguin in boot2 ###"
+			continue
+		}
+		) |&
+		while read -p line
+		do
+			if [ "$line" = "### Aiee penguin in boot2 ###" ]
+			then
+				wclose $DISPLAY_WIN
+				show_err "$disk_err"
+				disk_error=1
+				break
+			fi
+			gauge_add
+		done
+		call sleep 2
+		(( disk_error == 1 )) && continue	
+	
+		msg
+		[ "$FLOP2_IMAGE" = "/cd-rom/.extras.d/fboot2" ] || {
+			footer
+			wclose $CURWIN
+		}
+		wclose $GAUGEWDW
+		break
+	done
+	
+	#
+	# start idmknodd only once.
+	[ -f /etc/conf/bin/idmknodd ] && {
+		/etc/conf/bin/idmknodd >> /tmp/idmknodd.err 2>&1
+		# give it a moment to process files before we
+		# spew more stuff to errlog
+		call sleep 2
+		rm /etc/conf/bin/idmknodd >> /tmp/idmknodd.err 2>&1
+	}
+}
+
+function exit_boot2 {
+	if ivar check DEBUG_ALL
+	then
+		for mod in `list_all_modules`
+		do
+			[[ $mod != *[!-A-Za-z0-9_]* ]] &&
+				ivar set debug_$mod true
+		done
+	fi
+	ii_exit $1
+}
+
+#
+# Main
+#
+#
+# Where to look for the second boot floppy.
+#
+
+INSTALL_FLOPPIES=`svar get INSTALL_FLOPPIES`
+[ "$INSTALL_FLOPPIES" = "1" ] && exit_boot2 NEXT
+
+if [ -z "$INSTALL_FLOPPIES" ]
+then
+	if [ -s /usr/bin/ls ]
+	then
+		svar set INSTALL_FLOPPIES 1
+		exit_boot2 NEXT
+	else
+		svar set INSTALL_FLOPPIES 2
+	fi
+else
+	if good_files
+	then
+		exit_boot2 NEXT
+	fi
+fi
+
+FLOP2_IMAGE=`ivar get boot2_location`
+[ -z "$FLOP2_IMAGE" ] && FLOP2_IMAGE=/dev/rdsk/f0t
+
+REL_FULLNAME=`ivar get REL_FULLNAME`
+
+
+#
+# Read it
+#
+get_boot2
+
+#
+# Done
+#
+exit_boot2 NEXT
+

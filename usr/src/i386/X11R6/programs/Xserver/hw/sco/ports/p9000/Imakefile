@@ -1,0 +1,119 @@
+/*
+ *	@(#)Imakefile	12.2	2/9/98	14:26:50
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ * Modification History
+ *
+ * S002, 24-Feb-94, staceyc
+ * 	various install stuff for the PCI Viper
+ * S001, 07-Jan-94, staceyc
+ * 	more new source
+ * S000, 06-Jan-94, staceyc
+ * 	cleanup, new files added, file names changed, etc.
+ */
+
+#include <Server.tmpl>
+
+SRCS =	p9000Cmap.c p9000Cursor.c p9000Data.c p9000GC.c \
+	p9000Image.c p9000Init.c p9000Screen.c p9000Win.c \
+	p9000RectOps.c p9000Font.c p9000pr.s p9000pro.s \
+	p9000Mono.c p9000OpMono.c p9000Clip.c p9000Tile.c \
+	p9000Stip.c p9000Bres.c
+
+OBJS =	p9000Cmap.o p9000Cursor.o p9000Data.o p9000GC.o \
+	p9000Image.o p9000Init.o p9000Screen.o p9000Win.o \
+	p9000RectOps.o p9000Font.o p9000pr.o p9000pro.o \
+	p9000Mono.o p9000OpMono.o p9000Clip.o p9000Tile.o \
+	p9000Stip.o p9000Bres.o
+
+       GRAFDIR=$(USRLIBDIR)/grafinfo
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -DVOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+    DDXLIBS = libp9000.a
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -o $*.o $*.s
+	(cd shared; $(LN) ../$*.o .)
+
+p9000OpMono.o: p9000OpMono.c
+	LibObjCompile(shared,-DOPAQUE -Kpic)
+	NormalLibObjCompile(-DOPAQUE)
+
+#ifndef SCP_PRODUCT
+includes:: p9000OpMono.c
+clean::
+	$(RM) p9000OpMono.c
+
+p9000OpMono.c: p9000Mono.c
+	RemoveFile($@)
+	$(LN) $? $@
+
+NormalLibraryTarget(p9000,$(OBJS))
+SharedXDriverTarget(p9000,6.0,$(OBJS),shared,..)
+#endif
+LintLibraryTarget(p9000,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRuleSCP(p9000,libp9000.a,p9000Init.c)
+
+#else
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+       DDXLIBS = libp9000.a
+
+
+
+NormalLibraryObjectRule()
+
+NormalLibraryTarget(p9000,$(OBJS))
+
+ObjectFromSpecialSource(p9000OpMono,p9000Mono,-DOPAQUE)
+DynamicObjectRule(p9000,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+InstallGrafFile(grafinfo/dec,viperpci.xgi,dec)
+InstallGrafFile(grafinfo/dec,viperpci.tmpl,dec)
+InstallGrafFile(grafinfo/diamond,viper2m.xgi,diamond)
+InstallGrafFile(grafinfo/diamond,viperpci.xgi,diamond)
+InstallGrafFile(grafinfo/diamond,viperpci.tmpl,diamond)
+InstallGrafFile(grafinfo/olivetti,p9000.xgi,olivetti)
+InstallGrafFile(grafinfo/tulip,tulip.xgi,tulip)
+InstallGrafFile(grafinfo/weitek,p90001m.xgi,weitek)
+InstallGrafFile(grafinfo/weitek,p90002m.xgi,weitek)
+InstallNamedNonExec(grafinfo/AOF/viperpci,viperpci,$(USRLIBDIR)/vidconf/AOF/ID/diamond)
+InstallNamedNonExec(grafinfo/diamond/viperpci.unq,viperpci,$(USRLIBDIR)/vidconf/AOF/UNIQUE/diamond)
+InstallNamedProg(grafinfo/dec/viperpci.sh,decviperpci,$(USRLIBDIR)/vidconf/scripts)
+InstallNamedProg(grafinfo/diamond/viperpci.sh,viperpci,$(USRLIBDIR)/vidconf/scripts)
+
+DependTargetSCP(p9000Init.c)

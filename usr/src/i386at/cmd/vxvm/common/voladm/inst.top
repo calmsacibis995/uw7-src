@@ -1,0 +1,152 @@
+#!/usr/bin/sh --
+# @(#)cmd.vxvm:common/voladm/inst.top.sh	1.2 3/3/97 03:23:15 - cmd.vxvm:common/voladm/inst.top.sh
+#ident	"@(#)cmd.vxvm:common/voladm/inst.top.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOL_SCRIPTS_LIB:-/usr/lib/vxvm/lib}/vxcommon
+
+bail_cleanup()
+{
+	if not [ -f $reconfigfile ]; then
+		rm -f $newfile $newlist $pnewfile $pnewlist
+		rm -f $capfile $caplist $pcapfile $pcaplist
+		rm -f $relfile $reltmpslcfile $relrestfile
+		rm -f $relsavefile $relvtocfile
+	fi
+	quit 101
+}
+
+bail()
+{
+	ewritemsg -M vxvmshm:120 \
+"An error has been encountered during installation.
+  The Volume Manager has not been installed."
+	voladm_continue
+	bail_cleanup
+}
+
+trap bail INT HUP QUIT TERM
+
+voladm_menu_push Install
+voladm_help_push yorn.help
+
+if not [ -f $mkdbfile ]; then
+	ewritemsg -M vxvmshm:382 \
+"The Volume Manager appears to be installed already.  You should
+  use vxdiskadm to add more disks to the system.  Installation with
+  vxinstall will attempt to reinstall the Volume Manager from the
+  beginning.  Depending upon how your system is currently configured,
+  a reinstallation may fail and could leave your system unusable."
+	voladm_help_push inst.inst.help
+	voladm_yorn -M vxvmshm:126 "Are you sure you want to reinstall" n ||
+		quit 0
+	voladm_yorn -M vxvmshm:122 "Are you absolutely sure" n ||
+		quit 0
+	touch $mkdbfile
+	voladm_help_pop
+fi
+
+if [ -f $reconfigfile ]; then
+	ewritemsg -M vxvmshm:465 \
+"There is already a pending installation configuration.  You can
+  choose to abort that configuration and define a new one."
+	voladm_help_push inst.pend.help
+	voladm_yorn -M vxvmshm:200 "Do you want to redo installation" n ||
+		quit 0
+	voladm_help_pop
+fi
+
+cp $SYSROOT/etc/vfstab $SYSROOT/etc/vfstab.prevm
+rm -f $reconfigfile
+sync
+rm -f $newfile $newlist $pnewfile $pnewlist
+rm -f $capfile $caplist $pcapfile $pcaplist
+rm -f $relfile $reltmpslcfile $relrestfile $relsavefile $relvtocfile
+
+egettxt "Generating list of attached controllers...." vxvmshm:237
+ 
+controllers_on_system > $RDIR/cntrls
+
+if [ ! -s $RDIR/cntrls ]
+then
+	egettxt "No controllers were found attached to your system!" vxvmshm:285
+	bail_cleanup
+fi
+
+/usr/bin/sort -u -o $RDIR/cntrls $RDIR/cntrls > /dev/null 2> /dev/null
+
+voladm_begin_screen -M vxvmshm:562 "Volume Manager Installation"
+ewritemsg -M vxvmshm:389 \
+"The Volume Manager names disks on your system using the controller
+  and disk number of the disk, substituting them into the following
+  pattern:
+
+  	c<controller>b<bus>t<target>d<disk>
+
+  Some examples would be:
+
+  	c0b0t0d0	- first controller, bus 0, first target, first disk
+  	c1b0t0d0	- second controller, bus 0, first target, first disk
+  	c1b0t1d0	- second controller, bus 0, second target, first disk
+
+  The Volume Manager has detected the following controllers on your system:"
+
+(echo ""
+ while read c info
+ do
+	echo "	$c: $info"
+ done < $RDIR/cntrls
+ echo "") | voladm_display
+voladm_continue
+
+voladm_begin_screen -M vxvmshm:562 "Volume Manager Installation"
+ewritemsg -M vxvmshm:592 \
+"You will now be asked if you wish to use Quick Installation or
+  Custom Installation.  Custom Installation allows you to select how
+  the Volume Manager will handle the installation of each disk
+  attached to your system.
+
+  Quick Installation examines each disk attached to your system and
+  attempts to create volumes to cover all disk partitions that might
+  be used for file systems or for other similar purposes.
+
+  If you do not wish to use some disks with the Volume Manager, or if
+  you wish to reinitialize some disks, use the Custom Installation
+  option Otherwise, we suggest that you use the Quick Installation
+  option.
+
+"
+voladm_continue
+
+voladm_help_push inst.top.help
+while true; do
+	voladm_menu <<-'!'
+	Volume Manager Installation Options
+	1 inst.quick	vxvmshm:316 Quick Installation
+	2 inst.custom	vxvmshm:154 Custom Installation
+
+	!
+	voladm_menu_call $VOLADM_BIN/$VOLADM_MENU_SELECT
+	ret=$?
+	[ $ret = 101 -o $ret = 100 ] && quit $ret
+	quit 0
+done
+voladm_help_pop

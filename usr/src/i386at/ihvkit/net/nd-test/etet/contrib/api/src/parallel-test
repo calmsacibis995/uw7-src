@@ -1,0 +1,27 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1");
+
+sub tp1 {
+	local($LOCK_DIR)="lockdir";
+	print "parallel_test: ic1 tp1\n";
+	&tet'infoline("parallel_test: ic1 tp1");
+#	&tet'result("UNRESOLVED");
+	$gotlock=mkdir($LOCK_DIR,0777);
+	if ($gotlock) {
+		print "parallel_test: got lock\n";
+		&tet'infoline("parallel_test: got lock");
+		while (-d $LOCK_DIR) {
+#			print "parallel_test: sleep\n";
+			sleep(1);
+#			stat("/");
+		}
+		&tet'result("PASS");
+	} else {
+		print "parallel_test: removing lock\n";
+		&tet'infoline("parallel_test: removing lock");
+		rmdir($LOCK_DIR);
+	}
+}
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

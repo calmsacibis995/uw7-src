@@ -1,0 +1,66 @@
+#!/sbin/sh
+
+
+#ident	"@(#)adm:common/cmd/.adm/dfspace	1.4.1.1"
+#ident	"$Header$"
+#
+# dfspace - d(isk) f(ree) space
+# Calculate the available disk space in all mounted filesystems
+# with the exception of pseudo file systems such as /proc, /dev/df
+# and /processorfs.
+# 
+# Alternately, report on filesystems/devices specified on cmd-line.
+# Filesystem may be 1K bytes/block, but, df uses 512 bytes/block.
+#
+
+# try not to pass invalid arguments to df 
+while getopts -- option
+do
+	case "$option"
+	in
+		\?)	echo "usage: dfspace [ filesys ] ..."
+			exit 1;;
+	esac
+done
+
+# get free and allocated space.
+LC_MESSAGES=C /sbin/df -t $* | /usr/bin/awk '
+BEGIN { FS=":"; free = -1; Blksize=512; Mbyte=1048576; CONST = Blksize / Mbyte }
+{
+  if (free == -1) {	# free is toggled every other line.
+	split($1,fsptr,"("); FSYS=fsptr[1]
+	if (NF == 3) {
+		split($3,freeptr," "); free=freeptr[1]+0
+	} else {
+		split($2,freeptr," "); free=freeptr[1]+0
+	}
+	if( free == 0 && substr(freeptr[1],1,1) != "0" ) {
+		free = -1; next
+	}
+	next
+  }
+  split($2,allocptr," "); alloc = allocptr[1]+0
+  if (alloc == 0) alloc = 1;			# avoid division by zero
+  TFREE= (free * CONST) - .005			# force rounding down.
+  TALLOC= (alloc * CONST) - .005		# force rounding down.
+  PCT=free * 100 / alloc
+  if (TFREE < 0) TFREE=0
+  if (TALLOC < 0) TALLOC=0
+
+  if (FSYS !~ /^\/proc/ && FSYS !~ /^\/dev\/fd/ && FSYS !~ /^\/system\/processor/) 
+	printf ("%s:  Disk space: %#7.2f MB of %#7.2f MB available (%#5.2f%%)\n", FSYS, TFREE, TALLOC, PCT)
+  Cumfree += free; Cumalloc += alloc;
+  free = -1	# reset flag/variable for next set of two lines
+}
+END {
+    if (Cumalloc > 0) {
+	CumPct=Cumfree * 100 / Cumalloc
+	if (Cumfree > 0)
+		Cumfree= (Cumfree * CONST) - .005	# force rounding down.
+	if (Cumalloc > 0)
+		Cumalloc= (Cumalloc * CONST) - .005	# force rounding down.
+	printf ("\nTotal Disk Space: %#7.2f MB of %#7.2f MB available (%#5.2f%%).\n", Cumfree, Cumalloc, CumPct)
+    }
+}'
+
+# end of disk space calculation.

@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+#      @(#)soundon	7.2     11/14/97     17:31:57
+#
+. /etc/oss.conf
+
+LOG=$OSSLIBDIR/soundon.log
+
+TTYDEV=/dev/console
+
+if (cat /dev/null > /dev/tty 2>/dev/null) > /dev/null 2>&1
+then # The process has a tty (not in /etc/rc)
+   TTYDEV=/dev/tty
+fi
+
+echo Starting OSS/UnixWare `date` > $LOG
+echo Kernel version `uname -a` >> $LOG
+cat $OSSLIBDIR/devices.cfg >> $LOG 2>&1
+echo "============" >> $LOG
+cat $OSSLIBDIR/pnpres.dat >> $LOG 2>/dev/null
+echo '=========' >> $LOG
+
+sync
+/sbin/modadmin -l PnP
+/sbin/modadmin -l oss
+$OSSLIBDIR/sndconf - $OSSLIBDIR < $OSSLIBDIR/devices.cfg > $TTYDEV 2>>$LOG
+
+echo '=========' >> $LOG
+cat /dev/sndstat >> $LOG 2>&1
+
+echo '=========' >> $LOG
+tail /usr/adm/log/osmlog >> $LOG

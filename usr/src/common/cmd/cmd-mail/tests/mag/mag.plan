@@ -1,0 +1,317 @@
+#ident "@(#)mag.plan	11.2"
+
+Test runs as root, wants to write to /etc/default/mail and /etc/sendmail.cf.
+
+A little on the architecure of these test cases.
+
+core is our basic feature testing set.
+
+Each of the following test case sets depend only on core and will
+cover the rest of the the branches for the source files in their domain.
+
+object and objedit must be run in series and will cover
+	all of object and objedit (minus the -h branch for edittors).
+main is a little special in it will only cover
+	the parts of main that are not covered elsewhere.
+utils is similar in that it only covers branches missed elsewhere.
+bad covers the entire bad.tcl file, no dependencies.
+flags covers the entire flags.tcl file, no dependencies.
+chadd covers chadd.tcl and is dependent on core to achieve complete coverage.
+
+
+The semi-automated test cases are as follows:
+
+core_test1:	For each folder:
+			Expand the folder.
+			Select Settings->Defaults.
+			Close the folder.
+			Do the channels inside the channel folder first:
+				Expand, default, close.
+			Then default the channels folder and close it.
+			Answer yes to each defaults question.
+		Host->Exit.
+		Save changes.
+
+core_test2:	Add a new map "/tmp/aliases",
+			use the add toolbar button.
+			Use the "move dn" button to move /tmp/aliases down.
+			Hit the button twice. the second time no moves occur.
+		Add two new altnames "myothername" and "myothername2"
+			Use the Edit->Add menu.
+			Use "move up" button to move myothername up.
+			Hit the button twice, the second time no moves occur.
+		Add a new channel named newchan,
+			program is /tmp/deliver
+			table type is file.
+			Answer yes to continue, /tmp/deliver not exist.
+		Host->Exit
+		Save changes.
+
+core_test3:	Delete map "/tmp/aliases" using delete toolbar button.
+		Delete both altnames with delete button.
+		Delete channel newchan using Edit->Delete.
+		Host->Exit.
+		Cancel.
+		Host->Exit again.
+		Save changes.
+
+core_test4:	Set hostname to test.pdev.sco.com.
+			Use Edit->Modify button for this one.
+		Set from domain to pdev.sco.com
+			Use modify button for this one.
+		Enable the domain table.
+			Use dbl click or enter for all the rest.
+		set folder location to user's home directory.
+		set folder format to MMDF.
+		set folder sync to true.
+		set extended checks to true.
+		set incore to true.
+		set threshold to 100
+		set lock timeout to 5
+		set file locking to true.
+		set umask to 0777.
+		Close and reopen the folder configuration folder, verify.
+		add a new channel called "newchan",
+			program is /etc/mail/slocal, table type is unknown user.
+		change newchans's name to "channel1" (folder should redraw).
+		for channel1:
+			Use enter on at least one text field to jump
+				to the ok button.
+			change program to /tmp/deliver (answer yes).
+			change arguments to "deliver -- $h $u"
+			change program directory to /tmp
+			change table type to file (file name should default).
+			change the table file to /etc/mail/table/channel1 (ok).
+				If it is already this value call up the modify
+				dialog box and just hit ok twice.
+			change channel flags to D (don't use the browse button).
+			change eol to \r\n.
+			change maxmsg to None (use none button).
+			change maxline to 1024.
+			change nice to -2.
+				Hit cancel in the edit dialog box and then
+				restart the dialog and then change nice to -2.
+			change user to root:root.
+			change rruleset to ap976_re/ap976_rh.
+			change sruleset to ap976_re/ap976_rh.
+		Close and reopen channel1, verify.
+		Host->Exit
+		Save changes.
+
+object_test1:	Select the INBOX location property and change it to Custom.
+			Alter the spool directory to contain /usr/spool/mail.
+			Click ok on the dialog box.
+		Highlight the "folder configuration" container and hit the
+			default button, answer no to the dialog box.
+			verify that Custom is still set.
+		Highlight INBOX location and select Settings->Defaults,
+			INBOX should change back to System Spool Directory.
+		Next create a new channel named "channel1", /tmp/deliver, file.
+		Open the Badhost channel container as well.
+		Both the channel1 and Badhost containers should be open,
+			highlight the channel1 container and click the
+			move up button once to make it a middle channel.
+		Put this channel back at the bottom with move down.
+		Change the channel table type from file to unknown user.
+		Now the move up the button should be stippled.
+		Press the move up button anyway, nothing should happen.
+		Close both Badhost and channel1 containers.
+		Highlight the Badhost channel, click move down,
+			nothing should happen.
+		Open the channel1 container, highlight it
+			and hit the delete button.
+		Add an alias map "nis:mail.aliases@domain", vfy that the label
+			declares it to be a Map and not an aliases file.
+		Close and reopen the alias map container, vfy Map is still
+			displayed as the label for the new map.
+		Highlight the new alias map and hit the default button.
+			Nothing should change.
+		Add an alternate name "myothername", highlight it and hit
+			the default button.  Nothing should change.
+		Add a new channel called "UUCP", /usr/bin/uux, UUCP.
+		Edit the SMTP channel's rulesets to be <None> for envelopes
+			and <Same as Envelope> for the headers.
+			Change the header ones first to be <Same as Envelope>
+			Use the pull down lists, don't type in <None...>.
+		Close and expand the SMTP channel, vfy rulesets are <None>.
+		Change the UUCP channel user to be root
+		Close and expand the UUCP channel user is correct.
+		Change the UUCP channel group to root.
+		Close an expand the UUCP channel, root:root is still there.
+		Change the UUCP channel user to bin.
+		Host->Exit
+		Don't Save Changes.
+
+objedit_test1:	Rename the SMTP channel to "Local"
+			should fail with an error box (conflict).
+		Rename the SMTP channel to "(error)"
+			should fail with an error box (invalid).
+		Try to change the channel file name on the SMTP channel
+			should not allow the filename to be changed.
+		Try to change the group of the SMTP channel, should fail.
+		Set host name (basic config) to "" (null string), should fail.
+		Set host name to " " (a blank), should fail.
+		Set forward= parameter for local channel to test.
+		Set forward= parameter for local channel to "" (null string),
+			should convert to <None>.
+		set forward= parameter for local channel to "x x", should fail.
+		set nice parameter for local to "" (null string), should fail.
+		set nice parameter for local to abc (bad integer), should fail.
+		set nice parameter for local to -21 (out of range), should fail.
+		set max line size for local to "" (null), should change to None.
+		set max line size for local to "-1", should be out of range.
+		set max line size for local to abc, should be invalid.
+		set folder format type to "" (null), expect error message.
+		set file umask to "" (null), expect error message.
+		set file local umask to abc, expect error message.
+		set file local umask to 777, should convert to 0777.
+		set file local umask to 07777, expect err message.
+		create a new alias map called "" (null), expect error.
+		change local eol to "" (null), expect error.
+		change local eol to "x x", expect error.
+		change local program run directory to "x x", expect error.
+		change local program run directory to /notthere, expect warning.
+		change local program to "" (null), expect error.
+		change local program to "x x", expect error.
+		change SMTP channel table to file type.
+		change SMTP channel table file to "" (null), expect error.
+		change SMTP channel table file to "x x", expect error.
+		change SMTP channel table type to "abc", expect error.
+		change SMTP user to abc, expect error.
+		change SMTP user to be adm (prep for next test).
+		change SMTP group to abc, expect error.
+		change SMTP group to be adm (prep for next test).
+		change SMTP user to be <default>, group should change too.
+		change Local channel table type to be "unknown user",
+			message saying channel is not last should appear.
+		make sure SMTP and Local channel containers are open,
+			change the Local channel name to local1.
+			Verify screen redraws correctly.
+		Host->Exit
+		Don't Save Changes.
+
+objedit_test2:	Edit the domain table, just start and stop the edittor.
+		Change the host name to something in the select list.
+		Add a map "nis:mail.aliases@domain".
+		Select the nis map and try to edit it, expect error.
+		Select the alias file map and start and stop the edittor.
+		Change the SMTP channel table type to file.
+		Select the file, bring up the dialog box and edit the file.
+			Add a hostname to the file, save the file and exit.
+		Now call the channel table edittor again, add another entry.
+			The previous entry should be visible.
+		Add a mapname abc:/tmp/file, try to edit it, expect error.
+		Save and exit.
+
+objedit_test3:	Start the domain table editor and exit,
+			a simulated exec error should occur.
+		Host->Exit, no save.
+
+objedit_test4:	Start the domain table editor, change something, save and exit.
+			a simulated copy back error should occur.
+
+
+objedit_test5:	Start the domain table editor, change something, save and exit.
+			a simulated copy back error should occur.
+
+main_test1:	/etc/sendmail.cf is not present,
+			answer no to restore factory defaults.
+main_test2:	/etc/sendmail.cf is not present, answer yes to
+			restore factory defaults.  This will fail (no factory).
+main_test3:	/etc/sendmail.cf is not present,
+			answer yes to restore, this will succeed.
+		Host->Exit, save changes.
+main_test4:	/etc/sendmail has been hand editted, answer no to continue.
+main_test5:	/etc/sendmail cannot be parsed, answer no to restore.
+main_test6:	/etc/sendmail (tmp file) cannot be opened.
+main_test7:	/etc/sendmail cannot be parsed, answer yes to restore,
+			this operation will fail.
+main_test7_1:	/etc/sendmail cannot be parsed, answer yes to restore,
+			this operation will succeed.
+		Host->Exit, save changes.
+main_test8:	/etc/default/mail is not present.
+			answer no to restore factory defaults.
+main_test9:	/etc/default/mail is not present answer yes to
+			restore factory defaults.  This will fail (no factory).
+main_test10:	/etc/default/mail is not present,
+			answer yes to restore, this will succeed.
+		Host->Exit, save changes.
+main_test11:	/etc/default/mail cannot be parsed, answer no to restore.
+		Host->Exit, save changes.
+main_test12:	/etc/default/mail (tmp file) cannot be opened.
+main_test13:	/etc/default/mail cannot be parsed, answer yes to restore,
+			this operation will fail.
+main_test14:	/etc/default/mail cannot be parsed, answer yes to restore,
+			this operation will succeed.
+		Host->Exit, save changes.
+
+utils_test1:	Change host name to unknown.
+		Host-Exit, do NOT save changes.
+utils_test2:	change SMTP table type to non-local users.
+		change forwarding host to "gateway".
+		close and reopen the SMTP channel, verify data.
+		delete the badhost channel.
+		Host->Exit, save changes.
+utils_test3:	Host->Exit, UUCP makemap will fail.
+utils_test4:	Host->Exit, UUCP map file is new, answer yes to the prompt,
+			The data is verified underneath.
+utils_test5:	Host->Exit, UUCP map files are different, answer yes,
+			it will be copied back and verified.
+utils_test6:	Host->Exit, UUCP map file is different, answer yes
+			the operation will fail.
+
+bad_test1:	Settings->baduser, forward all mail to gateway.
+		close baduser channel.
+		Settings->badhost, forward all mail to gateway.
+		close badhost channel.
+		Host-Exit, save.
+bad_test2:	Settings->badhost, press none button, then ok,
+			badhost channel remains.
+		Settings->baduser, press none button, then ok,
+			baduser channel is deleted.
+		Host-Exit, save.
+
+flags_test1:	Edit the SMTP channel's delivery flags.
+		Add the flags 'z/' to the end of the text widget with the flags.
+		Then hit the select button.
+		In the bottom list highlight the 'D' flag.
+		Press the move up button twice.  The first time it
+			should move up.
+		Press the move down button twice.  The first time the 'D'
+			should move back.
+		Now highlight the '/' flag in the second list.
+		Move it up and back down.
+		Now highlight the 'z' flag in the second list.
+		Press move up once, watch it move, and press move down once.
+		Hit ok.
+		Hit ok again.
+		Verify that the flags are the same but for the new '/' and 'z'.
+		Go back into the flags edit box, hit select then,
+			hit the window manager close button
+				on the two list window.
+		Hit cancel to exit flags dialog box.
+		Host->Exit, save changes.
+
+chadd_test1:	Add a new channel, use all defaults:
+			New, /etc/mail/New, file.
+			Answer no to the warning dialog.
+			Hit ok again.
+			This time answer yes to the warning dialog.
+		Call up new channel dialog, hit cancel.
+		Add a new channel, use all defaults, get name conflict warning.
+		Change the table type of the new channel to abc,
+			should get an invalid table type warning.
+		Change the program to /etc/mail/slocal (from the pull down list)
+		Change the channel name to error.
+			hit ok, should get name conflict warning again.
+		Change the channel name to (error), should get invalid name msg.
+		Call up the new channel dialog and cancel out of it.
+		Now add two channels named (b1 and b2)
+			that have table type unknown user.
+			The second one should get an error that only one baduser
+			channel is allowed.
+			Cancel out of the second baduser channel add dialog.
+		Now add a new channel called channel1, use defaults.
+			This channel should appear in front of the existing b1
+			channel.
+		Host->Exit, do not save changes.

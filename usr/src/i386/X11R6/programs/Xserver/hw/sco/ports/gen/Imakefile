@@ -1,0 +1,84 @@
+XCOMM
+XCOMM @(#)Imakefile	6.4	4/4/96	15:10:23
+XCOMM
+XCOMM Copyright (C) 1991-1996 The Santa Cruz Operation, Inc.
+XCOMM
+XCOMM The information in this file is provided for the exclusive use of the
+XCOMM licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+XCOMM to use, modify, and incorporate this code into other products for 
+XCOMM purposes authorized by the license agreement provided they include
+XCOMM this notice and the associated copyright notice with any such 
+XCOMM product.  The information in this file is provided "AS IS" without 
+XCOMM warranty.
+XCOMM
+XCOMM
+
+#include <Server.tmpl>
+
+SRCS =	genRectOps.c genVisual.c genCmap.c genBres.c genFillRct.c \
+	genFillSp.c genStubs.c genFont.c genGlyph.c genMono.c
+
+OBJS =	genRectOps.o genVisual.o genCmap.o genBres.o genFillRct.o \
+	genFillSp.o genStubs.o genFont.o genGlyph.o genMono.o
+
+HEADERS = \
+        genDefs.h genProcs.h
+
+STD_DEFINES = ServerDefines
+XCOMM   INCLUDES = -I. -I$(SERVERSRC)/ddx -I$(SERVERSRC)/ddx/mi \
+XCOMM	-I$(SERVERSRC)/include -I$(INCLUDESRC) -I$(FONTSRC)/include
+   INCLUDES = -I. -I$(SERVERSRC)/include -I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(INCLUDESRC) -I$(SERVERSRC)/mi \
+	-I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(gen,$(OBJS))
+ProfiledLibraryTarget(gen,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(gen,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(gen,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o: 
+	LibObjCompile(shared,-Kpic)
+	NormalLibObjCompile($(NOOP_))
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(gen,$(OBJS))
+SharedXDriverTarget(gen,6.0,$(OBJS),shared,..)
+LintLibraryTarget(gen,$(SRCS))
+NamesFromLibrary(gen,gen)
+NormalLintTarget($(SRCS))
+DynamicObjectRule(gen,$(DDXLIBS) $(DDXLIBS))
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+DependTarget()
+
+
+BuildServerIncludes($(HEADERS),include/gen,../..)
+InstallHDKMultiple($(SRCS) $(HEADERS) Imakefile,$(HDKPORTSDIR)/gen)
+
+
+

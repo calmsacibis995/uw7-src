@@ -1,0 +1,225 @@
+/* 
+ *  @(#) m400-60.xgi 11.1 97/10/22
+ *
+ *  Copyright (C) 1992 Olivetti  Spa.
+ *
+ */
+
+/* ************************************************************************** *
+ *  olivetti/m400-60.XGI GrafInfo File for Olivetti m400-60 Computer          *
+ *                                                                            *
+ *  OLIVETTI.m400-60.VGA.640x480-16-60     VGA       640X480  16-colors  60Hz *
+ *  OLIVETTI.m400-60.ULTRA.1024-768-256-60 ULTRA VGA 1024X768 256-colors 60Hz *
+ *  OLIVETTI.m400-60.ULTRA.1024-768-256-72 ULTRA VGA 1024X768 256-colors 72Hz *
+ *                                                                            *
+ *                         CHIP SET  8514A                                    *
+ * ************************************************************************** */
+
+VENDOR OLIVETTI      "OLIVETTI"
+ MODEL  m400-60       "m400-60    VGA/ATI_ULTRA"
+  CLASS  VGA           "VGA"
+   MODE   640x480-16-60  "640x480   16 colors 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(VGA);
+
+      DATA
+         {
+         XDRIVER     = "mw";
+         VISUAL      = "PseudoColor";
+         DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+         out(0x3C2,0xE3);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEA;  r17 = 0x8C;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute flip/flop */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ************************************************************************  */
+
+VENDOR OLIVETTI      "OLIVETTI"
+ MODEL  m400-60       "m400-60    VGA/ATI_ULTRA"
+  CLASS  8514A         "8514A"
+   MODE   1024x768-256-60   "1024x768 256 colors 60Hz"
+
+	PORT(EFF);
+
+	DATA
+	{
+		XDRIVER     = "eff";
+		VISUAL      = "PseudoColor";
+		PIXWIDTH    = 1024;
+		PIXHEIGHT   = 768;
+		DEPTH       = 8;
+		/* OFFSCR values define the whereabouts of off-screen memory in
+		 * terms of starting X, Y coords on the card and the Width and
+		 * Height of memory from that point.  The eff driver requires
+		 * at least approx 160 scan lines of off-screen memory.
+		 */
+		OFFSCRX   = 0;              /* x coord for off-screen memory */
+		OFFSCRY   = 768;                                  /* y coord */
+		OFFSCRW   = 1024;            /* width, keep this >= PIXWIDTH */
+		OFFSCRH   = 256;              /* height of off-screen memory */
+	}
+
+	PROCEDURE SetGraphics
+	{
+		outw(0x5aee, 0x0001);                /* shadow CRT registers */
+		outw(0x46ee, 0x0000);                       /* unlock values */
+		outw(0x5aee, 0x0002);                /* shadow CRT registers */
+		outw(0x46ee, 0x0000);                       /* unlock values */
+		outw(0x5aee, 0x0000);                /* shadow CRT registers */
+		outw(0x4ae8, 0x0006);                 /* disable passthrough */
+
+		outw(0x12e8, 0x063b);                             /* v_total */
+		outw(0x1ae8, 0x0600);                         /* v_sync_strt */
+		outw(0x16e8, 0x05ff);                              /* v_disp */
+		out(0x1ee8, 0x04);                             /* v_sync_wid */
+		outw(0x02e8, 0x00a7);                             /* h_total */
+		outw(0x0ae8, 0x0085);                         /* h_sync_strt */
+		outw(0x06e8, 0x007f);                              /* h_disp */
+		outw(0x0ee8, 0x0008);                          /* h_sync_wid */
+
+		outw(0x22e8, 0x0023);
+		outw(0x4aee, 0x083d);                    /* dot clock 65 Mhz */
+         }
+
+	PROCEDURE SetText
+	{
+		outw(0x4ae8, 0);                             /* reset miscio */
+	}
+
+
+/* ************************************************************************  */
+
+VENDOR OLIVETTI      "OLIVETTI"
+ MODEL  m400-60       "m400-60    VGA/ATI_ULTRA"
+  CLASS  8514A         "8514A"
+   MODE   1024x768-256-72   "1024x768 256 colors 72Hz"
+
+	PORT(EFF);
+
+	DATA
+	{
+		XDRIVER     = "eff";
+		VISUAL      = "PseudoColor";
+		PIXWIDTH    = 1024;
+		PIXHEIGHT   = 768;
+		DEPTH       = 8;
+		/* OFFSCR values define the whereabouts of off-screen memory in
+		 * terms of starting X, Y coords on the card and the Width and
+		 * Height of memory from that point.  The eff driver requires
+		 * at least approx 160 scan lines of off-screen memory.
+		 */
+		OFFSCRX   = 0;              /* x coord for off-screen memory */
+		OFFSCRY   = 768;                                  /* y coord */
+		OFFSCRW   = 1024;            /* width, keep this >= PIXWIDTH */
+		OFFSCRH   = 256;              /* height of off-screen memory */
+	}
+
+	PROCEDURE SetGraphics
+	{
+		outw(0x5aee, 0x0001);                /* shadow CRT registers */
+		outw(0x46ee, 0x0000);                       /* unlock values */
+		outw(0x5aee, 0x0002);                /* shadow CRT registers */
+		outw(0x46ee, 0x0000);                       /* unlock values */
+		outw(0x5aee, 0x0000);                /* shadow CRT registers */
+		outw(0x4ae8, 0x0006);                 /* disable passthrough */
+
+		outw(0x12e8, 0x0649);                             /* v_total */
+		outw(0x1ae8, 0x0602);                         /* v_sync_strt */
+		outw(0x16e8, 0x05ff);                              /* v_disp */
+		out(0x1ee8, 0x26);                             /* v_sync_wid */
+		outw(0x02e8, 0x00a1);                             /* h_total */
+		outw(0x0ae8, 0x0082);                         /* h_sync_strt */
+		outw(0x06e8, 0x007f);                              /* h_disp */
+		outw(0x0ee8, 0x0032);                          /* h_sync_wid */
+
+		outw(0x22e8, 0x0023);
+		outw(0x4aee, 0x0839);                    /* dot clock 75 Mhz */
+         }
+
+	PROCEDURE SetText
+	{
+		outw(0x4ae8, 0);                             /* reset miscio */
+	}
+
+/* End of File - m400-60.XGI */
+

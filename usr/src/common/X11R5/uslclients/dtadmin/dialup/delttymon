@@ -1,0 +1,107 @@
+#ident	"@(#)dtadmin:dialup/delttymon	1.2"
+
+
+echo "****************************************************************"
+echo
+echo "This script is obsolete, and may not be present in future releases!"
+echo
+echo "You can delete a ttymon port monitor using the Dialup_Setup."
+echo "Invoke the graphical Dialup_Setup."
+echo "Select Actions -> Setup Devices -> Select the Device to change"
+echo "Select Device ->  Properties ->"
+echo "If you select Bi-Directional or Incoming Only for the port,"
+echo "you will put a ttymon monitor on the selected port. If you select"
+echo "Outgoing Only you will delete any ttymon on that port."
+echo "Select OK to save your changes."
+echo
+echo "****************************************************************"
+trap  '' 2 3
+trap 'echo \\n$0 Done.\\007\\n' 0 15
+
+if [ ! "`id | grep root`" ]
+then
+	echo "You must be root to execute this command"
+	exit 1
+fi
+
+ENTRY=0 
+for MON in  `sacadm -L 2>/dev/null | grep ttymon | cut -d":" -f1`
+do
+	ENTRY=`expr $ENTRY + 1`
+	eval TTYMON$ENTRY=\$MON 
+done
+
+if [ "$ENTRY" -eq 0 ] # there are no port monitor(s) configured
+then
+	echo "There are no ttymon services to delete."
+	exit 0
+fi
+
+# let's see what device(s) exist in the  _pmtab file(s)
+
+I=1 
+J=0
+while [ $I -le $ENTRY ]
+do
+	eval MON=\$TTYMON$I
+	for ITEM in `cut -d':' -f1,7 /etc/saf/$MON/_pmtab| grep -v '#'`
+	do
+		J=`expr $J + 1`
+		eval DEVICELIST$J=\$MON:\$ITEM
+	done
+	I=`expr $I + 1`
+done
+# DEVICELIST format is ttymon#:service_tag#:device name
+
+I=1
+while [ $I -le $J ]
+do
+	set `eval echo \\$DEVICELIST$I| sed -n -e 's/:/ /gp'` 
+
+	NUM=`echo $3 | sed -n -e 's/\/..*\([0-9][0-9]\).*/\1/p'`
+
+	if [ "$NUM" -eq 0 ]
+	then
+		PORT=COM1
+
+	elif [ "$NUM" -eq 1 ]
+	then
+		PORT=COM2
+	else
+		PORT=tty$NUM
+	fi
+
+	while
+	echo \\nDo you want to remove the ttymon service
+	echo on $PORT \( y or n \)? \\c
+	read ANS
+	do
+		case $ANS in
+			Y* | y*  )	pmadm -r -p $1 -s $2
+					if [ $? -eq 0 ]
+					then
+						echo \\nttymon on $PORT removed.
+					fi
+					break;;
+			     N* | n* )	break;;
+			           * )	continue;;
+		esac
+	done	
+I=`expr $I + 1`
+done
+
+# might as well see if the ttymon has anything left to do
+# if the _pmtab is empty, we'll get rid of the ttymon process
+
+I=1
+while [ $I -le $J ]
+do
+	set `eval echo \\$DEVICELIST$I| sed -n -e 's/:/ /gp'` 
+	
+	if [ ! "`grep login /etc/saf/$1/_pmtab`" ] #_pmtab empty
+	then
+		sacadm -r -p $1 > /dev/null 2>&1
+	fi
+I=`expr $I + 1`
+done
+

@@ -1,0 +1,63 @@
+#!/sbin/sh
+#ident	"@(#)dtadmin:floppy/dtindex	1.7"
+#copyright	"%c%"
+
+PID=$$
+LIST=""
+VERBOSE=""
+BADFILE=""
+while getopts f:p:v opt
+do
+	case $opt in
+	f)	LIST=$OPTARG
+		;;
+	p)	PID=$OPTARG
+		;;
+	v)	VERBOSE=yes
+		;;
+	esac
+done
+if [ "$LIST" = "" ]
+then
+	LIST=/tmp/FFILES.$PID
+fi
+if [ ! -f $LIST ]
+then
+	echo "usage: dtindex -f [find output file]"
+	exit 1
+fi
+set `du -a $LIST`
+echo "$1\t/tmp/flp_index.$PID" > /tmp/flp_index.$PID
+echo "2\t/tmp/priv_index.$PID" >> /tmp/flp_index.$PID
+cat $LIST | while read fname
+do
+	if [ -r "$fname" -o -h "$fname" ]
+	then
+		if [ -d "$fname" ]
+		then
+			LINE="D\t$fname"
+		elif [ -f "$fname" -o -h "$fname" ]
+		then
+			LINE=`du -a "$fname"`
+		else 
+			BADFILE=yes
+		fi
+		if [ "$BADFILE" != "yes" ]
+		then
+			if [ "$VERBOSE" = "yes" ]
+			then
+				echo "$LINE"
+			fi
+			echo "$LINE" >> /tmp/flp_index.$PID
+		fi
+	else
+		echo dtindex: unreadable file: $fname >&2
+	fi
+	BADFILE=""
+done
+BLOCKS=`cut -f1 < /tmp/flp_index.$PID | sed -e '1,$s/D/0/' -e '2,$s/$/+/' -e '$s/$/p/'| dc`
+if [ $BLOCKS -eq 0 ]
+then	BLOCKS=1
+fi
+echo BLOCKS=$BLOCKS >> /tmp/flp_index.$PID
+echo BLOCKS=$BLOCKS

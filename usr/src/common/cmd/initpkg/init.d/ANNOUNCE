@@ -1,0 +1,32 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/ANNOUNCE	1.1.4.3"
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	# if catalogs aren't under /usr/lib/locale, check /etc/inst/locale
+	if [ -d /usr/lib/locale/$LANG ] 
+	then LC_MESSAGES=$LANG
+	else LC_MESSAGES=/etc/inst/locale/$LANG
+	fi
+	export LANG LC_MESSAGES
+fi
+LABEL="UX:$0"
+
+# fonts are downloaded at some point during system startup, so test for the
+# font marker file to determine which encoding of the catalog to use.
+setcat()
+{
+if [ -f /etc/.font.8859-1 ]
+then echo uxrc
+else echo uxrc_437
+fi
+}
+
+pfmt -l $LABEL -s info -g ${CAT:=`setcat`}:9 "System services are now being stopped.\n"

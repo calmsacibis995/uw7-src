@@ -1,0 +1,122 @@
+#ident	"@(#)rc.inet	1.2"
+#ident	"$Header$"
+
+exit 0
+
+# Do not configure inet executables from this file!
+#
+# the processing that had been done in this file in the past has been
+# replaced by the contents of the /etc/inet/config file.
+# It is interpretted at boot time to run commands.
+
+#
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#
+
+# Inet startup script run from /etc/init.d/inetinit
+# FYI /etc/init.d/inetinit does not direct stdout or stderr to
+# $LOG since the deamons output would also be redirected.
+# This script will append generic messages to $LOG if there is
+# a non-zero return from a deamon.
+[ X$LOG = X ] && LOG=/tmp/inet.start export LOG
+exitcode=0
+
+#script to send a message to the LOG file and set exitcode.
+#usage: Warning $?-from-previous-cmd cmd-name [message]
+Warning() {
+	RetTmp=$1
+	if [ $RetTmp -ne 0 ]
+	then	CmdTmp="/etc/inet/rc.inet network warning: $2"
+		shift 2
+		exitcode=1
+		echo >>$LOG "$CmdTmp returned $RetTmp $*"
+	fi
+}
+
+#
+# commands of the form "/usr/sbin/ifconfig emd0 $IP_addr -trailers up"
+# are now constructed automagically from the contents of the file
+# /etc/confnet.d/inet/interface.  The interface file is constructed
+# by /etc/confnet.d/inet/configure automatically at device install
+# time and can be run interactively with a '-i' option. The interface
+# file may also edited manually.  NOTE: editing the file
+# /etc/inet/strcf is now strongly discouraged.
+#
+
+# Hosts acting as gateways should run
+# /etc/confnet.d/configure -i #generic interactive
+# or
+# /etc/confnet.d/inet/configure -i #inet specific
+#	This will manipulate /etc/confnet.d/inet/interface,
+#	where it stores configured devices, interface names,
+#	slink and ifconfig options.
+# edit /etc/inet/rc.inet (this file):
+#		un-comment the line that starts in.routed, and remove -q
+# To manually bring up your system as a gateway, you must:
+#	set IPFORWARDING to 1 in /etc/conf/pack.d/ip/space.c
+#		and build a new /unix with /etc/conf/bin/idbuild
+#	edit /etc/inet/networks: add network names and number
+#	edit /etc/inet/hosts: create unique host name for each interface
+#
+# See 'Expanding Your Network' section in the Network Administration
+# documentation for more information.
+#
+
+#
+# Add lines here to set up routes to gateways, start other daemons, etc.
+#
+
+#
+# Run the ppp daemon if /etc/inet/ppphosts is present
+#
+if [ -f /etc/inet/ppphosts -a -x /usr/sbin/in.pppd ]
+then
+	/usr/sbin/in.pppd
+	Warning $? /usr/sbin/in.pppd
+fi
+
+# This runs in.gated if its configuration file (/etc/inet/gated.conf) is
+# present.  Otherwise, in.routed is run.
+#
+if [ -f /etc/inet/gated.conf -a -x /usr/sbin/in.gated ]
+then
+	/usr/sbin/in.gated
+	Warning $? /usr/sbin/in.gated
+else
+	#
+	# if running, kill the route demon
+	#
+        if [ "$_PREV_RL" != "S" -a "$_PREV_RL" != "1" ]
+        then
+		kill `ps -ef|grep in[.]routed|awk '{print $2}'` 2>/dev/null
+	fi
+	/usr/sbin/in.routed -q
+	Warning $? in.routed /usr/sbin/in.routed -q
+fi
+#
+# /usr/sbin/route add default your_nearest_gateway hops_to_gateway
+# Warning $? /usr/sbin/route
+
+#
+#  Run the DNS server if a configuration file is present
+#
+if [ -f /etc/inet/named.boot -a -x /usr/sbin/in.named ]
+then
+	/usr/sbin/in.named
+	Warning $? /usr/sbin/in.named
+fi
+
+#
+#  Run the NTP server if a configuration file is present
+#
+if [ -f /etc/inet/ntp.conf -a -x /usr/sbin/in.xntpd ]
+then
+	/usr/sbin/in.xntpd
+	Warning $? /usr/sbin/in.xntpd
+fi
+
+#
+# return status to /etc/init.d/inetinit
+exit $exitcode

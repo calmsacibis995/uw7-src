@@ -1,0 +1,102 @@
+/**/#pragma ident	"@(#)r5extensions:lib/Imakefile	1.9"
+
+#define DoNormalLib NormalLibXext
+#define DoSharedLib SharedLibXext
+#define DoDebugLib DebugLibXext
+#define DoProfileLib ProfileLibXext
+#include <Library.tmpl>
+
+#ifdef RsArchitecture
+REQUIREDLIBS = $(XLIBSRC)/libX11.a
+#endif
+
+#if BuildXInputLib || BuildPexClients || BuildXTrapExt
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+#if BuildXInputLib
+   XINPUTDIRS = xinput
+#endif
+#if BuildPexClients
+      PEXDIRS = PEX PEXlib
+#endif
+#if BuildXTrapExt
+    XTRAPDIRS = xtrap
+#endif
+      SUBDIRS = $(XINPUTDIRS) $(PEXDIRS) $(XTRAPDIRS) xtest
+#endif
+
+#if HasShm
+      SHMSRCS = XShm.c
+      SHMOBJS = XShm.o
+#endif
+#if BuildXYZLib
+      XYZSRCS = Xxyz.c
+      XYZOBJS = Xxyz.o
+#endif
+
+#if BuildXIdleExt
+    XIDLESRCS = XIdle.c
+    XIDLEOBJS = XIdle.o
+#endif
+
+#if BuildBuiltinExt
+  BUILTINSRCS = XBuiltin.c
+  BUILTINOBJS = XBuiltin.o
+#endif
+
+#if Malloc0ReturnsNull
+ALLOC_DEFINES = -DMALLOC_0_RETURNS_NULL
+#endif
+      DEFINES = ExtensionDefines $(ALLOC_DEFINES)
+     INCLUDES = -I$(XLIBSRC) -I../include
+         SRCS = globals.c extutil.c XMultibuf.c XShape.c $(SHMSRCS)  \
+		MITMisc.c XTestExt1.c $(XYZSRCS) $(XIDLESRCS) $(BUILTINSRCS)
+         OBJS = globals.o extutil.o XMultibuf.o XShape.o $(SHMOBJS) \
+		MITMisc.o XTestExt1.o $(XYZOBJS) $(XIDLEOBJS) $(BUILTINOBJS)
+     LINTLIBS = $(LINTXLIB)
+
+LibraryObjectRule()
+
+#if DoSharedLib
+#if DoNormalLib
+SharedLibraryTarget(Xext,$(SOXEXTREV),$(OBJS),shared,..)
+CreateRelocatableObjs(Xext,$(OBJS),shared,..)
+#else
+SharedLibraryTarget(Xext,$(SOXEXTREV),$(OBJS),.,.)
+CreateRelocatableObjs(Xext,$(OBJS),.,.)
+#endif
+InstallSharedLibrary_m(Xext,$(SOXEXTREV),$(USRLIBDIR))
+#endif
+#if DoNormalLib
+NormalLibraryTarget(Xext,$(OBJS))
+InstallLibrary(Xext,$(USRLIBDIR))
+#if DoInstallExtensionsIntoXlib
+MergeIntoInstalledLibrary($(USRLIBDIR)/libX11.a,libXext.a)
+#endif
+#endif
+#if DoProfileLib
+ProfiledLibraryTarget(Xext,$(OBJS))
+InstallLibrary(Xext_p,$(USRLIBDIR))
+#if DoInstallExtensionsIntoXlib
+MergeIntoInstalledLibrary($(USRLIBDIR)/libX11_p.a,libXext_p.a)
+#endif
+#endif
+#if DoDebugLib
+DebuggedLibraryTarget(Xext,$(OBJS))
+InstallLibrary(Xext_d,$(USRLIBDIR))
+#if DoInstallExtensionsIntoXlib
+MergeIntoInstalledLibrary($(USRLIBDIR)/libX11_d.a,libXext_d.a)
+#endif
+#endif
+
+LintLibraryTarget(Xext,$(SRCS))
+InstallLintLibrary(Xext,$(LINTLIBDIR))
+
+DependTarget()
+
+#ifdef IHaveSubdirs
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+#endif
+
+NormalLintTarget($(SRCS))

@@ -1,0 +1,397 @@
+<html>
+
+<h1>
+SCO Admin Audio Configuration Manager Design Specification
+</h1>
+
+<center>
+<b>
+Shawn McMurdo
+<br>
+Version 0.14
+<br>
+1997 Jan 29
+</b>
+<br>
+SCCS: @(#)audioconfig.design.html	7.1	97/10/22
+</center>
+
+<h2>
+Table of Contents
+</h2>
+
+<ul>
+<li>Introduction
+<li>Guiding Design Decisions
+<li>Tasks
+<li>Task Descriptions
+<li>User Interface
+<li>System Interface
+<li>Dependencies and Component Interactions
+<li>Internationalization and Localization
+<li>Security and Authorization
+<li>Product Integration
+<li>Test Plan
+<li>Open Issues
+</ul>
+
+<h2>
+Introduction
+</h2>
+
+This is the design specification for the SCO Admin Audio Configuration Manager.  It includes descriptions of the tasks that can be performed, the user interface, and the system interface.  It also addresses the related areas of dependencies, interactionx, integration, internationalization, and testing.
+
+<h2>
+Guiding Design Decisions
+</h2>
+<ul>
+<li>Use an OSA for the backend to provide remote administration and leverage scoadmin infrastructure.
+<li>Multiple card configuration will not be allowed through the GUI in the first release.  However, design will keep in mind expansion to multiple cards.
+</ul>
+
+<h2>
+Tasks
+</h2>
+
+<ul>
+<li>Add a soundcard driver.
+<li>Remove a soundcard driver.
+<li>Modify hardware parameters for an installed soundcard driver.
+<li>Test an installed soundcard driver.
+</ul>
+
+<h2>
+Task Descriptions
+</h2>
+
+<ol>
+<li><b>Add a soundcard driver.</b>
+  <ol>
+  <li>Select the Add icon on the toolbar or Soundcard -> Add from the menubar.
+  <li>The Add Soundcard dialog appears.
+  <li>Choose the manufacturer from the manufactorers list.
+  <li>Choose the model from the model list.
+  <li>Select Ok or Cancel
+    <ul>
+    <li>Selecting Ok will go on to the Modify Soundcard Configuration dialog.
+    <li>Selecting Cancel will return to the main screen without making any changes.
+    </ul>
+  <li>The Modify Soundcard Configuration dialog appears.
+  <li>Modify as needed any of the hardware specific settings.
+    <ul>
+    <li>I/O Port Address Range Start
+    <li>MIDI I/O Port Address Range Start
+    <li>Interrupt Request Vector (IRQ)
+    <li>Secondary IRQ
+    <li>Direct Memory Access Channel (DMA)
+    <li>Secondary DMA
+    </ul>
+  <li>Select Ok or Cancel
+    <ul>
+    <li>Selecting Ok installs the driver in the kernel and if successful adds the card to the installed drivers list, then goes to the Test Soundcard Dialog.
+    <li>Selecting Cancel returns you to the Add Soundcard dialog.
+    </ul>
+  <li>The Test Soundcard dialog appears.
+  <li>Choose to test either of the following
+    <ul>
+    <li>Digital Audio
+    <li>MIDI Synthesis
+    </ul>
+  <li>Select Ok or Failed
+    <ul>
+    <li>Selecting Ok returns you to the main screen
+    <li>Selecting Failed returns you to the Modify Soundcard Configuration dialog.
+    </ul>
+  </ol>
+
+<li><b>Remove a soundcard driver.</b>
+  <ol>
+  <li>Select the Remove icon on the toolbar or Soundcard -> Remove from the menubar.
+  <li>The Remove Soundcard dialog appears displaying the soundcard to be removed.
+  <li>Select Ok or Cancel
+    <ul>
+    <li>Selecting Ok removes the driver from the kernel.
+    <li>Selecting Cancel returns you to the main screen without making changes.
+    </ul>
+  </ol>
+
+<li><b>Modify hardware parameters for an installed soundcard driver.</b>
+  <ol>
+  <li>Select the Modify icon on the toolbar or Soundcard -> Modify from the menubar.
+  <li>The Modify Soundcard Configuration dialog appears.
+  <li>Modify as needed any of the hardware specific settings.
+    <ul>
+    <li>I/O Port Address Range Start
+    <li>MIDI I/O Port Address Range Start
+    <li>Interrupt Request Vector (IRQ)
+    <li>Secondary IRQ
+    <li>Direct Memory Access Channel (DMA)
+    <li>Secondary DMA
+    </ul>
+  <li>Select Ok or Cancel
+    <ul>
+    <li>Selecting Ok changes the configuration of the driver in the kernel.
+    <li>Selecting Cancel returns you to the main screen without making changes.
+    </ul>
+  </ol>
+
+<li><b>Test an installed soundcard driver.</b>
+  <ol>
+  <li>Select the Test icon on the toolbar or Soundcard -> Test from the menubar.
+  <li>The Test Soundcard dialog appears.
+  <li>Choose to test either of the following
+    <ul>
+    <li>Digital Audio
+    <li>MIDI Synthesis
+    </ul>
+  <li>Select Ok or Failed
+    <ul>
+    <li>Selecting Ok returns you to the main screen
+    <li>Selecting Cancel returns you to the Modify Soundcard Configuration dialog.
+    </ul>
+  </ol>
+</ol>
+
+<h2>
+User Interface
+</h2>
+
+<ul>
+<li>Main Screen
+<br>
+<img src="audioconfig.main.gif">
+<br>
+ <ul>
+ <li>Menubar
+  <ul>
+  <li>Host
+   <ul>
+   <li>Open Host...
+   <li>Exit
+   </ul>
+  <li>Soundcard
+   <ul>
+   <li>Add...
+   <li>Modify...
+   <li>Remove
+   <li>Test
+   </ul>
+  </ul>
+ <li>Installed Soundcards List
+ </ul>
+<li>Select Soundcard Dialog
+ <ul>
+ <li>Soundcard List
+ </ul>
+<li>Modify Parameters Dialog
+ <ul>
+ <li>I/O Address Option Menu
+ <li>Synth I/O Address Option Menu
+ <li>MIDI I/O Address Option Menu
+ <li>IRQ Option Menu
+ <li>Second IRQ Option Menu
+ <li>DMA Option Menu
+ <li>Second DMA Option Menu
+ </ul>
+</ul>
+
+<h2>
+System Interface
+</h2>
+
+
+<ul>
+<li>The OSA will use the id tools to install/configure/remove drivers and will leverage their automatic use of idconfupdate to update the resmgr database.  There will be no direct access of the resmgr database in this release.
+  <ul>Reasons
+  <li>3.0 driver base only supports ISA, so no need for autoconfig aspects of resmgr.
+  <li>3.0 driver base id DDI 1 and does not take advantage of the cm_* to allow multiple cards of the same type.
+  </ul>
+<li>OSA will read the installed system file to insure consistency between audio config manager and resmgr/dcu.
+<li>The audioconfig supported card information will be installed in a file heirarchy under /usr/lib/audio/audioconfig/audinfo/{manufacturer}/{model}, where the filename {model} will be the model name with all of the whitespace removed.
+<li>The audinfo file will be a stanza file with a section named audioconfig containing entries for:
+  <ul>
+  <li>manufacturer
+  <li>model
+  <li>bus
+  <li>drivers
+  <li>has_audio_io
+  <li>audio_io_options
+  <li>audio_io_default
+  <li>has_synth_io
+  <li>synth_io_options
+  <li>synth_io_default
+  <li>has_midi_io
+  <li>midi_io_options
+  <li>midi_io_default
+  <li>has_primary_irq
+  <li>primary_irq_options
+  <li>primary_irq_default
+  <li>has_secondary_irq
+  <li>secondary_irq_options
+  <li>secondary_irq_default
+  <li>has_primary_dma
+  <li>primary_dma_options
+  <li>primary_dma_default
+  <li>has_secondary_dma
+  <li>secondary_dma_options
+  <li>secondary_dma_default
+  </ul>
+<li>In the future we may want to add a capabilities section that would include things like sample sizes, max record/playback sample rates, channels, and supported compression types.
+<li>The drivers field indicates which lines in the system file will be enabled by currently specifying the driver names as snd1, snd2, etc.  In the future, with a more modular driver set, this would actually be the driver module names.
+<li>The currently installed configuration will be maintained in the stanza file /usr/lib/audio/audioconfig/audioconfig.cfg.  This will have a section called audioconfig and sections for each card named by the unit #.
+<li>the audioconfig section currently has no attributes.
+<li>the audiocard attributes are:
+    <ul>
+    <li>unit
+    <li>manufacturer
+    <li>model
+    <li>audio_io
+    <li>synth_io
+    <li>midi_io
+    <li>primary_irq
+    <li>secondary_irq
+    <li>primary_dma
+    <li>secondary_dma
+    <li>enabled_drivers
+    </ul>
+</ul>
+
+<ul>
+<li>Object Service Agent (OSA) definition.
+
+  <ul>Classes
+  <li>Audiocard
+    <ul>Attributes
+    <li>unit
+    <li>manufacturer
+    <li>model
+    <li>audio_io
+    <li>synth_io
+    <li>midi_io
+    <li>primary_irq
+    <li>secondary_irq
+    <li>primary_dma
+    <li>secondary_dma
+    <li>enabled_drivers
+    </ul>
+    <ul>Methods
+    <li>create
+    <li>delete
+    <li>get
+    <li>replace
+    <li>list
+    </ul>
+    <ul>Class Relationships
+    <li>subordinate to audioconfig
+    </ul>
+  <li>Audioconfig
+    <ul>Attributes
+    <li>none
+    </ul>
+    <ul>Methods
+    <li>get
+    <li>action
+      <ul>
+      <li>query_auth
+      <li>list_manufacturers
+      <li>list_models
+      <li>get_audinfo
+      </ul>
+    </ul>
+    <ul>Class Relationships
+    <li>superior to audiocard
+    </ul>
+  </ul>
+</ul>
+
+<h2>
+Dependencies and Component Interactions
+</h2>
+
+<ul>
+<li>base utilities - /etc/magic inclusion of audio files.
+<li>boot - play audio file.
+<li>netscape - audio plugin, mailcap.
+<li>mail - mailcap.
+<li>desktop - ?
+<li>other?
+</ul>
+
+<h2>
+Internationalization and Localization
+</h2>
+
+<ul>
+<li>Message catalog is in usr/src/i386at/subsys/audio/drivers/audioconfig/src/NLS/en/audioconfig.msg and audioconfig.osa.msg.
+</ul>
+
+<h2>
+Security and Authorization
+</h2>
+
+<ul>
+<li>Use standard scoadmin check for authorization.  If not authorized, then don't allow to run.
+<li>Right now only root can run.  Should check to see how to add audioadmin to the adminuser database.
+<li>Possible future expansion to allow view only.
+</ul>
+
+<h2>
+Product Integration
+</h2>
+
+<ul>
+<li>Package all audio related files into a single seperate component, audio.
+<li>Use postinstall and preremove scripts to (un)register OSA with system and (un)register audio config manager with scoadmin desktop.
+</ul>
+
+<h2>
+Test Plan
+</h2>
+
+<ul>
+<li>Install package.
+<li>Add a soundcard.
+  <ul>
+  <li>SoundBlaster 16
+  <li>Maybe SoundBlaster Pro or SoundBlaster
+  <li>Maybe SoundBlaster 16 Plug and Play (depends on Plug and Play support)
+  </ul>
+<li>Configure soundcard.
+<li>Test soundcard.
+<li>Set mixer values for audio playback using mixer.
+<li>Play a file using vplay.
+<li>Play a file using SCO Sound.
+<li>Set mixer values for audio recording using mixer.
+<li>Record a file using vplay.
+<li>Record a file using SCO Sound.
+<li>For play and record, test file matrix includes:
+  <ul>Sample Rates
+  <li>8 kHz
+  <li>11 kHz
+  <li>22 kHz
+  <li>44 kHz
+  </ul>
+  <ul>Channels
+  <li>mono
+  <li>stereo
+  </ul>
+  <ul>File Type
+  <li>wav
+  <li>voc
+  <li>au
+  </ul>
+</ul>
+
+
+</ul>
+
+<h2>
+Open Issues
+</h2>
+
+<ul>
+<li>No support for Plug and Play.
+<li>No support for any current cards in 3.0 driver base.
+</ul>
+
+</html>

@@ -1,0 +1,304 @@
+#!/sbin/sh -x
+#ident "@(#)cans.rc	15.2	97/12/29"
+#
+# cans.rc -- ksh header for ISL UI modules:  cans, services, packages
+#
+
+# Get common stuff:
+. /isl/ui_modules/common.rc
+
+
+# Read the can_ifile generated from can_table by gen.can.ifile.
+#
+# svc_label[] contains the radio button labels.
+# svc_desc[]  contains the text that accompanies each radio button.
+#
+# pkg_code[]  contains the values used in "ivar set pkg_ids # # #...".
+# pkg_label[] contains the radio button labels.
+# pkg_desc[]  contains the text that accompanies each radio button.
+#
+
+set +x
+. /isl/can_ifile
+[ -n "$debug" ] && set -x
+
+
+#--------------------------------------------------------
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever is selected so when they come back, 
+	# it will be the default selection.
+	#
+	save_ivars
+	#
+	ivar set help_topic $1
+	ii_exit HELP
+}
+
+function set_localized_pkgs {
+	[ -n "$debug" ] && set -x
+	typeset le= locale= pkgle= cond= m 
+	typeset list="$*"
+
+	locale=`ivar get LOCALE`
+	locale=${locale%%_*}
+
+	for m in $localized_pkg_nums
+	do
+		OIFS=$IFS
+		IFS=:
+		set -- $m
+		le=$1
+		pkgle=$2
+		cond=$3
+		IFS=$OIFS
+		if [ "$le" = "$locale" ] && [[ " $list " = *" $cond "* ]] && [[ " $list " != *" $pkgle "* ]]
+		then
+			list="$list $pkgle"
+		fi
+	done
+	LOCALIZED_LIST="$list"
+}
+
+function set_INSTPKGS
+{
+#[ -n "$debug" ] && set -x
+	integer index=0 bflag=0 
+	typeset package service PKG p
+
+	if [[ $1 = -f ]]; then
+		force_dep=1
+		shift
+	else
+		force_dep=0
+	fi
+
+	typeset list="$*"
+
+	unset check1 check2
+
+	typeset required_packages=" "
+	# Prepend required packages if not already in list.
+	#x=$required_pkgs
+	#x=$req_pkg_nums
+	for p in $req_pkg_nums
+	do 
+		[[ " $list " != *" $p "* ]] && list="$p $list"
+		required_packages="${required_packages}${pkg_code[p]} "
+	done
+
+	# Now add existing packages from other sets
+	index=0
+	while (( index < num_sets ))
+	do
+		if (( index != current_set ))
+		then
+			eval TMP_PKG_NUMS=\`ivar get ${set_code[index]}_PKG_NUMS\`
+		# Strip of index of set name since that will be appended 
+		# later
+
+			if [ -n "$TMP_PKG_NUMS" ]
+			then
+				set -- $TMP_PKG_NUMS
+				shift
+				list="$list $*"
+			fi
+		fi
+		(( index += 1 ))
+	done
+
+	# Expand all dependencies (faked recursion).
+	#
+	orig_list="$list"
+	prev=
+	while [[ "$list" != "$prev" ]] ; do
+		prev="$list"
+		for p in $list ; do
+			[ -z "${check1[p]}" ] && {
+				check1[p]=yes
+				list="$list ${pkg_pkg_nums[p]}"
+			}
+		done
+	done
+
+	# Figure out if any packages were added that were not
+	# already in the list of packages to install.
+	# need_list: " svc#:pkg# svc#:pkg#"
+
+	unmet_dep=0
+	need_list=""
+	unset check2
+	for p in $list
+	do
+		[ -n "${check2[p]}" ] && continue
+		check2[p]=yes
+		[[ " $orig_list " != *" $p "* ]] && {
+			unmet_dep=1
+			need_list="$need_list $p"
+		}
+	done
+	unset check2
+
+	# If the dependencies were not already met, it's an error
+	# unless the -f argument was given.
+	[[ $unmet_dep = 1 && $force_dep = 0 ]] && return 1
+
+	#
+	# $list now contains the full list of needed pkgs, with some duplicates.
+	#
+	# Put the pkgs in the reverse dependency order.
+	#
+	ip=" "
+	prev=
+	while [[ "$ip" != "$prev" ]] ; do
+		prev="$ip"
+		for p in $list ; do
+			[ -z "${check2[p]}" ] && {
+				unhandled=no
+				for d in ${pkg_pkg_nums[p]} ; do
+					[ -z "${check2[d]}" ] && {
+						unhandled=yes
+						break
+					}
+				done
+				[ $unhandled = no ] && {
+					ip="$ip ${pkg_code[p]}::$p"
+					check2[p]=yes
+				}
+			}
+		done
+	done
+
+	# Ensure order matches that specified in setinfo file.
+	INSTPKGS=	# pkgs found in setinfo list go in first.
+	INSTPKGS_NUM=
+	for p in $setinfo ; do
+		if [[ " $ip " = *" $p::"* ]]; then
+			INSTPKGS="$INSTPKGS $p"
+			temp="${ip##*\ $p::}"
+			INSTPKGS_NUM="$INSTPKGS_NUM ${temp%%\ *}"
+		fi
+	done
+	# pkgs not found in setinfo go in last.
+	for p in $ip ; do
+		temp="${p%%::*}"
+		if [[ " $INSTPKGS " != *" $temp "* ]]; then
+			INSTPKGS="$INSTPKGS $temp"
+			INSTPKGS_NUM="$INSTPKGS_NUM ${p##*::}"
+		fi
+	done
+
+
+	TMP_INSTPKGS="$INSTPKGS"
+	TMP_INSTPKGS_NUM="$INSTPKGS_NUM"
+			
+	(( index = 0 ))
+	while (( index < num_sets ))
+	do
+		eval ${set_code[index]}_PKGS=""	
+		eval ${set_code[index]}_PKG_NUMS=""	
+		(( index += 1 ))
+	done
+
+	for PKG in $TMP_INSTPKGS
+	do
+		if [[ "$required_packages" = *" $PKG "* ]]
+		then
+			UnixWare_PKGS="$UnixWare_PKGS $PKG"
+			set -- $TMP_INSTPKGS_NUM
+			UnixWare_PKG_NUMS="$UnixWare_PKG_NUMS $1"
+			shift
+			TMP_INSTPKGS_NUM="$*"
+			continue
+		fi
+	
+		(( bflag=0 ))
+		(( index = 0 ))
+		while (( index < num_sets ))
+		do
+			for service in ${set_svc_nums[index]}
+			do
+				for package in ${svc_pkg_nums[service]}
+				do
+					if [[ "${pkg_code[package]}" = "$PKG" ]]
+					then
+						eval ${set_code[index]}_PKGS=\"\$${set_code[index]}_PKGS $PKG\"
+						set -- $TMP_INSTPKGS_NUM
+						eval ${set_code[index]}_PKG_NUMS=\"\$${set_code[index]}_PKG_NUMS $1\"		
+						bflag=1
+						break
+					fi
+				done
+				if (( bflag == 1 ))
+				then
+					(( index = num_sets ))
+					break
+				fi
+			done
+			(( index += 1 ))
+		done
+		shift
+		TMP_INSTPKGS_NUM="$*"
+	done
+
+	# Set name needs to be part of package list.
+	(( index=0 ))
+	while (( index < num_sets ))
+	do
+
+		eval temp="\$${set_code[index]}_PKGS"
+		eval pkg_ids[$index]=\"\$${set_code[index]}_PKG_NUMS\"
+		eval ivar set pkg_ids[$index] \"\$${set_code[index]}_PKG_NUMS\"
+		if [ -n "$temp" ]
+		then
+			eval ${set_code[index]}_PKGS=\"${set_code[index]} \$${set_code[index]}_PKGS\"
+			# Get the package number for the set
+			p=-1
+			while (( ( p += 1 ) < num_pkgs ))
+			do
+				if [[ ${set_code[index]} = ${pkg_code[p]} ]]; then
+					eval ${set_code[index]}_PKG_NUMS=\"$p \$${set_code[index]}_PKG_NUMS\"
+					break
+				fi
+			done
+		fi
+		eval ivar set "${set_code[index]}_PKGS" \"\$${set_code[index]}_PKGS\"
+		eval ivar set "${set_code[index]}_PKG_NUMS" \"\$${set_code[index]}_PKG_NUMS\"
+		(( index += 1 ))
+	done
+	return 0
+}
+
+function percent_init  # sets 'usable' for use in % calcs
+{
+# pkg_size[] values are in blocks (assumed 512 bytes).
+# set 'usable' to the # of 512-byte blocks available on the filesystem
+# JTB: USABLE_SIZE is total of all active unix partitions (or something
+# like that).  This can't be what we want.  Perhaps we want all space
+# on "/"?  That's slice 1.  I'll try that.
+
+. /isl/slice.info    # for SLSIZE[1]
+[[ -z ${SLSIZE[1]} ]] || [[ ${SLSIZE[1]} != *[0-9]* ]] && ii_exit DIE
+(( usable = ${SLSIZE[1]} * 1000000 / 512 ))
+
+#. /isl/disk.info    # for USABLE_SIZE[0]
+#[[ -z ${USABLE_SIZE[0]} ]] || [[ ${USABLE_SIZE[0]} != *[0-9]* ]] && ii_exit DIE
+#(( usable = ${USABLE_SIZE[0]} * 1000000 / 512 ))
+}
+
+function percent_format  # right-justifies a % value.  
+ # $1 is value, $2 can be 0 to indicate 0% is ok.
+ # returns string in variable 'percent'.
+{
+[ -n "$debug" ] && set -x
+p=$1
+(( p = p * 100 / usable ))
+percent="$p%"
+(( p < 100 )) && percent=" $p%"
+(( p <  10 )) && percent="  $p%"
+(( p <   1 )) && percent=" <1%"
+[ "$2" = 0 ] && (( p ==  0 )) && percent="  0%"
+}

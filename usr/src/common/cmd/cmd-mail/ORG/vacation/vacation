@@ -1,0 +1,449 @@
+# This is a shell archive.  Save it in a file, remove anything before
+# this line, and then unpack it by entering "sh file".  Note, it may
+# create directories; files and directories will be owned by you and
+# have default permissions.
+#
+# This archive contains:
+#
+#	vacation.1
+#	vacation.c
+#
+echo x - vacation.1
+sed 's/^X//' >vacation.1 << 'END-of-vacation.1'
+X.\" Copyright (c) 1985, 1987 Regents of the University of California.
+X.\" All rights reserved.
+X.\"
+X.\" Redistribution and use in source and binary forms are permitted
+X.\" provided that this notice is preserved and that due credit is given
+X.\" to the University of California at Berkeley. The name of the University
+X.\" may not be used to endorse or promote products derived from this
+X.\" software without specific prior written permission. This software
+X.\" is provided ``as is'' without express or implied warranty.
+X.\"
+X.\"	@(#)vacation.1	6.5 (Berkeley) 12/26/87
+X.\"
+X.TH VACATION 1 "December 26, 1987"
+X.UC 6
+X.SH NAME
+Xvacation \- return ``I am not here'' indication
+X.SH SYNOPSIS
+X.B vacation
+X.B -i
+X.br
+X.B vacation
+X[
+X.B -a
+Xalias ] login
+X.SH DESCRIPTION
+X\fIVacation\fP returns a message to the sender of a message telling
+Xthem that you are currently not reading your mail.  The intended use
+Xis in a \fI.forward\fP file.  For example, your \fI.forward\fP file
+Xmight have:
+X.PP
+X.ti +5
+X\eeric, "|/usr/ucb/vacation -a allman eric"
+X.PP
+Xwhich would send messages to you (assuming your login name was eric) and
+Xreply to any messages for ``eric'' or ``allman''.
+X.PP
+XNo message will be sent unless \fIlogin\fP or an \fIalias\fP supplied
+Xusing the \fB-a\fP option is a substring of either the ``To:'' or ``Cc:''
+Xheaders of the mail.  No messages from ``???-REQUEST'', ``Postmaster'',
+X``UUCP'', ``MAILER'', or ``MAILER-DAEMON'' will be replied to, nor is a
+Xnotification sent if a ``Precedence: bulk'' or ``Precedence: junk'' line
+Xis included in the mail headers.  Only one message per week will be sent
+Xto each unique sender.  The people who have sent you messages are
+Xmaintained as an \fIndbm\fP(3) database in the files \fI.vacation.pag\fP
+Xand \fI.vacation.dir\fP in your home directory.
+X.PP
+XThe \fB-i\fP flag initializes the vacation database files.  It should be
+Xused before you modify your \fI.forward\fP file.
+X.PP
+X\fIVacation\fP expects a file \fI.vacation.msg\fP, in your home directory,
+Xcontaining a message to be sent back to each sender.  It should be an entire
+Xmessage (including headers).  For example, it might say:
+X.PP
+X.in +5
+X.nf
+XFrom: eric@ucbmonet.Berkeley.EDU (Eric Allman)
+XSubject: I am on vacation
+XDelivered-By-The-Graces-Of: The Vacation program
+XPrecedence: bulk
+X
+XI am on vacation until July 22.  If you have something urgent,
+Xplease contact Joe Kalash <kalash@ucbingres.Berkeley.EDU>.
+X	--eric
+X.fi
+X.in -5
+X.PP
+X\fIVacation\fP reads the first line from the standard input for
+Xa \s-1UNIX\s0-style ``From'' line to determine the sender.
+X\fISendmail\fP(8) includes this ``From'' line automatically.
+X.PP
+XFatal errors, such as calling \fIvacation\fP with incorrect arguments,
+Xor with non-existent \fIlogin\fPs, are logged in the system log file,
+Xusing \fIsyslog\fP(8).
+X.SH FILES
+X.nf
+X.ta \w'~/.vacation.msg    'u
+X~/.vacation.dir	database file
+X~/.vacation.msg	message to send
+X~/.vacation.pag	database file
+X.fi
+X.SH "SEE ALSO"
+Xsendmail(8), syslog(8)
+END-of-vacation.1
+echo x - vacation.c
+sed 's/^X//' >vacation.c << 'END-of-vacation.c'
+X/*
+X * Copyright (c) 1983, 1987 Regents of the University of California.
+X * All rights reserved.
+X *
+X * Redistribution and use in source and binary forms are permitted
+X * provided that this notice is preserved and that due credit is given
+X * to the University of California at Berkeley. The name of the University
+X * may not be used to endorse or promote products derived from this
+X * software without specific prior written permission. This software
+X * is provided ``as is'' without express or implied warranty.
+X */
+X
+X#ifndef lint
+Xchar copyright[] =
+X"@(#) Copyright (c) 1983, 1987 Regents of the University of California.\n\
+X All rights reserved.\n";
+X#endif /* not lint */
+X
+X#ifndef lint
+Xstatic char sccsid[] = "@(#)vacation.c	5.9 (Berkeley) 3/24/88";
+X#endif /* not lint */
+X
+X/*
+X**  Vacation
+X**  Copyright (c) 1983  Eric P. Allman
+X**  Berkeley, California
+X*/
+X
+X#include <sys/param.h>
+X#include <sys/file.h>
+X#include <pwd.h>
+X#include <stdio.h>
+X#include <ctype.h>
+X#include <syslog.h>
+X
+X/*
+X**  VACATION -- return a message to the sender when on vacation.
+X**
+X**	This program could be invoked as a message receiver when someone is
+X**	on vacation.  It returns a message specified by the user to whoever
+X**	sent the mail, taking care not to return a message too often to
+X**	prevent "I am on vacation" loops.
+X*/
+X
+X#define	MAXLINE	500			/* max line from mail header */
+X#define	PERIOD	(60L*60L*24L*7L)	/* week between notifications */
+X#define	VMSG	".vacation.msg"		/* vacation message */
+X#define	VACAT	".vacation"		/* dbm's database prefix */
+X#define	VDIR	".vacation.dir"		/* dbm's DB prefix, part 1 */
+X#define	VPAG	".vacation.pag"		/* dbm's DB prefix, part 2 */
+X
+Xtypedef struct alias {
+X	struct alias *next;
+X	char	*name;
+X} ALIAS;
+XALIAS	*names;
+X
+Xstatic char from[MAXLINE];		/* sender's address */
+X
+Xmain(argc, argv)
+X	int argc;
+X	char **argv;
+X{
+X	extern int optind;
+X	extern char *optarg;
+X	struct passwd *pw;
+X	ALIAS *cur;
+X	int ch, iflag;
+X	char *malloc();
+X	uid_t getuid();
+X
+X	iflag = 0;
+X	while ((ch = getopt(argc, argv, "a:Ii")) != EOF)
+X		switch((char)ch) {
+X		case 'a':			/* alias */
+X			if (!(cur = (ALIAS *)malloc((u_int)sizeof(ALIAS))))
+X				break;
+X			cur->name = optarg;
+X			cur->next = names;
+X			names = cur;
+X			break;
+X		case 'i':			/* init the database */
+X		case 'I':			/* backward compatible */
+X			iflag = 1;
+X			break;
+X		case '?':
+X		default:
+X			goto usage;
+X		}
+X	argc -= optind;
+X	argv += optind;
+X
+X	if (argc != 1) {
+X		if (!iflag) {
+Xusage:			syslog(LOG_ERR, "uid %u: usage: vacation [-i] [-a alias] login\n", getuid());
+X			exit(1);
+X		}
+X		if (!(pw = getpwuid(getuid()))) {
+X			syslog(LOG_ERR, "vacation: no such user uid %u.\n", getuid());
+X			exit(1);
+X		}
+X	}
+X	else if (!(pw = getpwnam(*argv))) {
+X		syslog(LOG_ERR, "vacation: no such user %s.\n", *argv);
+X		exit(1);
+X	}
+X	if (chdir(pw->pw_dir)) {
+X		syslog(LOG_ERR, "vacation: no such directory %s.\n", pw->pw_dir);
+X		exit(1);
+X	}
+X
+X	if (iflag) {
+X		initialize();
+X		exit(0);
+X	}
+X
+X	if (!(cur = (ALIAS *)malloc((u_int)sizeof(ALIAS))))
+X		exit(1);
+X	cur->name = pw->pw_name;
+X	cur->next = names;
+X	names = cur;
+X
+X	readheaders();
+X
+X	if (access(VDIR, F_OK))
+X		initialize();
+X	else
+X		dbminit(VACAT);
+X
+X	if (!recent()) {
+X		setreply();
+X		sendmessage(pw->pw_name);
+X	}
+X	exit(0);
+X}
+X
+X/*
+X * readheaders --
+X *	read mail headers
+X */
+Xstatic
+Xreadheaders()
+X{
+X	register ALIAS *cur;
+X	register char *p;
+X	int tome, cont;
+X	char buf[MAXLINE], *strcpy(), *index();
+X
+X	cont = tome = 0;
+X	while (fgets(buf, sizeof(buf), stdin) && *buf != '\n')
+X		switch(*buf) {
+X		case 'F':		/* "From " */
+X			cont = 0;
+X			if (!strncmp(buf, "From ", 5)) {
+X				for (p = buf + 5; *p && *p != ' '; ++p);
+X				*p = '\0';
+X				(void)strcpy(from, buf + 5);
+X				if (junkmail())
+X					exit(0);
+X			}
+X			break;
+X		case 'P':		/* "Precedence:" */
+X			cont = 0;
+X			if (strncasecmp(buf, "Precedence", 10) || buf[10] != ':' && buf[10] != ' ' && buf[10] != '\t')
+X				break;
+X			if (!(p = index(buf, ':')))
+X				break;
+X			while (*++p && isspace(*p));
+X			if (!*p)
+X				break;
+X			if (!strncasecmp(p, "junk", 4) || !strncasecmp(p, "bulk", 4))
+X				exit(0);
+X			break;
+X		case 'C':		/* "Cc:" */
+X			if (strncmp(buf, "Cc:", 3))
+X				break;
+X			cont = 1;
+X			goto findme;
+X		case 'T':		/* "To:" */
+X			if (strncmp(buf, "To:", 3))
+X				break;
+X			cont = 1;
+X			goto findme;
+X		default:
+X			if (!isspace(*buf) || !cont || tome) {
+X				cont = 0;
+X				break;
+X			}
+Xfindme:			for (cur = names; !tome && cur; cur = cur->next)
+X				tome += nsearch(cur->name, buf);
+X		}
+X	if (!tome)
+X		exit(0);
+X	if (!*from) {
+X		syslog(LOG_ERR, "vacation: no initial \"From\" line.\n");
+X		exit(1);
+X	}
+X}
+X
+X/*
+X * nsearch --
+X *	do a nice, slow, search of a string for a substring.
+X */
+Xstatic
+Xnsearch(name, str)
+X	register char *name, *str;
+X{
+X	register int len;
+X
+X	for (len = strlen(name); *str; ++str)
+X		if (*str == *name && !strncasecmp(name, str, len))
+X			return(1);
+X	return(0);
+X}
+X
+X/*
+X * junkmail --
+X *	read the header and return if automagic/junk/bulk mail
+X */
+Xstatic
+Xjunkmail()
+X{
+X	static struct ignore {
+X		char	*name;
+X		int	len;
+X	} ignore[] = {
+X		"-REQUEST", 8,	"Postmaster", 10,
+X		"uucp", 4,	"MAILER-DAEMON", 13,
+X		"MAILER", 6,	NULL, NULL,
+X	};
+X	register struct ignore *cur;
+X	register int len;
+X	register char *p;
+X	char *index(), *rindex();
+X
+X	/*
+X	 * This is mildly amusing, and I'm not positive it's right; trying
+X	 * to find the "real" name of the sender, assuming that addresses
+X	 * will be some variant of:
+X	 *
+X	 * From site!site!SENDER%site.domain%site.domain@site.domain
+X	 */
+X	if (!(p = index(from, '%')))
+X		if (!(p = index(from, '@'))) {
+X			if (p = rindex(from, '!'))
+X				++p;
+X			else
+X				p = from;
+X			for (; *p; ++p);
+X		}
+X	len = p - from;
+X	for (cur = ignore; cur->name; ++cur)
+X		if (len >= cur->len && !strncasecmp(cur->name, p - cur->len, cur->len))
+X			return(1);
+X	return(0);
+X}
+X
+Xtypedef struct {
+X	char	*dptr;
+X	int	dsize;
+X} DATUM;
+X
+Xtypedef struct {
+X	time_t	sentdate;
+X} DBREC;
+X
+X/*
+X * recent --
+X *	find out if user has gotten a vacation message recently.
+X */
+Xstatic
+Xrecent()
+X{
+X	DATUM k, d, fetch();
+X	time_t now, then, time();
+X
+X	k.dptr = from;
+X	k.dsize = strlen(from) + 1;
+X	d = fetch(k);
+X	if (d.dptr) {
+X		/* be careful on machines with alignment restrictions */
+X		bcopy((char *)&((DBREC *)d.dptr)->sentdate, (char *)&then, sizeof(then));
+X		(void)time(&now);
+X		if (!then || then + PERIOD > now)
+X			return(1);
+X	}
+X	return(0);
+X}
+X
+X/*
+X * setreply --
+X *	store that this user knows about the vacation.
+X */
+Xstatic
+Xsetreply()
+X{
+X	DBREC xrec;
+X	DATUM k, d;
+X	time_t time();
+X
+X	k.dptr = from;
+X	k.dsize = strlen(from) + 1;
+X	(void)time(&xrec.sentdate);
+X	d.dptr = (char *)&xrec;
+X	d.dsize = sizeof(xrec);
+X	store(k, d);
+X}
+X
+X/*
+X * sendmessage --
+X *	exec sendmail to send the vacation file to sender
+X */
+Xstatic
+Xsendmessage(myname)
+X	char *myname;
+X{
+X	if (!freopen(VMSG, "r", stdin)) {
+X		syslog(LOG_ERR, "vacation: no ~%s/%s file.\n", myname, VMSG);
+X		exit(1);
+X	}
+X	execl("/usr/lib/sendmail", "sendmail", "-f", myname, from, NULL);
+X	syslog(LOG_ERR, "vacation: can't exec /usr/lib/sendmail.\n");
+X	exit(1);
+X}
+X
+X/*
+X * initialize --
+X *	initialize the dbm database
+X */
+Xstatic
+Xinitialize()
+X{
+X	extern int errno;
+X	extern char *sys_errlist[];
+X	int fd;
+X
+X	if ((fd = open(VDIR, O_WRONLY|O_CREAT|O_TRUNC, 0644)) < 0) {
+X		syslog(LOG_ERR, "vacation: %s: %s\n", VDIR, sys_errlist[errno]);
+X		exit(1);
+X	}
+X	(void)close(fd);
+X	if ((fd = open(VPAG, O_WRONLY|O_CREAT|O_TRUNC, 0644)) < 0) {
+X		syslog(LOG_ERR, "vacation: %s: %s\n", VPAG, sys_errlist[errno]);
+X		exit(1);
+X	}
+X	(void)close(fd);
+X	dbminit(VACAT);
+X}
+END-of-vacation.c
+exit
+
+

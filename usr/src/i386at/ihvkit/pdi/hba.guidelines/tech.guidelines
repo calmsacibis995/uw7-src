@@ -1,0 +1,146 @@
+#ident	"@(#)ihvkit:pdi/hba.guidelines/tech.guidelines	1.2.2.1"
+
+NOTE: The following set of guidelines applies only to those drivers
+which conform to DDI version 7 or less. For drivers conforming to
+DDI version 8 or more, please refer to HDK documentation. Many of
+these guidelines do not apply to DDI8 drivers.
+
+Following is a collection of helpful hints for developers interested in
+developing HBA device drivers which confirm to DDI version 7 or less. 
+
+Helpful hints for HBA Driver Writers:
+------------------------------------
+
+1) Memory allocation
+	
+HBA drivers may need to allocate physically contiguous DMAable memory.
+Past versions of the DDI/DKI were not explicit in describing how drivers were
+to get DMAable memory.  The lack of documentation and the lack of a DDI/DKI
+interface for allocating physically contiguous DMAable memory led driver
+writers to the conclusion that kmem_alloc was the correct interface.
+
+SVR4.0, SVR4.2, and UnixWare 1.1 kmem_alloc'ed memory is in fact DMAable,
+but only guaranteed to be physically contiguous on allocations of 1 page
+or less.  This worked not by design but because of the way KMA was
+implemented.
+
+SVR4.2MP kmem_alloc'ed memory is not guaranteed to be either DMAable or
+physically contiguous.  This is by design.  A new DDI routine,
+kmem_alloc_physcontig, is provided for drivers that need DMAable memory.
+	
+Drivers that currently use kmem_alloc() to allocate DMA memory must convert
+to use kmem_alloc_physcontig() for SVR4.2MP.  HBA drivers that are binary
+compatible with SVR4.2MP, and use kmem_alloc() for DMA memory will still
+work with the PHYSTOKVMEM tunable set to 1 (See above description.)
+
+2) Sleep flag
+
+The SDI and HBA interfaces were extended in SVR4.2MP to use a flag argument
+for those routines that may need to sleep.  Since certain HBA routines need
+to be called at interrupt level, a sleep flag was necessary to indicate
+whether a sleep could be done.  The HBA routines that have the additional
+flag argument include: getblk(), icmd(), send(), and xlat().  The SDI
+routines that have the additional flag argument include: sdi_get(),
+sdi_getblk(), sdi_icmd(), sdi_send, and sdi_translate().
+
+
+3) Breakup
+The SVR4.2MP DDI/DKI added a new improved breakup interface, buf_breakup().
+A PDI_VERSION 3 driver provides the target driver with the breakup parameters
+through the SVR4.2MP extension defined for the HBA getinfo routine.
+Pass-thru has also to be made dual-level to use buf_breakup() with the
+driver's tailor-made breakup parameters.
+
+
+DO's for HBA Driver Writers
+---------------------------
+
+- DO put gtol/ltog array declarations in space.c
+  The gtol/ltog arrays are mappings from global controller number
+  to local controller number, and vice versa.  They must be sized
+  to the maximum number of HBAs in the system.  To keep this
+  flexible for ongoing releases, it is essential that these
+  arrays be declared in the driver space.c file, and allocated
+  to the size of SDI_MAX_HBAS.
+  
+- DO use b_proc to get the process's proc pointer, and not 
+  drv_getparm(UPROC,..).
+
+- DO write the HBAintr routine to first check that the interrupt
+  for the driver was expected.  This is to allow for the possibility
+  that the IRQ can be software shared (interrupt type 3 in the 
+  System file).
+
+
+DON'Ts for HBA Driver Writers
+-----------------------------
+
+- DON'T call spl's from the driver init routine.  
+  The driver init routine has a limited set of kernel interface
+  routines that may be used (See init(D2)), so drivers should do
+  the minimum initialization at this time.  Typically only the
+  initializations required while interrupts are disabled are done
+  in the init routine.  All other initialization should be done in
+  the driver start routine, where it is legal to call spl's.
+
+- DON'T use b_dev in the buf_t structure.  
+  Drivers should use b_edev.  The old b_dev field is still populated, 
+  but is limited in major/minor numbers, and is not
+  guaranteed to be supported in future releases.
+
+- DON'T use b_resid to hold a value that was intended to be 
+  passed through the physiock() routine to the driver strategy().
+  HBA drivers may use b_private when using pass-thru.  However,
+  in UnixWare b_private is not safe to use for block or raw I/O,
+  since some file systems also use it.
+
+- DON'T use the #define, NBPP, for pagesize.
+  Drivers should use ptob(1) to get pagesize.
+
+- DON'T call printf within DEBUG code.
+  Information printed within driver DEBUG code should use 
+  cmn_err(CE_CONT..).
+
+- DON'T make explicit checks on cr_uid.
+  Drivers should use the DDI routine, drv_priv(), to check privilege.
+
+- DON'T make explicit reads of ublock.
+  Drivers should use the DDI routine, drv_getparm().  Any parameters
+  that are not provided by the drv_getparm() function are not valid
+  parameters for drivers to use.
+
+- DON'T pre-allocate kernel structures, such as buf_t.
+  Drivers must use the proper kernel allocation routine to allocate
+  kernel structures.  For example, getrbuf() is used when a buf 
+  structure is needed.  Such structures should never be embedded 
+  within a driver structure or allocated in BSS memory.
+
+- DON'T do direct DMA programming.
+  Drivers must make use of the DDI interface for DMA programming.
+
+- DON'T use BSS memory for DMAable memory.
+
+- DON'T use non-DDI routines
+  The following non-DDI routines should not be used, and are not
+  guaranteed to be available in future releases.  The DDI routines
+  that should be used in their place are given.
+
+     non-DDI	 	  DDI
+  --------------       ---------
+  xphystokv		physmap
+  iooutb		outb
+  iowait		biowait
+  spinwait		drv_usecwait
+  tenmicrosec		drv_usecwait
+  pio_breakup		buf_breakup
+  uiophysio		physiock
+  kvtophys		vtop
+
+- DON'T save the wrong buf_t pointer for pass-thru operations.
+  The buf_t pointer passed to physiock() in pass-thru is not
+  guaranteed to be the same buf_t pointer passed to the driver
+  strategy routine.  Drivers should save the buf_t pointer after
+  the strategy routine is called, and not before physiock is
+  called.
+
+- DON'T include any target driver .h files.

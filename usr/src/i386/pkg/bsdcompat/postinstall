@@ -1,0 +1,27 @@
+#ident	"@(#)pkg.bsdcompat:postinstall	1.2.7.1"
+#ident	"$Header$"
+
+if [ -f /tmp/rm.lpr ]
+then
+        /usr/bin/pkginfo acp > /dev/null 2>&1 && {
+               removef acp /usr/bin/lpr > /dev/null 2>&1
+               removef -f acp
+	}
+        rm -f /tmp/rm.lpr
+fi
+installf $PKGINST /usr/options/$PKG.name=/var/sadm/pkg/bsdcompat/predepend s 
+echo $NAME > /usr/options/$PKG.name
+echo "BSD compatibility package" > /usr/options/compat.name
+installf $PKGINST /usr/options/compat.name
+cd /usr/ucblib/reftools/papers; ./runinv >/dev/null
+
+installf ${PKGINST} /usr/ucblib/reftools/papers/Ind.ia
+installf ${PKGINST} /usr/ucblib/reftools/papers/Ind.ib
+installf ${PKGINST} /usr/ucblib/reftools/papers/Ind.ic
+installf -f ${PKGINST}
+
+# Save volatile files during upgrade or overlay
+SCRIPTS=/usr/sbin/pkginst
+${SCRIPTS}/pkgmrgconf "${PKGINST}" "${AUTOMERGE}" "${NAME}"
+
+exit 0

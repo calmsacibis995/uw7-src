@@ -1,0 +1,67 @@
+SUITE=nd-drvr
+
+if [ $# -lt 1 ]
+then
+	SCEN_NAME=drvr_unit 
+else
+	SCEN_NAME=$1
+fi
+[ $SCEN_NAME = "all" ] && SCEN_NAME=drvr_unit
+GUI=0
+DISPCMD=echo
+echo "Auto setup for $SUITE tests started..."
+if  [ $# -gt 1 ]
+then
+	if [ $2 = "GUI=YES" ]
+	then
+		DISPCMD=gui_notice.wksh
+	fi
+fi
+
+PROFILE=${TET_SUITE_ROOT}/$SUITE/drvr_profile
+CONFIG_FILE=$HOME/$SUITE.cfg
+
+if [ -r $PROFILE -a -r $CONFIG_FILE ]
+then
+	:
+else
+	$DISPCMD "$0: ERROR:file '$PROFILE' or '$CONFIG_FILE' missing"
+	exit 1
+fi
+
+. $PROFILE
+. $CONFIG_FILE
+
+# machines must be in init state 1 to run driver stress test suites
+echo "Checking init state...."
+
+runlevel=`who -r | awk '{ print $3 }'`
+if [ $runlevel != 1 ]
+then 
+	$DISPCMD "ERROR: You must be in init state 1 to run $SUITE test suites
+	Your current init state> $runlevel 
+	To change state type init 1 at command line as root" 
+	exit 1
+else
+ 	echo "Init State:  <$runlevel>"
+fi
+
+if [ "${TET_SUITE_ROOT}" -a "$USER" ]
+then
+	:
+else
+	$DISPCMD "$0: ERROR:environmental variable TET_SUITE_ROOT and/or USER not set. Please have \nthese variables set and run the tests again."
+	exit 1
+fi
+
+CONFIG_ERROR="NOTE: The tests should be configured before they can be executed. \nPlease have the tests configured either by updating the configuration file \n'$CONFIG_FILE' or using GUI."
+
+if [ ! -r $CONFIG_FILE ]
+then
+	$DISPCMD "ERROR: Configuration file '$CONFIG_FILE' missing"
+	exit 1
+fi
+
+#start the tests
+echo "${TET_ROOT}/bin/tcc -e $SUITE $SCEN_NAME"
+${TET_ROOT}/bin/tcc -e $SUITE $SCEN_NAME

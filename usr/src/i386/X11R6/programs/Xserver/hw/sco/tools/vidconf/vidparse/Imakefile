@@ -1,0 +1,68 @@
+#
+#	@(#)Imakefile	3.1	8/29/96	21:30:28
+#	@(#) Imakefile 12.3 95/12/07 SCOINC
+#
+#	Copyright (C) The Santa Cruz Operation, 1991-1993.
+#	This Module contains Proprietary Information of
+#	The Santa Cruz Operation, and should be treated as Confidential.
+
+# S011, 23-Oct-97, davidw@sco.COM
+#	Remove dummy.sh - we no longer have interactive scripts - like n9gxi
+#	so this isn't needed any longer.
+# S010, 09-Aug-96, hiramc@sco.COM
+#	porting to Unixware, set VIDDIR, remove lex.c
+#	from MKCSRCS to avoid warning during 'make depend'
+#	define GRAFINFO_DIR for compiles
+# S009, 07-Dec-95, davidw@sco.com
+#	Use appropriate Install rules for vidparse and dummy.sh.
+# S008, 05-Dec-95, davidw@sco.com
+#	If scripts dir doesn't exist, dummy.sh is installed as scripts file.
+# S007, 17-Apr-94, davidw@sco.com
+#	Commented out the installation rule for update.sh for BL8.
+# S006, 23-Dec-93, davidw@sco.com
+#	Commented out installation rules for mkcfiles and mkcfiles.h 
+#	since they are not being used for everest and are undocumented.
+# S005, 23-Dec-93, davidw@sco.com
+#	Removed OA, tinfo and intlstub libraries - vidconf is going away
+#	Created SRCS so makedepend would work
+# S004, 15-June-93, edb@sco.com
+#       Add mkcfiles
+# M003, 02-Dec-92, davidw
+#	install dummy.sh in /usr/lib/vidconf/scripts
+# M002, 05-Oct-92, buckm
+# 	vidparse is not dependent on DEPLIBS
+# M001, 03-Sep-91, hess
+# 	install vidparse, update.sh into /usr/lib/vidconf
+# M000, 03-Sep-91, hess
+#	Created
+#
+VIDDIR = $(USRLIBDIR)/vidconf
+VIDSRCS = main.c lex.l parse.c data.c error.c
+VIDOBJS = main.o lex.o parse.o data.o error.o
+
+MKCSRCS = mkcfiles.c parse.c data.c error.c
+MKCOBJS = mkcfiles.o parse.o lex.o data.o error.o
+
+SRCS = $(VIDSRCS) $(MKCSRCS)
+EXTRA_DEFINES = -DGRAFINFO_DIR=\"$(USRLIBDIR)/grafinfo\"
+
+SYSLIBS =  -ll -lc -lx
+#
+# target
+#
+all:: vidparse mkcfiles
+
+vidparse: $(VIDOBJS)
+	$(RM) $@; if [ -f $@ ]; then $(MV) $@ $@~; fi ; \
+	$(CC) -o $@ $(VIDOBJS) $(LDOPTIONS) $(SYSLIBS) -lmalloc
+
+mkcfiles: $(MKCOBJS)
+	$(RM) $@; if [ -f $@ ]; then $(MV) $@ $@~; fi ; \
+	$(CC) -o $@ $(MKCOBJS) $(LDOPTIONS) $(SYSLIBS) -lmalloc
+
+InstallProgram(vidparse,$(VIDDIR))
+
+clean ::
+	$(RM) *.o vidparse core lex.yy.c mkcfiles
+
+DependTarget()

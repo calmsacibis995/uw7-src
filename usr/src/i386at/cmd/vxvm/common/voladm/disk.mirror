@@ -1,0 +1,102 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.mirror.sh	1.2 3/3/97 03:20:49 - cmd.vxvm:common/voladm/disk.mirror.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.mirror.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push Mirror
+voladm_help_push disk.mirror.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:275 "Mirror volumes on a disk"
+	ewritemsg -M vxvmshm:499 \
+"This operation can be used to mirror volumes on a disk.  These
+  volumes can be be mirrored onto another disk or onto any
+  available disk space.  Volumes will not be mirrored if they are
+  already mirrored.  Also, volumes that are comprised of more than
+  one subdisk will not be mirrored.
+
+  Mirroring volumes from the boot disk will produce a disk that
+  can be used as an alternate boot disk.
+
+  At the prompt below, supply the name of the disk containing the
+  volumes to be mirrored."
+
+	voladm_get_disk_dmname
+	srcdmname=$dmname
+
+	export srcdmname; ewritemsg -M vxvmshm:588 \
+"You can choose to mirror volumes from disk $srcdmname onto any
+  available disk space, or you can choose to mirror onto a specific
+  disk.  To mirror to a specific disk, select the name of that disk.
+  To mirror to any available disk space, select \\\"any\\\"."
+	voladm_get_disk_dmname -g "$dgname" "Enter destination disk" any
+	dstdmname=$dmname
+
+	if [ "X$dstdmname" = Xany ]
+	then
+		dstdmname=
+		export srcdmname dgname; ewritemsg -M vxvmshm:446 \
+"The requested operation is to mirror all volumes on disk $srcdmname
+  in disk group $dgname onto any available disk space."
+	else
+		export srcdmname dgname dstdmname; ewritemsg -M vxvmshm:447 \
+"The requested operation is to mirror all volumes on disk $srcdmname
+  in disk group $dgname onto available disk space on disk $dstdmname."
+		x=`vxprint -g "\$dgname" -s -F "%disk" | grep "^$dstdmname\\$"`
+		if [ -n "$x" ]
+		then
+			export dstdmname; ewritemsg -M vxvmshm:469 \
+"There is space already allocated on disk $dstdmname.  If you don't
+  want to mirror onto this disk, enter \\\"n\\\" at the next prompt and
+  restart this operation from the beginning."
+		fi
+	fi
+	ewritemsg -M vxvmshm:283 \
+	 "NOTE: This operation can take a long time to complete."
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		voladm_yorn -M vxvmshm:274 "Mirror volumes on a different disk?" n && continue
+		break
+	fi
+
+	writemsg
+	doit vxmirror $v_opt -V -g "$dgname" "$srcdmname" $dstdmname \
+		2> $tmpfile1
+	if [ $? -eq 0 ]
+	then
+		export srcdmname; ewritemsg -M vxvmshm:278 \
+			"Mirroring of disk $srcdmname is complete."
+		voladm_yorn -M vxvmshm:276 \
+		"Mirror volumes on another disk?" n || break
+	else
+		export srcdmname tmpfile1; ewritemsg -M vxvmshm:277 \
+"Mirroring of disk $srcdmname failed.
+  Error:
+  `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:274 "Mirror volumes on a different disk?" n || break
+	fi
+done
+
+quit 0

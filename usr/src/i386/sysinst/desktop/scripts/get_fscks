@@ -1,0 +1,38 @@
+#ident	"@(#)get_fscks	15.1"
+
+function get_fscks
+{
+	typeset i root_dir pkg_list
+
+	if [ $PKGINSTALL_TYPE = UPGRADE ]
+	then
+		pkg_list=etc/pkg.LIST
+	elif [ $PKGINSTALL_TYPE = UPGRADE2 ]
+	then
+		pkg_list=etc/pkg201.LIST
+	fi
+
+	case $SEC_MEDIUM_TYPE in
+	cdrom)
+		root_dir=/cd-rom/.extra.d
+		;;
+	tape|diskette|tcp|spx)
+		if [ $PKGINSTALL_TYPE = UPGRADE2 ]
+		then
+			get_tools '*extra.d/etc/fs/*/fsck *extra.d/etc/pkg201.LIST *extra.d/usr/sbin/pkginst/*'
+		else
+			get_tools '*extra.d/etc/fs/*/fsck *extra.d/etc/pkg.LIST'
+		fi
+		root_dir=/.extra.d
+		;;
+	esac
+	call symlink $root_dir/$pkg_list /etc/pkg.LIST
+	[ -d /usr/sbin ] || mkdir -p /usr/sbin
+	call symlink $root_dir/usr/sbin/pkginst /usr/sbin/pkginst
+	cd $root_dir/etc/fs
+	for i in *
+	do
+		call symlink $root_dir/etc/fs/$i/fsck /etc/fs/$i/fsck
+	done
+	cd /
+}

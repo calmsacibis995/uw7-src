@@ -1,0 +1,184 @@
+#ident	"@(#)inetinit	1.3"
+
+#
+#	STREAMware TCP
+#	Copyright 1987, 1993 Lachman Technology, Inc.
+#	All Rights Reserved.
+#
+
+umask 022
+
+if [ -z "$LC_ALL" -a -z "$LC_MESSAGES" ]
+then
+	if [ -z "$LANG" ]
+	then
+		LNG=`defadm locale LANG 2>/dev/null`
+		if [ "$?" != 0 ]
+		then LANG=C
+		else eval $LNG
+		fi
+	fi
+	export LANG
+fi
+LABEL="UX:$0"
+CAT=uxrc
+
+#	inet startup
+
+mldmode > /dev/null 2>&1
+if [ "$?" = "0" ]
+then			# Enhanced Security running
+	exit
+fi
+
+LOG=/tmp/inet.start
+PermLog=/var/adm/log/inet.start
+export LOG PermLog
+exitcode=0
+
+SLINK=/usr/sbin/slink
+IFCONFIG=/usr/sbin/ifconfig
+STRCF=/etc/inet/strcf
+MSG1="\nTCP/IP startup was not entirely successful. Error messages in %s\n"
+DATADIR=/etc/confnet.d/inet
+DATASCRIPT=$DATADIR/config.boot.sh
+DATABASE=$DATADIR/interface
+NUstrcf=$DATADIR/strcf.custom
+UPSAVE=$DATADIR/up.save 	# ifconfig commands built for "up" operation
+KLUDGE=kludge
+
+export DATADIR DATASCRIPT DATABASE NUstrcf
+#
+# construct the commands to set-up and take-down the protocol stack.
+#
+UP="$SLINK -v -c $NUstrcf $KLUDGE"
+DOWN="$SLINK -u -c $NUstrcf $KLUDGE"
+
+case "$1" in
+start)
+	#
+	#  Run getmac to create /etc/inet/macaddr
+	#
+	if [ -x /usr/sbin/getmac ]
+	then
+		/usr/sbin/getmac >/dev/null 2>&1
+	fi
+
+	# The LOOP=up or LOOP=down portion of code is to determine
+	# if we are running this 'start)' code following running
+	# the 'stop)' code.  Once we've run an ifconfig lo0 {address},
+	# ifconfig lo0 will always have a zero return code, even after
+	# unlinking the transport stack.  So use the loopback transport
+	# UP|DOWN as a flag for the boot code.
+
+	# Avoid the test if we are coming up for the first time.
+
+	ifret=1
+	LOOP=down
+	if [ -z "$_AUTOBOOT" ]
+	then
+		ifout="`ifconfig lo0 2>/dev/null`"
+		ifret=$?
+		case X"$ifout" in
+			Xlo0*flags=*\<UP,*)
+				LOOP=up ;;
+			*)	LOOP=down ;;
+		esac
+	fi
+	if [ $ifret != 0 -o $LOOP != up ]
+	then
+		#
+		# the network stack is not yet up (at least there is
+		# no loopback).
+		#
+		cmd="/usr/sbin/slink -v -c /etc/inet/strcf"
+		pfmt -l $LABEL -s info -g $CAT:5 "\nThe following commands ran from /etc/init.d/inetinits\nThis command will link the TCP/IP protocol stack.\n%s\n\n" $cmd
+		$cmd
+		exitcode=$?
+		if [ ${exitcode} != 0 ]
+		then
+			cmd="/usr/sbin/slink -uv -c /etc/inet/strcf"
+			pfmt -l $LABEL -s error -g $CAT:6 "\nAn error was detected while linking the TCP/IP stack.\nThe slink command returned %s.\nThe following command will unlink the TCP/IP protocol stack.\n%s\n\n" ${exitcode} $cmd
+			# failed to build the stream stack so try to
+			# unbuild it.
+			$cmd
+			pfmt -l $LABEL -s error -g $CAT:7 "$MSG1" $LOG
+			cp $LOG $PermLog
+			exit $exitcode
+		fi
+		cmd="/usr/sbin/initialize -U"
+		pfmt -l $LABEL -s info -g $CAT:8 "This command will initialize addresses, routing, and services.\n%s\n\n" "$cmd"
+		$cmd
+		exitcode=$?
+		if [ ${exitcode} != 0 ]
+		then
+			pfmt -l $LABEL -s error -g $CAT:7 "$MSG1" $LOG
+		fi
+		exit ${exitcode}
+	fi > $LOG 2>&1
+
+	innerexitcode=$?
+	if [ ${innerexitcode} != 0 -o ${exitcode} != 0 ]
+	then
+		pfmt -l $LABEL -s error -g $CAT:7 "$MSG1" $LOG
+		exitcode=1
+		cp $LOG $PermLog >/dev/null 2>&1 &
+	else
+		rm -f $LOG $PermLog
+	fi
+	( #reset these subdevices
+	  cd /dev/inet
+	  echo tcp?* |/bin/xargs /bin/chown root &
+	  echo tcp?* |/bin/xargs /bin/chmod 600 & ) >/dev/null 2>&1
+	exit ${exitcode}
+
+	;;
+
+stop)
+	#
+	# rc0 and rc1 take care of killing when going down to states 0,1,5,6
+	#
+	if [ -z "$_AUTOKILL" ]	
+	then
+		# kill the various standalone daemons
+		#
+		# Read the /etc/inet/config file with awk and list all the
+		# executables (except shell script).  Ignore comments.
+		# Prepend executable names with a space.
+		#
+		# fgrep this list of cmds from ps output, and pass them to kill.
+		kill -9 `/usr/bin/ps -ef |
+			/usr/bin/fgrep "\`
+			/usr/bin/awk </etc/inet/config \
+				-F'[ 	]*:[ 	]*' \
+				'(( $1 !~ /[ 	]*#/ ) &&
+				  ( $2 !~ /^[ 	]*$/ ) &&
+				  ( $2 != \"/usr/bin/sh\" )) {
+					print \" \" $2;
+				 }'\`" |
+			/usr/bin/awk '{ print $2; }'`
+	fi
+
+	# If we are going down all the way, let nature take its course.
+	# Otherwise, if we are going to another run level, tear down the
+	# stack.
+
+	if [ -z "$_CURR_RL" ]
+	then
+		set -- `LC_ALL=C /sbin/who -r`
+		_CURR_RL=$7
+	fi
+	case "$_CURR_RL" in
+	0 | 5 | 6 )
+		;;
+	* )
+		$IFCONFIG -a down >/dev/null 2>&1
+		/usr/sbin/initialize -D >/dev/null 2>&1
+		/usr/sbin/slink -uv -c /etc/inet/strcf >/dev/null 2>&1
+		;;
+	esac
+	;;
+
+*)
+	exit 1
+esac

@@ -1,0 +1,952 @@
+#!/sbin/sh
+#ident	"@(#)ipxconf	15.2	98/01/18"
+
+# This is a dual-purpose module.  If it is run as netinst_ipx,
+# it will ask only for information necessary for the network
+# install.  If it runs as ipxconf, it will ask you to choose
+# from only valid frame types and the chosen frame type will
+# determine which servers are available.  If you run it with
+# some other name, it will die.
+
+[ -n "$debug" ] && set -x
+
+#JTB: the case used to say
+#        *netinst_ipx)
+
+case $0 in
+	*netinst*)
+		typeset -r InstallPath=true ;;
+	*ipxconf)
+		typeset -r InstallPath=false ;;
+	*)
+                print -u2 This module must be run as ipxconf or netinst_ipx.
+                exit 0 ;;
+esac
+
+typeset SPX_MODULES="uni ipx ripx nspx sockmod timod tirdwr"
+typeset IIROOT=/.extra.d
+typeset MNTROOT=/flpy2          # Mount point of Netinstall Floppy
+
+. /etc/inst/locale/$LANG/menus/net_wrapper.txtstrings
+. /etc/inst/locale/$LANG/menus/ipxconf.txtstrings
+
+#-------------------------------------------------------
+
+
+function noop
+{
+   beep
+}
+
+
+function skip_test
+{
+	[ -n "$debug" ] && set -x
+
+	# common.rc invokes this to see if this module needs to run,
+	# which is only if the "nwnet" package will be installed.
+	# If the package is not going to be installed, exit.
+
+	if [[ $InstallPath != true ]]; then
+		UnixWare_PKGS=`ivar get UnixWare_PKGS`
+		[[ " $UnixWare_PKGS " = *" nwnet "* ]] || ii_exit $direction
+
+		# if we've been asked to defer configuration, skip on by.
+		NICS_CHOICE=`svar get NICS_CHOICE`
+		[ "$NICS_CHOICE" = "DEFER_CONFIG" ] && {
+			ivar set IPX_NETWORK_NUMBER ""
+			ivar set IPX_FRAME_TYPE ""
+			ivar set IPX_DEFER "TRUE"
+			ii_exit $direction
+		}
+	fi
+}
+
+. /globals.sh
+. /isl/ui_modules/common.rc
+. /isl/ui_modules/frametype.rc
+
+function setnows {
+	eval "$1=\"$2\""
+}
+
+
+# Table of Contents
+# -----------------
+#  go_back
+#  go_next
+#  get_help
+#
+#  ipx_config_update
+#  ipx_config_shutdown
+#  ipx_net_config
+#  entry_get_parms
+#  entry_guess_parms
+#  net_install_ipx_init
+
+# Don't automatically export all subsequently defined variables
+set +a
+PS4='[$LINENO]+ '
+
+
+# ----------------------------------------------------
+# End of generics
+# ----------------------------------------------------
+
+# Needed by frametype.rc
+CHOOSE_FRAME_TYPE_TITLE="$IPXCONF_CHOOSE_FRAME_TYPE_TITLE"
+CHOOSE_FRAME_TYPE_FOOTER="$IPXCONF_CHOOSE_FRAME_TYPE_FOOTER"
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices.
+	#
+
+	ipx_config_update
+	ipx_config_shutdown
+
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save the current choices if they're valid,
+	# otherwise, stick around.
+	#
+
+	ipx_config_update validate
+	retval=$?
+
+	[[ $retval != 0 ]] && return $retval
+
+	if [[ $InstallPath = true ]]; then
+		try_to_reach_network || return $?
+		ipx_config_done || return $?
+	fi
+
+	ipx_config_shutdown
+	svar set spx_status 2
+
+	#
+	# Tell the sequencer to go forward
+	#
+	ii_exit NEXT
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+
+	ipx_config_update
+	ipx_config_shutdown
+
+	ivar set help_topic ipxconf
+	ii_exit HELP
+}
+
+
+# determine if IPX network number is reasonable
+function valid_ipx_network_addr
+{
+[ -n "$debug" ] && set -x
+	#  Null string is OK
+	[ -z "$1" ] && return 0
+
+	[[ $1 = *[!0-9a-fA-F]* ]] && return 1
+
+	return 0
+}
+
+#
+#  If the form has reasonable information, or if $1 is not "validate",
+#  update the ifile with all of the shell variables we set here,.
+#
+function ipx_config_update
+{
+[ -n "$debug" ] && set -x
+
+	footer ""
+	msg ""
+
+	#
+	#  Make sure that this form is completely filled in with 
+	#  valid values.  Each address is piped to a read to eliminate
+	#  leading or trailing whitespace which can foul up commands
+	#  that will use these addresses (like pkgcat).
+	#
+	typeset II_ERR=0
+	typeset II_FLD
+
+	typeset chk_IPX_NETWORK_NUMBER
+	typeset chk_IPX_FRAME_TYPE
+	typeset chk_IPX_SERVER
+
+	setnows chk_IPX_NETWORK_NUMBER	$IPX_NETWORK_NUMBER
+	setnows chk_IPX_FRAME_TYPE	$IPX_FRAME_TYPE
+	chk_IPX_SERVER="$IPX_SERVER"
+
+	[[ $1 = "validate" ]] && {
+
+		if [[ $InstallPath != true ]]; then
+			valid_ipx_network_addr "${chk_IPX_NETWORK_NUMBER}"
+			[ $? != 0 -o -z "${chk_IPX_NETWORK_NUMBER}" ] && {
+				II_FLD[${II_ERR}]="${IPXCONF_NETWORK_PROMPT}"
+				let II_ERR+=1
+			}
+		fi
+	
+		valid_frame_type "${chk_IPX_FRAME_TYPE}"
+		[ $? != 0 -o -z "${chk_IPX_FRAME_TYPE}" ] && {
+			II_FLD[${II_ERR}]="${IPXCONF_FRAME_TYPE_PROMPT}"
+			let II_ERR+=1
+		}
+
+		if [[ $InstallPath = true ]]; then
+			SERVER_CHOICES=`cat /tmp/ii.ALL`
+			typeset OIFS="$IFS"
+			IFS=${nl}
+			set -A SERVERS ${SERVER_CHOICES}
+			IFS="$OIFS"
+
+			found=0
+			for i in "${SERVERS[@]}"
+			do
+				[[ "$chk_IPX_SERVER" = "$i" ]] && {
+					found=1; break
+				}
+			done
+
+			[[ $found = 0 ]] && {
+				II_FLD[${II_ERR}]="${INETINST_SPX_SERVER}"
+				let II_ERR+=1
+			}
+
+			typeset chk_SERVER_NAME="${chk_IPX_SERVER#*\] }"
+		fi
+	}
+	
+	if [ ${II_ERR} != 0 ] 
+	then
+		eval display -w "\"$II_ERR_MSG\"" -bg $ERROR_BG -fg $ERROR_FG
+		return 1
+	else
+		if [[ $InstallPath = true ]]; then
+			ivar set SERVER_NAME	"${chk_SERVER_NAME}"
+			ivar set IPX_SERVER_NAME "$chk_IPX_SERVER"
+		else
+			ivar set IPX_NETWORK_NUMBER "${chk_IPX_NETWORK_NUMBER}"
+		fi
+		ivar set IPX_FRAME_TYPE		"${chk_IPX_FRAME_TYPE}"
+		ivar set IPX_DEFER "FALSE"
+		return 0
+	fi
+}
+
+# Close the form and whatever else we need to do before leaving this module
+
+function ipx_config_shutdown
+{
+[ -n "$debug" ] && set -x
+
+	if [ -n "$myFID" ]
+	then
+		destroy_form $myFID
+		myFID=
+	fi
+	if [ -n "$myWID" ]
+	then
+		wclose $myWID
+		myWID=
+	fi
+}
+
+function defer_spx_config
+{
+	[ -n "$debug" ] && set -x
+	if [[ $InstallPath != true ]]; then
+		UnixWare_PKGS=`ivar get UnixWare_PKGS`
+
+		# if we defer SPX config, we may have to deconfig the NIC
+		typeset defer_nics=false
+		tcp_defer=$(svar get tcp_defer)
+		[[ " $UnixWare_PKGS " != *" inet "* ]] && defer_nics=true
+		[ "$defer_nics" == "true" -o "${tcp_defer:-false}" == "true" ] && {
+			svar set NICS_CHOICE DEFER_CONFIG
+
+			# some of the network postinstall scripts use
+			# empty NICS_TYPE as a way to defer configuration
+			ivar set NICS_TYPE ""
+			ivar set NICS_CONFIG_FILE ""
+			ivar set NICS_DRIVER_NAME ""
+		}
+		ivar set IPX_NETWORK_NUMBER ""
+		ivar set IPX_FRAME_TYPE ""
+		ivar set IPX_DEFER "TRUE"
+	fi
+}
+
+
+#  We just came from configuring our networking
+#  card.  Now we need some information to configure the protocol
+#  stack (for IPX/SPX).
+#
+function ipx_net_config
+{
+[ -n "$debug" ] && set -x
+
+	if [[ $InstallPath == true ]]
+	then
+		FOOTER="$IPXCONF_NODEFER_FOOTER"
+		FFOOTER="$IPXCONF_NODEFER_FOOTER"
+	else
+		FOOTER="$IPXCONF_FORM_FOOTER"
+		FFOOTER="$IPXCONF_FRAME_FOOTER"
+	fi
+
+	#
+	# Determine width of this menu
+	#
+	typeset II_WIDTH=34		# Width of input field (+4)
+	typeset II_WIDTH_MAX=0
+	typeset field_cnt=4		# 2 lines of blanks & 2 prompts
+
+	if [[ $InstallPath == true ]]; then
+		max "${#IPXCONF_FRAME_TYPE_PROMPT}" "${#INETINST_SPX_SERVER}"
+	else
+		max "${#IPXCONF_NETWORK_PROMPT}" "${#IPXCONF_FRAME_TYPE_PROMPT}"
+	fi
+	II_WIDTH_MAX=$?
+
+	let II_FIELD_LOC=${II_WIDTH_MAX}+3
+	let II_WIDTH=${II_WIDTH}+${II_WIDTH_MAX}
+
+        place_window -right 1 $(( II_WIDTH + 4 )) ${field_cnt} \
+            -current 'footer "${FOOTER}"' -fg $COMBO2_FG \
+            -bg $COMBO2_BG -title "${IPXCONF_TITLE}"
+	myWID=$CURWIN
+
+	open_form -exit 'go_next'
+	myFID=$FID
+
+	if [[ $InstallPath != true ]]; then
+	    add_field \
+		    -exit 'valid_ipx_network_addr "${IPX_NETWORK_NUMBER}"' \
+		    -entry 'msgnoerr $IPXCONF_NETWORK_MSG;footer ${IPXCONF_NOF2_FOOTER}' \
+		    -p "${IPXCONF_NETWORK_PROMPT}" -ilen 15 \
+		    -ix ${II_FIELD_LOC} IPX_NETWORK_NUMBER 
+	fi
+
+	add_field \
+		-choice 'choose_frame_type "${IPX_FRAME_TYPE}"' \
+		-exit frame_exit -ix ${II_FIELD_LOC} \
+		-entry 'msgnoerr $IPXCONF_FRAME_TYPE_MSG;footer "${FFOOTER}"' \
+		-p "${IPXCONF_FRAME_TYPE_PROMPT}" \
+		-ilen ${FRAME_TYPE_MAX_LEN} IPX_FRAME_TYPE
+
+	if [[ $InstallPath = true ]]; then
+		add_field -choice 'do_servers' \
+		        -entry 'msgnoerr ${INETINST_SPX_EXPLAIN};footer "${IPXCONF_SERVER_FOOTER}"' \
+			-p "${INETINST_SPX_SERVER}" \
+			-ilen 30 IPX_SERVER
+	fi
+
+	run_form $myFID
+}
+
+
+function entry_get_parms
+{
+[ -n "$debug" ] && set -x
+
+	if [[ $InstallPath = true ]]; then
+		IPX_SERVER=`ivar get IPX_SERVER_NAME`
+	else
+		IPX_NETWORK_NUMBER=`ivar get IPX_NETWORK_NUMBER`
+		[ -z "$IPX_NETWORK_NUMBER" ] && IPX_NETWORK_NUMBER=0
+	fi
+	IPX_FRAME_TYPE=`ivar get IPX_FRAME_TYPE`
+
+	# Initial frame type, if none is set already.
+
+	[[ -z ${IPX_FRAME_TYPE} ]] && {
+		if [[ $InstallPath != true ]]; then
+			typeset -i autoidx=${#NETWORK_FRAME_TYPE_TXT[*]}-1
+			IPX_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[autoidx]}"
+		else
+			IPX_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[1]}"
+		fi
+	}
+
+	last_IPX_FRAME_TYPE=""
+}
+
+
+function entry_guess_parms
+{
+[ -n "$debug" ] && set -x
+	# Initial frame type, if none is set already.
+
+	[[ -z ${IPX_FRAME_TYPE} ]] &&
+		if [[ $InstallPath = true ]]; then
+			#IPX_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[0]}"
+			typeset -i autoidx=${#NETWORK_FRAME_TYPE_TXT[*]}-1
+			IPX_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[autoidx]}"
+		else
+			IPX_FRAME_TYPE="${NETWORK_FRAME_TYPE_TXT[1]}"
+		fi
+}
+
+function load_floppy_one
+{
+	# get rid of remnants of previous magic floppy mount
+	sh_umount $MNTROOT >/dev/null 2>&1
+	rm -f /usr/lib/libcrypt.so* >/dev/null 2>&1
+
+	typeset DONE=0
+	typeset II_FLOP_ERR=0
+	typeset MESSAGE=${INETINST_INSERT_FLOPPY}
+	cancel_spx_install=0
+
+	while [ ${DONE} -eq 0 ]
+	do
+	    #wclose $DISPWIN
+	    if [ ${II_FLOP_ERR} != 0 ]
+	    then
+		display -w "${MESSAGE}" -bg $ERROR_BG -fg $ERROR_FG
+	    else
+		display -w "${MESSAGE}"
+	    fi
+
+	    set_hotkey 9 "cancel_spx_install=1; return 0"
+
+	    footer "$WELCOME_FOOTER"
+	    msg ""
+	    input_handler
+
+	    # The user has decided that it isn't time to load the
+	    # first network floppy, or hasn't yet created the
+	    # floppy and wants to back up.
+	    #
+	    [ "${cancel_spx_install}" == "1" ] && {
+		# TODO - somewhat problematic. This currently
+		# tries to unload the modules, but they aren't
+		# yet loaded. 
+		netinst_clean ERROR
+		ii_exit PREV
+	    }
+
+	    display "${EXAMINING_DISKETTE}"
+	    footer "${GENERIC_WAIT_FOOTER}"
+
+	    rm -f /tmp/netflop.label
+	    cpio -iuvDZI /dev/rdsk/f0t >> /tmp/stderr 2>&1
+	    (( $? )) || {
+		read IDSTRING < /tmp/netflop.label
+		REL_FULLNAME=$(ivar get REL_FULLNAME)
+		if [ "${IDSTRING}" = "${REL_FULLNAME} 1" ]
+		then
+			DONE=1
+		fi
+	    }
+	    MESSAGE="${INETINST_INSERT_AGAIN}${INETINST_INSERT_FLOPPY}"
+	    II_FLOP_ERR=1
+	    wclose $CURWIN
+	done
+}
+
+function one_time_only_init
+{
+	[ -n "$debug" ] && set -x
+
+	# make sure the files have been extracted from the
+	# floppy.
+
+	cd ${IIROOT}
+	got_floppy_one=0
+	[ -f /tmp/common.list -a -f /tmp/spx.list ] || {
+		load_floppy_one
+		got_floppy_one=1
+	}
+	SPX_EXTRACT_LIST=""
+	testlist="$(cat /tmp/common.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			SPX_EXTRACT_LIST="${testlist}"
+			break
+		}
+	done
+	testlist="$(cat /tmp/spx.list)"
+	for file in ${testlist}
+	do
+		[ -f $file ] || {
+			SPX_EXTRACT_LIST="${SPX_EXTRACT_LIST} ${testlist}"
+			break
+		}
+	done
+
+	typeset extract_cnt=0 cnt_extracted=0
+	[ -n "$SPX_EXTRACT_LIST" ] && {
+	    (( $got_floppy_one )) || load_floppy_one
+	    display "$INETINST_COPY_WAIT" -above 1 -below 3
+	    DISPWIN=${CURWIN}
+	    msg ""
+	    footer "$LONG_WAIT_FOOTER"
+	    set -- ${SPX_EXTRACT_LIST}
+	    extract_cnt=$#
+	    gauge_start $extract_cnt -title "${COPYING_UTILS}" -above 6
+	    PROGRESS=$CURWIN
+	    cpio -ivdDZI /dev/rdsk/f0 ${SPX_EXTRACT_LIST} 2>> /tmp/stderr |&
+		while read -p x
+		do
+			gauge_add
+			(( cnt_extracted += 1 ))
+		done
+	    call sleep 2
+	    wclose $PROGRESS
+	    wclose ${DISPWIN}
+	}
+
+	[[ $cnt_extracted != $extract_cnt ]] && {
+	    display -w "${INETINST_NET_FAILURE} ${INETINST_SPXEXTRACT_FAIL}" \
+		-bg $ERROR_BG -fg $ERROR_FG
+	    input_handler
+	    return 1
+	}
+
+	display "$INETINST_CONFIGURE_NETWORK"
+	DISPWIN=$CURWIN
+
+	typeset iilibs
+	for iilibs in ${IIROOT}/usr/lib/*.so ${IIROOT}/usr/lib/*.so.2
+	do
+		[ -h /usr/lib/${iilibs##*/} ] || ln -s ${iilibs} /usr/lib/
+	done
+
+	for iilibs in /usr/lib/*.so
+	do
+		[ -h ${iilibs}.1 ] || ln -s ${iilibs} ${iilibs}.1
+	done
+
+	#
+	#  SPX network install requires that we make the necessary
+	#  device nodes, load the appropriate kernel modules, then
+	#	run nwdiscover to find SPX networking info
+	#	run sap_nearest
+	#	run nwdiscover to find SPX networking info
+	#
+	#
+
+	#
+	#  Make device nodes
+	#
+	OIFS=${IFS}
+	IFS=':'
+	for MODULE in ipx nspx ripx
+	do
+		while read J1 J2 NAME MAJ
+		do
+			[ "${NAME}" = "${MODULE}" ] && {
+				${IIROOT}/usr/sbin/mknod /dev/${MODULE}0 c ${MAJ} 0
+				${IIROOT}/usr/sbin/mknod /dev/${MODULE} c 7 ${MAJ}
+				[ "${MODULE}" = "nspx" ] && {
+					let MAJ=$MAJ+1
+					${IIROOT}/usr/sbin/mknod /dev/${MODULE}2 c 7 ${MAJ}
+				}
+				jRET=$?
+				break
+			}
+		done < ${IIROOT}/etc/conf/mod_register
+	done
+	IFS=${OIFS}
+
+	#
+	#  Make SPX specific links, directories, stub files.
+	#
+	ln -s ${IIROOT}/usr/sbin/npsd /usr/sbin
+	mkdir /etc/netware
+	ln -s ${IIROOT}/etc/netware/conf /etc/netware/
+	mkdir -p /var/spool/sap/in
+	mkdir -p /usr/lib/locale/C/LC_MESSAGES
+	mkdir -p /var/netware
+	> /etc/netware/nwconfig
+	cd /
+	cpio -icd -DZ < ${IIROOT}/usr/lib/msgcat.cpio.z >> /tmp/stderr 2>&1
+	MODULE=""
+
+	#
+	#  Load in modules for Networking Stack, sockets, and TLI.  These are
+	#  stored on the Network Install Floppy as bzip'ed cpio archives to
+	#  save space.  When we cpio them in and load them, we then blow them
+	#  away to save space on the boot filesystem.  
+	#
+	cd /etc/conf/mod.d/
+	for MODULE in ${SPX_MODULES}
+	do
+		sh_modadmin -l ${IIROOT}/etc/conf/mod.d/${MODULE}
+		jRET=$?
+		[ "${jRET}" != "0" ] && {
+			wclose $DISPWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_SPXLOAD_FAIL} ${MODULE}"  -bg $ERROR_BG -fg $ERROR_FG
+			input_handler
+#			netinst_clean ERROR
+			return 1
+		}
+	done
+
+	echo "server_name = \"$MY_UNAME\"" >> /etc/netware/nwconfig
+
+	#
+	#  Use nwdiscover to find all frame types spoken on this network.
+	#
+	LC_CTYPE="" ${IIROOT}/usr/sbin/nwdiscover -d ${dev_name} -a -c -t 1 \
+		> /tmp/frame.spx 2>>/tmp/stderr
+
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+		wclose $DISPWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_NWDISC_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+#		netinst_clean ERROR
+		return 1
+	}
+
+	wclose $DISPWIN
+
+	#svar set spx_status 1
+}
+
+function net_install_ipx_init
+{
+[ -n "$debug" ] && set -x
+
+	spx_status=$(svar get spx_status)
+	spx_status="${spx_status:-0}"
+	(( spx_status > 0 )) && return 0
+
+	ETH_HW="$(ivar get NICS_DRIVER_NAME)"
+	NICS_TYPE="$(ivar get NICS_TYPE)"
+	if [ "$NICS_TYPE" == "MDI" ]
+	then
+		dev_name=/dev/net0
+	else
+		dev_name=/dev/${ETH_HW}_0
+	fi
+	MY_UNAME="$(ivar get NODE)"
+	II_SVC_NO="0x3ee"
+
+	one_time_only_init
+
+	#
+	#  Let the user know we're now configuring the network
+	#
+	display "${INETINST_CONFIGURE_NETWORK}"
+	footer "${INETINST_WAIT_MSG}"
+	typeset CONFWID=$CURWIN
+
+	#
+	#  Determine if there is more than one frame type spoken here.
+	#  Eliminate any duplicates.
+	#
+	typeset spxFrame frame
+	integer spxNum inum dup
+	spxNum=0
+	while read frame junk1 junk2 junk3
+	do
+		inum=0
+		dup=0
+		while (( inum < spxNum ))
+		do
+			[ $frame = ${spxFrame[inum]} ] && dup=1
+			let inum+=1
+		done
+		[ ${dup} = "0" ] && {
+			spxFrame[spxNum]=$frame
+			let spxNum+=1
+		}
+	done < /tmp/frame.spx
+
+	# override default list of frame types with the limited set
+	# which is actually used on our network.
+	(( $spxNum )) && set -A NETWORK_FRAME_TYPE_TXT "${spxFrame[@]}"
+
+	wclose $CONFWID
+
+	svar set spx_status 1
+	return 0
+}
+
+
+function frame_exit
+{
+[ -n "$debug" ] && set -x
+	valid_frame_type "${IPX_FRAME_TYPE}" || return 1
+	[[ $InstallPath = true ]] || return 0
+
+	[[ "$last_IPX_FRAME_TYPE" = "$IPX_FRAME_TYPE" ]] && return 0
+
+	msg "$IPX_SERVER_DISCOVER"
+
+# kill off npsd process (new)
+	[[ -r /etc/netware/npsd.pid ]] && {
+		read PID < /etc/netware/npsd.pid
+		kill $PID >> /tmp/stderr 2>&1
+		call sleep 3
+	}
+
+# rewrite nwconfig file (new)
+	> /etc/netware/nwconfig
+	echo "server_name = \"$MY_UNAME\"" >> /etc/netware/nwconfig
+	echo "lan_1_adapter = \"${dev_name}\"" >> /etc/netware/nwconfig
+# end of new part
+
+	echo "lan_1_frame_type = \"${IPX_FRAME_TYPE}\"" >> \
+		/etc/netware/nwconfig
+	msg "$IPX_SERVER_DISCOVER (nwdiscover)"
+	LC_CTYPE="" ${IIROOT}/usr/sbin/nwdiscover -f ${IPX_FRAME_TYPE} \
+		-d ${dev_name} -u >>/tmp/stderr 2>&1
+
+	echo "router_type = \"CLIENT\"" >> /etc/netware/nwconfig
+
+	#
+	#  Start up npsd to hold the ipx/spx devices open for use by
+	#  other processes.
+	#
+	msg "$IPX_SERVER_DISCOVER (npsd)"
+	LC_CTYPE="" /usr/sbin/npsd -v >> /tmp/stderr 2>&1
+	jRET=$?
+	[ "${jRET}" != "0" ] && {
+#		wclose $CURWIN
+		display -w "${INETINST_NET_FAILURE} ${INETINST_NPSD_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+#		input_handler
+#		netinst_clean ERROR
+		return 1
+	}
+
+	#
+	#  Use sap_nearest to determine nearest server of our desired
+	#  type to automatically configure network.
+	#
+	integer retry=0
+	while (( retry < 3 ))
+	do
+	msg "$IPX_SERVER_DISCOVER (sap_nearest $retry)"
+		> /var/spool/sap/in/0x4
+		LC_CTYPE="" ${IIROOT}/bin/sap_nearest ${II_SVC_NO} \
+			>> /var/spool/sap/in/0x4 2>/dev/null
+		jRET=$?
+		[ "${jRET}" = "0" ] && break
+		[ "${retry}" = 2 ] && [ "${jRET}" != "0" ] && {
+#			wclose $CURWIN
+			display -w "${INETINST_NET_FAILURE} ${INETINST_SERVER_FAIL}" \
+				-bg $ERROR_BG -fg $ERROR_FG
+#			input_handler
+#			netinst_clean ERROR
+			msg ""
+			return 1
+		}
+		let retry+=1
+	done
+
+#
+#  Generate a menus to select Install Server from all servers found by
+#  sap_nearest and written to /var/spool/sap/in/0x4.
+#
+
+	MAXCOLS=0
+	svrcnt=0
+	> /tmp/ii.ALL
+	[ -s /var/spool/sap/in/0x4 ] && {
+		read DFLT_SERVER ADDR HOPS SVC < /var/spool/sap/in/0x4
+		export DFLT_SERVER
+		fld_change $myFID 1 "[$HOPS] $DFLT_SERVER"
+
+		while read SERVER ADDR HOPS SVC
+		do
+			echo "[$HOPS] $SERVER" >> /tmp/ii.ALL
+			COLS=$(echo "[$HOPS] $SERVER")
+			COLS=${#COLS}
+			[ ${COLS} -gt ${MAXCOLS} ] && MAXCOLS=${COLS}
+			(( svrcnt += 1 ))
+		done < /var/spool/sap/in/0x4
+		let MAXCOLS=${MAXCOLS}+1
+	}
+
+	(( svrcnt )) || {
+		msg ""
+		display -w "${INETINST_NET_FAILURE} ${INETINST_SERVER_FAIL}" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		input_handler
+		return 1
+	}
+
+	last_IPX_FRAME_TYPE="$IPX_FRAME_TYPE"
+	return 0
+}
+
+function ipx_config_done
+{
+[ -n "$debug" ] && set -x
+	#
+	#  Now we're configured.  Place the SPX-specific files in the
+	#  list to be copied to the hard drive when we chroot /mnt.
+	#
+	while read FILENAME
+	do
+		grep "^${FILENAME}$" /hd.list > /dev/null 2>&1
+		(( $? )) && echo ${FILENAME} >> /hd.list
+	done <<-EOFILES
+dev/ipx
+dev/ipx0
+dev/nspx
+dev/nspx0
+dev/nspx2
+dev/ripx
+dev/ripx0
+etc/netware
+etc/netware/nwconfig
+etc/netware/npsd.pid
+etc/netware/conf
+etc/netware/conf/nwnet.bin
+var/spool/sap/in/0x4
+usr/lib/novell.so
+usr/lib/libnwutil.so
+usr/lib/libNwCal.so
+usr/lib/libNwClnt.so
+usr/lib/libNwLoc.so
+usr/lib/libNwNcp.so
+usr/lib/libnwnetval.so
+usr/lib/locale
+usr/lib/locale/C
+usr/lib/locale/C/LC_MESSAGES/
+usr/lib/locale/C/LC_MESSAGES/npsmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/npsmsgs.cat.m
+usr/lib/locale/C/LC_MESSAGES/utilmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/utilmsgs.cat.m
+usr/lib/locale/C/LC_MESSAGES/nwcmmsgs.cat
+usr/lib/locale/C/LC_MESSAGES/nwcmmsgs.cat.m
+usr/sbin/npsd
+EOFILES
+
+# end of IPX specific code
+
+#
+#  Copy file ii.conflicts from /tmp to /var/sadm/dist so
+#  that these parameters may be used by other packages' install scripts.
+#
+[ -f /tmp/ii.conflicts ] && cp /tmp/ii.conflicts /var/sadm/dist/ii.conflicts
+
+#
+#  Now we're configured.  Place the common files in the list to be
+#  copied to the hard drive when we chroot /mnt. This is a list of
+#  files used by copy2hd to cpio from the RAM disk to the newly created
+#  hard disk.
+#
+	while read FILENAME
+	do
+		grep "^${FILENAME}$" /hd.list > /dev/null 2>&1
+		(( $? )) && echo ${FILENAME} >> /hd.list
+	done <<-EOFILES
+etc/services
+etc/netconfig
+var/sadm/dist/ii.conflicts
+usr/sbin/pkgcat
+usr/lib/libnsl.so
+usr/lib/libsocket.so.2
+usr/lib/libthread.so
+usr/lib/libnsl.so.1
+usr/lib/libthread.so.1
+usr/bin/cat
+usr/bin/dd
+usr/bin/uname
+EOFILES
+
+#netinst_clean SUCCESS
+
+return 0
+}
+
+function try_to_reach_network
+{
+
+	[ -n "$debug" ] && set -x
+footer "Verifying existence of install stream on server..."
+	IMAGE="${IPX_SERVER##* }:/var/spool/dist/${REL_FULLNAME}/${LANG} ${SET_NAME}.package"
+	NETPATH=spx /usr/sbin/pkgcat -n spx \
+		 -s $IMAGE | read_header > /dev/null 2>&1
+	if [[ $? -ne 0 ]]
+	then
+		eval display -w "\"${INETINST_PKGCAT_FAIL}\"" \
+			-bg $ERROR_BG -fg $ERROR_FG
+		footer "$INETINST_ERROR_FOOTER"
+#		netinst_clean ERROR
+		return 1
+	fi
+}
+
+
+#
+#  Radio box to select Install Server from list of all that were found.
+#
+function do_servers
+{
+[ -n "$debug" ] && set -x
+	SERVER_CHOICES=`cat /tmp/ii.ALL`
+#	if [ -z "${SERVERS}" ]
+#	then
+		typeset OIFS="$IFS"
+		IFS=${nl}
+		set -A SERVERS ${SERVER_CHOICES}
+		IFS="$OIFS"
+#	fi
+	CHOOSE_TITLE="$INETINST_SPX_SERVER"
+	CHOOSE_FOOTER="$INETINST_SERVER_DIRECTIONS"
+	choose -exit 'footer "$GENERIC_FORM_FOOTER"' -f "$DFLT_SERVER" "${SERVERS[@]}"
+	msg "${INETINST_SPX_EXPLAIN}"
+}
+
+
+entry_get_parms
+if [[ $InstallPath = true ]]; then
+	net_install_ipx_init || ii_exit PREV
+fi
+entry_guess_parms
+ipx_net_config
+
+# ----------------------------------------------------
+# More generics
+# ----------------------------------------------------
+
+# process user input
+
+set_hotkey 1 get_help
+set_hotkey 3 noop
+set_hotkey 4 noop
+set_hotkey 5 noop
+set_hotkey 6 noop
+set_hotkey 7 noop
+set_hotkey 9 go_back
+[[ $InstallPath != true ]] && set_hotkey 8 "defer_spx_config; ii_exit NEXT"
+input_handler
+
+#
+# Done
+#
+go_next
+

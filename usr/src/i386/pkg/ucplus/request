@@ -1,0 +1,82 @@
+#ident	"@(#)pkg4.i386:i386/pkg/ucplus/request	1.4"
+
+FAILURE=1
+
+trap 2 3 15
+
+#
+#  Make sure LANG environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+[ ${LANG} ] || LANG="C"
+export LANG
+
+MENU_RESP=$1
+
+# determine CLASSES to install
+RERROR=0
+urel=`uname -r`
+if [ $urel = "5" ]
+then
+	# native Gemini
+	CLASSES="all unative"
+elif [ $urel = "4.2MP" ]
+then
+	# UnixWare - pre-Gemini
+	uvers=`uname -v`
+	vers20=`expr "$uvers" : '2\.0'`
+	if [ $vers20 != "0" -o $uvers = "2.1" -o $uvers = "2.1.1" ]
+	then
+		RERROR=2.1.2
+	else
+		CLASSES="all uaddon"
+	fi
+elif [ $urel = "3.2" ]
+then
+	# OSR5
+	xuname=`uname -X`
+	vers500=`expr "$xuname" : '.*3\.2v5\.0\.0.*'`
+	vers502=`expr "$xuname" : '.*3\.2v5\.0\.2.*'`
+	if [ $vers500 != "0" -o $vers502 != "0" ]
+	then
+		echo "Installation requires OpenServer version 5.0.4 or higher"
+		exit $FAILURE
+	else
+		CLASSES="all uaddon"
+	fi
+else
+	RERROR=badrel
+fi
+#
+# if nothing to install, exit w/ code 77 for pkging tools to exit gracefully.
+#
+if [ $RERROR != "0" ]
+then
+	#Set up localized messaging
+	PKGMSG=${PKGINST}.pkg
+	LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+	if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+	then 
+		if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+			-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+		then
+			cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+			/usr/lib/locale/${LOCALE}/LC_MESSAGES
+			
+			installf ${PKGINST} /usr/lib/locale/${LOCALE}/LC_MESSAGES
+		fi
+	fi
+	if [ $RERROR = "2.1.2" ]
+	then
+		message -d `pfmt -s error -g ${PGKMSG}:1 "Installation of the %s package requires UnixWare version 2.1.2 or higher\n" ${PKGINST} 2>&1`
+	else
+		message -d `pfmt -s error -g ${PGKMSG}:2 "The %s package can only be installed on UnixWare 7 or 2.1.2 or OpenServer release 5.0.4\n" ${PKGINST} 2>&1`
+	fi
+	exit $FAILURE
+fi
+
+[ "$CLASSES" ] || exit 77
+
+echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+exit 0

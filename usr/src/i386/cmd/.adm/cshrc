@@ -1,0 +1,110 @@
+#	Copyright (c) 1987, 1988 Microsoft Corporation
+#	  All Rights Reserved
+
+#	This Module contains Proprietary Information of Microsoft
+#	Corporation and should be treated as Confidential.
+
+#ident	"@(#)adm:i386/cmd/.adm/cshrc	1.14.1.1"
+
+umask 022	# set default file creation mask
+
+eval set `defadm locale LANG`
+setenv LANG "$LANG"
+
+eval set `grep TZ= /etc/TIMEZONE`
+setenv TZ "$TZ"
+
+# calculate available disk space in root filesystem.
+#	echo ""		# skip a line
+#	/bin/sh /etc/dfspace
+
+# issue message of the day
+	echo ""		# skip a line
+	if ( -r /etc/motd ) cat /etc/motd
+
+# set default attributes for terminal
+	stty erase '^h' echoe
+	if ( $?LOGTTY == 0) set LOGTTY = `tty`
+
+# set TERM on console
+
+	if ( $?TERM == 0 ) then
+		set term = ansi
+		if ( `expr "$LOGTTY" : '.*/\(.*\)'` == "console" ) then
+			# check if it is an at386
+			/usr/sbin/isat386
+			if ( $status == 0 ) then
+				# it is an at386, check for color
+				/usr/sbin/adpt_type
+				if ( $status == 3 ) then	# VGA color?
+					eval set `defadm coterm`
+					set term = "$TERM"
+					# work around Dell Fastwrite VGA
+					# problem -- force text mode
+					# to color 80x25
+					# However, in multibyte console mode,
+					# this is not needed.
+					if ( $?MBCONSOLE == 0 ) set MBCONSOLE = no
+					if ( "$MBCONSOLE" != yes ) then
+						stty VGA_C80x25 >&! /dev/null
+					endif
+				else
+					eval set `defadm coterm-M`
+					set term = "$TERM"
+				endif
+			endif
+		endif
+	endif
+
+# set TERMCAP
+	if ( $?TERMCAP == 0 ) setenv TERMCAP /etc/termcap
+
+# check mailbox and news bulletins
+	mailcheck
+	if ( "$LOGNAME" != root && -d /var/news ) news -n
+
+# set up keyboard and X input method
+
+	if ( -r /etc/default/keyboard && ! -z /etc/default/keyboard ) then
+		eval set `defadm keyboard`
+		if ( $?KEYBOARD ) then
+			setenv KEYBOARD "$KEYBOARD"
+		endif
+		if ( $?XKEYBOARD ) then
+			setenv XKEYBOARD "$XKEYBOARD"
+		endif
+		if ( $?NUMLOCK ) then
+			setenv NUMLOCK "$NUMLOCK"
+		endif
+		if ( $?MAPCHAN ) then
+			setenv MAPCHAN "$MAPCHAN"
+		endif
+		if ( $?SHIFTDOWN ) then
+			setenv SHIFTDOWN "$SHIFTDOWN"
+		endif
+	endif
+
+	if ( -r /etc/default/Xim && ! -z /etc/default/Xim ) then
+		eval set `defadm Xim`
+		if ( $?XNLSPATH ) then
+			setenv XNLSPATH "$XNLSPATH"
+		endif
+		if ( $?XMODIFIERS ) then
+			setenv XMODIFIERS "$XMODIFIERS"
+		endif
+	endif
+
+	switch ( "$LOGTTY" )
+	case /dev/console:
+		if ( $?MAPCHAN ) then
+			/usr/bin/mapchan -f "$MAPCHAN"
+		endif
+		stty -istrip cs8
+		breaksw
+	case /dev/pts*:
+		stty -istrip cs8
+		breaksw
+	endsw
+
+# set USER
+	set user = "$LOGNAME"

@@ -1,0 +1,128 @@
+#ident "@(#)e3D.bcfg	27.1"
+#ident "$Header$"
+
+#$version 1
+
+#####################################
+#MANIFEST:
+
+FILES="Driver.o Drvmap Master Node Space.c System"
+
+#####################################
+#DRIVER:
+
+NAME="3Com 3C507 EtherLink 16 Series"
+
+HELPFILE="HW_netdrivers e3D.html"
+
+# driver does not support promiscuous mode
+PROMISCUOUS=false
+
+FAILOVER=false
+
+# no DMA for ISAVERIFY
+ISAVERIFY="READIOADDR READIRQ READMEMADDR
+           WRITEIOADDR WRITEIRQ WRITEMEMADDR"
+
+TYPE=MDI
+
+DRIVER_NAME=e3D
+
+CUSTOM_NUM=4
+
+# Whatever value is first in the list of choices is the "default"
+
+CUSTOM[1]="
+CABLETYPE
+0 1
+BNC/TP AUI
+Cable Type
+RESERVED
+Select Cable Type
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[2]="
+ZEROWAIT
+0 1
+Disabled Enabled
+Zero Wait State
+RESERVED
+Select Zero Wait State Mode
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[3]="
+DATAMODE
+0 1
+Turbo Standard
+Data Mode
+RESERVED
+Select the Data Mode
+BASIC
+ETHER
+BOARD
+"
+
+CUSTOM[4]="
+MACADDR
+0
+__STRING__
+MAC Address override
+RESERVED
+Enter colon-delimited override MAC address (base 16)
+ADVANCED
+ETHER
+BOARD
+"
+
+#####################################
+#ADAPTER:
+
+# we are a ddi8 driver, only limited by number of IO addresses available
+MAX_BD=999
+
+ACTUAL_RECEIVE_SPEED=0
+ACTUAL_SEND_SPEED=0
+
+CONFORMANCE=0x100
+
+TOPOLOGY=ETHER
+
+# old way:
+#INT="2 3 4 5"
+#PORT="250-25F 280-28F 2A0-2AF 2E0-2EF 300-30F 310-31F 330-33F 350-35F"
+#we use AOF values instead
+
+# IRQ 11 is only valid for boards whose eeprom part number is >= 5
+# but we include it anyway.
+# VALUES=3, 5, 7, 9, 10, 11, 12, 15
+INT="2 3 5 7 9 10 11 12 15"
+
+# VALUES=200-260:10, 280-2e0:10, 300-360:10, 380-3a0:10, 3e0
+PORT="200-20F 210-21F 220-22F 230-23F 240-24F 250-25F 260-26F 
+      280-28F 290-29F 2A0-2AF 2B0-2BF 2C0-2CF 2D0-2DF 2E0-2EF
+      300-30F 310-31F 320-32F 330-33F 340-34F 350-35F 360-36F
+      380-38F 390-39F 3A0-3AF 
+      3E0-3EF"
+
+# VALUES=c0000-d0000:8000(16|32|48|64), d8000(16|32), f00000-f80000:20000(64)
+#   16K         32K         48K         64K
+MEM="
+C0000-C3FFF C0000-C7FFF C0000-CBFFF C0000-CFFFF
+C8000-CBFFF C8000-CFFFF C8000-D3FFF C8000-D7FFF
+D0000-D3FFF D0000-D7FFF D0000-DBFFF D0000-DFFFF
+D8000-DBFFF D8000-DFFFF
+F00000-F03FFF F00000-F07FFF F00000-F0BFFF F00000-F0FFFF
+F20000-F23FFF F20000-F27FFF F20000-F2BFFF F20000-F2FFFF
+F40000-F43FFF F40000-F47FFF F40000-F4BFFF F40000-F4FFFF
+F60000-F63FFF F60000-F67FFF F60000-F6BFFF F60000-F6FFFF
+F80000-F83FFF F80000-F87FFF F80000-F8BFFF F80000-F8FFFF
+"
+
+BUS=ISA
+

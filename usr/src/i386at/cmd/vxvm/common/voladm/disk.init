@@ -1,0 +1,524 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.init.sh	1.2 3/3/97 03:19:53 - cmd.vxvm:common/voladm/disk.init.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.init.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+. $VOLADM_BIN/disk.ckinit
+
+set_OS_variables
+
+device_list="$*"
+
+if [ -n "$device_list" ]
+then
+	ask_for_device_list=no
+	ask_more=no
+else
+	ask_for_device_list=yes
+	ask_more=yes
+fi
+
+voladm_menu_push AddDisks
+voladm_help_push disk.init.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:106 "Add or initialize disks"
+
+	if [ "$ask_for_device_list" = "yes" ]
+	then
+		ewritemsg -M vxvmshm:553 \
+"Use this operation to add one or more disks to a disk group.  You can
+  add the selected disks to an existing disk group or to a new disk group
+  that will be created as a part of the operation. The selected disks may
+  also be added to a disk group as hot spares. The selected disks may also
+  be initialized without adding them to a disk group leaving the disks
+  available for use as replacement disks.
+
+  More than one disk or pattern may be entered at the prompt.  Here are
+  some disk selection examples:
+
+  all:		all disks
+  c3 c4b0t2:    all disks on both controller 3 and controller 4, bus 0, target 2
+  c3b0t4d2:     a single disk"
+
+		# Make sure prompt is displayed on the next line.
+		voladm_disk_device_list -M vxvmshm:0 \
+"Select disk devices to add:                                          "
+
+		if [ -z "$device_list" ]
+		then
+			ewritemsg -M vxvmshm:293 "No matching disks found."
+			voladm_continue -n
+			continue
+		fi
+	fi
+
+	disp_file=$tmpfile4
+
+	if [ `list_count $device_list` -eq 1 ]
+	then
+		single_disk=yes
+		ewritemsg -f $disp_file -M vxvmshm:241 \
+"Here is the disk selected.  Output format: [Device_Name]"
+	else
+		single_disk=no
+		ewritemsg -f $disp_file -M vxvmshm:240 \
+"Here are the disks selected.  Output format: [Device_Name]"
+	fi
+
+	voladm_list_display -a -f $disp_file $device_list
+
+	voladm_yorn -M vxvmshm:143 "Continue operation?" y
+	if [ $? -ne 0 ]
+	then
+		if [ "$ask_more" = "yes" ]
+		then
+			continue
+		else
+			quit 0
+		fi
+	fi
+
+	create_group=no
+
+	if [ "$single_disk" = "yes" ]
+	then
+		ewritemsg -M vxvmshm:587 \
+"You can choose to add this disk to an existing disk group, a
+  new disk group, or leave the disk available for use by future
+  add or replacement operations.  To create a new disk group,
+  select a disk group name that does not yet exist.  To leave
+  the disk available for future use, specify a disk group name
+  of \\\"none\\\"."
+	else
+		ewritemsg -M vxvmshm:585 \
+"You can choose to add these disks to an existing disk group, a
+  new disk group, or you can leave these disks available for use
+  by future add or replacement operations.  To create a new disk
+  group, select a disk group name that does not yet exist.  To
+  leave the disks available for future use, specify a disk group
+  name of \\\"none\\\"."
+	fi
+
+	voladm_disk_group -n "" rootdg optional
+
+	[ $? -eq 10 ] && create_group=yes
+
+	if [ "X$dgname" = Xnone ]
+	then
+		if [ "$single_disk" = "yes" ]
+		then
+			ewritemsg -f $disp_file -M vxvmshm:399 \
+"The disk will be initialized and left free for use as a replacement
+  disk."
+		else
+			ewritemsg -f $disp_file -M vxvmshm:116 \
+"All disks will be initialized and left free for use as replacement
+  disks."
+		fi	
+	else
+		voladm_help_push disk.nameadd.help
+		if [ "$single_disk" = "yes" ]
+		then
+			voladm_yorn -M vxvmshm:545 \
+			"Use a default disk name for the disk?" y
+		else
+			voladm_yorn -M vxvmshm:546 \
+			"Use default disk names for these disks?" y
+		fi
+		if [ $? -ne 0 ]
+		then
+			use_default_dmnames="no"
+		else
+			use_default_dmnames="yes"
+		fi
+		voladm_help_pop
+
+		disk_is_hs=no
+
+		voladm_help_push disk.hotadd.help
+		if [ "$single_disk" = "yes" ]
+		then
+			voladm_yorn -M vxvmshm:103 \
+			"Add disk as a spare disk for $dgname?" n
+		else
+			voladm_yorn -M vxvmshm:104 \
+			"Add disks as spare disks for $dgname?" n
+		fi
+		if [ $? -eq 0 ]
+		then
+			disk_is_hs=yes
+		fi
+		voladm_help_pop
+
+		if [ "$create_group" = "yes" ]
+		then
+
+			if [ "$use_default_dmnames" = "yes" ]
+			then
+				if [ "$disk_is_hs" = "yes" ]
+				then
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:95 \
+"A new disk group will be created named $dgname and the selected
+  disks will be added as spares to the disk group with default
+  disk names."
+				else
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:93 \
+"A new disk group will be created named $dgname and the selected disks
+  will be added to the disk group with default disk names."
+				fi
+			else
+				if [ "$disk_is_hs" = "yes" ]
+				then
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:92 \
+"A new disk group will be created named $dgname and the selected disks
+  will be added as spares to the disk group with disk names that will
+  be specified interactively."
+				else
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:94 \
+"A new disk group will be created named $dgname and the selected disks
+  will be added to the disk group with disk names that you will specify
+  interactively."
+				fi
+			fi
+		else
+			if [ "$use_default_dmnames" = "yes" ]
+			then
+				export dgname; \
+				if [ "$disk_is_hs" = "yes" ]
+				then
+					ewritemsg -f $disp_file -M vxvmshm:451 \
+"The selected disks will be added as spares to the disk group $dgname
+  with default disk names."
+				else
+					ewritemsg -f $disp_file -M vxvmshm:453 \
+"The selected disks will be added to the disk group $dgname with
+  default disk names."
+				fi
+			else
+				if [ "$disk_is_hs" = "yes" ]
+				then
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:452 \
+"The selected disks will be added to the disk group $dgname as
+  spares with disk names that you will specify interactively."
+				else
+					export dgname; \
+					ewritemsg -f $disp_file -M vxvmshm:454 \
+"The selected disks will be added to the disk group $dgname with
+  disk names that you will specify interactively."
+				fi
+			fi
+		fi
+	fi
+
+	voladm_list_display -a -f $disp_file $device_list
+
+	voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+	if [ $? -ne 0 ]
+	then
+		if [ "$ask_more" = "yes" ]
+		then
+			voladm_yorn -M vxvmshm:108 \
+			"Add or initialize other disks?" y || break
+			continue
+		else
+			quit 0
+		fi
+	fi
+
+	disk_dgname=$dgname
+
+	#
+	# Create a device, daname list for disk.ckinit.
+	#
+
+        dev_num=2    # Number of elements in device, daname list
+	dev_index=1     # Index of the device name in the group list.
+	da_index=2      # Index of the daname in the group list.
+
+	ckinit_dev_list=
+	error=no
+	for device in $device_list
+	do
+		if not dogi_name_is_device $device
+		then
+			export device; \
+			ewritemsg -M vxvmshm:158 \
+			"Device $device is not in the form cNbNtNdN."
+			voladm_continue -n
+			error=yes
+		else
+			dogi_name_daname $device daname
+			append_list ckinit_dev_list $device $daname
+		fi
+	done
+
+	if [ "$error" = "yes" ]
+	then
+		voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+		if [ $? -ne 0 ]
+		then
+			quit 0
+		fi
+	fi
+
+	if [ -z "$ckinit_dev_list" ]
+	then
+		if [ "$single_disk" = "yes" ]
+		then
+			ewritemsg -M vxvmshm:363 \
+			"Selected disk found to be invalid."
+		else
+			ewritemsg -M vxvmshm:117 \
+			"All selected disks found to be invalid."
+		fi
+		voladm_continue
+		continue
+	fi
+
+	#
+	# disk_ckinit sets the following environment variables:
+	#
+	#     ckinit_init - disks to be initialized
+	#     ckinit_noreinit - disks not to be reinitialized
+	#     ckinit_reatt - disks to be re-attached
+	#     ckinit_encap - disks to be encapsulated
+	#
+	disk_ckinit $ckinit_dev_list add
+
+	#
+	# Handle any vxreattach operations.
+	#
+	if [ -n "$ckinit_reatt" ]
+	then
+		if [ `list_count $ckinit_reatt` -eq $dev_num ]
+		then
+			ewritemsg -f $disp_file -M vxvmshm:119 \
+"An attach will be attempted for this device. It will not be
+  initialized.  Output format: [Device_Name]"
+		else
+			ewritemsg -f $disp_file -M vxvmshm:118 \
+"An attach will be attempted for each of the following devices. These
+  disks will not be initialized.  Output format: [Device_Name]"
+		fi
+
+		voladm_list_display -a -f $disp_file \
+		-g $dev_num -d $dev_index $ckinit_reatt
+
+		voladm_yorn -M vxvmshm:146 "Continue with reattach?" y
+		if [ $? -eq 0 ]
+		then
+			set -- $ckinit_reatt
+			while [ $# -gt 0 ]
+			do
+				device=$1
+				daname=$2
+					
+				doit vxreattach -rb $daname 2> $tmpfile1
+
+				if [ $? -eq 0 ]
+				then
+					export daname; \
+					ewritemsg -M vxvmshm:317 \
+"Reattaching device $daname completed successfully."
+				else
+					export daname tmpfile1; \
+					ewritemsg -M vxvmshm:318 \
+"Reattaching device $daname failed.
+  Error: `cat $tmpfile1`"
+					voladm_continue -n
+				fi
+				shift $dev_num
+			done
+		fi
+	fi
+	
+	#
+	# If no disk group is to be created, then nothing needs
+	# to be done for already initialized disks.
+	#
+	if [ "X$disk_dgname" = "Xnone" -a -n "$ckinit_noreinit" ]
+	then
+		if [ `list_count $ckinit_init` -eq $dev_num ]
+		then
+			ewritemsg -f $disp_file -M vxvmshm:289 \
+"No disk group was selected and this disk is already initialized. No
+  changes are required for these disks.  Output format: [Device_Name]"
+		else
+			ewritemsg -f $disp_file -M vxvmshm:288 \
+"No disk group was selected and these disks are already initialized. No
+  changes are required for these disks.  Output format: [Device_Name]"
+		fi
+
+		voladm_list_display -acn -f $disp_file \
+		-g $dev_num -d $dev_index $ckinit_noreinit
+	fi
+
+	#
+	# Initialize selected devices.
+	#
+	if [ -n "$ckinit_init" ]
+	then
+		success_list=
+		set -- $ckinit_init
+		while [ $# -gt 0 ]
+		do
+			device=$1
+			daname=$2
+
+			export device; \
+			ewritemsg -M vxvmshm:251 \
+			"Initializing device $device."
+
+			voladm_call disk.doinit "$device" "$daname"
+			if [ $? -ne 0 ]
+			then
+				voladm_continue
+			else
+				append_list success_list $device $daname
+			fi
+			shift $dev_num
+		done
+		ckinit_init="$success_list"
+	fi
+
+	#
+	# If no disk group was specified, then don't add ckinit_init or
+	# ckinit_noreinit disks to a disk group. There may be disks to
+	# encapsulate below.
+	#
+	# Handle disk group adds and the setting of the spare flag.
+	#
+	append_list ckinit_init $ckinit_noreinit
+	if [ "X$disk_dgname" != "Xnone" -a -n "$ckinit_init" ]
+	then
+		set -- $ckinit_init
+		while [ $# -gt 0 ]
+		do
+			device=$1
+			daname=$2
+				
+			if [ "$use_default_dmnames" = "no" ]
+			then
+				voladm_new_disk_dmname "$disk_dgname" "$device"
+			else
+				dmname=`vxnewdmname $disk_dgname`
+			fi
+
+			if [ "$create_group" = "yes" ]
+			then
+				export disk_dgname device dmname; \
+				ewritemsg -M vxvmshm:150 \
+"Creating a new disk group named $disk_dgname containing the disk
+  device $device with the name $dmname."
+
+				doit vxdg init $disk_dgname $dmname=$daname \
+				2> $tmpfile1
+				if [ $? -ne 0 ]
+				then
+					export disk_dgname daname dmname; \
+					ewritemsg -M vxvmshm:151 \
+"Creating disk group $disk_dgname with disk device $device failed.
+  `cat $tmpfile1`"
+					voladm_continue -n
+				elif [ "$disk_is_hs" = "yes" ]
+				then
+					export dmname disk_dgname; \
+					ewritemsg -M vxvmshm:367 \
+"Setting spare flag for disk $dmname in disk group $disk_dgname."
+
+					vxedit set "spare=on" $dmname \
+					2> $tmpfile1
+					if [ $? -ne 0 ]
+					then
+						export dmname; \
+						ewritemsg -M vxvmshm:366 \
+"Setting spare flag for $dmname failed.
+  `cat $tmpfile1`"
+						voladm_continue -n
+					fi
+				fi
+				create_group=no
+			else
+				export device disk_dgname dmname; \
+				ewritemsg -M vxvmshm:110 \
+"Adding disk device $device to disk group $disk_dgname with disk
+  name $dmname."
+
+				doit vxdg -g $disk_dgname adddisk \
+				$dmname=$daname 2> $tmpfile1
+				if [ $? -ne 0 ]
+				then
+					export \
+					daname disk_dgname dmname tmpfile1; \
+					ewritemsg -M vxvmshm:109 \
+"Adding disk device $device failed.
+  `cat $tmpfile1`"
+					voladm_continue -n
+				elif [ "$disk_is_hs" = "yes" ]
+				then
+					export dmname disk_dgname; \
+					ewritemsg -M vxvmshm:367 \
+"Setting spare flag for disk $dmname in disk group $disk_dgname."
+
+					vxedit set "spare=on" $dmname \
+					2> $tmpfile1
+					if [ $? -ne 0 ]
+					then
+						export dmname; \
+						ewritemsg -M vxvmshm:365 \
+"Setting hot spare flag for $dmname failed.
+  `cat $tmpfile1`\n"
+						voladm_continue -n
+					fi
+				fi
+			fi
+			shift $dev_num
+		done
+	fi
+
+	#
+	# Handle disks to be encapsulated. This should be the last
+	# action because of the possibility of a reboot being required.
+	#
+	if [ -n "$ckinit_encap" ]
+	then
+		disk_encap $ckinit_encap add
+	fi
+
+	if [ "$ask_more" = "yes" ]
+	then
+	      voladm_yorn -M vxvmshm:108 \
+	      "Add or initialize other disks?" n || break
+	else
+		quit 0
+	fi
+
+done
+
+quit 0

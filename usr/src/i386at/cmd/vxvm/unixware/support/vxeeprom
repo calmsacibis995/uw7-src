@@ -1,0 +1,202 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxeeprom.sh	1.2 3/3/97 03:29:19 - cmd.vxvm:unixware/support/vxeeprom.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxeeprom.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+prog=vxeeprom
+tag=vxvm:$prog
+export prog tag
+
+usage()
+{
+	egettxt >&2 \
+'Usage:	$prog [-m] devalias [aliasname [device-alias]]
+	$prog devunalias aliasname ...
+	$prog boot-device [boot-device]
+	$prog version
+	$prog supported
+	$prog enable' \
+	vxvmshm:517
+	exit 1
+}
+
+# doit - execute a command, printing the command in verbose mode
+doit() {
+	[ "$verbose" ] && cat <<-% >&4
+			! $*
+			%
+	"$@"
+}
+
+tab='	'
+nl='
+'
+bl="[$tab ]"
+I_ignore_bad_prom_version=
+m_match_multiple=
+verbose=
+
+while getopts :Imv c
+do
+	case $c in
+	I)	I_ignore_bad_prom_version=yes;;
+	m)	m_match_multiple=yes;;
+	v)	verbose=yes;;
+	?)	usage;;
+	esac
+done
+shift `expr $OPTIND - 1`
+[ $# -gt 0 ] || usage
+
+cmd=$1
+shift
+
+PROM_VERSION=
+eval "`vxparms`"
+
+if [ "X$cmd" = Xversion ]
+then
+	[ $# -eq 0 ] || usage
+	if [ -z "$PROM_VERSION" ]
+	then
+		egettxt '$tag: Unknown prom version' vxvmshm:80 >&2
+	else
+		echo $PROM_VERSION
+	fi
+	exit 0
+fi
+if [ "X$cmd" = Xsupported ]
+then
+	[ $# -eq 0 ] || usage
+	[ -n "$PROM_VERSION" -a "$PROM_VERSION" -ge 2 ]
+	exit $?
+fi
+
+[ -n "$PROM_VERSION" -a "$PROM_VERSION" -ge 2 ] || {
+	[ -z "$I_ignore_bad_prom_version" ] && {
+		v=$PROM_VERSION egettxt >&2 \
+			'$tag: Prom version $v not supported' \
+			vxvmshm:79
+	}
+	exit 3
+}
+
+getnvramrc()
+{
+	eeprom nvramrc 2> /dev/null | sed -e "1s/nvramrc=//p" -e 1d
+}
+setnvramrc()
+{
+	doit eeprom nvramrc="`cat`"
+}
+
+case $cmd in
+getnvramrc)
+	getnvramrc;;
+setnvramrc)
+	setnvramrc;;
+devalias)
+	case $# in
+	0)	getnvramrc | sed -n \
+		"s/^$bl*devalias$bl$bl*\([^$tab ]*\)$bl$bl*\(.*\)$bl*\$/\1 \2/p"
+		;;
+	1)	if [ -n "$m_match_multiple" ]
+		then
+			getnvramrc |
+			sed -n \
+		       "s/^$bl*devalias$bl$bl*\($1\)$bl$bl*\(.*\)$bl*\$/\1 \2/p"
+		else
+			getnvramrc |
+			sed -n \
+			    "s/^$bl*devalias$bl$bl*$1$bl$bl*\(.*\)$bl*\$/\1/p" |
+			tail -1
+		fi
+		;;
+	2)	case $2 in
+		/devices/*)
+			device="`expr "\$2" : '/devices\(/.*\)'"
+			;;
+		/*)	if [ ! -h "$2" ]
+			then
+				device=$2
+			else
+				link="`ls -l "\$2" 2> /dev/null`"
+				device="`expr "\$link" : \
+					'.* -> \.\./\.\./devices\(.*\)'`"
+			fi
+			;;
+		*)	link="`ls -l "/dev/dsk/\$2" 2> /dev/null`"
+			device="`expr "\$link" : \
+				'.* -> \.\./\.\./devices\(/.*\)'`"
+			;;
+		esac
+		[ -n "$device" ] || {
+			spec=$2 egettxt >&2 \
+				'$tag: Invalid device specification: $spec' \
+				vxvmshm:78
+			exit 2
+		}
+		getnvramrc |
+		(
+			sed -e "/^$bl*devalias$bl$bl*$1$bl/d"
+			cat <<-!
+			devalias $1 $device
+			!
+			) |
+		setnvramrc
+		;;
+	*)	usage;;
+	esac
+	;;
+
+devunalias)
+	case $# in
+	0)	usage;;
+	*)	sedcmd="sed"
+		for alias in "$@"
+		do
+			sedcmd="$sedcmd -e '/$bl*devalias$bl$bl*$alias$bl/d'"
+		done
+		getnvramrc | eval "$sedcmd" | setnvramrc
+		;;
+	esac
+	;;
+
+boot-device)
+	case $# in
+	0)	eeprom boot-device 2> /dev/null | sed "s/boot-device=$bl*//";;
+	1)	eeprom boot-device="$1";;
+	*)	usage;;
+	esac
+	;;
+
+enable)	case `eeprom 'use-nvramrc?'` in
+	*=false)	doit eeprom 'use-nvramrc?=true';;
+	esac
+	;;
+
+*)	usage;;
+esac
+
+exit 0

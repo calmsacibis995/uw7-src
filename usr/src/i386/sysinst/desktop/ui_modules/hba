@@ -1,0 +1,909 @@
+#!/sbin/sh
+#ident  "@(#)hba	15.1	97/12/19"
+
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	IHVHBAS[2]=`ivar get IHVHBAS[2]`
+	# If we need to load more HBA disks ...
+	if [ ! "${IHVHBAS[2]}" = END ] 
+	then
+		#
+                # ... call ourselves again, interactively.
+                #
+                ivar set silent_$module "false"
+                ivar set skip_$module "false"
+                . /isl/ui_map
+                exec $module_path/$module $direction	
+	else
+		# load the default HBAs
+		HBA_CHOICE=1
+		HBA_INDEX=0
+		process_choice
+	fi
+}
+
+. /isl/ui_modules/common.rc
+
+prompt="$HBA_PROMPT"
+keys="$HBA_READ_DISK_KEYS"
+
+function noop
+{
+	:
+}
+
+
+function demand_hba
+{
+[ -n "$debug" ] && set -x
+	#
+	# Tell them to insert the disk or hit F9
+	#
+
+# Make sure to set HBA_INDEX to 0 when asking for a new HBA disk
+# HBA_INDEX is 0 when a fresh HBA disk is to added and is the index
+# into the IHV arrays when a disk is reloaded
+	HBA_INDEX=0
+
+
+	display -w "$prompt"
+	DISPLAY_WINDOW=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	footer "$keys"
+	msg ""
+	input_handler
+	#
+	# Start reading it
+	#
+	read_hba_disk
+}
+
+
+function process_choice
+{
+[ -n "$debug" ] && set -x
+
+	case $HBA_CHOICE in
+		0 )	
+	  	#
+	  	# Start reading it
+	  	#
+	  	#tell_reading_disk
+		read_hba_disk ;;
+		1 )
+		if [ -f /etc/hbaflop.cpio ]
+		then
+			display "$HBA_EXTRACT"
+			call sleep 2
+			FLPY=/flpy2
+			sh_umount /${FLPY} > /dev/null  2>&1 
+			cd /${FLPY}
+			cpio -iDdum < /etc/hbaflop.cpio
+			wclose $CURWIN
+			loadname=`grep -v '^$' ${FLPY}/etc/load.name` 
+			tell_reading_disk
+			really_read_hba_disk "$loadname"
+			wclose $main_hba_window
+			rm -rf $FLPY/*
+			rm -rf /etc/hbaflop.cpio
+		fi
+		process_boot_hba 
+		;;
+	esac
+}
+
+
+function ask_hba
+{
+[ -n "$debug" ] && set -x
+	display "$HBA_INSTALL_ANOTHER" -above 1 -below 6 
+	typeset DISPLAY_WINDOW=$CURWIN
+	open_radio -bg $BLUE -fg $WHITE
+	radio_wid=$RID
+
+	[ -z "$HBA_INDEX" ] && HBA_INDEX=0
+
+	integer i=0
+	while (( i < ${#HBA_CHOICES[*]} ))
+	do
+		add_radio "${HBA_CHOICES[i]}" -entry "HBA_CHOICE=$i"
+		(( i += 1 ))
+	done
+	radio_runparms $radio_wid ${#HBA_CHOICES[*]}
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		-above 4 -below 1 -title "$CHOOSE_TITLE"	
+	run_radio $radio_wid 1 ${#HBA_CHOICES[*]}
+	set_hotkey 1 get_help
+	#set_hotkey 10 process_boot_hba
+	set_hotkey 9 go_back
+	msg ""
+	footer "$HBA_KEYS"
+	input_handler
+	wclose $DISPLAY_WINDOW
+	process_choice
+}
+
+
+function tell_reading_disk
+{
+[ -n "$debug" ] && set -x
+#	place_window $HBAwaitCols $HBAwaitLines -below 3
+	display "$HBA_WAIT1" -below 3
+	main_hba_window=$CURWIN
+#	set_hotkey 1 noop
+#	set_hotkey 9 noop
+#	set_hotkey 10 noop
+#set_hotkey 2 "exit -1"
+#	_j=$CURWIN
+#	wprintf $CURWIN "$HBA_WAIT1"
+	msg "$HBA_READ_FLOPPY"
+	footer 
+}
+
+
+#
+# I think this adds filesystem types to the kernel.
+#
+function add_fs_drivers
+{
+[ -n "$debug" ] && set -x
+	if [ -s /etc/conf/fsmod.d/s5 ] 
+	then
+		modreg 4 s5
+		modadmin -l /etc/conf/fsmod.d/s5 >/dev/null 2>&1
+		rm -f /etc/conf/fsmod.d/s5
+	fi
+	if [ -s /etc/conf/fsmod.d/dosfs ]
+	then
+		modreg 4 dosfs
+		sh_modadmin -l /etc/conf/fsmod.d/dosfs >/dev/null 2>&1
+	rm -f /etc/conf/fsmod.d/dosfs
+	fi
+}
+
+
+#
+# This tries to mount and read an HBA disk. It returns 0 if sucessfull,
+# 1 if unsucessfull. The global NUM_HBA (and the associated 
+# hba_num_disks ivar variable) are updated if sucessfull.
+#
+function read_hba_disk
+{
+[ -n "$debug" ] && set -x
+	tell_reading_disk
+	#
+	# Mount the hba floppy.
+	#
+	FLPY=/flpy2
+	sh_mount -Fs5 -r /dev/dsk/f0t ${FLPY} 			  || \
+		sh_mount -Fdosfs -r /dev/dsk/f0t ${FLPY}	  || \
+		sh_mount -Fs5 -r /dev/dsk/f1t ${FLPY}		  || \
+		sh_mount -Fdosfs -r /dev/dsk/f1t ${FLPY}	  || \
+	if [ $? -ne 0 ]
+	then
+		#
+		# Unable to mount the disk.
+		#
+		wclose $_j
+		footer "$HBA_WELCOME_FOOTER"
+		display -w "$HBA_EMSG3" -bg $ERROR_BG -fg $ERROR_FG
+		msg "$HBA_FLOPPY_MOUNT_ERROR"
+		input_handler
+		msg ""
+		return 1
+	fi
+	
+	#
+	# first check for SID diskette (Supplemental Installation Directives)
+	#
+	if [ -f ${FLPY}/signature ]
+	then
+		read_sid_disk_instead
+		#
+		# This didn't count as an HBA disk.
+		#
+		sh_umount ${FLPY}
+		return 1
+	fi
+
+	#
+	# Better be an hba disk...
+	#
+	if [ ! -f ${FLPY}/etc/load.name ]
+	then
+		wclose $_j
+		footer "$HBA_WELCOME_FOOTER"
+		display -w "$HBA_EMSG3" -bg $ERROR_BG -fg $ERROR_FG
+		msg "$HBA_FLOPPY_ERROR_FOOTER"
+		sh_umount ${FLPY}
+		input_handler
+		msg ""
+		return 1
+	fi
+
+	#
+	# Have we read this disk already?
+	#	
+	loadname=`grep -v '^$' ${FLPY}/etc/load.name`
+	if already_read_hba "$loadname"
+	then
+		wclose $_j
+		footer "$HBA_KEYS"
+		display "$HBA_DUPIHVS" -above 1 \
+			-below 4 -bg $WHITE -fg $BLUE
+		DISPLAY_WINDOW=$CURWIN
+		open_radio
+		radio_wid=$RID
+
+		integer i=0
+		while (( i < ${#DUPHBA_CHOICES[*]} ))
+		do
+			add_radio "${DUPHBA_CHOICES[i]}" -entry "HBA_CHOICE=$i"
+			(( i += 1 ))
+		done
+		radio_runparms $radio_wid ${#DUPHBA_CHOICES[*]}
+		place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+			-above 4 -below 1 -title "$CHOOSE_TITLE"	
+		run_radio $radio_wid 0 ${#DUPHBA_CHOICES[*]}
+		set_hotkey 1 get_help
+		set_hotkey 9 "sh_umount ${FLPY}; go_back"
+		msg ""
+		input_handler
+		wclose $DISPLAY_WINDOW
+		
+		case $HBA_CHOICE in
+			0 )
+			tell_reading_disk
+			;;
+			1 )
+			sh_umount ${FLPY}
+			return 1 ;;
+		esac
+	else
+		ivar set dcu_already_run "false"
+	fi
+	
+	eval msg "$HBA_IHVLOADFOOTER"
+	footer
+	really_read_hba_disk "$loadname"
+	wclose $main_hba_window
+	sh_umount ${FLPY}
+	return 0
+}
+
+
+#
+# $1 = Name of the hba disk
+#
+function really_read_hba_disk
+{
+[ -n "$debug" ] && set -x
+	typeset mounted=NO
+	typeset -i _cpyerr=2 _rtn=1 num_modules
+	loadname="$1"
+	
+	#
+	# Get a list of module file names
+	#
+	modules=""
+	num_modules=0
+	while read line 
+	do
+		fn=${line#*:*:}	# delete the first two fields
+		fn=${fn%%:*}	# delete all but the first field
+		modules="$modules $fn"
+		(( num_modules += 1 ))
+	done < ${FLPY}/etc/loadmods
+
+	#
+	# Create a thermomitor...
+	#
+	gauge_start $num_modules -title "$HBA_COPY_DRIVERS" -above 4 -below 1
+
+	#
+	# For each (selected) entry in $modules...
+	#
+	for module in $modules
+	do
+		ffn="$HBA_COPYING $module         "
+		#
+		# Keep the user informed (pacified)
+		#
+		wgotoxy $main_hba_window 1 6
+		wprintf $main_hba_window "\r%s $ffn"
+
+		if [ -f ${FLPY}/etc/conf/mod.d/${module} ]
+		then
+			#
+			# This is a compressed module?
+			# See if it already exists on the system?
+			#
+			if ( [ ! -f /etc/conf/mod.d/${module} ] && (( HBA_INDEX == 0 )) ) || (( HBA_INDEX > 0 ))
+			then
+				#
+				# It's new, so copy it ?
+				#
+				copy_hba ${FLPY}/etc/conf/mod.d ${module}
+				_cpyerr=$?
+			fi
+		else
+			#
+			# This is a compressed archive of a module.
+			# We will need a ramdisk.
+			#
+			if [ $mounted = NO ]
+			then
+				#
+				# Mount a new ram disk at /.extra.d
+				# (only if there are any compressed modules)
+				#
+				[ -d /.extra.d ] || mkdir /.extra.d
+				sh_mount -F memfs -o \
+					swapmax=2000000,rootmode=01777,sfp=65535 \
+					/memfs /.extra.d >/dev/null 2>&1
+				mounted=YES
+				
+				#
+				# Copy all the compressed modules over
+				#
+				cp ${FLPY}/etc/modules /.extra.d/modules
+			fi
+
+			#
+			# We have a ram disk. Install from there.
+			#	
+			cd /.extra.d
+			
+			#
+			# Unwind module archive into tmp/$module directory
+			#
+			from_dir=${FLPY}/${module}/root/tmp/${module}
+			cpio -icdDZ -I $from_dir/mod*cpio.z >/dev/null 2>&1
+	
+			#
+			# copy module
+			#
+			if ( [ ! -f /etc/conf/mod.d/${module} ] && (( HBA_INDEX == 0 )) ) || (( HBA_INDEX > 0 )) 
+			then
+				copy_hba /.extra.d/tmp/${module} ${module}
+				_cpyerr=$?
+				#
+				#If the module was not a stub module, mark that 
+				# we succeeded in loading at least one module 
+				# off this HBA floppy. 
+				#
+#				grep ${module} /.extra.d/modules >/dev/null 2>&1
+#				if [ "$?" -gt 0 -a ! "$cmd" = LOAD_MOD ]
+#				then
+#					IHVHBASTUBS[n]="${IHVHBASTUBS[n]} ${module}"
+#				fi
+			fi
+			#
+			# Clean up - we'll need the space
+			#
+			sh_rm -fr /.extra.d/tmp
+		fi
+		if [ $_cpyerr = 0 ]
+		then
+#			IHVHBAMODS[n]="${IHVHBAMODS[n]} ${module}"
+			_rtn=0
+		fi
+
+		#
+		# Finally, increment the progress thermomitor
+		#
+		gauge_add
+	done
+
+	#
+	# Close the thermomitor window
+	#
+	call sleep 2
+	wclose $PROGRESS
+	ffn=" "
+	wprintf $main_hba_window "\r%s $ffn"
+
+	cd /
+	#
+	# Unmount memfs, if we mounted it
+	#
+	[ $mounted = YES ] && sh_umount /.extra.d
+	
+	#
+	# If it worked, remember this disk so we don't read it again.
+	#
+	if [ $_rtn -eq 0 ]
+	then
+		remember_read_hba "$loadname" "$modules" diskette
+	fi
+	return $_rtn
+}
+
+
+#
+# If module matches system bus (?) or it's a PCI module,
+# and it's not too big, then copy it's files to the ram disk.
+#
+function copy_hba
+{
+[ -n "$debug" ] && set -x
+	integer modsize=0 total_hba_mem=0 _rc=0
+	typeset junk mod
+
+	drv_xbus ${FLPY}/*/root/tmp/${2}/Drvmap || return 1
+	ihvresadd $2
+	if [ -f /etc/conf/mod.d/${2} ]
+	then
+		rm -f /etc/conf/mod.d/${2}
+		(( HBA_MEM_LIMIT < 0 )) && let HBA_MEM_LIMIT*=-1
+	fi
+
+	if (( HBA_MEM_LIMIT > 0 )) 
+	then
+		ls -1 /etc/conf/mod.d | while read mod
+		do
+			ls -lL /etc/conf/mod.d/$mod | read \
+				junk junk junk junk modsize junk
+			let total_hba_mem+=modsize
+		done
+
+		ls -lL ${1}/${2} | read \
+			junk junk junk junk modsize junk
+
+		if (( (total_hba_mem+modsize) < HBA_MEM_LIMIT ))
+		then
+			cp ${1}/${2} /etc/conf/mod.d
+		else
+			need_hba $2 && badhba $2
+			let HBA_MEM_LIMIT*=-1
+			_rc=1
+		fi
+	fi
+	return $_rc
+}
+
+
+
+#
+# A module couldn't be loaded off an HBA disk, due to memory size limits.
+# If this was a required module, we are in trouble, and the install cannot
+# continue (why?). Return 0 (true) if it is required.
+#
+# need_hba(module)
+#
+function need_hba
+{
+[ -n "$debug" ] && set -x
+	if [ -f "/etc/conf/drvmap.d/$1" ]
+	then
+		grep "^$1|*|V" /etc/conf/drvmap.d/$1 >/dev/null 2>&1
+		return $?
+	else
+		return 1
+	fi
+}
+
+
+#
+# We couldn't load a module that was required (due to memory limits).
+# So we have to give up.
+# MAKE THIS NICER.
+#
+function badhba
+{
+[ -n "$debug" ] && set -x
+        eval print "\"${HBA_NOROOM}\n${HBA_INSTERR}\""
+        read junk 
+        halt
+}
+
+
+#
+# drv_xbus( abs_drvmap )
+# Determine if the hba module has the bus information in the drvmap file 
+# for this module. And return which bus information is supported back the
+# calling function  
+#
+# commented added by hah
+# 
+ 
+function drv_xbus
+{
+[ -n "$debug" ] && set -x
+	typeset bus
+
+	if [ -f "$1" ]
+	then
+		case $(get_xbus) in
+		0|1)
+			bus=\|*ISA\|
+			;;
+		2)
+			bus=\|MCA\|
+			;;
+		esac
+		{ uncompress <$1 2>/dev/null || cat $1; } | \
+				grep $bus >/dev/null 2>&1
+		if (( $? ))
+		then
+			{ uncompress <$1 2>/dev/null || cat $1; } | \
+				grep \|PCI\| >/dev/null 2>&1
+			return $?
+		fi
+	fi
+	return 0
+}
+
+
+#
+# ihvresadd( module_name)
+# add drvmap, system, and master files to /etc/conf/*
+# I have no idea
+#
+function ihvresadd
+{
+[ -n "$debug" ] && set -x
+	set -- ${1} ${FLPY}/*/root/tmp/${1}
+	typeset _dir=$2
+
+	if [ -f ${_dir}/Drvmap ]
+	then
+        	uncompress <${_dir}/Drvmap \
+			>/etc/conf/drvmap.d/${1} \
+			2>/dev/null || \
+		cp ${_dir}/Drvmap \
+			/etc/conf/drvmap.d/${1} \
+			>/dev/null 2>&1
+	else
+		rm -f /etc/conf/drvmap.d/${1}
+	fi
+	if [ -f ${_dir}/System ]
+	then
+		uncompress <${_dir}/System \
+			>/etc/conf/sdevice.d/${1} \
+			2>/dev/null || \
+		cp ${_dir}/System \
+			/etc/conf/sdevice.d/${1} >/dev/null 2>&1
+	fi
+	if [ -f ${_dir}/Master ] 
+	then
+		uncompress <${_dir}/Master \
+			>/etc/conf/mdevice.d/${1} \
+			2>/dev/null || \
+		cp ${_dir}/Master \
+			/etc/conf/mdevice.d/${1} \
+			>/dev/null 2>&1
+	fi
+}
+
+
+
+#
+# Instead of an HBA disk, we got a SID disk. So, run a script on it.
+# I guess this is one way OEMs can add to the ISL.
+#
+function read_sid_disk_instead
+{
+[ -n "$debug" ] && set -x
+	typeset SID_NAME
+	SID_NAME=`grep -v '^$' ${FLPY}/signature`
+	if [ -n "$SID_NAME" ] 
+	then
+		eval footer "$HBA_SIDLOADEDFOOTER"
+		#
+		# RUN THE SCRIPT
+		#
+		. ${FLPY}/sbin/sidrc
+		return 0
+	else
+		return 1
+	fi
+}
+
+
+#
+# The user hit F9, so tell the sequencer to go back.
+#
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+# 
+# The user hit F1, so tell the sequencer to run the help module.
+#
+function get_help
+{
+[ -n "$debug" ] && set -x
+        ivar set help_topic hba
+        ii_exit HELP
+}
+
+
+#
+# The user hit F10, but is not allowd to go on yet. Give them an error
+# message, and stay here.
+#
+function go_nowhere
+{
+[ -n "$debug" ] && set -x
+	msg "$HBA_MANDATORY_DISK"
+	beep
+}
+
+
+#
+# The user hit F10, and it's ok to exit.
+#
+function go_next
+{
+[ -n "$debug" ] && set -x
+	ii_exit NEXT
+}
+
+
+#
+# Make a note of the name of the hba disk we just read. We need to
+# keep track, so if the same disk is inserted again we can tell.
+# Takes three arguments: the title (loadname) of the disk, the
+# list of modules coppied, and the media.
+# NUM_HBA holds the number of hba disks sucessfully read. So, create
+# a new ivar varaible hba_diskanme_N, where N=NUM_HBA+1. Save the
+# disk title there. This also increments NUM_HBA.
+#
+function remember_read_hba 
+{
+[ -n "$debug" ] && set -x
+	loadname="$1"
+	modules="$2"
+	media="$3"
+
+	integer index
+	if (( HBA_INDEX == 0 ))
+	then
+		(( NUM_HBA += 1 ))
+		ivar set NUM_HBA $NUM_HBA
+		index=$NUM_HBA
+	else
+		index=$HBA_INDEX
+	fi
+
+	ivar set IHVHBAS[$index] "$loadname"
+	ivar set IHVHBAMODS[$index] "$modules"
+	ivar set IHVHBAMEDIA[$index] "$media"
+}
+
+
+#
+# Check to see if this hba disk has already been read.
+# Whenever an hba disk is read, an ivar variable
+# hba_diskname_N (n=1..NUM_HBA) is set to the title of the
+# hba disk.
+# If we have already read the disk, return 0 (true). Else return
+# 1 (false).
+#
+function already_read_hba
+{
+[ -n "$debug" ] && set -x
+	integer i
+	loadname="$1"
+	i=$NUM_HBA
+	while (( i > 0 ))
+	do
+		name=`ivar get IHVHBAS[$i]`
+		[ "$name" = "$loadname" ] && {
+			HBA_INDEX=$i
+			return 0
+		}
+		(( i = i - 1 ))
+	done
+	return 1
+}
+
+
+#
+# This is called after the user has read in at least one hba disk,
+# and then they hit F10. Do one more virtual hba disk, and then exit.
+# When we read N hba disks, they were stored as hba[1..N].
+# Now create a pretend hba disk, with a list of modules that
+# were included on the boot floppy.
+#
+function process_boot_hba
+{
+[ -n "$debug" ] && set -x
+	#
+	# Don't know when this would be true.
+	#
+	if [ ! "${IHVHBAS[0]}" = END ] 
+	then
+		return
+	fi
+
+	for _mod in /etc/conf/hbamod.d/*
+	do
+		if [ ! -f /etc/conf/mod.d/${_mod##*/} ]
+		then
+			if drv_xbus /etc/conf/drvmap.d/${_mod##*/}
+			then
+				ln -s /etc/conf/hbamod.d/${_mod##*/} \
+						/etc/conf/mod.d/${_mod##*/}
+			else
+				rm -f /etc/conf/hbamod.d/${_mod##*/}
+			fi
+		else
+			rm -f /etc/conf/hbamod.d/${_mod##*/}
+		fi
+	done
+	
+# At this point, what we did in the past (I think) was to get a list
+# of all the "useful" (what does that mean?) modules that came from
+# the base media (boot floppy/floppies) and make that show up as
+# disk 0.  This had the advantage of ide being on the first disk,
+# therefore it got loaded last (disk 0, the boot floppy or floppies,
+# was a special case that was process last).  ide will no longer
+# be on the boot floppy, nor will anything else.  But we will (in
+# the dcu) take ide out of the list (or lists) it is in, and move
+# it to disk 0 anyway.		(JTB)
+
+#	#
+#	# Create list of modules, as if they had been loaded off a
+#	# hba disk.
+#	#
+#	m=""
+#	while read _mod
+#	do
+#		_mod=${_mod#*:*:} # delete the first two fields
+#		_mod=${_mod%%:*}  # delete all but the first field
+#		[ ! -f /etc/conf/hbamod.d/$_mod ] && continue
+#	m="$m $_mod"
+#	done < /etc/loadmods
+#
+#	#
+#	# Remember this "disk"
+#	#
+#	IHVHBAMODS[0]="$m"
+#	IHVHBAS[0]="SBF base HBAs"
+#	IHVHBAMEDIA[0]="basemedia"
+        ivar set IHVHBAS[0] "SBF base HBAs"
+        ivar set IHVHBAMODS[0] ""
+        ivar set IHVHBAMEDIA[0] "basemedia"
+
+	i=0
+	while (( i < ${#CHAR_DISK_NODES[@]} ))
+	do
+        	ivar set CHAR_DISK_NODES[$i] ${CHAR_DISK_NODES[$i]}
+		(( i++ ))
+	done
+
+	#
+	# Now we are really done.
+	#
+	ii_exit NEXT
+}
+
+	
+
+#-----------------------------------------------------------
+
+#
+# This function calls bmkdev, which (I assume) creates some /dev/*
+# files. This is important, because the hba disk we just read may
+# have (for example) added a driver which now lets us see the root hard disk.
+# After creating the devices, it checks to see if the root hard disk is
+# big enough.
+# If the hard disk is OK, this returns 0 (true).
+#
+function make_and_check_devs
+{
+[ -n "$debug" ] && set -x
+	typeset vals
+	typeset b_value b_base b_dir
+	integer HD_SZ=0 rc
+
+	#
+	# Call bmkdev
+	#
+	set -A CHAR_DISK_NODES -- $(/etc/scsi/bmkdev)
+	
+	#
+	# Parse the output
+	#
+	for b_value in ${CHAR_DISK_NODES[*]}
+	do
+		b_base=${b_value##*/}
+		b_dir=${b_value%/rdsk/${b_base}}
+		vals="$vals ${b_dir}/dsk/${b_base}"
+	done
+	set -A BLOCK_DISK_NODES $vals
+
+	#
+	# Check the root disk for space. Call partsize.
+	#
+	HD_SZ=`partsize -s ${CHAR_DISK_NODES[0]}`
+	rc=$?
+	if [ "${rc}" != "0" -o  "$HD_SZ" -lt "$MIN_HARDDISK" ]
+	then	
+		return 1
+	else
+		return 0
+	fi
+}
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
+
+# not integrated yet
+
+#function save_ihv_info
+#{
+#	integer i=0
+#	{
+#	while (( i < ${#IHVHBAMODS[*]} ))
+#	do
+#		print IHVHBAMODS[$i]=\"${IHVHBAMODS[i]}\"
+#		(( i += 1 ))
+#	done
+#	(( i = 0 ))
+#	while (( i < ${#IHVHBAS[*]} ))
+#	do
+#		print IHVHBAS[$i]=\"${IHVHBAS[i]}\"
+#		(( i += 1 ))
+#	done
+#	} > /tmp/ihv_info
+#}
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
+#
+# Main
+#
+# How many hba disks have already been read?
+#
+
+#integer num_hba
+#num_hba=`ivar get hba_num_disks`
+#[ -z "$num_hba" ] && num_hba=0
+# Part of the renaming of variables.  (JTB)
+
+integer NUM_HBA
+NUM_HBA=`ivar get NUM_HBA`
+[ -z "$NUM_HBA" ] && NUM_HBA=0
+
+#
+# How many hba disks are required? (defaults to 1) 
+# This is set in the init module. At least hba_num_max HBA disks must
+# be read in. After hba_num_max, don't ask anymore, just exit.
+#
+integer hba_num_min hba_num_max
+hba_num_min=`ivar get hba_num_min`
+[ -z "$hba_num_min" ] && hba_num_min=1
+hba_num_max=`ivar get hba_num_max`
+[ -z "$hba_num_max" ] && hba_num_max=1
+
+# If no hba disks have been read, ask for one. Don't let them get past
+# us until we read at least one (they can go back). (This is assuming that
+# hba_num_min equals one).
+# Keep asking for disks till they use a hotkey.
+#
+add_fs_drivers
+while (( NUM_HBA < hba_num_max ))
+do
+	if (( NUM_HBA < hba_num_min )) && [ ! -f /etc/hbaflop.cpio ] 
+	then
+		demand_hba
+	else
+		ask_hba
+	fi
+done
+
+#
+# We shouldn't reach here, but if we do...
+#
+ii_exit NEXT
+

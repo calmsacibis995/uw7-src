@@ -1,0 +1,737 @@
+/*
+ *	@(#) vp-w32.xgi 11.1 97/10/22
+ *
+ * Copyright (C) 1993 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ * 
+ */
+/***************************************************************************
+ *        ibm/vp-w32.xgi - IBM Tseng Labs ET4000/W32        *
+ *                                                                         *
+ *                   IBM.VP-W32.SVGA.1024x768-256-72                   *
+ *                   IBM.VP-W32.SVGA.1024x768-256-60                   *
+ *                   IBM.VP-W32.SVGA.800x600-256-75                    *
+ *                   IBM.VP-W32.SVGA.800x600-256-60                    *
+ *                   IBM.VP-W32.SVGA.640x480-256-60                    *
+ *                                                                         *
+ ***************************************************************************/
+
+VENDOR IBM    "IBM"
+ MODEL VP-W32    "Tseng Labs ET4000/W32"
+  CLASS  SVGA      "SVGA"
+   MODE   1024x768-256-72  "1024x768 256-color 72Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x3C2,0x3CA,0x3CC,0x3DA);  /* General/External registers  */
+      PORT(0x3C0,0x3C1);              /* Attribute                   */
+      PORT(0x3C4,0x3C5);              /* Sequencer                   */
+      PORT(0x3C7,0x3C8,0x3C9);        /* Color registers             */
+      PORT(0x3CE,0x3CF);              /* Graphics                    */
+      PORT(0x3D4,0x3D5);              /* CRTC                        */
+      PORT(0x3CD,0x3CB);              /* Bank segment selects        */
+
+      DATA
+         {
+	 XDRIVER     = "w32";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         BASEADDRESS = 0xA0000;
+	 FBTYPE	     = "BANK";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+	/* Program the cs0 and cs1 */
+         out(0x3C2,0x3F);                 /* misc out reg */
+
+	/* re-enable the sequencer */
+	 out(0x3c4, 0x0); out(0x3c5, 0x3);
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+
+/*   CRTC  */
+         r0  = 0xA1;  r1  = 0x7F;  r2  = 0x80;  r3  = 0x04; 
+         r4  = 0x85;  r5  = 0x97;  r6  = 0x26;  r7  = 0xFD;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x02;  r17 = 0x88;  r18 = 0xFF;  r19 = 0x80;
+         r20 = 0x60;  r21 = 0x04;  r22 = 0x22;  r23 = 0xAB;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Program GDCs  */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;       /* 64K */
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;  */  /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /* set extended regs */
+          out(0x3BF,0x03); out(0x3D8,0xA0);   /* enable extended regs */
+          out(0x3C4,0x87); out(0x3C5,0xBC);   
+          out(0x3D4,0x33); out(0x3D5,0x00);   /* extended start address */
+          out(0x3D4,0x31); out(0x3D5,0x00);   /* not MCLK CS4 or MCLK CS3 */
+          out(0x3D4,0x34); out(0x3D5,0x08);   /* MCLK CS2 */
+          out(0x3D4,0x35); out(0x3D5,0x00);   /* non-interlaced */
+
+	/* Program CRTC 36 */
+     	out(0x3d4,0x36); out(0x3d5,0xAB);    /* bits<2.0> must init be 0x3 */
+        out(0x3D4,0x37); out(0x3D5,0x1D);    /*   Video sys config */
+
+	/* Program ATC 16: Misc */
+	 in(r63,0x3da);
+	 out(0x3c0,0x16); out(0x3c0,0x00);
+
+	/* Enable 64k linear bank select : bank segment */
+         out(0x3CD,0); out(0x3CB,0);        
+
+	/* palette mask*/
+	 out(0x3c6,0xff);
+
+	/* Program seq 6 and 7 */
+	 out(0x3c4,0x6); out(0x3c5, 0x0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         /* out(0x3BF,0x03); out(0x3D8,0xA0);*/   /* enable extended regs */
+         out(0x3CD,0);                 /* bank segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0xFC);  /* select MCLK/2 */
+         out(0x3D4,0x33); out(0x3D5,0x00);  /* extended start address */
+         out(0x3D4,0x31); out(0x3D5,0x00);  /*  MCLK CS3 ,CS4 */
+         out(0x3D4,0x34); out(0x3D5,0x08);  /* MCLK CS2 */
+         out(0x3D4,0x35); out(0x3D5,0x00);  /* non-interlaced */
+
+         out(0x3BF,0x01); out(0x3D8,0x29);  /* disable extended regs */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR IBM    "IBM"
+ MODEL VP-W32    "Tseng Labs ET4000/W32"
+  CLASS  SVGA      "SVGA"
+   MODE   1024x768-256-60  "1024x768 256-color 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x3C2,0x3CA,0x3CC,0x3DA);  /* General/External registers  */
+      PORT(0x3C0,0x3C1);              /* Attribute                   */
+      PORT(0x3C4,0x3C5);              /* Sequencer                   */
+      PORT(0x3C7,0x3C8,0x3C9);        /* Color registers             */
+      PORT(0x3CE,0x3CF);              /* Graphics                    */
+      PORT(0x3D4,0x3D5);              /* CRTC                        */
+      PORT(0x3CD,0x3CB);              /* Bank segment selects        */
+
+      DATA
+         {
+	 XDRIVER     = "w32";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         BASEADDRESS = 0xA0000;
+	 FBTYPE	     = "BANK";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+	/* Program the cs0 and cs1 */
+         out(0x3C2,0x2F);                 /* misc out reg */
+
+	/* re-enable the sequencer */
+	 out(0x3c4, 0x0); out(0x3c5, 0x3);
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+
+/*   CRTC   */
+         r0  = 0x99;  r1  = 0x7F;  r2  = 0x7F;  r3  = 0x9D; 
+         r4  = 0x83;  r5  = 0x17;  r6  = 0x2F;  r7  = 0xF5;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x08;  r17 = 0x80;  r18 = 0xFF;  r19 = 0x80;
+         r20 = 0x60;  r21 = 0xFF;  r22 = 0x30;  r23 = 0xAB;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Program GDCs  */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;       /* 64K */
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;  */  /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /* set extended regs */
+          out(0x3BF,0x03); out(0x3D8,0xA0);   /* enable extended regs */
+          out(0x3D4,0x33); out(0x3D5,0x00);   /* extended start address */
+          out(0x3D4,0x34); out(0x3D5,0x08);   /* MCLK CS2 */
+          out(0x3D4,0x31); out(0x3D5,0x00);   /* MCLK CS3 ,CS4 */
+          out(0x3D4,0x35); out(0x3D5,0x00);   /* non-interlaced */
+
+	/* Program CRTC 36 */
+ 	 out(0x3d4,0x36); out(0x3d5,0xAB); /* bits<2.0> must init be 0x3 */
+         out(0x3D4,0x37); out(0x3D5,0x1D);   /* Video sys config */
+
+	/* Program ATC 16: Misc */
+	 in(r63,0x3da);
+	 out(0x3c0,0x16); out(0x3c0,0x00);
+
+	/* Enable 64k linear bank select */
+         out(0x3CD,0); out(0x3CB,0);        /* bank segment #0 */
+
+	/* palette mask*/
+	 out(0x3c6,0xff);
+
+	/* Program seq 6 and 7 */
+	 out(0x3c4,0x6); out(0x3c5, 0x0);
+         out(0x3C4,0x87); out(0x3C5,0xBC);   
+
+	/* Disable access to locked registers */
+/*
+	 out(0x3bf,0x01); out(0x3d8,0x29);
+ */
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         /* out(0x3BF,0x03); out(0x3D8,0xA0);*/   /* enable extended regs */
+         out(0x3CD,0);                 /* bank segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0xFC);  /* select MCLK/2 */
+         out(0x3D4,0x33); out(0x3D5,0x00);  /* extended start address */
+         out(0x3D4,0x31); out(0x3D5,0x00);   /* MCLK CS3 ,CS4 */
+         out(0x3D4,0x34); out(0x3D5,0x08);  /* MCLK CS2 */
+         out(0x3D4,0x35); out(0x3D5,0x00);  /* non-interlaced */
+
+         out(0x3BF,0x01); out(0x3D8,0x29);  /* disable extended regs */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x65);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/***********************************************************************/
+
+VENDOR IBM    "IBM"
+ MODEL VP-W32    "Tseng Labs ET4000/W32"
+  CLASS  SVGA      "SVGA"
+   MODE   800x600-256-75  "800x600 256-color 75Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x3C2,0x3CA,0x3CC,0x3DA);  /* General/External registers  */
+      PORT(0x3C0,0x3C1);              /* Attribute                   */
+      PORT(0x3C4,0x3C5);              /* Sequencer                   */
+      PORT(0x3C7,0x3C8,0x3C9);        /* Color registers             */
+      PORT(0x3CE,0x3CF);              /* Graphics                    */
+      PORT(0x3D4,0x3D5);              /* CRTC                        */
+      PORT(0x3CD,0x3CB);              /* Bank segment selects        */
+
+      DATA
+         {
+	 XDRIVER     = "w32";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         BASEADDRESS = 0xA0000;
+	 FBTYPE	     = "BANK";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+	/* Program the cs0 and cs1 */
+         out(0x3C2,0xE3);                 /* misc out reg */
+
+	/* re-enable the sequencer */
+	 out(0x3c4, 0x0); out(0x3c5, 0x3);
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+
+/*   CRTC  */
+         r0  = 0x7D;  r1  = 0x63;  r2  = 0x68;  r3  = 0x01; 
+         r4  = 0x6C;  r5  = 0x1C;  r6  = 0x9A;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x7C;  r17 = 0x82;  r18 = 0x57;  r19 = 0x80;
+         r20 = 0x60;  r21 = 0x5B;  r22 = 0x75;  r23 = 0xAB;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Program GDCs  */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;       /* 64K */
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;  */  /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /* set extended regs */
+          out(0x3BF,0x03); out(0x3D8,0xA0);   /* enable extended regs */
+          out(0x3C4,0x87); out(0x3C5,0xBC);   
+          out(0x3D4,0x33); out(0x3D5,0x00);   /* extended start address */
+          out(0x3D4,0x31); out(0x3D5,0x00);   /* not MCLK CS4 or MCLK CS3 */
+          out(0x3D4,0x34); out(0x3D5,0x08);   /* MCLK CS2 */
+          out(0x3D4,0x35); out(0x3D5,0x00);   /* non-interlaced */
+
+	/* Program CRTC 36 */
+     	out(0x3d4,0x36); out(0x3d5,0xAB);    /* bits<2.0> must init be 0x3 */
+        out(0x3D4,0x37); out(0x3D5,0x1D);    /*   Video sys config */
+
+	/* Program ATC 16: Misc */
+	 in(r63,0x3da);
+	 out(0x3c0,0x16); out(0x3c0,0x00);
+
+	/* Enable 64k linear bank select : bank segment */
+         out(0x3CD,0); out(0x3CB,0);        
+
+	/* palette mask*/
+	 out(0x3c6,0xff);
+
+	/* Program seq 6 and 7 */
+	 out(0x3c4,0x6); out(0x3c5, 0x0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         /* out(0x3BF,0x03); out(0x3D8,0xA0);*/   /* enable extended regs */
+         out(0x3CD,0);                 /* bank segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0xFC);  /* select MCLK/2 */
+         out(0x3D4,0x33); out(0x3D5,0x00);  /* extended start address */
+         out(0x3D4,0x31); out(0x3D5,0x00);  /*  MCLK CS3 ,CS4 */
+         out(0x3D4,0x34); out(0x3D5,0x08);  /* MCLK CS2 */
+         out(0x3D4,0x35); out(0x3D5,0x00);  /* non-interlaced */
+
+         out(0x3BF,0x01); out(0x3D8,0x29);  /* disable extended regs */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR IBM    "IBM"
+ MODEL VP-W32    "Tseng Labs ET4000/W32"
+  CLASS  SVGA      "SVGA"
+   MODE   800x600-256-60  "800x600 256-color 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x3C2,0x3CA,0x3CC,0x3DA);  /* General/External registers  */
+      PORT(0x3C0,0x3C1);              /* Attribute                   */
+      PORT(0x3C4,0x3C5);              /* Sequencer                   */
+      PORT(0x3C7,0x3C8,0x3C9);        /* Color registers             */
+      PORT(0x3CE,0x3CF);              /* Graphics                    */
+      PORT(0x3D4,0x3D5);              /* CRTC                        */
+      PORT(0x3CD,0x3CB);              /* Bank segment selects        */
+
+      DATA
+         {
+	 XDRIVER     = "w32";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         BASEADDRESS = 0xA0000;
+	 FBTYPE	     = "BANK";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+	/* Program the cs0 and cs1 */
+         out(0x3C2,0xE3);                 /* misc out reg */
+
+	/* re-enable the sequencer */
+	 out(0x3c4, 0x0); out(0x3c5, 0x3);
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+
+/*   CRTC  */
+         r0  = 0x7D;  r1  = 0x63;  r2  = 0x68;  r3  = 0x01; 
+         r4  = 0x6C;  r5  = 0x1C;  r6  = 0x9A;  r7  = 0xF0;
+         r8  = 0x00;  r9  = 0x60;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x7C;  r17 = 0x82;  r18 = 0x57;  r19 = 0x80;
+         r20 = 0x60;  r21 = 0x5B;  r22 = 0x75;  r23 = 0xAB;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Program GDCs  */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;       /* 64K */
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;  */  /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /* set extended regs */
+          out(0x3BF,0x03); out(0x3D8,0xA0);   /* enable extended regs */
+          out(0x3C4,0x87); out(0x3C5,0xFC);   
+          out(0x3D4,0x33); out(0x3D5,0x00);   /* extended start address */
+          out(0x3D4,0x31); out(0x3D5,0x00);   /* not MCLK CS4 or MCLK CS3 */
+          out(0x3D4,0x34); out(0x3D5,0x0A);   /* MCLK CS2 */
+          out(0x3D4,0x35); out(0x3D5,0x00);   /* non-interlaced */
+
+	/* Program CRTC 36 */
+     	out(0x3d4,0x36); out(0x3d5,0xAB);    /* bits<2.0> must init be 0x3 */
+        out(0x3D4,0x37); out(0x3D5,0x1D);    /*   Video sys config */
+
+	/* Program ATC 16: Misc */
+	 in(r63,0x3da);
+	 out(0x3c0,0x16); out(0x3c0,0x00);
+
+	/* Enable 64k linear bank select : bank segment */
+         out(0x3CD,0); out(0x3CB,0);        
+
+	/* palette mask*/
+	 out(0x3c6,0xff);
+
+	/* Program seq 6 and 7 */
+	 out(0x3c4,0x6); out(0x3c5, 0x0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         /* out(0x3BF,0x03); out(0x3D8,0xA0);*/   /* enable extended regs */
+         out(0x3CD,0);                 /* bank segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0xFC);  /* select MCLK/2 */
+         out(0x3D4,0x33); out(0x3D5,0x00);  /* extended start address */
+         out(0x3D4,0x31); out(0x3D5,0x00);  /*  MCLK CS3 ,CS4 */
+         out(0x3D4,0x34); out(0x3D5,0x08);  /* MCLK CS2 */
+         out(0x3D4,0x35); out(0x3D5,0x00);  /* non-interlaced */
+
+         out(0x3BF,0x01); out(0x3D8,0x29);  /* disable extended regs */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR IBM    "IBM"
+ MODEL VP-W32    "Tseng Labs ET4000/W32"
+  CLASS  SVGA      "SVGA"
+   MODE   640x480-256-60  "640x480 256-color 60Hz"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x3C2,0x3CA,0x3CC,0x3DA);  /* General/External registers  */
+      PORT(0x3C0,0x3C1);              /* Attribute                   */
+      PORT(0x3C4,0x3C5);              /* Sequencer                   */
+      PORT(0x3C7,0x3C8,0x3C9);        /* Color registers             */
+      PORT(0x3CE,0x3CF);              /* Graphics                    */
+      PORT(0x3D4,0x3D5);              /* CRTC                        */
+      PORT(0x3CD,0x3CB);              /* Bank segment selects        */
+
+      DATA
+         {
+	 XDRIVER     = "w32";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 8;
+         BASEADDRESS = 0xA0000;
+	 FBTYPE	     = "BANK";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x03;  r1 = 0x01;  r2 = 0x0F;  r3 = 0x00;  r4 = 0x0E;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+
+	/* Program the cs0 and cs1 */
+         out(0x3C2,0xE3);                 /* misc out reg */
+
+	/* re-enable the sequencer */
+	 out(0x3c4, 0x0); out(0x3c5, 0x3);
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+
+/*   CRTC  */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; 
+         r4  = 0x54;  r5  = 0x80;  r6  = 0x0B;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xEA;  r17 = 0x8C;  r18 = 0xDF;  r19 = 0x80;
+         r20 = 0x60;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xAB;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* Program GDCs  */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x40;  r6  = 0x05;  r7  = 0x0F;       /* 64K */
+/*       r4  = 0x00;  r5  = 0x40;  r6  = 0x01;  r7  = 0x0F;  */  /* 128K */
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x08;  r9  = 0x09;  r10 = 0x0A;  r11 = 0x0B;
+         r12 = 0x0C;  r13 = 0x0D;  r14 = 0x0E;  r15 = 0x0F;
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         /* set extended regs */
+          out(0x3BF,0x03); out(0x3D8,0xA0);   /* enable extended regs */
+          out(0x3C4,0x87); out(0x3C5,0xFC);   
+          out(0x3D4,0x33); out(0x3D5,0x00);   /* extended start address */
+          out(0x3D4,0x31); out(0x3D5,0x00);   /* not MCLK CS4 or MCLK CS3 */
+          out(0x3D4,0x34); out(0x3D5,0x08);   /* MCLK CS2 */
+          out(0x3D4,0x35); out(0x3D5,0x00);   /* non-interlaced */
+
+	/* Program CRTC 36 */
+     	out(0x3d4,0x36); out(0x3d5,0xAB);    /* bits<2.0> must init be 0x3 */
+        out(0x3D4,0x37); out(0x3D5,0x1D);    /*   Video sys config */
+
+	/* Program ATC 16: Misc */
+	 in(r63,0x3da);
+	 out(0x3c0,0x16); out(0x3c0,0x00);
+
+	/* Enable 64k linear bank select : bank segment */
+         out(0x3CD,0); out(0x3CB,0);        
+
+	/* palette mask*/
+	 out(0x3c6,0xff);
+
+	/* Program seq 6 and 7 */
+	 out(0x3c4,0x6); out(0x3c5, 0x0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         /* reset extended regs */
+         /* out(0x3BF,0x03); out(0x3D8,0xA0);*/   /* enable extended regs */
+         out(0x3CD,0);                 /* bank segment #0 */
+         out(0x3C4,0x07); out(0x3C5,0xFC);  /* select MCLK/2 */
+         out(0x3D4,0x33); out(0x3D5,0x00);  /* extended start address */
+         out(0x3D4,0x31); out(0x3D5,0x00);  /*  MCLK CS3 ,CS4 */
+         out(0x3D4,0x34); out(0x3D5,0x08);  /* MCLK CS2 */
+         out(0x3D4,0x35); out(0x3D5,0x00);  /* non-interlaced */
+
+         out(0x3BF,0x01); out(0x3D8,0x29);  /* disable extended regs */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);             /* sequencer regs */
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attribute F/F */
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x06;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */

@@ -1,0 +1,202 @@
+/*
+ *	@(#) Imakefile 11.2 97/10/23
+ *
+ *	Copyright (C) The Santa Cruz Operation, 1991-1996.
+ *	This Module contains Proprietary Information of
+ *	The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ *
+ * Modification History
+ *
+ * S038, 31-Mar-96, davidw
+ *	Moved mw/grafinfo/olivetti/m400-60.xgi to here - uses eff driver.
+ * S037, 16-Nov-94, hiramc
+ *      Remove SpecialFlagsObjectRule(effRectOps, -Otlc) for BL10 build
+ * S036, 21-Jul-94, davidw
+ *	Added unisys grafinfo file mpe.xgi from unisys.
+ * S035, 09-Nov-93, buckm
+ *	remove install rules for ati and intel 68800;
+ *	these now come from the m32 driver.
+ * S034, 02-Feb-93, mikep
+ * 	intel 68800
+ * S033, 02-Feb-93, staceyc
+ * 	miro magic plus grafinfo file installation added
+ * S032, 01-Feb-93, staceyc
+ * 	miro crystal grafinfo file installation added
+ * S031, 17-Dec-92, chrissc
+ *	Added 68800 for ATI Ultra Pro and Ultra Plus cards.
+ * S030, 14-Dec-92, juliad
+ * 	whoops...install ibm in ibm, not ati!
+ * S029, 12-Dec-92, mikep
+ *	add effFillSp.c
+ * S028, 18-Nov-92, juliad
+ * 	add install rules for ibm, miro and paradise
+ * S027, 22-Oct-92, staceyc
+ * 	pwx merge
+ * S026, 04-Sep-92, staceyc
+ * 	added clip file
+ * S025, 03-Sep-92, hiramc
+ *	Don't need PixelSize, don't need PSZ, don't need cfb.h or mfb.h
+ * S024, 03-Sep-92, hiramc
+ *	Remove effCursor - it became an empty file
+ * S023, 17-Apr-92, mikep
+ *	Add PixelSize for new CFB
+ * S022, 13-Mar-92, mikep
+ *	remove effAPBOut.s from link and source lines.  The C version is
+ *	now much faster.
+ * S021, 27-Feb-92, mikep
+ * 	add FONTSRC/include for R5
+ * S020, 14-Oct-91, mikep
+ * 	add yet another include path
+ * S019, 01-Oct-91, staceyc
+ * 	removed font realize code - now done in nfb
+ * S018, 23-Sep-91, pavelr
+ *	added dynamic object rule
+ * S017, 20-Sep-91, staceyc
+ *	added slow AP block out in case of Matrox bug
+ * S016, 18-Sep-91, staceyc
+ *	removed image and poly glyph code - now use reworked nfb
+ * S015, 08-Sep-91, mikep@sco.com
+ *	gen and nfb moved for the last time.  Really!
+ * S014, 03-Sep-91, staceyc
+ *	fix whereabouts of sys/intel
+ * S013, 28-Aug-91, staceyc
+ *	fix whereabouts of common
+ * S012, 28-Aug-91, staceyc
+ *	fast multi rect requests and faster image glyphs
+ * S011, 20-Aug-91, staceyc
+ *	reimplementation of mono image
+ * S010, 14-Aug-91, staceyc
+ * 	glyph drawing and caching
+ * S009, 13-Aug-91, mikep
+ * 	added gen include line
+ * S008, 13-Aug-91, staceyc
+ *	font realize code
+ * S007, 08-Aug-91, staceyc
+ *	stipple code
+ * S006, 01-Aug-91, staceyc
+ *	added hardware cursor limit check code
+ * S005, 16-Jul-91, staceyc
+ *	added cursor code
+ * S004, 28-Jun-91, staceyc
+ *	added nfb common to include dirs
+ * S003, 26-Jun-91, staceyc
+ *	added fast block copy assembler - include server template
+ * S002, 25-Jun-91, staceyc
+ *	reworked include line
+ * S001, 21-Jun-91, staceyc
+ *	added Bres line drawing code
+ * S000, 18-Jun-91, staceyc
+ * 	added effSlab.c
+ */
+
+#include <Server.tmpl>
+
+SRCS =	effRectOps.c effGC.c effVisual.c effCmap.c effData.c \
+	effInit.c effScreen.c effWin.c effImage.c effSlab.c effBres.c \
+	effBlkOut.s effDispCur.c effMisc.c effStip.c \
+	effGlCache.c effMono.c effBlam.s effGlyph.c \
+	effGBlit.s effSAPBOut.s effClip.c effFillSp.c
+
+OBJS =	effRectOps.o effGC.o effVisual.o effCmap.o effData.o \
+	effInit.o effScreen.o effWin.o effImage.o effSlab.o effBres.o \
+	effBlkOut.o effDispCur.o effMisc.o effStip.o \
+	effGlCache.o effMono.o effBlam.o effGlyph.o \
+	effGBlit.o effSAPBOut.o effClip.o effFillSp.o
+
+GRAFDIR= $(USRLIBDIR)/grafinfo
+XGIDIRS = zds matrox ati
+
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines 
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+.s.o:
+	$(AS) -T -o $*.o $*.s
+	$(CP) $@ shared/$@
+
+NormalLibraryTarget(eff,$(OBJS))
+SharedXDriverTarget(eff,6.0,$(OBJS),shared,..)
+LintLibraryTarget(eff,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(eff,libeff.a)
+
+#else
+
+STD_DEFINES = ServerDefines
+
+   INCLUDES = -I. -I$(SERVERSRC)/ddx/nfb -I$(SERVERSRC)/ddx/cfb \
+	-I$(SERVERSRC)/ddx -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	-I$(SERVERSRC)/ddx/mi -I$(SERVERSRC)/sys/common \
+	-I$(SERVERSRC)/ddx/mfb -I$(SERVERSRC)/ddx/ports/gen -I$(INCLUDESRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(eff,$(OBJS))
+ProfiledLibraryTarget(eff,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(eff,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(eff,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(eff,$(OBJS))
+LintLibraryTarget(eff,$(SRCS))
+
+DynamicObjectRule(eff,libeff.a)
+
+NormalLintTarget($(SRCS))
+
+saber_src:
+	#load $(CFLAGS) $(SRCS)
+
+#endif /* USLArchitecture */
+
+DependTarget()
+
+InstallGrafFile(grafinfo/ati,ultra.xgi,ati)
+InstallGrafFile(grafinfo/ibm,8514a.xgi,ibm)
+InstallGrafFile(grafinfo/matrox,mwin1280.xgi,matrox)
+InstallGrafFile(grafinfo/miro,magic.xgi,miro)
+InstallGrafFile(grafinfo/miro,crystal.xgi,miro)
+InstallGrafFile(grafinfo/miro,magic+.xgi,miro)
+InstallGrafFile(grafinfo/olivetti,m400-60.xgi,olivetti)
+InstallGrafFile(grafinfo/paradise,8514a.xgi,paradise)
+InstallGrafFile(grafinfo/unisys,mpe.xgi,unisys)
+InstallGrafFile(grafinfo/zds,zds_wam.xgi,zds)

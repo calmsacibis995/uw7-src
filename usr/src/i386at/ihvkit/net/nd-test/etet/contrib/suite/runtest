@@ -1,0 +1,37 @@
+#!/bin/sh
+
+if [ "$TET_ROOT" = "" ]
+then
+	echo "TET_ROOT not set aborting."
+	exit 1
+fi
+
+if [ ! -r $TET_ROOT/lib/xpg3sh/tcm.sh ]
+then
+	echo "xpg3sh api not installed, aborting..."
+	exit 1
+fi
+
+if [ ! -r $TET_ROOT/lib/perl/tcm.pl ]
+then
+	echo "perl api not installed, aborting..."
+	exit 1
+fi
+
+echo "Setting up the environment..."
+echo "TET_EXTENDED=true"
+echo "TET_TMP_DIR=/tmp"
+echo "PATH=$PATH:$TET_ROOT/bin:."
+
+TET_EXTENDED=true
+TET_TMP_DIR=/tmp 
+
+PATH=$PATH:$TET_ROOT/bin:.
+export TET_TMP_DIR PATH TET_EXTENDED
+
+(cd src ; make)
+(cd ../api/src; make EXTRACT)
+
+echo "Executing tcc -e -p contrib/suite"
+tcc -e -p contrib/suite
+

@@ -1,0 +1,50 @@
+#
+#	@(#)Imakefile 11.1
+#
+# Modification History
+#
+# S000, Mon Dec 30 14:55:24 PST 1996, kylec@sco.com
+#	- create
+#
+
+#include <Server.tmpl>
+
+VIDCONFDIR = $(USRLIBDIR)/vidconf
+
+DRV = v86x
+HEADERS = v86.h
+SRCS = v86.c
+OBJS = v86.o
+
+DEFINES = -D_KERNEL
+
+all:: Driver.o
+
+Driver.o: $(OBJS)
+	$(LD) -r $(OBJS) -o Driver.o
+
+idinstall:: Driver.o
+	/etc/conf/bin/idinstall -a -k $(DRV)
+	/etc/conf/bin/idbuild -M $(DRV)
+
+iduninstall:: 
+	/etc/conf/bin/idinstall -d -k $(DRV)
+
+idload:: 
+	modadmin -l $(DRV)
+
+idunload::
+	modadmin -U $(DRV)
+
+settext::
+	cc -o settext settext.c
+
+clean::
+	rm -rf $(OBJS) Driver.o *~ settext
+
+InstallNonExecFile(Driver.o,$(VIDCONFDIR)/ID/v86)
+InstallNonExecFile(Master,$(VIDCONFDIR)/ID/v86)
+InstallNonExecFile(System,$(VIDCONFDIR)/ID/v86)
+InstallNonExecFile(Node,$(VIDCONFDIR)/ID/v86)
+
+BuildServerIncludes($(HEADERS),include,..)

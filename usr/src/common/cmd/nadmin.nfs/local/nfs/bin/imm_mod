@@ -1,0 +1,52 @@
+#ident	"@(#)imm_mod	1.2"
+#ident  "$Header$"
+/usr/bin/rm /usr/tmp/sh_msg 2>/dev/null
+
+$TFADMIN /usr/sbin/unshare -F nfs $DIR
+
+if [ "$DESC" ]
+then
+	CMD1="$TFADMIN /usr/sbin/share -F nfs -d \"$DESC\" "
+else
+	CMD1="$TFADMIN /usr/sbin/share -F nfs "
+fi
+
+if [ "$ACC" = "read-only" ]
+then
+	NACC="ro"
+else
+	NACC="rw"
+fi
+
+if [ ! -d "$DIR" ]
+then
+	$TFADMIN /usr/bin/mkdir -p $DIR 2>/dev/null
+	if [ ?$ -ne 0 ]
+	then
+		echo  "Share of \"$DIR\" failed - it could not be created.\n" >/usr/tmp/sh_msg
+		exit
+	fi
+fi
+# if the CLIENT is equal to unrestricted or its null, then there is no client
+# list
+
+echo "$CLIENT" | /usr/bin/grep "unrestricted"
+GRET=`echo $?`
+if [  ! "$CLIENT"  -o  $GRET -eq 0 ]
+then
+	CMD2="-o $NACC $DIR"
+else
+	CLIST=`echo "$CLIENT" | /usr/bin/tr -s '\012' ':' | /usr/bin/sed "s/ //"`
+	CMD2="-o $NACC=$CLIST $DIR"
+fi
+
+eval `echo "$CMD1" "$CMD2"` 2>/usr/tmp/sh_err$$
+if [ $? -eq 0 ]
+then
+	echo "\nThe local directory $DIR is being shared with remote systems  via NFS." > /usr/tmp/sh_msg
+else
+	echo "ERROR:  $DIR cannot be shared immediately via NFS." >/usr/tmp/sh_msg
+	echo "$CMD1" "$CMD2" >> /usr/tmp/sh_msg
+	/usr/bin/cat /usr/tmp/sh_err$$>> /usr/tmp/sh_msg
+	/usr/bin/rm /usr/tmp/sh_err$$
+fi

@@ -1,0 +1,36 @@
+#ident	"@(#)mk:i386at/:mkktools	1.1.1.2"
+#ident "$Header$"
+#
+#	Make the idtools
+#
+echo "START `basename $0` `date`"
+trap "exit 1" 1 2 3 15
+
+Root=$1
+Mach=$2
+Work=$3
+Tools=$4
+Cpu=$5
+
+ROOT=${Root}
+TOOLS=${Tools}
+MACH=${Mach}
+export MACH ROOT TOOLS
+
+XENV=${Tools}/usr/ccs/bin/${Cpu}osenv
+export XENV
+
+echo "Building Ktools"
+
+cd ${Root}/usr/src/${Work}/ktool
+${XENV} ${Cpu}make -f ktool.mk clobber
+${XENV} ${Cpu}make -f ktool.mk install CMDRULES=${TOOLS}/etc/xcmd.rulefile
+${XENV} ${Cpu}make -f ktool.mk clobber
+${XENV} ${Cpu}make -f ktool.mk install
+
+[ -d $TOOLS/etc/conf/bin ] || mkdir -p $TOOLS/etc/conf/bin
+cp $ROOT/$MACH/etc/conf/bin/* $TOOLS/etc/conf/bin/
+
+exit 0
+echo "ENDED `basename $0` `date`"
+

@@ -1,0 +1,175 @@
+#!/sbin/sh
+#ident "@(#)change_disk_ops	15.1	98/03/04"
+
+function default_options
+{
+. /isl/ui_modules/disk.rc
+. /etc/inst/locale/$LANG/menus/disk_config.txtstrings
+[ -n "$debug" ] && set -x
+#	typeset temp
+
+	load_disk_info
+
+# Bad blocking turned off as requested by Mike Drangula and Co.
+
+	HDOPT[0]="-n"
+	HDOPT[1]="-n"
+#	temp=`ivar get DISK_CONFIG_ACTION[1]`
+#	[ "$temp" = "${ACTIONS[2]}" ] && HDOPT[1]="-n" || HDOPT[1]=" "
+	RESETGEOM[0]="no"
+	RESETGEOM[1]="no"
+	BOOTSECTOR="yes"
+	store_disk_info	
+}
+
+
+function skip_func
+{
+	if [ "$direction" != PREV ]
+	then
+		#
+		# If we got here by going forward, and they have not
+		# changed the options, set them to the defaults
+		# (because calling fsinit in change_slices will have
+		#  overridden the defaults).
+		#
+		if [ ! `ivar check change_ops` ]
+		then
+			default_options
+		fi
+	fi
+}
+
+. /isl/ui_modules/common.rc
+
+
+
+#--------------------------------------------------------
+
+#
+# Use the default slices or change them?
+#
+function get_choice
+{
+[ -n "$debug" ] && set -x
+	msg
+	footer "$Footer1"
+	display "$Display1" -above 1 -below 4
+	open_radio  
+	radio_wid=$RID
+	add_radio -entry "set_choice false"  "$Use_Default"
+	add_radio -entry "set_choice true"   "$Customize"
+	if $change_ops
+	then
+		current=1
+	else
+		current=0
+	fi
+	radio_runparms $radio_wid 2
+	place_window $RADIO_WIN_WIDTH $RADIO_WIN_HEIGHT \
+		 -above 6 -below 1 -title "$Choose1"
+	run_radio $radio_wid $current 2
+	main_window=$CURWIN
+	set_hotkey 1 get_help
+	set_hotkey 9 go_back
+	set_hotkey 10 go_next
+	input_handler	
+}
+
+
+function set_choice
+{
+[ -n "$debug" ] && set -x
+	if [ "$1" = true ]
+	then
+		change_ops=true
+		msg "$Specify"
+	else
+		change_ops=false
+		msg "$Normal"
+	fi
+}
+
+
+function go_back
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_ops "$change_ops"
+	#
+	# Tell the sequencer to go back
+	#
+	ii_exit PREV
+}
+
+
+function go_next
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_ops "$change_ops"
+	#
+	# Tell the sequencer to go on
+	#
+	if $change_ops
+	then
+		ii_exit OPTIONS
+	else
+		default_options
+		ii_exit NEXT
+	fi
+}
+
+
+function get_help
+{
+[ -n "$debug" ] && set -x
+	#
+	# Save whatever option is currently selected
+	# so when they come back, it will be the default selection.
+	#
+	ivar set change_ops "$change_ops"
+	#
+	ivar set help_topic change_disk_ops
+	ii_exit HELP
+}
+
+
+
+#
+# Main
+#
+#
+# Get the initial choice (if any).
+#
+change_ops=`ivar get change_ops`
+[ -z "$change_ops" ] && change_ops=false
+
+#
+# Let the user decide.
+#
+get_choice
+input_handler
+
+#
+# Save their choice
+#
+ivar set change_ops "$change_ops"
+
+#
+# Done
+#
+if $change_ops
+then
+	ii_exit OPTIONS
+else
+	default_options
+	ii_exit NEXT
+fi
+

@@ -1,0 +1,333 @@
+#!/sbin/sh -x
+#ident	"@(#)packages	15.1	98/03/04"
+
+
+#
+# packages -- ISL UI module:  user selects/deselects packages
+#
+
+# Read cans.rc to load common functions,
+# and to load the can_ifile which defines pkg_ variables:
+#
+# pkg_code[]  contains the values used in "ivar set pkg_ids # # #...".
+# pkg_label[] contains the radio button labels.
+# pkg_desc[]  contains the text that accompanies each radio button.
+#
+. /etc/inst/locale/C/menus/cans.txtstrings
+CAN_HEADER="$HEAD_PKG"
+. /isl/ui_modules/cans.rc
+
+needed=""	# keep a list of Packages needed by chosen Services
+
+#--------------------------------------------------------
+
+function save_ivars
+{
+set -x
+	# Here we save the pkg_ids ifile variable,
+	# and write the sorted list of packages to a file for the back-end.
+	#
+	ivar set pkg_ids "$pkg_ids"
+	#
+	# Remember the currently highlit choice.
+	ivar set current_pkg "$current_pkg"
+
+	# Determine if user has turned off any services
+	# needed by the Canned Configuration chosen on the previous screen.
+	# If so, we pop-up a special warning before exitting the screen.
+	#
+	for n in $needed
+	do
+		found=0
+		for x in $pkg_ids
+		do
+			[ $n == $x ] && { found=1; break; }
+		done
+		[ $found == 0 ] && { turned_off=1; break; }
+	done
+
+	out_file=/tmp/pkgs_to_install
+
+	# We only write the output file if it doesn't exist,
+	# or if the package list has changed.
+
+	# Compare old_pkg_ids (gotten on entry to Packages screen)
+	# against the pkg_ids we just saved (the current state of the screen):
+	#
+	compare_lists "$old_pkg_ids" "$pkg_ids"
+	same=$?
+
+	[[ $same = 0 || ! -f $out_file ]] && {	# user has made changes,
+														# or first time thru packages module
+		###
+		# Write to a file the pkg_name's in reverse dependency order.
+		# This file will be used by the back-end to install the packages.
+
+		[ -f $out_file ] && rm -f $out_file
+
+		# Sort pkg_ids into dependency order (done_list).
+		#
+		# NOTE:  The packages are put on the CDROM in dependency order
+		#			so that they can all be installed at once (which is faster!).  
+		#			So maybe the loop below could be replaced 
+		#			by a much simpler loop:
+		# 					for p in $pkg_ids ; do
+		#						echo ${pkg_code[$p]} >> $out_file
+		#					done
+		#
+		pkg_list="$pkg_ids"
+		integer j=47 i=0
+		while (( j != i ))	# spin until all pkgs have been printed
+		do
+			j=i	# i changes when we print one
+			for p in $pkg_list	# try to print each pkg
+			do
+				p_dep=0	# check if p is a dependency of another pkg
+				for q in $pkg_list
+				do
+					[ $q != $p ] && {	# don't compare self
+						for d in ${pkg_pkgs[$q]}	# q's dependencies
+						do
+							[ $d = ${pkg_code[$p]} ] && { 
+								p_dep=1;	# p is on q's list of dependencies
+								break;
+							}
+						done
+					}
+					[ $p_dep = 1 ] && break
+				done
+				[ $p_dep = 0 ] && { # no other pkg depends on p, record it!
+					# record p for output
+					done_list[(( i += 1 ))]=$p
+					# remove p from pkg_list
+					x=""
+					for z in $pkg_list
+					do
+						[ $z != $p ] && x="$x $z"
+					done
+					break
+				}
+			done
+			pkg_list="$x"
+		done
+
+		# Reversing the done_list yields the pkgs in dependency order.
+		(( i += 1 ))
+		while (( i -= 1 ))
+		do
+			p=${pkg_code[${done_list[$i]}]}
+			echo $p >> $out_file
+			INSTPKGS="$INSTPKGS $p"
+		done
+		# Since the 'base' package must always be installed,
+		# it is not presented as a choice to the user,
+		# and so it will never appear in the list of chosen packages, INSTPKGS.
+		# If 'base' ever appears in INSTPKGS, it means the user WAS allowed
+		# to choose, and so it was erroneously left in the pkg_table
+		# which controls the generation of the screen of package choices.
+		# 
+		# Here we add 'base' to INSTPKGS,
+		# but first ensure it is not already there.
+		case " $INSTPKGS " in
+		*" base "*)
+			;;
+		*)
+			INSTPKGS="base $INSTPKGS"
+			;;
+		esac
+		# Prepend the value of $SET_NAME to INSTPKGS.
+		SET_NAME=`ivar get SET_NAME`
+		INSTPKGS="$SET_NAME $INSTPKGS ${pkg_code[${done_list[$i]}]}"
+		# Now INSTPKGS is ready for use by the back-end.
+		ivar set INSTPKGS "$INSTPKGS"
+
+		# Warn user about making changes on Services and/or Cans screens.
+		#
+		[ $run_silent != 1 ] && {
+			warn=""
+			[ "$turned_off" == 1 ] && warn="$WARN_PKG_MISS"
+			# Warn the user that subsequent changes made on
+			# either Cans or Services screens may undo the changes made 
+			# here on the Packages screen.
+			#
+			[[ $1 == PREV && $same = 0 ]] && warn="${warn}$WARN_PKG_PREV"
+			[ "$warn" != "" ] && {
+				wclose $desc_window
+				wclose $check_window
+				msg    "$MSG_READ_WARNING"
+				footer "$FOOT_HIT_RETURN"
+				display -w "${warn}" -above 1 -below 2
+				call getkey
+				#input_handler
+			}
+		}
+	}
+}
+
+
+function get_packages
+{
+[ -n "$debug" ] && set -x
+set -x
+	integer i num current
+	#
+	# Create the description window
+	#
+	place_window 76 7 -above 1 -below 10
+	desc_window=$CURWIN
+
+	#
+	# Create the check_box
+	# 
+	# Note:  the call to check_params determines the number of columns
+	#        in the Packages check box.
+	#        The number of columns is limited by the widest choice item label.
+	#        The labels are trimmed by the 'gen.pkg.table' script.
+	#
+	open_check # -entry "echo ENTERED" -exit "echo EXITTED" # -x 3 -y 1
+	check_box=$CID
+#echo check_box=$check_box
+	i=0
+	needed=""
+	#
+	# Create a check-item for each package:
+	#
+	while (( i < num_pkgs ))
+	do
+		mark='  '
+		#
+		# If this package is needed by any currently chosen "service", mark it so.
+		#
+		unset s
+		for s in $svc_ids
+		do
+			for p in ${svc_pkgs[$s]}
+			do
+				[ X"$p" = X"${pkg_code[$i]}" ] && { 
+					mark='> '; needed="$needed $i"; break; }
+			done
+		done
+		#
+		# If this package is in pkg_ids, it was previously selected
+		# either automatically as part of a "service", or by the user.
+		#
+		is_selected=""
+		for p in $pkg_ids
+		do
+			[ "$p" = "$i" ] && {
+				is_selected="-is_selected"
+				break
+			}
+		done
+		#
+		# Create the check-item for this package.
+		#
+		add_check "$mark${pkg_label[$i]}" $is_selected \
+				-entry  "describe_pkg $i" \
+				-on     "select_pkg   $i" \
+				-off    "deselect_pkg $i" 
+		(( i += 1 ))
+	done
+	
+	#
+	# Create the window for it
+	#
+	(( num += 2 ))
+num=10
+	let pkglines=i+1
+	let pkglines=pkglines/2
+	check_runparms $check_box $pkglines
+	place_window $CHECK_WIN_WIDTH $num -title "$TITLE_PKG_SEL"  \
+		-below 1 -above 16
+	check_window=$CURWIN
+	run_check $check_box $current_pkg $pkglines # $num_pkgs
+	extra=""
+	[ ${#needed} != 0 ] && 
+		extra=$PKG_NEEDED
+	msg "$MSG_CHOOSE_PKGS$extra."
+	footer "$FOOT_PKG_SEL"
+	set_hotkey  1 get_help
+	set_hotkey  9 "save_exit PREV"
+	set_hotkey 10 "save_exit NEXT"
+	input_handler
+}
+
+	
+function describe_pkg
+{
+[ -n "$debug" ] && set -x
+	current_pkg=$1
+	wclear $desc_window
+	wgotoxy $desc_window 1 1
+	wprintf $desc_window "${pkg_desc[$1]}"
+}
+	
+function select_pkg
+{
+[ -n "$debug" ] && set -x
+	add=1
+	for s in ${pkg_ids[*]}
+	do
+		[ $1 = $s ] && { add=0; break; }
+	done
+	[ $add ] && pkg_ids="$pkg_ids $1"
+}
+	
+function deselect_pkg
+{
+[ -n "$debug" ] && set -x
+	x=""
+	for s in ${pkg_ids[*]}
+	do
+		[ $1 = $s ] || x="$x $s"
+	done
+	pkg_ids="$x"
+}
+
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	wclear $desc_window
+	save_ivars $1
+	ii_exit $1
+}
+
+
+
+#
+# Main
+#
+#
+# Get the initial license data, if any.
+#
+
+pkg_ids=`ivar get pkg_ids`
+#echo pkg_ids=$pkg_ids
+old_pkg_ids="$pkg_ids"
+
+svc_ids=`ivar get svc_ids`
+
+# If 'cans' told 'services' to run silently,
+# 'services' told 'packages' to run silently.
+#
+run_silent=`ivar get silent_packages`
+[ $run_silent = 1 ] && save_exit $direction
+
+ivar set visited_packages 1
+
+# Recall the currently highlit item.
+#
+current_pkg=`ivar get current_pkg`
+[ "" == "$current_pkg" ] && current_pkg=0
+
+#
+# Let the user de/select packages
+#
+get_packages
+
+#
+# Save their choices 
+# (We get here only when user hits Return.  Hot keys go directly to save_exit.)
+#
+save_exit NEXT

@@ -1,0 +1,216 @@
+#ident	"@(#)request	1.2"
+#ident	"$Header$"
+
+#	request script for nsu package installation
+
+trap 'exit 3' 15
+
+#
+#  Make sure LOCALE environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+UPINSTALL=/etc/conf.sav
+SCRIPTS=/usr/sbin/pkginst
+UPGRADE_STORE=/etc/inst/save.user
+UPGFILE=${UPGRADE_STORE}/${PKGINST}.env
+
+. $SCRIPTS/updebug
+
+[ "$UPDEBUG" = "YES" ] && {
+	set -x
+	goany
+}
+
+OUTPUT=$1
+> ${OUTPUT}
+
+CLASSES="none" export CLASSES
+
+# Since the new mtune.d/ptm is not installed yet, we get the number
+# of default pseudo-ttys from the pkginfo file. 
+NREG=$DFLT_REG
+
+MENU_DIR=/etc/inst/locale/${LOCALE}/menus/${PKG}
+[ -d ${MENU_DIR} ] || mkdir -p ${MENU_DIR}
+
+MENUS="menu.nsu"
+
+for i in $MENUS
+do
+   if [ ! -f ${MENU_DIR}/$i ]
+   then
+      if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ]
+      then
+           cp ${REQDIR}/inst/locale/${LOCALE}/${PKG}/$i ${MENU_DIR}
+      else
+           cp ${REQDIR}/${PKG}/$i ${MENU_DIR}
+      fi
+   fi
+done
+#
+#  Set up to use menu_colors; default to C-locale if ${LOCALE}'s dir has
+#  no menu_colors.sh
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+export INSTALL_MODE PKGINSTALL_TYPE AUTOMERGE
+
+#  set INSTALL_MODE to CUSTOM, if not set
+
+[ "$INSTALL_MODE" ] || INSTALL_MODE=CUSTOM
+
+AUTOMERGE=NULL
+PKGINSTALL_TYPE=NEWINSTALL
+
+[ "$UPDEBUG" = "YES" ] && goany
+
+# Call chkpkgrel to determine installation type. As a side-effect, 
+# chkpkgrel will make $UPGFILE.
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY	;;
+	4)	PKGINSTALL_TYPE=UPGRADE	;;
+	6)	PKGINSTALL_TYPE=UPGRADE2	;;
+	*)	;;
+esac
+
+[ "$PKGINSTALL_TYPE" = NEWINSTALL ] || {
+
+	AUTOMERGE=Yes
+
+	# Determine number of pseudo-ttys to configure. 	
+	# This is the number previously configured
+	# or the default which ever is greater. In UnixWare 2.0
+	# the default was significantly increased. We will
+	# allocate at least this new default amount.
+
+	# For upgrades from pre-UnixWare 2.0 releases, the number of
+	# regular ptys can be found in the sdevice.d/ptm file.
+	# Pre-UnixWare 2.0 releases had different drivers and, consequently,
+	# different sdevice.d files for SCO and regular ptys. They 
+	# did not have tuneables for ptys so idtune cannot be used.
+
+	# For an overlay using pkgadd, the request (and preinstall)
+	# script can use idtune to get the number of ptys since 
+	# the old /etc/conf files are still available.
+
+	# Overlays from the boot floppy are more complicated.
+	# Since one driver handles both SCO and regular ptys,
+	# the sdevice.d/ptm file has the sum of both types. To find
+	# the number of regular, count the lines for regular ptys in
+	# the $UPINSTALL/node.d/pts file. 
+
+	# Note that for boot-floppy installations, the contents of the
+	# /etc/conf directory are saved in conf.sav. Since request
+	# scripts are not run on the boot-floppy, only the preinstall
+	# needs to use conf.sav. 
+
+	# There is one odd case - when a boot-floppy upgrade or overlay
+	# is done with nsu installed but not selected from the package
+	# selection menu.  No /etc/conf files for nsu are available 
+	# when pkgadd is used to upgrade or overlay it on the running system.
+	# In this case, just set the number of pty's to the defaults.
+
+
+	[ "$PKGINSTALL_TYPE" = UPGRADE ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+		# (We checked for boot-floppy installation just in case
+		# at some future time the request script is called from
+		# the boot-floppy. The extra cost is small.)
+			PTM=$UPINSTALL
+		else
+			PTM=/etc/conf
+		fi	
+		
+		# We are upgrading from a pre-UnixWare 2.0 release that used 
+		# different drivers for SCO and regular ptys. The sdevice.d/ptm 
+		# file will have only the number of regular ptys.
+		if [ -f $PTM/sdevice.d/ptm ]
+		then
+			grep "^ptm	" $PTM/sdevice.d/ptm >/tmp/ptm.$$ 2>/dev/null
+			OFS=$IFS
+			IFS="	"	#tab
+			read Dev Conf LAST_REG x4 </tmp/ptm.$$
+			[ "$Conf" = N ] && LAST_REG=$DFLT_REG
+			IFS=$OFS
+			rm -f /tmp/ptm.$$
+
+			[ "$LAST_REG" -gt "$DFLT_REG" ] && NREG=$LAST_REG
+			[ "$NREG" -gt "$MAX_REG_PTS" ] && NREG=$MAX_REG_PTS
+		else
+		# This is the odd case when we cannot find the old values. 
+		# Use the defaults.
+				continue
+		fi
+	}
+
+	[ "$PKGINSTALL_TYPE" = OVERLAY -o "$PKGINSTALL_TYPE" = UPGRADE2 ] && {
+		if [ -f /etc/inst/scripts/postreboot.sh ]
+		then
+		# We are installing from the boot floppy.
+		# (We checked for boot-floppy installation just in case
+		# at some future time the request script is called from
+		# the boot-floppy. The extra cost is small.)
+			PTM=$UPINSTALL
+			NREG=`cut -f2 $PTM/node.d/pts|grep pts|wc -l`
+			[ "$NREG" -gt "$MAX_REG_PTS" ] && NREG=$MAX_REG_PTS
+		else
+		# We are installing using pkgadd on a running system.
+			PTM=/etc/conf
+			if [ -f $PTM/mtune.d/ptm ]
+			then
+				line=`/etc/conf/bin/idtune -g NUMREGPT`
+				set - $line
+				NREG=$1
+				[ "$NREG" -gt "$MAX_REG_PTS" ] && NREG=$MAX_REG_PTS
+			else
+			# This is the odd case when we cannot find the old values.
+			# Use the defaults.
+				continue
+			fi	
+		fi
+	}
+}
+
+############# End UPGRADE AND OVERLAY #######################
+# export NREG for use by menu command
+export NREG
+
+# Show the menu only if we are not installing from the boot-floppy.
+[ ! -f /etc/inst/scripts/postreboot.sh ] && {
+	menu_colors regular
+	> /tmp/out
+	
+	menu -f $MENU_DIR/menu.nsu -o /tmp/out 2> /dev/null
+	. /tmp/out
+}
+
+echo "CLASSES=\"${CLASSES}\"" >> $OUTPUT
+
+#echo "NREG=$NREG" >>$OUTPUT || exit 1
+
+echo AUTOMERGE=\"${AUTOMERGE}\" >> ${OUTPUT}
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${OUTPUT}
+echo INSTALL_MODE=\"${INSTALL_MODE}\" >> ${OUTPUT}
+
+# Now a kludge, since the boot-flpppy does not run the request script
+# but does make an $UPGFILE, we need another flag to tell preinstall
+# that this request script was run. Put $NREG into $UPGFILE as the flag.
+# We have to empty out the contents first since chkpkgrel puts in value
+# of $PKGVERSION which gives an error when $UPGFILE is dotted in later.
+echo "NREG=$NREG" >$UPGFILE
+
+exit 0

@@ -1,0 +1,37 @@
+#ident	"@(#)r5nls:Imakefile	1.4"
+XCOMM $XConsortium: Imakefile,v 1.8 91/07/16 22:44:07 gildea Exp $
+#define IHaveSubdirs
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+INSTALLFLAGS = $(INSTDATFLAGS)
+
+XCOMM
+XCOMM This line should be moved to usl.cf after load P12
+XCOMM
+#define BuildXimp YES
+#define BuildXsi YES
+
+#ifndef BuildXimp
+#define BuildXimp NO
+#endif
+#ifndef BuildXsi
+#if !BuildXimp
+#define BuildXsi YES
+#endif
+#endif
+
+#if BuildXsi
+#ifndef BuildXimp
+SUBDIRS = Xsi
+#else
+SUBDIRS = Ximp Xsi
+#endif
+#endif
+
+#if BuildXimp
+#ifndef BuildXsi
+SUBDIRS =  Ximp
+#endif /* BuildXsi */
+#endif
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))

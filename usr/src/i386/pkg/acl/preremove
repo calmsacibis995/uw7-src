@@ -1,0 +1,119 @@
+#ident	"@(#)preremove	1.3"
+#ident	"$Header$"
+
+FAILURE=2		# exit code if anything goes wrong
+
+REBUILD=0
+
+CONFDIR=/etc/conf
+CONFBIN=${CONFDIR}/bin
+
+PKGMSG=${PKGINST}.pkg
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+if [ ! -f /usr/lib/locale/${LOCALE}/LC_MESSAGES/${PKGMSG} ]
+then
+   if [ -f ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} -a \
+	-d /usr/lib/locale/${LOCALE}/LC_MESSAGES ]
+   then
+	cp ${REQDIR}/inst/locale/${LOCALE}/${PKGMSG} \
+	   /usr/lib/locale/${LOCALE}/LC_MESSAGES
+   fi
+fi
+
+turnoff () {
+cd /etc/conf/sdevice.d
+for i in $*
+do
+if [ -f $i ]
+then
+ed $i << END > /dev/null 2>&1
+1,\$s/	Y	/	N	/
+w
+w
+q
+END
+fi
+done
+}
+
+NOTOOLS=`pfmt -s error -g ${PKGMSG}:7 " The Installable Driver feature has been removed.  The %s cannot be removed." "${NAME}" 2>&1`
+
+# determine that ID/TP tools are available
+
+if
+	[ ! -x ${CONFBIN}/idbuild -o ! -x ${CONFBIN}/idinstall ]
+then
+	message ${NOTOOLS}
+	exit $FAILURE
+fi
+
+SEDCMD="s/[	 ]Y/	N/"
+
+do_remove() {
+	OPTS="" # part of idinstall and -a -clop hack
+	${CONFBIN}/idcheck -p ${1}
+	RET="$?"
+	if
+		[ "${RET}" -ne "100" -a "${RET}" -ne "0" ]
+	then
+		# The module cannot be completely removed.  The stub.c
+		# mdevice.d and sdevice.d files
+		# must remain configured. 
+		turnoff ${1}
+		mkdir /tmp/${1} 2> /dev/null
+		if [ -f ${CONFDIR}/pack.d/${1}/stubs.c ]
+		then
+			cp ${CONFDIR}/pack.d/${1}/stubs.c /tmp/${1}/stubs.c
+		fi
+		cp ${CONFDIR}/sdevice.d/${1} /tmp/${1}/${1}.s
+		cp ${CONFDIR}/mdevice.d/${1} /tmp/${1}/${1}.m
+	
+		${CONFBIN}/idinstall -P ${PKGINST} -d${OPTS} ${1}
+		if [ ! -d ${CONFDIR}/pack.d/${1} ]
+		then
+			mkdir ${CONFDIR}/pack.d/${1}
+		fi
+		cp /tmp/${1}/${1}.s ${CONFDIR}/sdevice.d/${1}
+		cp /tmp/${1}/${1}.m ${CONFDIR}/mdevice.d/${1}
+		if [ -f /tmp/${1}/stubs.c ]
+		then
+			cp /tmp/${1}/stubs.c ${CONFDIR}/pack.d/${1}/stubs.c
+		fi
+		pfmt -s nostd -g ${PKGMSG}:8 "Removing %s %s module ...\n" "${NAME}" "${1}" 2>&1
+	
+		REBUILD=1
+	fi
+}
+
+do_remove dac
+
+if
+	[ "${REBUILD}" = "1" ]
+then
+	# rebuild for changes to take effect
+	
+	${CONFBIN}/idbuild
+	if
+		[ "$?" -ne "0" ]
+	then
+		exit ${FAILURE}
+	else
+		exit 10
+	fi
+else
+	exit 0
+fi
+
+while read cmd role
+do
+	adminrole -r $cmd $role
+done <<!
+getacl SSO
+setacl SSO
+tcpio  SSO
+tcpio  SOP
+!
+
+exit 10			# indicates that the system should be rebooted
+

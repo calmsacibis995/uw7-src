@@ -1,0 +1,58 @@
+#! /bin/sh
+#ident	"@(#)OSRcompat:i386/pkg/OSRcompat/preremove	1.1"
+
+#debug flag
+#DEBUG="echo would do:  "
+DEBUG=
+
+#USECUSTOM means to use a custom patch for installing libc.so.1
+#otherwise we just use the statically linked mv
+#USECUSTOM=1
+USECUSTOM=0
+
+# OpenServer 5.0.0 and 5.0.2 need to change libc
+# we don't restore the original libc.so.1
+# tell the user in the postremove to use custom to remove the patch.
+
+# using static mv command
+xuname=`uname -X`
+overs=`expr "$xuname" : '.*Release = \(3\.2v5\.0\..\)'`
+if [ $overs != "3.2v5.0.4" -a $USECUSTOM -eq 0 ]
+then
+    LINE=`ls -l /usr/lib/libc.so.1 2>/dev/null`
+    LNAME=`expr "$LINE" : '.* -> \(.*\)'`
+    DNAME=`dirname $LNAME`
+    if [ -f ${DNAME}/OSR5.libc.so.1 ]
+    then
+      ${DEBUG} rm -f ${DNAME}/GEM.libc.so.1
+      ${DEBUG} chmod 755 ${DNAME}/OSR5.libc.so.1
+      ${DEBUG} ln ${LNAME} ${DNAME}/GEM.libc.so.1
+      ${DEBUG} /udk/.install/mv.static -f ${DNAME}/OSR5.libc.so.1 ${LNAME}
+
+      # check the functionality of libc
+      ls /tmp > /dev/null
+      if [ $? -ne 0 ]
+      then
+        ${DEBUG} /udk/.install/mv.static -f ${DNAME}/GEM.libc.so.1 ${LNAME}
+        echo
+        echo "Original libc does not appear to work."
+        echo "Restoring UDK libc."
+        echo
+      fi
+    else
+      echo
+      echo "You don't have an original libc on your system."
+      echo "The UDK libc will be left in place."
+      echo
+    fi
+fi
+
+# remove all the links created in the postinstall
+
+rm -f /var/tmp
+rm -f /usr/lib/locale
+rm -f /usr/X/lib/locale
+rm -f /usr/X11R6.1
+rm -f /udk/usr/bin/sh
+rm -f /udk/etc/netconfig
+rm -f /usr/lib/iconv

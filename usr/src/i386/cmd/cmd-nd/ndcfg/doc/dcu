@@ -1,0 +1,42 @@
+                           DCU considerations
+
+                         Document Version: 6.1
+
+There are some considerations necessary when we change the location of
+the bcfg files on the system.  Currently, the niccfg program copies
+the bcfg files from their original location
+/etc/inst/nics/drivers/xxx/xxx.bcfg
+into /etc/inst/locale/$LOCALE/menus/nics/config/.  This is where they are
+stored and modified.
+
+The dcu program reads the Drvmap file to determine where to find the
+bcfg file in /etc/inst/locale/$LOCALE/ according to an undocumented
+field in the Drvmap file.  For example, the first file would lead to
+/etc/inst/locale/$LOCALE/menus/nics/config/en596e.
+
+#ident  "@(#)Drvmap     2.1"
+#ident  "$Header$"
+en596|Y|N|Network Interface Cards|
+|EISA||Unisys Embedded 596|menus/nics/config/en596e
+|EISA|UNB0048|Unisys 596 EISA Card|menus/nics/config/en596
+|EISA|COG9004|Cogent EM932 EISA Card|menus/nics/config/co596
+
+This is used by dcu to set the bcfgfile variable in /etc/dcu.d/menus/boards
+to on of the following (in order of preference):
+
+1) /etc/inst/locale/$LOCALE/<Drvmap path>      (all $LOCALEs)
+but if #1 doesn't exist, then use:
+2) /etc/inst/locale/C/<Drvmap path>            (only for *NON*-C $LOCALE)
+or
+2) /etc/conf/bcfg.d/$y/$y.bcfg                 (everything else)
+
+dcu then sources in the bcfgfile and checks to see if the CUSTOM_NUM
+variable is zero.  If not then dcu prompts the user for the choices
+in each of the CUSTOM[x] variables.   dcu also knows about the CUSTOM[x]
+help files.
+
+OPEN ISSUES:
+
+1)If we change the location of these files we will need to change dcu too.
+2)What should this pathname be in the Drvmap file?
+

@@ -1,0 +1,250 @@
+#!/bin/ksh
+#ident	"@(#)bootptabadd	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+#  Create entry into the peripheral tftp config file and
+#  enter peripheral entries into bootptab         
+#
+
+if [ ! -d "$CONFIGDIR" ]
+then
+  echo "" | tee -a -- "$LOG"
+  echo mkdir -m u=rwx,go=rx -p $CONFIGDIR | tee -a -- "$LOG"
+  mkdir -m u=rwx,go=rx -p "$CONFIGDIR" > /dev/null 2>&1
+  if [ $? -ne 0 ]
+  then
+    echo "Not able to create directory $CONFIGDIR"
+    exit 100
+  fi
+fi
+
+
+SHORTNAME="`echo $NAME | awk -F. '{print $1}'`"
+DT144TAG="$SHORTNAME.cfg"
+CFGFILE="$CONFIGDIR/$DT144TAG"
+
+echo "--------------------------------------------------------------"
+
+SUBNETSLOCAL=""
+if [ -f "$CFGFILE" ]
+then
+  #
+  # Carry forward subnets-local if it is in the config file.
+  # The only way to get subnets-local into the config file
+  # is manually since hpnpcfg does not question for it.
+  #
+  SUBNETSLOCAL="`grep '^subnets-local:' $CFGFILE`"
+  echo "" | tee -a -- "$LOG"
+  echo "Removing $CFGFILE" | tee -a -- "$LOG"
+  rm -f -- "$CFGFILE"
+fi
+
+if [ "$SETCFG" = "YES" -o "$SHORTNAME" != "$NAME" -o -n "$SUBNETSLOCAL" ]
+then
+  # Create remote configuration file $RNAME.cfg for peripheral $NAME 
+
+  if [ -n "$SUBNETSLOCAL" ]
+  then
+    echo $SUBNETSLOCAL >> "$CFGFILE"
+  fi
+
+  if [ -n "$IDLETO" ]
+  then
+    echo "idle-timeout: $IDLETO" 		>>  "$CFGFILE"
+  fi
+
+  if [ -n "$SYSLOGFAC" ]
+  then
+    echo "syslog-facility: $SYSLOGFAC" >> "$CFGFILE"
+  fi
+
+  #  There may be as many as 10 entries to the access list
+
+  if [ -n "$ALLOWLIST1" ]
+  then
+     echo "allow: $ALLOWLIST1" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST2" ]
+  then
+    echo "allow: $ALLOWLIST2" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST3" ]
+  then
+    echo "allow: $ALLOWLIST3" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST4" ]
+  then
+    echo "allow: $ALLOWLIST4" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST5" ]
+  then
+    echo "allow: $ALLOWLIST5" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST6" ]
+  then
+    echo "allow: $ALLOWLIST6" 		>>  "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST7" ]
+  then
+    echo "allow: $ALLOWLIST7" 		>> "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST8" ]
+  then
+    echo "allow: $ALLOWLIST8" 		>> "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST9" ]
+  then
+    echo "allow: $ALLOWLIST9" 		>> "$CFGFILE"
+  fi
+  if [ -n "$ALLOWLIST10" ]
+  then
+    echo "allow: $ALLOWLIST10" 		>>  "$CFGFILE"
+  fi
+
+  if [ "$SNMP" = "YES" -o "$SHORTNAME" != "$NAME" ]
+  then
+
+    if [ "$SHORTNAME" != "$NAME" ]
+    then
+      echo '#' >> "$CFGFILE"
+      echo '# Place domain name here to avoid overflowing' >> "$CFGFILE"
+      echo '# the vendor information area of the BOOTP reply.' >> "$CFGFILE"
+      echo '#' >> "$CFGFILE"
+      echo "name: $NAME" 			>> "$CFGFILE"
+    fi
+          
+    if [ -n "$LOCATE" ]
+    then
+      echo "location: $LOCATE" 		>>  "$CFGFILE"
+    fi
+    if [ -n "$CONTACT" ]
+    then
+      echo "contact: $CONTACT"		>> "$CFGFILE"
+    fi
+    if [ -n "$GETCOMNAM" ]
+    then
+      echo "get-community-name: $GETCOMNAM"	>> "$CFGFILE"
+    fi
+    if [ -n "$STCOMNAM" ]
+    then
+      echo "set-community-name: $STCOMNAM"	>> "$CFGFILE"
+    fi
+    if [ "$SNMPTRAP" = "YES" ]
+    then
+      if [ -n "$TRAPLIST1" ]
+      then
+        echo "trap-dest: $TRAPLIST1" >> "$CFGFILE"
+      fi
+      if [ -n "$TRAPLIST2" ]
+      then
+        echo "trap-dest: $TRAPLIST2" >> "$CFGFILE"
+      fi
+      if [ -n "$TRAPLIST3" ]
+      then
+        echo "trap-dest: $TRAPLIST3" >> "$CFGFILE"
+      fi
+      if [ -n "$TRAPLIST4" ]
+      then
+        echo "trap-dest: $TRAPLIST4" >> "$CFGFILE"
+      fi
+      if [ -n "$TRPCOMNAM" ]
+      then
+        echo "trap-community-name: $TRPCOMNAM" >> "$CFGFILE"
+      fi
+      if [ "$SNMPTRPAUTH" = "YES" ]
+      then
+        echo "authentication-trap: on"	>> "$CFGFILE"
+      else
+        echo "authentication-trap: off"	>> "$CFGFILE"
+      fi
+    fi
+  fi
+  if [ -s "$CFGFILE" ]
+  then
+    echo "" | tee -a -- "$LOG"
+    echo "Network peripheral interface configuration file" | tee -a -- "$LOG"
+    echo "$CFGFILE created.  Here are its contents:" | tee -a -- "$LOG"
+    echo "" | tee -a -- "$LOG"
+    cat -- "$CFGFILE" | tee -a -- "$LOG"
+    echo "" | tee -a -- "$LOG"
+    chmod u=rw,go=r "$CFGFILE"
+    echo "--------------------------------------------------------------"
+    echo ""
+    echo "Press the return key to continue ... $NL"
+    read -r RESP
+    echo ""
+    echo "--------------------------------------------------------------"
+  fi
+fi
+
+touch -- "$BOOTPTABLE"
+rmbootpentry "$SHORTNAME" > /dev/null
+
+if [ $? -eq 0 ]
+then
+  echo ""
+  echo "Removed existing entry for $SHORTNAME in $BOOTPTABLE"
+  echo "Removed existing entry for $SHORTNAME in $BOOTPTABLE" >> "$LOG"
+fi
+
+echo "" | tee -a -- "$LOG"
+echo "Adding the following BOOTP entry to $BOOTPTABLE:" | tee -a -- "$LOG"
+echo "" | tee -a -- "$LOG"
+
+rm -f -- "$TMP/BOOTPTAB"
+
+echo "$SHORTNAME:\\" >> "$TMP/BOOTPTAB"
+echo "	:ht=ether:\\" >> "$TMP/BOOTPTAB"
+echo "	:ha=$HATAG:\\" >> "$TMP/BOOTPTAB"
+if [ -n "$SNMASK" ]
+then
+  echo "	:sm=$SNMASK:\\" >> "$TMP/BOOTPTAB"
+fi
+if [ -n "$SNGATEWAY" ]
+then
+  echo "	:gw=$SNGATEWAY:\\" >> "$TMP/BOOTPTAB"
+fi
+if [ -n "$SYSLOGIP" ]
+then
+  echo "	:lg=$SYSLOGIP:\\" >> "$TMP/BOOTPTAB"
+fi
+if [ "$SHORTNAME" = "$NAME" ]
+then
+  echo "	:hn:\\" >> "$TMP/BOOTPTAB"
+fi
+echo "	:ip=$IPADDR:\\" >> "$TMP/BOOTPTAB"
+if [ -s "$CFGFILE" ]
+then
+	echo "	:T144=\"hpnp/$DT144TAG\":\\" >> "$TMP/BOOTPTAB"
+fi
+echo "	:vm=rfc1048:" >> "$TMP/BOOTPTAB"
+
+
+cat -- "$TMP/BOOTPTAB" | tee -a -- "$LOG"
+cat -- "$TMP/BOOTPTAB" >> "$BOOTPTABLE"
+rm -f -- "$TMP/BOOTPTAB"
+
+if [ $? -ne 0 ] 
+then  
+	echo "Error: Modification of $BOOTPTABLE failed"
+	exit 1
+fi
+
+echo "" | tee -a -- "$LOG"
+echo "--------------------------------------------------------------"
+
+
+exit 0

@@ -1,0 +1,203 @@
+#!/bin/sh
+#ident	"%W%"
+#copyright	"%c%"
+
+DESKTOPDIR=$HOME export DESKTOPDIR	#!@ Do not edit this line !@
+DT=${DT:-yes} export DT	#!@ Do not edit this line !@
+FONTSERVER=tcp/`uname -n`:7000 export FONTSERVER #!@ Do not edit this line !@
+XGUI=MOTIF export XGUI	#!@ Do not edit this line !@
+XNETACCESS=on			#!@ Do not edit this line !@
+XWINHOME=${XWINHOME:-/usr/X}	export XWINHOME	#!@ (or your mount point) !@
+PATH=$PATH:$XWINHOME/bin export PATH	#!@ Do not edit this line !@
+LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$XWINHOME/lib export LD_LIBRARY_PATH	#!@ Do not edit this line !@
+
+eval `defadm keyboard 2> /dev/null`
+export XKEYBOARD NUMLOCK SHIFTDOWN
+if [ ! -z "$LANG"  -a -r /usr/lib/locale/$LANG/locale_def ]
+then
+    eval `grep LOC_XMODIFIERS /usr/lib/locale/$LANG/locale_def 2> /dev/null`
+    if [ $? != 0 ]
+    then
+	unset XMODIFIERS
+    else
+	XMODIFIERS=$LOC_XMODIFIERS
+	export XMODIFIERS
+    fi
+else
+    eval `defadm Xim XMODIFIERS 2> /dev/null`
+    export XMODIFIERS
+fi
+if [ -z "$XNLSPATH" ]
+then
+    eval `defadm Xim XNLSPATH 2> /dev/null`
+    export XNLSPATH
+fi
+
+# See MR ul93-13901 to find out why XFILESEARCHPATH is set here.
+
+# The existence of Ctrl-A () in this comment should prevent STAR from
+# replacing %C%.  Do NOT remove this comment!
+
+XFILESEARCHPATH=$XWINHOME/lib/locale/%L/%T/%N%C%S:$XWINHOME/lib/locale/%l/%T/%N%C%S:$XWINHOME/lib/locale/%L/%T/%N%S:$XWINHOME/lib/locale/%l/%T/%N%S:$XWINHOME/lib/%L/%T/%N%C%S:$XWINHOME/lib/%l/%T/%N%C%S:$XWINHOME/lib/%T/%N%C%S:$XWINHOME/lib/%L/%T/%N%S:$XWINHOME/lib/%l/%T/%N%S:$XWINHOME/lib/%T/%N%S:$XWINHOME/lib/locale/C/%T/%N%C%S:$XWINHOME/lib/locale/C/%T/%N%S
+export XFILESEARCHPATH
+
+if [ "$XDM_LOGIN" = "yes" ];	# using graphical login
+then
+    case "$DISPLAY" in
+    "" | unix:0 | unix:0.0 | :0 | :0.0 | local:0 | local:0.0 )
+	    DISPLAY=`uname -n`:0
+	    export DISPLAY
+	    ;;
+    esac
+    case $DT in
+	n|N|no|No|NO|false|False|FALSE)
+		$XWINHOME/bin/nondesktop ;	# prompt user for decision
+		RETVAL=$? 
+		if [ $RETVAL -eq 6 ]; then	# user wants to use the desktop
+			$XWINHOME/bin/dtm ;
+			exit $?
+		else 				# returning to xdm for control
+			exit $RETVAL
+		fi
+		;;
+	*) $XWINHOME/bin/dtm ; exit $? ;;	# standard desktop user
+    esac
+fi	# end of if for XDM_LOGIN
+
+. $XWINHOME/adm/dtuser.msgs
+
+y1=`$GETTXT $TXT_Yes1`
+y2=`$GETTXT $TXT_Yes2`
+y3=`$GETTXT $TXT_Yes3`
+y4=`$GETTXT $TXT_Yes4`
+y5=`$GETTXT $TXT_Yes5`
+n1=`$GETTXT $TXT_No1`
+n2=`$GETTXT $TXT_No2`
+n3=`$GETTXT $TXT_No3`
+n4=`$GETTXT $TXT_No4`
+n5=`$GETTXT $TXT_No5`
+
+
+# test if $1 is a valid remote hostname by pinging the host with
+# a 2 second timeout.  If $2 is yes, then generate an error message
+# if the ping fails.
+
+validNode ()
+{
+	if [ -z "$1" ]
+	then
+		return 1
+	fi
+	if [ -x /usr/sbin/ping ]
+	then
+		Host=`echo $1 | /usr/bin/cut -f1 -d":"`
+		if /usr/sbin/ping "$Host" 2 > /dev/null 2>&1 
+		then
+			return 0
+		else
+			if [ "$2" = "yes" ]
+			then
+                                MSG=`$GETTXT $TXT_BadRemote`
+                                printf "$MSG\n" $Host
+			fi
+			return 2
+		fi
+	fi
+	return 0
+} ;
+
+
+WhereAreYou () 
+{
+        MSG=`$GETTXT $TXT_WhereAreYou`
+        printf "$MSG"
+	read NODE
+	if [ -n "$NODE" ]
+	then
+		if validNode "$NODE" "yes"
+		then
+			if  echo $NODE | /usr/bin/grep ':[0-9]' >/dev/null
+			then
+				DISPLAY=$NODE
+			else
+				DISPLAY=${NODE}:0
+			fi
+			export DISPLAY
+			EXECUTE="yes"  # i.e. start desktop
+		fi
+	else
+		# user entered <CR> only at prompt -- don't start desktop
+		EXECUTE="no"
+	fi
+} ;
+
+case `/usr/bin/tty` in
+    /dev/syscon|/dev/console)
+	at_console=yes
+	DISPLAY=`uname -n`:0
+	;;
+    *)
+	at_console=no
+	;;
+esac
+
+CONSEM=no export CONSEM
+EXECUTE=no
+NODE=""
+case $DT in
+    n|N|no|No|NO|false|False|FALSE)
+       EXECUTE=no ;;
+    *)
+       if [ "$at_console" = "yes" ]
+       then
+            EXECUTE="yes"
+       else
+	    EXECUTE="?"
+	    while [ "$EXECUTE" = "?" ]
+	    do
+                    MSG=`$GETTXT $TXT_DisplayDT`
+                    printf "$MSG"
+	            read NODE
+	            case $NODE in
+	                $n1|$n2|$n3|$n4|$n5)
+	                    EXECUTE="no" ;;
+	                $y1|$y2|$y3|$y4|$y5)
+	                    if validNode "$REMOTE" "no"
+	                    then
+                     MSG=`$GETTXT $TXT_LoginFromREMOTE`
+                     printf "$MSG" $REMOTE
+	                        read NODE
+	                        case $NODE in
+	                            $y1|$y2|$y3|$y4|$y5)
+	                               DISPLAY=${REMOTE}:0
+	                               export DISPLAY
+	                               EXECUTE="yes" ;;
+	                            *)
+	                               WhereAreYou ;;
+	                        esac
+			    else
+				WhereAreYou
+	                    fi ;;
+	                *:[0-9])
+	                    DISPLAY=$NODE export DISPLAY
+	                    EXECUTE="yes" ;;
+	                *)
+                           MSG=`$GETTXT $TXT_BadDisplayDT`
+                           printf "\n$MSG\n\n" $y4 $n4 >& 2
+	            esac
+	    done
+    fi
+esac
+if [ "$EXECUTE" = "yes" ]
+then
+    if [ $DISPLAY = "`uname -n`:0" ]
+    then
+	$XWINHOME/bin/olinit -motif $XWINHOME/bin/dtm -- -xnetaccess $XNETACCESS
+    else
+	$XWINHOME/bin/dtm -xrm "*killAllWindows: False" &
+    fi
+fi
+if [ `basename $SHELL` = "csh" ]
+then
+	exec $SHELL
+fi

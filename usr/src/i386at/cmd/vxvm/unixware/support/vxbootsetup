@@ -1,0 +1,375 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxbootsetup.sh	1.2 3/3/97 03:28:26 - cmd.vxvm:unixware/support/vxbootsetup.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxbootsetup.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+usage=`egettxt "Usage: vxbootsetup [medianame ...]" vxvmshm:531`
+
+exec 4>&2
+
+# doit - execute a command, printing the command in verbose mode
+doit() {
+	[ "$verbose" ] && cat <<-% >&4
+			! $*
+			%
+	"$@"
+}
+
+isfreeslice()
+{
+        while read part tag flags offset len
+        do
+                case $part in
+                '#'*)   continue;;
+                esac
+                if [ "$part" -eq $1 ]
+                then
+                        [ "$tag" = 0x0 ] && return 0
+                        [ $# -gt 1 -a "X$tag" = "X$2" ] && return 0
+                        return 1
+                fi
+        done
+        return 1
+}
+
+set_OS_variables
+verbose=
+v_opt=
+while getopts :v c
+do
+	case $c in
+	v)	verbose=yes; v_opt=-v;;
+	?)	echo "$usage" >&2; quit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+eval `vxparms`
+if [ -z "$V_ROOT" ]
+then
+	progname="$progname" egettxt \
+		"$progname: Unexpected output from vxparms" vxvmshm:76
+	quit 1
+fi
+
+# search for file systems to create partitions for
+root_vol=
+swap_vol=
+stand_vol=
+
+# must find the root file system on a volume
+# For Solaris, don't bother handling anything other than the root volume
+# and swap. For UnixWare, stand, is equally important.
+get_mountdevice / root root_dg
+[ -z "$root_vol" ] && {
+	egettxt >&2 \
+	     'vxbootsetup: NOTE: Root file system is not defined on a volume.' \
+	     vxvmshm:643
+	quit 0
+}
+[ "X$root_dg" != Xrootdg ] && {
+	egettxt >&2 \
+    'vxbootsetup: ERROR: Volume for root file system not in rootdg disk group' \
+	     vxvmshm:642
+	quit 1
+}
+
+# We need to handle swap for dump devices. We need to create partitions on
+# on a disk to which swap volume has been mirrored.
+
+firstswap=
+swapflag=
+
+volumelist="\"rootvol\", \"swapvol\", \"standvol\""
+
+# if we are updating all boot disks, then keep a list of eeprom device
+# aliases, so that we can remove those that we don't re-add
+
+#if [ $# -eq 0 ] && vxeeprom supported
+#then
+#	aliases="`vxeeprom -m devalias 'vx-[^	 ]*' | awk '{ print \$1 }'`"
+#fi
+
+# look for all single-subdisk plexes associated with the root, swap
+# and stand volumes.  Create partitions for each such subdisk.  If
+# any disk names are given on the command line, limit the operation to
+# that disk.
+
+anyfail=
+vxprint -g rootdg -s 2> /dev/null \
+	-F "%usetype %vname %name %dmname %daname %len %pl_offset" \
+	-e "assoc.assoc in ($volumelist)" |
+(
+    while read usetype vol sd dmname daname len ploffset
+    do
+	rootdisksetup=
+	if vxcheckda $daname > /dev/null 2> /dev/null
+	then
+		if not dogi_name_is_slice $daname
+		then
+			
+			continue
+		fi
+		if not dogi_is_whole_slice $daname
+		then
+			continue
+		fi
+	else
+		continue
+	fi
+
+	if [ $# -gt 0 ]
+	then
+		found=
+		for arg in "$@"
+		do
+			[ "X$arg" = "X$dmname" ] && found=yes
+		done
+		[ -z "$found" ] && continue
+	fi
+
+	# If the subdisk is not addressable (i.e. not mapped into the
+	# logical range of the volume length), ignore it.
+	vlen=`vxprint -F"%len" $vol`
+	if [ "$ploffset" -ge "$vlen" ]
+	then
+		vol=
+		continue
+	fi
+
+	#
+	# Ignore the ghost sub disk if any
+	#
+	if [ $len -eq $VOL_GHOST_LEN ]
+	then
+		vol=
+		continue
+	fi
+
+	case $vol in
+
+	$root_vol) [ "X$usetype" = Xroot ] || continue
+		   tag=$V_ROOT;  slice=1;  flags=0x200; rootdisksetup=yes;;
+
+	# additional types of volumes are currently never actually
+	# handled in this script
+	$swap_vol) [ "X$usetype" = Xswap ] || continue
+		   tag=$V_SWAP;  slice=2;  flags=0x201;;
+
+	$stand_vol)
+		   standdev=`sed 's/#.*//' /etc/vfstab |
+			     awk '\$3 == "/stand" { print \$1; exit; }`
+		   if [ "X$standdev" != X/dev/vx/dsk/standvol ] &&
+		      [ "X$standdev" != X/dev/vx/dsk/rootdg/standvol ]
+		   then
+			continue
+		   fi
+		   tag=$V_STAND; slice=10; flags=0x200
+		   bootfile=/etc/boot
+		   if [ -f /etc/vxboot ]
+		   then
+			# check for old versions of /etc/boot that
+			# don't include our boot track modifications.
+			# Replace these older boot tracks with our
+			# own boot track.
+			case `sum < /etc/boot` in
+			# Older USL 4.2 boot tracks: 28501 30, 28726 30
+			# Older Univel boot track:   40490 28
+			"28501 30" | "28726 30" | "40490 28" )
+				bootfile=/etc/vxboot;;
+			esac
+		   fi
+		   doit disksetup -b $bootfile /dev/rdsk/$daname
+		   ;;
+
+	$usr_vol)  
+		   dogi_slice_rawpath $daname usrpath
+		   $PRTVTOC -f $tmpfile1 $usrpath
+		   usr_slice=
+		   for i in 3 4 5 6 9 11 12 13
+		   do
+			if isfreeslice $i $V_USR < $tmpfile1
+			then
+				usr_slice=$i
+				break
+			fi
+		   done
+		   if [ -z "$usr_slice" ]
+		   then
+			daname="$daname"  egettxt \
+		     "$0: No free partition found on device $daname for /usr." \
+			vxvmshm:40 $0 "$@" >&2
+			continue
+		   fi
+		   tag=$V_USR;  slice=$usr_slice;  flags=0x200;;
+	$var_vol)  
+		  dogi_slice_rawpath $daname varpath
+		  $PRTVTOC -f $tmpfile1 "$varpath"
+		   var_slice=
+                   for i in  3 4 5 6 9 11 12 13
+                   do
+                        if isfreeslice $i $V_VAR < $tmpfile1
+                        then
+                                var_slice=$i
+                                break
+                        fi
+                   done
+                   if [ -z "$var_slice" ]
+                   then
+                        daname="$daname"  egettxt \
+                     "$0: No free partition found on device $daname for /var." \
+                        vxvmshm:41 $0 "$@" >&2
+			continue
+                   fi
+                   tag=$V_VAR;  slice=$var_slice;  flags=0x200;;
+
+	*)	   continue;;
+	esac
+
+	doit vxmksdpart -f $v_opt -g rootdg "$sd" $slice $tag $flags
+	[ $? -ne 0 ] && anyfail=yes
+	[ -z "$anyfail" ] || quit 1
+	[ -n "$rootdisksetup" ] || continue
+    done
+)
+
+quit 0
+
+#Solaris#  
+#Solaris#  # Get needed path names for new root disk
+#Solaris#  dogi_slice_to_device $daname device
+#Solaris#  dogi_device_slice $device 0 newroot_slice
+#Solaris#  dogi_slice_rawpath $newroot_slice newroot_rawpath
+#Solaris#  dogi_slice_blkpath $newroot_slice newroot_blkpath
+#Solaris#  
+#Solaris#  # Set the path to the boot block
+#Solaris#  bblkpath=/usr/lib/fs/ufs/bootblk
+#Solaris#  
+#Solaris#  # Check to see if this is a Solaris 2.5 system, in which case 
+#Solaris#  # we should use the bootblock in /usr/platform. Unfortunately,
+#Solaris#  # uname doesn't have an 'i' option in pre-2.5, so this is a
+#Solaris#  # bit convoluted.
+#Solaris#  osrel=`uname -r`
+#Solaris#  if [ "X$osrel" != "X5.4" -a "X$osrel" != "X5.3" ]
+#Solaris#  then
+#Solaris#  	sysplat=`uname -i`
+#Solaris#  	if [ -f /usr/platform/${sysplat}/lib/fs/ufs/bootblk ]
+#Solaris#  	then
+#Solaris#  		bblkpath=/usr/platform/${sysplat}/lib/fs/ufs/bootblk
+#Solaris#  	fi
+#Solaris#  fi
+#Solaris#  		
+#Solaris#  doit /usr/sbin/installboot $bblkpath $newroot_rawpath
+#Solaris#  
+#Solaris#  # For systems that support setting their eeproms,
+#Solaris#  # determine correct path independent of disk name spaces
+#Solaris#  # and set up appropriate aliases.
+#Solaris#  newroot_path=
+#Solaris#  dogi_get_prompath $newroot_slice newroot_path
+#Solaris#  if [ -n "$newroot_path" ] 
+#Solaris#  then
+#Solaris#  	vxeeprom supported && {
+#Solaris#  		doit vxeeprom devalias "vx-$dmname" $newroot_path
+#Solaris#  	}
+#Solaris#  
+#Solaris#  	# Add an alias for the new root volume
+#Solaris#  	cat <<-! | fgrep -v -x "vx-$dmname" > $tmpfile1
+#Solaris#  	$aliases
+#Solaris#  	!
+#Solaris#  	aliases="`cat $tmpfile1`"
+#Solaris#  
+#Solaris#  fi
+#Solaris#  
+#Solaris#  # Determine what root disk drivers need to be force loaded
+#Solaris#  #
+#Solaris#  # Case 1: non-SSA disk
+#Solaris#  # --------------------
+#Solaris#  # newroot_slice   = c0t0d0s0
+#Solaris#  # newroot_blkpath = /dev/dsk/c0t0d0s0
+#Solaris#  #
+#Solaris#  # Case 2: SSA disk not under AP facility
+#Solaris#  # --------------------------------------
+#Solaris#  # newroot_slice   = c1t0d0s0
+#Solaris#  # newroot_blkpath = /dev/dsk/c1t0d0s0
+#Solaris#  #
+#Solaris#  # Case 3: SSA disk under AP facility
+#Solaris#  # ----------------------------------
+#Solaris#  # newroot_slice   = mc1t0d0s0
+#Solaris#  # newroot_blkpath = /dev/ap/dsk/mc1t0d0s0
+#Solaris#  #
+#Solaris#  # This is what "get_drv_list"/"forceload" functions will place
+#Solaris#  # into /etc/system...
+#Solaris#  #
+#Solaris#  # +---------------------+----------------------------------------+
+#Solaris#  # |                     |                $drv                    |
+#Solaris#  # |                     +-----------+-------------+--------------+
+#Solaris#  # |                     |   Case 1  |    Case 2   |     Case 3   |
+#Solaris#  # +---------------------+-----------+-------------+--------------+
+#Solaris#  # | forceload: drv/$drv |       sd  |       ssd   |      ap_dmd  |
+#Solaris#  # |                     |      esp  |  SUNW,pln   |      pseudo  |
+#Solaris#  # |                     |   espdma  |  SUNW,soc   |              |
+#Solaris#  # |                     |     sbus  |      sbus   |              |
+#Solaris#  # +---------------------+-----------+-------------+--------------+
+#Solaris#  #
+#Solaris#  # For Case 3 here's what should be loaded into /etc/system...
+#Solaris#  #
+#Solaris#  # +---------------------+----------------+
+#Solaris#  # |                     |     $drv       |
+#Solaris#  # |                     +----------------+
+#Solaris#  # |                     |   Case 3       |
+#Solaris#  # +---------------------+----------------+
+#Solaris#  # | forceload: drv/$drv |      ssd       |
+#Solaris#  # |                     | SUNW,pln       |
+#Solaris#  # |                     | SUNW,soc       |
+#Solaris#  # |                     |     sbus       |
+#Solaris#  # |                     |   ap_dmd *     |
+#Solaris#  # |                     |       ap       |
+#Solaris#  # |                     |   pseudo *     |
+#Solaris#  # +---------------------+----------------+
+#Solaris#  #
+#Solaris#  # These are all loaded by AP facility's "apboot" command and
+#Solaris#  # because the Volume Manager does not allow a root metadisk to
+#Solaris#  # be encapsulated without having run "apboot" with the root
+#Solaris#  # metadisk specified, there is nothing that actually needs to
+#Solaris#  # be loaded at this point for this case.
+#Solaris#  #
+#Solaris#  # To simplify things we allow the argument "$newroot_blkpath"
+#Solaris#  # to be passed to the "get_drv_list" function for all cases. 
+#Solaris#  # For case 3 this means that "get_drv_list" will only return
+#Solaris#  # "ap_dmd" and "pseudo", but because /etc/system is already set
+#Solaris#  # with the entire set of forceloads the ensuing call to the
+#Solaris#  # function "forceload_drv" won't re-add them.  Hence, no harm
+#Solaris#  # no foul for this case.
+#Solaris#  #
+#Solaris#  get_drv_list $newroot_blkpath > $tmpfile1
+#Solaris#  if [ -s $tmpfile1 ] ; then
+#Solaris#  	cat $tmpfile1 | while read drv; do
+#Solaris#  		forceload_drv $drv
+#Solaris#  	done
+#Solaris#  else
+#Solaris#  	egettxt "VxVM Can't determine root disk drivers"  vxvmshm:501
+#Solaris#  	quit 1
+#Solaris#  fi
+#Solaris#  done
+#Solaris#  [ -n "$aliases" ] && doit vxeeprom devunalias $aliases

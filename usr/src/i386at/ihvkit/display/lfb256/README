@@ -1,0 +1,179 @@
+#ident	"@(#)ihvkit:display/lfb256/README	1.2"
+
+
+This file contains information concerning version 1.0 of the Intel Linear
+Frame Buffer (LFB) Display Module (DM) drivers.  Included in the directory
+tree with this file are ports for the ATI(R) Ultra Pro and the Dell(R) Jaws
+video adapters.
+
+
+Description
+-----------
+
+The DM was split into class and vendor specific libraries.  The LFB class
+library implements the device independent portions of the DM, such as
+maintaining the Graphics State, providing compatibility with old servers,
+and some of the initialization.  It also implements some drawing code
+(BitBlit, [GS]etScanLine, and PlotPoint) and provides some utility routines.
+
+The vendor-specific libraries are sample libraries that use the LFB vendor
+library.  They are described below:
+
+
+Dell Jaws Vendor Library
+------------------------
+
+The Dell Jaws card is a true dumb frame buffer.  There is no hardware
+to accelerate any drawing operations.  The card has a RAMDAC and a
+hardware cursor.  The card is no longer manufactured (it had a VERY
+short lifetime), but the port is useful as a reference port of a
+minimalistic vendor library.
+
+The Jaws card is also the CPU card.  Only one can be present in a system.
+
+
+ATI Ultra Pro Vendor Library
+----------------------------
+
+The ATI Ultra Pro is based on the ATI Mach32(TM) (ATI688000).  The
+Mach32 is a superset of the 8514/a register set.  The card has a
+RAMDAC and hardware cursor.  The Mach32 provides acceleration for a
+number of graphics primitives, including lines, filled rectangles, bit
+blit, spans, and fonts.  It can draw with stipples (opaque and
+transparent) and tiles.
+
+The library supports the EISA, VLB, and PCI versions of the card.  It
+also supports systems that have the ATI Mach32 chip on the motherboard.
+
+
+Building the Libraries
+----------------------
+
+If installing this code into a built X11R5 tree, move the lfb256
+directory to .../server/display/.  Then execute the following:
+
+	cd .../server/display
+	make Makefile SUBDIRS=lfb256
+	cd lfb256
+	make depend
+	make
+	make install
+
+If installing in an unbuilt source tree, move the lfb256 directory to
+.../server/display/.  Then edit .../server/display/Imakefile and add
+lfb256 to the end of the SUBDIRS= line.  Build as normal.
+
+
+Building the device drivers
+---------------------------
+
+See the portability note below.
+
+There is no overall Makefile for the device drivers.  The code for the
+drivers is in /usr/src/ihvsrc/display/lfb256/FB/
+(or .../server/display/lfb256/FB/).
+
+Following are the steps for the ATI driver:
+
+	cd .../server/display/lfb256/FB/ati
+	make	# Build and move Driver.o to bin
+	cd bin
+	/etc/conf/bin/idinstall -ak ati
+	/etc/conf/bin/idbuild -M ati
+
+The last two steps install the driver and configure it into the kernel.
+When reinstalling (overwriting) the driver use the -uk options for
+idinstall.  There is no need to reboot the system or rebuild the kernel
+for these drivers to work.  To test, execute the command:
+
+	</dev/ati
+
+If you get a message indicating where the physical address of the ATI frame
+buffer was found, the driver installed correctly.  Otherwise, you should see
+an error message giving an indication of what was wrong.
+
+The device drivers are not binary portable between UnixWare 1.1 and 2.0.
+
+
+Portability
+-----------
+
+The DM (LFB, ATI, and Jaws) should be compiled on the OS version (UnixWare
+1.1 or 2.0) that it will be used.  This is because the sysi86()
+sub-function to change the IOPL became a function.  If compiled on the
+wrong version of the OS, the code will execute slower, but will still
+work (inb and outb are about 30 clocks each when the IOPL is at the
+default level, but about 20 clocks when IOPL is changed; this savings
+is very significant.).
+
+The device drivers must be compiled on the version of the OS that they
+will be used on.  This is because the UnixWare 1.1 kernel routine
+enableio() was renamed to iobitmapctl(), and the parameters are different.
+
+There are compiler #ifdefs to determine whether the system is UnixWare
+1.1 or 2.0 (#ifdef ESMP for UnixWare 2.0, due to historical reasons).
+There is no advertised way to do this, so we gave it our best.  If you
+have problems, please notify us.
+
+
+Configuration
+-------------
+
+Sample configuration files for both versions of the server are provided.
+
+- The ATI vendor library ignores the memory and virtual_size fields in
+  the config file.  The off screen memory is divided between fonts and
+  bitmaps, and limiting the amount of memory would impact performance.
+  The amount of memory used is defined by the resolution.  Since the
+  card provides such high resolutions, virtual root is unnecessary.
+
+- The Jaws vendor library ignores the memory and virtual_size fields
+  in the config file.  The amount of memory used is defined by the
+  resolution.  Since the card provides such high resolutions, virtual
+  root is unnecessary.
+
+- The device field should be set to /dev/console.  It is only used for
+  restoring the colormap and fonts when dropping back to text mode.
+
+- The info2*lib fields are ignored.
+
+- The monitor frequency determines whether the mode is interlaced or
+  not.  There is an assumption that there will never be a vertical
+  refresh frequency that is used for both interlaced and
+  non-interlaced.  So far, this has been a valid assumption.
+
+
+Notes
+-----
+
+- Only the 8bpp modes have been tested.  The 16bpp code is not
+  complete and has some known bugs.  The Jaws code should be complete,
+  but there are some small problems with the LFB class library and the
+  ATI code.
+
+- The LFB code does not support multiple screens.  In theory, all that
+  would be necessary is to create a struct to hold the globals for
+  each screen and to move the globals (and the statics) to the struct.
+
+  Since you cannot have a system with more than one ATI or more than
+  one Jaws card, this has not been an issue.
+
+- ATI has not released a good algorithm for determining the physical
+  address of the FB.  The code in the ATI device driver is based on an
+  Application Note from ATI, with additions based on observed behavior.
+  Unfortunately, this may cause the driver to fail as new options
+  become available.
+
+- The ATI Ultra Pro vendor library has a lot of room for improvement.
+  There are drawing functions that were not limited due to lack of
+  time.
+
+- The LFB Class library needs StplBlit functions.  In addition, there
+  are probably some more functions that should go in to lfbUtil.c.
+
+- The device drivers are designed to detect the existence of the card
+  in the start() routine, and to fail to open when the card is not
+  installed.  In addition, if the card is set up with the video mode
+  disabled, the open will fail, and a console message will indicate
+  the cause of failure.
+

@@ -1,0 +1,53 @@
+#ident	"@(#)ihvkit:display/vga256/devices/gd54xx/Imakefile	1.2"
+/**/#ident	"@(#)vga256:vga256/devices/gd54xx/Imakefile	1.4"
+
+/**/#
+/**/# If the Makefile is lost or corrupted, to generate a new Makefile:
+/**/# 
+/**/#  /usr/X/bin/imake -DUseInstalled -DTOPDIR=. -DCURDIR=. -I/usr/X/lib/config
+/**/#
+/**/# change SRCFILE to your file name
+/**/#
+
+#define VendorDisplayModuleRule()			@@\
+.c.o:							@@\
+	$(CC) -c -DVGA_PAGE_SIZE="(64*1024)" -O -Xa -Dix86 $(ALLINCLUDES) $<; @@\
+							@@\
+all:: $(VENDORLIB) 					@@\
+$(VENDORLIB):: $(OBJS)					@@\
+	$(CC) $(YFLAGS) -G $(OBJS) -o $(VENDORLIB) $(CORELIB) @@\
+	@echo $(VENDORLIB) generated. 			@@\
+							@@\
+install:: all						@@\
+	$(INSTALL) $(INSTLIBFLAGS) $(VENDORLIB) $(DISPLIBDIR) @@\
+	$(INSTALL) $(INSTDATFLAGS) $(CFGFILE) $(DISPLIBDIR)
+
+
+       BASE = gd54xx
+       SRCS = init.c hwfuncs.c
+       OBJS = init.o hwfuncs.o
+       SRCS = init.c
+       OBJS = init.o
+  VENDORLIB = $(BASE)_256.so.$(DISPLIBREV)
+    ARCHLIB = $(BASE)_256.a
+    CFGFILE = $(BASE).256dat
+#if UseInstalled
+    CORELIB = /usr/X/lib/libvga256.so.$(DISPLIBREV)
+   INCLUDES = -I.. -I../../include -I/usr/X/include/X11
+#else
+    CORELIB = ../../libvga256.so.$(DISPLIBREV)
+   INCLUDES = -I./ -I../.. -I$(TOP)/include
+#endif
+     LFLAGS = -buxz
+
+#if XWINSharedDisplayLibrary
+VendorDisplayModuleRule()
+#else
+NormalLibraryObjectRule()
+NormalLibraryTarget ($(BASE)_256, $OBJS)
+#endif /* XWINSharedDisplayLibrary */
+
+clean::
+	$(RM) *.so
+
+DependTarget()

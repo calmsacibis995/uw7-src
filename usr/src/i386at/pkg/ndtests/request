@@ -1,0 +1,55 @@
+#! /usr/bin/ksh
+### Add user called  "${USER}"
+ERRORLOG=/tmp/nd_install.log
+
+USER=ndcert
+if grep "^$USER:" /etc/passwd >/dev/null 2>&1; then
+	  echo "User ${USER} already exists!"
+	  echo "Current installation may overwrite files under this user's home directory."
+	  echo -n "Do you want to continue [default: n] (y/n)? "
+	  read ans
+
+	  ans1=`echo $ans | cut -c1`
+	  if [ "$ans1" != "y" -a "$ans1" != "Y" ]; then
+		 exit 1
+	  fi
+else
+	echo -n "Enter Home Directory of User $USER (Default /home/${USER}) : "
+	read UWCTS_DIR
+	if [ "$UWCTS_DIR" = "" ]
+	then
+		UWCTS_DIR=/home/${USER}
+	fi
+	echo "Adding user $USER....."
+	useradd -m -s "/usr/bin/ksh" -d ${UWCTS_DIR} ${USER} >/dev/null 2>&1
+	passwd -x 0 ${USER}
+	echo "Please choose password for user '${USER}':"
+	passwd ${USER}
+fi
+
+HOMEDIR=`grep "^${USER}:" /etc/passwd | awk -F":"  '{ print \$6 }'`
+USER_ID=`grep "^${USER}:" /etc/passwd | awk -F":"  '{ print \$3 }'`
+
+/usr/bin/ed ${HOMEDIR}/.profile <<! >/dev/null 2>&1
+$
+a
+
+USER=${USER}
+TET_ROOT=${HOMEDIR}
+TET_SUITE_ROOT=${HOMEDIR}
+TEMPDIR=${HOMEDIR}/tmp
+USER_ID=${USER_ID}
+LANG=C
+export USER TET_ROOT TET_SUITE_ROOT USER_ID LANG TEMPDIR
+PATH=\$PATH:.:${HOMEDIR}/bin:/etc:/usr/sbin
+export PATH
+.
+w
+q
+!
+
+cat >$1 <<!
+SUITE_ROOT='${HOMEDIR}'
+USER='${USER}'
+!
+exit 0

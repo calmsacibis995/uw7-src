@@ -1,0 +1,101 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/support/vxnewdmname.sh	1.2 3/3/97 03:16:15 - cmd.vxvm:common/support/vxnewdmname.sh
+#ident	"@(#)cmd.vxvm:common/support/vxnewdmname.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+usage=`egettxt "Usage: vxnewdmname [-c dmname] diskgroup" vxvmshm:536`
+checkname=
+while getopts :c: c
+do
+	case $c in
+	c)	checkname=$OPTARG;;
+	?)	echo "$usage" >&2; quit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ $# -ne 1 ]
+then
+	echo "$usage" >&2
+	quit 1
+fi
+dg=$1
+
+# gather together all names that we want to use to eliminate possible
+# choices for new disk names
+
+: > $tmpfile1
+
+if [ "X`vxdctl mode 2> /dev/null`" = "Xmode: enabled" ]; then
+	vxprint -n -g $dg 2> /dev/null >> $tmpfile1
+fi
+
+if [ -f "$pcapfile" ] ; then
+	exec 3<&0 < $pcaplist
+	while read disk
+	do
+		dgfile=$DISKDIR/$disk/dg
+		if [ -f "$dgfile" ]; then
+			[ "X$dg" = "X`cat $dgfile`" ] || continue
+		else
+			[ "X$dg" = Xrootdg ] || continue
+		fi
+		dmfile=$DISKDIR/$disk/dmname
+		[ -f "$dmfile" ] && cat $dmfile >> $tmpfile1
+	done
+	exec 0<&3 3<&-
+fi
+
+if [ -f "$pnewfile" ] ; then
+	exec 3<&0 < $pnewlist
+	while read disk sa_opt
+	do
+		dgfile=$DISKDIR/$disk/dg
+		if [ -f "$dgfile" ]; then
+			[ "X$dg" = "X`cat $dgfile`" ] || continue
+		else
+			[ "X$dg" = Xrootdg ] || continue
+		fi
+		dmfile=$DISKDIR/$disk/dmname
+		[ -f "$dmfile" ] && cat $dmfile >> $tmpfile1
+	done
+	exec 0<&3 3<&-
+fi
+
+# if we are just checking a disk name, then check for the disk in
+# the generated name list.
+
+[ -n "$checkname" ] && {
+	if fgrep -x "$checkname" $tmpfile1 > /dev/null
+	then
+		quit 1
+	else
+		quit 0
+	fi
+}
+
+# call vxparms to compute the new disk name, using the list generated
+# above to eliminate existing names
+
+vxparms -n "$dg" < $tmpfile1
+quit $?

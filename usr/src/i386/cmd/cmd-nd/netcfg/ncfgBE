@@ -1,0 +1,2210 @@
+#!/bin/osavtcl
+#ident "@(#)ncfgBE	29.4"
+#ident "$Header$"
+#
+#  Based on OpenServer ncfgBE version 11.1
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.  
+#	    All Rights Reserved.
+#
+#       The information in this file is provided for the exclusive use of
+#       the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#       right to use, modify, and incorporate this code into other products
+#       for purposes authorized by the license agreement provided they include
+#       this notice and the associated copyright notice with any such product.
+#       The information in this file is provided "AS IS" without warranty.
+#
+
+#cmdtrace on [ open /tmp/ncfgBE.log a+ ]
+
+loadlibindex /usr/lib/sysadm.tlib
+
+set NCFG_DIR		/usr/lib/netcfg
+set NDCFG_PATH		$NCFG_DIR/bin/ndcfg
+set NCFG_INFODIR	$NCFG_DIR/info
+set NCFG_CHAINSFILE	$NCFG_DIR/chains
+set NCFG_RECONFDIR	$NCFG_DIR/reconf
+set NCFG_LISTDIR	$NCFG_DIR/list
+set PROMPTER_PATH	/usr/sbin/ncfgprompter
+
+source $NCFG_DIR/bin/ncfgBE.msg.tcl
+source $NCFG_DIR/lib/libSCO.tcl
+
+# This script manipulates the following objects:
+# MESH:		A structure representing all chains, both possible and
+#		actually configured, that can be manipulated given the
+#		current networking componentes installed into the netconfig
+#		framework.
+# MESH = list of NODEs
+#
+# NODE:		A structure representing one element of one chain.
+# NODE = list of NODEs			( Children of that node )
+# 	     list of ELEMENTdescriptor	( The chain itself )
+#	     element-index		( Index into above list )
+#	     actually-configured	( 1=Yes, 0=Potentially, but not at mo. )
+#
+# ELEMENT:	A structure containing all the information about an element
+#		in a chain.
+# ELEMENT = component			( The name of the component )
+#	    element			( The name of the element )
+#	    info-path			( The path of the info file )
+#	    description			( The description of the element )
+#	    hw-sw			( 1=Hardware, 0=Software )
+#	    up				( UP interface )
+#	    down			( DOWN interface )
+#	    reconfigurable		( 1=Yes,0=No )
+#	    listable			( 1=Yes,0=No )
+
+# Returns an ELEMENT when given an nodeinfo
+proc GetElement {nodeinfo} \
+{
+	global ELEMENT
+
+	set elementindex [ keylget nodeinfo INDEX ]
+	set chain [ keylget nodeinfo CHAIN ]
+
+	set elementdescriptor [ lindex $chain $elementindex ]
+
+	set indexes [array names ELEMENT]
+	if { [ lsearch $indexes $elementdescriptor ] == -1 } {
+		echo "SCO_NETCONFIG_UI_ERR_BE_INFO_MISSING"
+		exit 1
+	}
+
+	return $ELEMENT($elementdescriptor)
+}
+
+proc IsWANInterface {if} \
+{
+
+		if { [ crange $if 0 3 ] == "wan-" } {
+			return 1
+		} else {
+			return 0
+		}
+}
+
+proc IsNetX {el} \
+{
+		if [ regexp "^net(\[0-9\])+$" $el ] {
+			return 1
+		} else {
+			return 0
+		}
+}
+
+proc SetElement {name {infofile ""}} \
+{
+	global ELEMENT
+	global NCFG_INFODIR NCFG_RECONFDIR NCFG_LISTDIR
+
+	set component $name
+	if { $infofile != "" } {
+		set element ${component}(${infofile})
+		set infoPath $NCFG_INFODIR/$component/$infofile
+	} else {
+		set element $component
+		set infoPath $NCFG_INFODIR/$component
+	}
+
+	set reconfable [ file exists $NCFG_RECONFDIR/$component ]
+	set listable [ file exists $NCFG_LISTDIR/$component ]
+
+	# Search Info file for DESCRIPTION=, HWSW=
+	set description ""
+	set hwsw ""
+	set up ""
+	set down ""
+	set sd [ scancontext create ]
+	set fd [ open $infoPath ]
+	scanmatch $sd "^DESCRIPTION=" {
+		set description [ string trim [ csubstr $matchInfo(line) 12 end ] \" ]
+	}
+	scanmatch $sd "^UP=" {
+		set up [ string trim [ csubstr $matchInfo(line) 3 end ] \" ]
+	}
+	scanmatch $sd "^DOWN=" {
+		set down [ string trim [ csubstr $matchInfo(line) 5 end ] \" ]
+	}
+	scanmatch $sd "^HWSW=" {
+		set hwsw [ string trim [ csubstr $matchInfo(line) 5 end ] \" ]
+	}
+	scanfile $sd $fd
+	scancontext delete $sd
+	close $fd
+
+	if { $down == "" } {
+		set ndcfgreturn [ lindex [ SendNDRequest "GETHWKEY $element" ] 0 ]
+		keylget ndcfgreturn INFO hwkey
+		set description "$description$hwkey"
+	}
+
+	if { $up == "" } {
+		set up NULL
+	}
+	if { $down == "" } {
+		set down NULL
+	}
+
+	if { $hwsw == "" && $down == "NULL" } {
+		if [ IsWANInterface $up ] {
+			set hwsw "SW"
+		} else {
+			set hwsw "HW"
+		}
+	}
+
+	keylset ELEMENT($element) COMPONENT $component
+	keylset ELEMENT($element) ELEMENT $element
+	keylset ELEMENT($element) DESCRIPTION $description
+	keylset ELEMENT($element) HWSW $hwsw
+	keylset ELEMENT($element) UP $up
+	keylset ELEMENT($element) DOWN $down
+	keylset ELEMENT($element) RECONFABLE $reconfable
+	keylset ELEMENT($element) LISTABLE $listable
+
+	return $element
+}
+
+proc AddChainToNode {node ni_list} \
+{
+	global ELEMENT
+
+#puts stderr "AddChainToNode(<$node> <$ni_list>"
+	if { [ llength $ni_list ] < 2 } {
+		return $node
+	}
+	set tail [ lrange $ni_list 0 [ expr { [ llength $ni_list ] - 2 } ] ]
+
+	set end [ lindex $tail [ expr { [ llength $tail ] - 1 } ] ]
+	set end_element [ GetElement $end ]
+	set end_name [ keylget end_element COMPONENT ]
+
+	set nodechildren [ lindex $node 0 ]
+	set nodeinfo [ lindex $node 1 ]
+	set found 0
+	set newchildren ""
+	foreach child $nodechildren {
+		set childinfo [ lindex $child 1 ]
+		set child_element [ GetElement $childinfo ]
+		set component_name [ keylget child_element COMPONENT ]
+
+		if { $component_name == $end_name } {
+			lappend newchildren [ AddChainToNode $child $tail ]
+			set found 1
+		} else {
+			lappend newchildren $child
+		}
+	}
+	set nodechildren $newchildren
+
+	if {! $found } {
+		set ni_tree ""
+		foreach i $tail {
+			if { $ni_tree == "" } {
+				set ni_tree [ list $ni_tree $i ]
+			} else {
+				set ni_tree [ list [ list $ni_tree ] $i ]
+			}
+		}
+		lappend nodechildren $ni_tree
+	}
+	set result [ list $nodechildren $nodeinfo ]
+	return $result
+}
+
+proc AddChainsToNode {node} \
+{
+	global AOLOPCchains AOLOPCactually_configured ELEMENT
+
+#puts stderr "AddChainToNodes(<$node>)"
+	set nodechildren [ lindex $node 0 ]
+	set nodeinfo [ lindex $node 1 ]
+
+	set element [ GetElement $nodeinfo ]
+	set component_name [ keylget element COMPONENT ]
+	
+	set newchains ""
+	foreach i $AOLOPCchains {
+		set tail [ lindex $i [ expr { [ llength $i ] - 1 } ] ]
+		set name [ keylget ELEMENT($tail) COMPONENT ]
+		if { $name == $component_name } {
+			set ni_list ""
+			for {set j 0} { $j < [ llength $i ] } { incr j } {
+				keylset ni CHAIN $i
+				keylset ni INDEX $j
+				keylset ni CONFIGURED $AOLOPCactually_configured
+				lappend ni_list $ni
+			}
+			set node [ AddChainToNode $node $ni_list ]
+		} else {
+			lappend newchains $i
+		}
+	}
+	set AOLOPCchains $newchains
+	return $node
+}
+
+proc AddChainsToTree {tree} \
+{
+#puts stderr "AddChainsToTree(<$tree>)"
+	set children [ lindex $tree 0 ]
+	set nodeinfo [ lindex $tree 1 ]
+
+	set newchildren ""
+	foreach i $children {
+		lappend newchildren [ AddChainsToTree $i ]
+	}
+	set newtree [ list $newchildren $nodeinfo ]
+	return [ AddChainsToNode $newtree ]
+}
+
+proc AddOneLayerOfChains {mesh chains actually_configured} \
+{
+	global AOLOPCactually_configured AOLOPCchains
+
+	set AOLOPCchains $chains
+	set AOLOPCactually_configured $actually_configured
+
+	set newmesh ""
+	foreach tree $mesh {
+set AOLOPCchains $chains
+		lappend newmesh [ AddChainsToTree $tree ]
+	}
+
+	return [ list $newmesh $AOLOPCchains ]
+}
+
+# Return a list of the root components of a list of chains
+proc FindRoots {chain_list} \
+{
+	# Set roots to the list of all chain ends (ie last component of chain)
+	set roots ""
+	foreach i $chain_list {
+		set found 0
+		set end [ lindex $i [ expr { [ llength $i ] - 1 } ] ]
+
+		foreach j $roots {
+			if { $j == $end } {
+				set found 1
+				break
+			}
+		}
+		if { ! $found } {
+			lappend roots $end
+		}
+	}
+
+	# Filter out any chain ends which have corresponding chain heads
+	# E.g. nfs->tcp  tcp->net0
+	set newroots ""
+	foreach k $roots {
+		set found 0
+		foreach l $chain_list {
+			if { [ llength $l ] != 1 } {
+				if { $k == [ lindex $l 0 ] } {
+					set found 1
+					break
+				}
+			}
+		}
+		if { ! $found } {
+			keylset nodeinfo CHAIN $k
+			keylset nodeinfo INDEX 0
+			keylset nodeinfo CONFIGURED 1
+			lappend newroots [ list "" $nodeinfo ]
+		}
+	}
+	return $newroots
+}
+
+# Read the chains file and build a list representing it
+proc ReadChainsFile {} \
+{
+	global NCFG_CHAINSFILE
+
+	set list ""
+	if [ file exists $NCFG_CHAINSFILE ] {
+		set fd [ open $NCFG_CHAINSFILE ]
+	} else {
+		set fd [ open $NCFG_CHAINSFILE w+ ]
+	}
+	while { [ gets $fd line ] != -1 } {
+		set c [ translit "#" " " $line ]
+		if { [ llength $c ] > 0 } {
+			lappend list $c
+		}
+	}
+	close $fd
+
+	set sorted_list ""
+	while { $list != "" } {
+		set s [ lindex $list 0 ]
+		set s_len [ llength $s ]
+		set l ""
+		foreach i [ lrange $list 1 end ] {
+			set i_len [ llength $i ]
+			if { $i_len < $s_len } {
+				lappend l $s
+				set s $i
+				set s_len $i_len
+			} else {
+				lappend l $i
+			}
+		}
+		lappend sorted_list $s
+		set list $l
+	}
+	return $sorted_list
+}
+
+# Returns a list of chains, and a MESH representing all currently configured chains
+proc GetCurrentChains {} \
+{
+	global ELEMENT
+
+	if [ info exists ELEMENT ] { unset ELEMENT }
+
+	global NCFG_INFODIR
+	set olddir [ pwd ]
+	cd $NCFG_INFODIR
+	set file_list [ glob -nocomplain * ]
+	cd $olddir
+
+	foreach i $file_list {
+		if [ file isdirectory $NCFG_INFODIR/$i ] {
+			cd $NCFG_INFODIR
+			set file_list2 [ glob -nocomplain $i/* ]
+			cd $olddir
+			foreach j $file_list2 {
+				SetElement $i [ file tail $j ]
+			}
+		} else {
+			SetElement $i
+		}
+	}
+	set chain_list [ ReadChainsFile ]
+	set root_list [ FindRoots $chain_list ]
+
+	# Add all chains to root_list, creating a mesh of all currently
+	# configured nodes.
+	set c $chain_list
+	while { $c != "" } {
+		set x [ AddOneLayerOfChains $root_list $c 1 ]
+		set root_list [ lindex $x 0 ]
+		set new_c [ lindex $x 1 ]
+
+		if { $new_c == $c } {
+#			puts stderr "ncfg: Warning screwy chains DB"
+			break
+		}
+		set c $new_c
+	}
+
+	return [ list $root_list $chain_list ]
+}
+
+proc GPC {partial_chain} \
+{
+	global ELEMENT GPCchains
+
+	set tail $ELEMENT([ lindex $partial_chain [ expr { [ llength $partial_chain ] -1 } ] ])
+	set up [ keylget tail UP ]
+	set down [ keylget tail DOWN ]
+
+	if { [ llength $partial_chain ] > 1 } {
+		foreach i $up {
+			if { $i == "NULL" } {
+				lappend GPCchains $partial_chain
+				return
+			}
+		}
+		foreach i $down {
+			if { $i == "NULL" } {
+				lappend GPCchains $partial_chain
+				return
+			}
+		}
+	}
+
+	foreach i [ array names ELEMENT ] {
+		set loop 0
+		foreach j $partial_chain {
+			if { $j == $i } {
+				set loop 1
+				break
+			}
+		}
+		if { $loop } {
+			continue
+		}
+		set element $ELEMENT($i)
+		set up [ keylget element UP ]
+		set match 0
+		foreach j $down {
+			if { $down == "NULL" } {
+				continue
+			}
+			foreach k $up {
+				if { $j == $k } {
+					set match 1
+					break
+				}
+			}
+			if { $match } {
+				set c $partial_chain
+				lappend c $i
+				GPC $c
+			}
+		}
+	}
+}
+
+# Returns a list of chains that are not currently configured in the system,
+# but could be
+proc GetPossibleChains {current_chains} \
+{
+	global ELEMENT GPCchains
+
+	set GPCchains ""
+	# Find all the elements that can be at the end of a chain
+	foreach i [ array names ELEMENT ] {
+		set up [ keylget ELEMENT($i) UP ]
+		foreach u $up {
+			if { $u == "NULL" } {
+				GPC $i
+				break
+			}
+		}
+	}
+
+	set new_chains ""
+	foreach i $GPCchains {
+		set found 0
+		foreach j $current_chains {
+			if { $j == $i } {
+				set found 1
+				break
+			}
+		}
+		if { ! $found } {
+			lappend new_chains $i
+		}
+	}
+	return $new_chains
+}
+
+# This portion of the script filters a Mesh structure based on several
+# criteria.  It returns a flattened list:
+# TREE:		A flat list of icons and descriptions which is displayed
+#		within a DrawnList widget.
+# TREE = list of TREL
+#
+# TREL:		An element of the tree, represents one element in a chain
+# TREL = selectable			( 1=Yes, 0=No )
+#	 iconlist			( The list of icons to be displayed )
+#	 indent				( Offset of text within list )
+#	 description			( Description from NODEINFO )
+#	 nodeinfodescriptor		( Pointer to nodeinfo )
+
+proc BuildTree {node indent tree_type} \
+{
+	set children [ lindex $node 0 ]
+	set nodeinfo [ lindex $node 1 ]
+#puts stderr "BT(<$node>,<$indent>,<$tree_type>)"
+#puts stderr "C($nodeinfo,$children)"
+
+	# Look up the element
+	set element [ GetElement $nodeinfo ]
+	set element_name [ keylget element DESCRIPTION ]
+	set element_hwsw [ keylget element HWSW ]
+	set element_up [ keylget element UP ]
+
+	# Build TREL
+	set t_indent $indent
+	set t_desc $element_name
+	set t_nodeinfo $nodeinfo
+
+	case $tree_type {
+		ADD_SW {
+			set t_is_solid [ expr { ! [ keylget t_nodeinfo CONFIGURED ] } ]
+			set t_selectable [ expr { $t_is_solid } ]	
+		}
+		DEL_SW {
+			set t_is_solid 1
+			set t_selectable [ expr { ! [ keylget t_nodeinfo CONFIGURED ] } ]
+		}
+		MAIN {
+			set t_is_solid 1
+			set t_selectable 1
+		}
+	}
+
+	set prev_one_is_solid 0
+	set list ""
+	set c_len_minus_1 [ expr { [ llength $children ] -1 } ]
+	for {set i $c_len_minus_1} { $i >= 0 } {incr i -1} {
+		set child [ lindex $children $i ]
+
+		set new [ BuildTree $child [ expr { $indent + 2 } ] $tree_type ]
+
+		#figure out what to prefix the child tree with...
+		set one_is_solid 0
+		set new_len [ llength $new ]
+		set l ""
+		for {set j 0} {$j < $new_len} {incr j} {
+			set item [ lindex $new $j ]
+
+			set x_iconlist [ keylget item ICONLIST ]
+			set x_nodeinfo [ keylget item NODEINFO ]
+
+			case $tree_type {
+				ADD_SW {
+					set x_is_solid [ expr { ! [ keylget x_nodeinfo CONFIGURED ] } ]
+				}
+				DEL_SW {
+#					set x_is_solid [ expr { ! [ keylget x_nodeinfo CONFIGURED ] } ]
+					set x_is_solid 1
+				}
+				MAIN {
+					set x_is_solid 1
+				}
+			}
+			if { $x_is_solid } {
+				set one_is_solid 1
+			}
+
+			if { $j ==  0 } {
+				if { $i == $c_len_minus_1 } {
+					if { $x_is_solid } {
+						set x_iconlist [ concat 5 3 $x_iconlist ]
+					} else {
+						set x_iconlist [ concat 5 10 $x_iconlist ]
+					}
+				} else {
+					if { $x_is_solid } {
+						if { $prev_one_is_solid } {
+							set x_iconlist [ concat 5 1 $x_iconlist ]
+						} else {
+							set x_iconlist [ concat 5 13 $x_iconlist ]
+						}
+					} else {
+						if { $prev_one_is_solid } {
+								set x_iconlist [ concat 5 12 $x_iconlist ]
+						} else {
+								set x_iconlist [ concat 5 8 $x_iconlist ]
+						}
+					}
+				}
+			} else {
+				if { $i == $c_len_minus_1 } {
+						set x_iconlist [ concat 5 5 $x_iconlist ]
+				} else {
+					if { $prev_one_is_solid } {
+						set x_iconlist [ concat 5 2 $x_iconlist ]
+					} else {
+						set x_iconlist [ concat 5 9 $x_iconlist ]
+					}
+				}
+			}
+			keylset item ICONLIST $x_iconlist
+
+			lappend l $item
+		}
+		if { $one_is_solid } {
+			set prev_one_is_solid 1
+		}
+		set list [ concat $l $list ]
+	}
+
+
+	if { $indent == 2 } {
+		if { [ IsWANInterface $element_up ] } {
+			set t_iconlist [ list 18 21 ]
+		} else {
+			if { $t_is_solid } {
+				set t_iconlist [ list 6 20 ]
+			} else {
+				set t_iconlist [ list 17 22 ]
+			}
+		}
+	} else {
+		if { $list == "" } {
+			if { $t_is_solid } {
+				set t_iconlist [ list 0 15 ]
+			} else {
+				set t_iconlist [ list 7 16 ]
+			}
+		} else {
+			if { $t_is_solid } {
+				if { $prev_one_is_solid } {
+					set t_iconlist [ list 0 4 ]
+				} else {
+					set t_iconlist [ list 0 14 ]
+				}
+			} else {
+				if { $prev_one_is_solid } {
+					set t_iconlist [ list 7 19 ]
+				} else {
+					set t_iconlist [ list 7 11 ]
+				}
+			}
+		}
+	}
+	keylset t SELECTABLE $t_selectable
+	keylset t ICONLIST $t_iconlist
+	keylset t INDENT $t_indent
+	keylset t DESCRIPTION $t_desc
+	keylset t NODEINFO $t_nodeinfo
+	set result [ linsert $list 0 $t ]
+
+	return $result
+}
+
+# Turn a mesh into a tree
+proc MeshToTree {mesh tree_type} \
+{
+	set tree ""
+	foreach root $mesh {
+		if { $root != {} } {
+			set tree [ concat $tree [ BuildTree $root 2 $tree_type ] ]
+		}
+	}
+	return $tree
+}
+
+# Filter irrelevant chains out of mesh for LAN/WAN display modes
+proc FilterMesh {mesh confchains lan_wan} \
+{
+	global ELEMENT
+
+	case $lan_wan {
+	LAN {
+		set bottomtype HW
+	}
+	WAN {
+		set bottomtype SW
+	}
+	WAN_HW {
+		set bottomtype HW
+	}
+	default {
+		return $mesh
+	}
+	}
+	set nmesh ""
+	upvar lanwancount count
+	set count 0
+	loop inx 0 [ llength $confchains ] {
+		set chain [ lindex $confchains $inx ]
+		set bel [ lindex $chain end ]
+		if { [ keylget ELEMENT($bel) HWSW ] == $bottomtype } {
+			if { $lan_wan == "LAN" && [ keylget ELEMENT($bel) UP ] == "NULL" } {
+				continue
+			}
+			if { $lan_wan == "WAN_HW" && [ keylget ELEMENT($bel) UP ] != "NULL" } {
+				continue
+			}
+			lappend nmesh [ lindex $mesh $inx ]
+			incr count
+		}
+	}
+	return $nmesh
+}
+
+
+proc GetSerialPorts {} \
+{
+	set objCall [ list ObjectGet -filter {state eq ENABLED} \
+			{sco SerialPorts} NULL {} ]
+	set bmipList [ SaMakeObjectCall $objCall ]
+
+	foreach bmip $bmipList {
+		lappend portlist [ BmipResponseObjectInstance bmip ]
+	}
+
+	set objCall [ list ObjectGet {sco UUCPdevices} NULL {} ]
+	set bmipList [ SaMakeObjectCall $objCall ]
+
+	foreach bmip $bmipList {
+		set attrs [ BmipResponseAttrValList bmip ]
+		lappend portlist [ keylget attrs port ]
+
+		set objCall [ list ObjectGet {sco ModemModel} [keylget attrs dialer] {} ]
+		set modembmipresponse  [ SaMakeObjectCall $objCall ]
+		set modembmip [ lindex $modembmipresponse 0 ]
+		set modemattrs  [ BmipResponseAttrValList modembmip ] 
+#		puts [ keylget modemattrs desc ] 
+	}
+
+	set portlist [ lrmdups $portlist ]
+
+	foreach port $portlist {
+
+		set tmp {{SELECTABLE 0} {ICONLIST {6 20}} {INDENT 2} {DESCRIPTION { XXX }} {NODEINFO {{CHAIN net3} {INDEX 1} {CONFIGURED 1}}}}
+
+		keylset tmp DESCRIPTION "$port"
+
+		lappend w $tmp
+	}
+	
+	return $w
+}
+
+
+proc seriallist {} \
+{
+	set DEVLIST ""
+
+	# Get Outgoing devices from uucp devices
+
+	set objCall [ list ObjectGet {sco UUCPdevices} NULL {} ]
+	set bmipList [ SaMakeObjectCall $objCall ]
+
+	foreach bmip $bmipList {
+		set DEVINFO ""
+		
+		set attrs [ BmipResponseAttrValList bmip ]
+		if { [keylget attrs dialer] != "ISDN" } {
+
+			#get driver
+			set objCall [ list ObjectGet {sco SerialPorts} [ keylget attrs port ] {} ]
+			set driverbmipresponse  [ SaMakeObjectCall $objCall ]
+			set driverbmip [ lindex $driverbmipresponse 0 ]
+			set driverattrs  [ BmipResponseAttrValList driverbmip ] 
+			keylset DEVINFO DRIVER [ keylget driverattrs driver ] 
+			
+			
+			#get port
+			keylset DEVINFO PORT [ keylget attrs port ]
+			keylset DEVINFO DESC [ keylget attrs desc ]
+			
+			#get modem type
+			set objCall [ list ObjectGet {sco ModemModel} [keylget attrs dialer] {} ]
+			set modembmipresponse  [ SaMakeObjectCall $objCall ]
+			set modembmip [ lindex $modembmipresponse 0 ]
+			set modemattrs  [ BmipResponseAttrValList modembmip ] 
+			if { "$modemattrs" != {} } {
+				keylset DEVINFO MODEM [ keylget modemattrs desc ] 
+				keylset DEVINFO DIRECTION [ keylget driverattrs direction ]
+			
+				set DEVARRAY([ keylget DEVINFO PORT ]) $DEVINFO
+				lappend DEVLIST $DEVINFO
+			}
+		}
+	}
+	
+	# Get ENABLED Incoming devices
+#	set objCall [ list ObjectGet -filter {state eq ENABLED} {sco SerialPorts} NULL {} ]
+	set objCall [ list ObjectGet {sco SerialPorts} NULL {} ]
+	set bmipList [ SaMakeObjectCall $objCall ]
+	
+	foreach bmip $bmipList {
+		
+		set DEVINFO ""
+		set attrs [ BmipResponseAttrValList bmip ]
+
+# puts stderr "$attrs"
+
+		if { [keylget attrs state ret] && "$ret" == "ENABLED" } {
+			keylset DEVINFO DRIVER [ keylget attrs driver ]
+			set port [ BmipResponseObjectInstance bmip ]
+			keylset DEVINFO DESC [ keylget attrs desc ]
+			keylset DEVINFO PORT [ BmipResponseObjectInstance bmip ]
+			if { [ info exists DEVARRAY($port) ] } {
+				set DEVINFO $DEVARRAY($port)
+			} else {
+				keylset DEVINFO MODEM ""
+				keylset DEVINFO DIRECTION [ keylget attrs direction ]
+			}   
+			set DEVARRAY($port) $DEVINFO
+			lappend DEVLIST $DEVINFO
+		}
+	}
+	
+	set DEVLIST [ lrmdups $DEVLIST ]
+	return [ lsort $DEVLIST ]
+
+}
+
+proc infoentry { select icon indent desc node } \
+{
+	keylset item SELECTABLE $select
+	keylset item ICONLIST $icon
+	keylset item INDENT $indent
+	keylset item DESCRIPTION $desc
+	keylset item NODEINFO $node
+
+	return $item
+}
+
+
+proc serialtree {} \
+{
+	set tlist [ seriallist ]
+	if { "$tlist" == "" } {
+		return ""
+	}
+	set olddriver ""
+	set port [ lindex $tlist 0 ]
+
+	foreach nextport [ lrange $tlist 1 end ] {
+		set iconlist ""
+		set driver [ keylget port DRIVER ]
+		set nextdriver [ keylget nextport DRIVER ]
+		set modem [ keylget port MODEM ]
+		keylset nodeinfo PORT [ keylget port PORT ] 
+
+		if { $olddriver != $driver } {
+			keylset nodeinfo WHAT "driver"  
+			lappend olist "[ infoentry 1 {6 20} 2 $driver $nodeinfo]"
+		}
+		if { $nextdriver == $driver } {
+			lappend iconlist 5 1 0
+			set miconlist { 5 2 5 3 0 15 }
+		} else {
+			lappend iconlist 5 3 0
+			set miconlist { 5 5 5 3 0 15 }
+		}
+
+	# jaw intl
+		set portdesc "[keylget port DESC] ([keylget port DIRECTION])"
+
+		if { $modem != "" } {
+			lappend iconlist 4
+			keylset nodeinfo WHAT "port"  
+			lappend olist "[ infoentry 1 $iconlist 4 $portdesc $nodeinfo]"
+			keylset nodeinfo WHAT "modem"  
+			lappend olist "[ infoentry 1 $miconlist 6 $modem $nodeinfo]"
+		} else { 
+			lappend iconlist 15
+			keylset nodeinfo WHAT "port"  
+			lappend olist "[ infoentry 1 $iconlist 4 $portdesc $nodeinfo]"
+		}
+
+		set olddriver $driver
+		set port $nextport
+	}
+	set iconlist ""
+	set miconlist ""
+	set driver [ keylget port DRIVER ]
+	set modem [ keylget port MODEM ]
+	keylset nodeinfo PORT [ keylget port PORT ] 
+	# jaw intl
+	set portdesc "[keylget port DESC] ([keylget port DIRECTION])"
+	if { $olddriver != $driver } {
+		keylset nodeinfo WHAT "driver"  
+		lappend olist "[ infoentry 1 {6 20} 2 $driver $nodeinfo]"
+	}
+	lappend iconlist 5 3 0
+	set miconlist { 5 5 5 3 0 15 }
+	if { $modem != "" } {
+		lappend iconlist 4
+		keylset nodeinfo WHAT "port"  
+		lappend olist "[ infoentry 1 $iconlist 4 $portdesc $nodeinfo]"
+		keylset nodeinfo WHAT "modem"  
+		lappend olist "[ infoentry 1 $miconlist 6 $modem $nodeinfo]"
+	} else { 
+		lappend iconlist 15
+		keylset nodeinfo WHAT "port"  
+		lappend olist "[ infoentry 1 $iconlist 4 $portdesc $nodeinfo]"
+	}
+
+	return $olist
+}
+
+
+# uses uucpOSA to add netx devices to the uucp Devices file
+proc AddOutgoing {netx} \
+{
+	keylset attrs type ISDN_SYNC
+	keylset attrs port /dev/$netx
+	keylset attrs dialerline -
+	keylset attrs speed -
+	keylset attrs dialer ISDN
+	keylset attrs tokens {}
+	set objcall [list ObjectCreate \
+		{sco UUCPdevices} DUMMY $attrs]
+	set bmipResponse [SaMakeObjectCall $objcall]
+	set firstBmip [lindex $bmipResponse 0]
+	set errStack [BmipResponseErrorStack firstBmip]
+	if { ! [lempty $errStack] } {
+#puts stderr "AddOutgoing: $errStack"
+	}
+	keylset attrs type ISDN_ASYNC
+	keylset attrs port /dev/$netx
+	keylset attrs dialerline -
+	keylset attrs speed -
+	keylset attrs dialer ISDN
+	keylset attrs tokens {}
+	set objcall [list ObjectCreate \
+		{sco UUCPdevices} DUMMY $attrs]
+	set bmipResponse [SaMakeObjectCall $objcall]
+	set firstBmip [lindex $bmipResponse 0]
+	set errStack [BmipResponseErrorStack firstBmip]
+	if { ![lempty $errStack] } {
+#puts stderr "AddOutgoing: $errStack"
+	}
+}
+
+
+#   returns 1 if port monitor is configured with sac, else 0
+proc PortMonitorConfigured { portmonitor } \
+{
+	set results [CallNonStdCmd /usr/sbin/sacadm "-L -p $portmonitor" \
+		SCO_NETCONFIG_BE_MSG_SERIAL_OSA errStack]
+	
+	if {[string length $errStack] == 0} {
+		return 1
+	} else {
+		return 0
+	}
+}
+
+#  configures port monitor with sac
+proc ConfigurePortMonitor { portmonitor } \
+{
+	set results [CallNonStdCmd /usr/sbin/sacadm \
+		"-a -p $portmonitor -t isdnmon -c /usr/lib/saf/isdnmon -v 1" \
+		SCO_NETCONFIG_BE_MSG_SERIAL_OSA errStack]
+	return $results
+}
+
+# adds a service to the port monitor, starts port monitor if necessary
+proc AddIncoming {netx} \
+{
+	if { ![PortMonitorConfigured isdnmon] } {
+		ConfigurePortMonitor isdnmon
+	}
+
+	set results [CallNonStdCmd /usr/sbin/pmadm "-a -p isdnmon -s $netx -m auto -v 1" \
+		SCO_NETCONFIG_BE_MSG_SERIAL_OSA errStack]
+}
+
+# Build the TREE structure for the main screens
+proc BuildMainTree {lan_wan tree_count} \
+{
+	set x [ GetCurrentChains ]
+
+	set mesh [ lindex $x 0 ]
+	set confchains [ lindex $x 1 ]
+	set mesh [ FilterMesh $mesh $confchains $lan_wan ]
+
+	if { $tree_count == "TREE" } {
+		set tree [ MeshToTree $mesh MAIN ]
+		if { $lan_wan == "WAN_HW" } {
+# jaw put serial stuff here
+#			set tmp [ GetSerialPorts ]
+			set tmp [ serialtree ]
+#			set tmp ""
+			foreach tmp2 $tmp {
+				lappend tree $tmp2
+				
+			}
+			
+#puts stderr "BluidMainTree ($tmp)"
+
+		}
+
+#puts stderr "BluidMainTree ($tree)"
+		flush stderr
+		return $tree
+	} else {
+		set wan_sw_chains 0
+		if { $lan_wan == "WAN" } {		# also count WAN hardware
+			set wan_sw_chains $lanwancount
+			set mesh [ FilterMesh $mesh $confchains WAN_HW ]
+		}
+		return [ expr $wan_sw_chains + $lanwancount ]
+	}
+}
+
+# Generate parameter list for prompter
+proc PrompterList {basadv adv_button ncfg_element} \
+{
+	global ATTR
+	set Plist ""
+
+	foreach attr [ keylget ATTR ] {
+#puts stderr "PrompterList $attr: [ keylget ATTR $attr ]"
+		if { [ keylget ATTR $attr.BASADV ] == "$basadv" } {
+			if { [ cequal [ keylget ATTR $attr.VALUES ] "__STRING__" ] } {
+				if { [ cequal [ keylget ATTR $attr.CURRENT ] "__STRING__" ] } {
+					keylset ATTR $attr.CURRENT {}
+				}
+				lappend Plist "$attr {[ keylget ATTR $attr.LABEL ]} LABEL {[ keylget ATTR $attr.SHELP ]}"
+			} else {
+				case [ keylget ATTR $attr.CURRENT ] {
+				__STRING__ {
+					keylset ATTR $attr.CURRENT {}
+					lappend Plist "$attr {[ keylget ATTR $attr.LABEL ]} LABEL {[ keylget ATTR $attr.SHELP ]}"
+				}
+				__TOGGLE__ {
+					set inout {}
+					if [ InDevices $ncfg_element ] {
+						lappend inout "Outgoing"
+					}
+					if [ InPortMonitor $ncfg_element ] {
+						lappend inout "Incoming"
+					}
+					keylset ATTR $attr.CURRENT [ list $inout ]
+					lappend Plist "$attr {[ keylget ATTR $attr.LABEL ]} TOGGLE {[ keylget ATTR $attr.SHELP ]}"
+				}
+				__SKIP__ {
+				}
+				__UNUSED__ {
+				}
+				default {
+					lappend Plist "$attr {[ keylget ATTR $attr.LABEL ]} ROLIST {[ keylget ATTR $attr.SHELP ]}"
+				}
+				}
+			}
+		}
+	}
+	if { "$basadv" == "BASIC" && $adv_button } {
+		lappend Plist "ADVANCED {[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_ADV_OPTIONS ]} NEWSCREEN {[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_ADV_TITLE ]}"
+	}
+#puts stderr "PrompterList Plist: <$Plist>"
+	return $Plist
+}
+
+
+# Prompt communicates with ncfgprompter
+proc Prompt {action item} \
+{
+	global PROMPTER_PATH ATTR
+	set isdn_param __ISDN_inout__
+	set do_adv 0
+	set topo ""
+
+#puts stderr "Prompt(action=<$action> item=<$item>)"
+
+	set ATTR ""
+	if { $action == "INIT" } {
+		set bus [ keylget item GHOST.BUS ]
+		set bcfgindex [ keylget item GHOST.BCFGINDEX ]
+		set description [ keylget item GHOST.DESCRIPTION ]
+		set ncfg_element [ keylget item GHOST.NCFGELEMENT ]
+		set topo [ keylget item GHOST.TOPOLOGIES ]
+		set helpfile  [ lindex [ SendNDRequest "SHOWVARIABLE $bcfgindex HELPFILE" ] 0 ]
+	} else {
+		set ncfg_element $item
+		set ndbi [ lindex [ SendNDRequest "ELEMENTTOINDEX $ncfg_element" ] 0 ]
+		set bcfgindex [ keylget ndbi INDEX ]
+		set ndbus [ lindex [ SendNDRequest "SHOWBUS $bcfgindex" ] 0 ]
+		set bus [ keylget ndbus BUS ]
+		set nddesc [ lindex [ SendNDRequest "SHOWNAME $bcfgindex" ] 0 ]
+		set description [ keylget nddesc NAME ]
+		set kkey [ lindex [ SendNDRequest "RESSHOWKEY $ncfg_element" ] 0 ]
+		set key [ keylget kkey KEY ]
+		set ktopo [ lindex [ SendNDRequest "RESGET $key TOPOLOGY,s" ] 0 ]
+		set topo [ keylget ktopo VALUE ]
+		set helpfile  [ lindex [ SendNDRequest "SHOWVARIABLE $bcfgindex HELPFILE" ] 0 ]
+	}
+	set helpfile [ keylget helpfile HELPFILE ]
+	if { $helpfile == "foo bar" } {
+		set helpfile "{} {}"
+	}
+	if { $action == "LIST" } {
+		set umsg [ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_PROMPTER_VIEW_UPPER  [ list $description ] ]
+	} else {
+		set umsg [ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_PROMPTER_UPPER  [ list $description ] ]
+	}
+
+	set ckey [ lindex [ SendNDRequest "SHOWCUSTOMNUM $bcfgindex" ] 0 ]
+	set custom_params [ keylget ckey CUSTOM_NUM ]
+
+	if { $bus == "ISA" } {
+		if { $action != "INIT" } {
+			set ic [ lindex [ SendNDRequest "SHOWISACURRENT $ncfg_element" ] 0 ]
+			set isa [ lindex [ SendNDRequest "SHOWALLISAPARAMS $ncfg_element" ] 0 ]
+		} else {
+			set isa [ lindex [ SendNDRequest "SHOWISAPARAMS $bcfgindex" ] 0 ]
+		}
+		foreach param [ keylget isa ] {
+			set vals [ keylget isa $param ]
+			keylset ATTR $param.RESMGR $param
+			keylset ATTR $param.LABEL "[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_$param ]"
+			keylset ATTR $param.BASADV BASIC
+			keylset ATTR $param.SHELP ""
+			keylset ATTR $param.VALUES $vals
+			if { $action != "INIT" } {
+				keylset ATTR $param.CURRENT [ keylget ic $param ]
+			} else {
+				keylset ATTR $param.CURRENT [ lindex $vals 0 ]
+				set aparam "_$param"
+				if [ keylget item GHOST.$aparam autoval ] {
+					keylset ATTR $param.CURRENT $autoval
+				}
+			}
+			set cur [ keylget ATTR $param.CURRENT ]
+			if { [ cequal "$cur" { } ] || [ cequal $cur {} ] } {
+				keylset ATTR $param.CURRENT __SKIP__
+			}
+		}
+	} else {
+		if { ! $custom_params && "$topo" != "ISDN" } {
+			return "0 $ATTR"
+		}
+	}
+
+	if { $custom_params } {
+		if { $action != "INIT" } {
+			set cc [ lindex [ SendNDRequest "SHOWCUSTOMCURRENT $ncfg_element" ] 0 ]
+		}
+		for {set i 1} {$i <= $custom_params} {incr i} {
+			set c($i) [ lindex [ SendNDRequest "SHOWCUSTOM $bcfgindex $i" ] 0 ]
+			set cptopo [ keylget c($i) TOPOLOGIES ]
+			set numtopos [ llength $cptopo ]
+			for {set j 0} {$j < $numtopos} {incr j} {
+				if { [ cequal [lindex $cptopo $j] "$topo" ] } {
+					break
+				}
+			}
+			if { $j == $numtopos } {
+				continue
+			}
+			set param [ keylget c($i) RESMGRPARAM ]
+			keylset ATTR $param.RESMGR $param
+			keylset ATTR $param.CUSTOM 1
+			keylset ATTR $param.LABEL [ keylget c($i) CHOICETITLE ]
+			keylset ATTR $param.BASADV [ keylget c($i) BASADV ]
+			if { [ keylget c($i) BASADV ] == "ADVANCED" } {
+				set do_adv 1
+			}
+			keylset ATTR $param.SHELP ""
+
+			set vals [ keylget c($i) CHOICES ]
+			keylset ATTR $param.VALUES $vals
+			set resvals [ keylget c($i) RESVALUES ]
+			keylset ATTR $param.RESVALUES $resvals
+			if { $action != "INIT" } {
+				keylset ATTR $param.CURRENT [ keylget cc $param ]
+			} else {
+				keylset ATTR $param.CURRENT [ lindex $vals 0 ]
+				if [ keylget item GHOST.$param autoval ] {
+
+					if { [ cequal $autoval "__UNUSED__" ] } {
+						keylset ATTR $param.CURRENT $autoval
+					} else {
+						set custidx [ lsearch -exact $resvals $autoval ]
+						if { $custidx != -1 } {
+							set dispval [ lindex $vals $custidx ]
+							keylset ATTR $param.CURRENT $dispval
+						}
+					}
+				}
+			}
+		}
+	}
+	if { "$topo" == "ISDN" } {
+		keylset ATTR $isdn_param.RESMGR $isdn_param
+		keylset ATTR $isdn_param.CURRENT __TOGGLE__
+		if { $action == "INIT" } {
+			AddIncoming $ncfg_element
+			AddOutgoing $ncfg_element
+		}
+		keylset ATTR $isdn_param.LABEL "Line Direction"
+		keylset ATTR $isdn_param.VALUES "Incoming Outgoing"
+		keylset ATTR $isdn_param.RESVALUES [ keylget ATTR $isdn_param.VALUES ]
+		keylset ATTR $isdn_param.BASADV BASIC
+		keylset ATTR $isdn_param.SHELP "[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_ISDN_SHELP ]"
+	}
+
+	set args no_output
+	if { $action == "LIST" } {
+		lappend args readonly
+	}
+	pipe a Pstdin 
+	pipe Pstdout b
+
+	set childPid [ fork ]
+	case $childPid {
+		-1 {
+			echo "SCO_NETCONFIG_UI_ERR_FORK_FAIL"
+			exit 1
+		}
+		0 {
+			close $Pstdin
+			close $Pstdout
+
+			dup $a stdin
+			close $a
+
+			dup $b stdout
+			close $b
+
+			execl $PROMPTER_PATH "$args"
+		}
+	}
+
+	close $a
+	close $b
+
+
+	while { [ gets $Pstdout line ] != -1 } {
+#puts stderr "line <$line>"
+		case [ lindex $line 0 ] {
+
+		PAGEINIT {
+			case [ lindex $line 1 ] {
+				BASIC {
+					puts $Pstdin "{[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_PROMPTER_TITLE ]} {$umsg} $helpfile {} {}"
+				}
+				ADVANCED {
+					puts $Pstdin "{[ IntlLocalizeMsg SCO_NETCONFIG_BE_MSG_ADV_TITLE ]} {$umsg} $helpfile {} {}"
+				}
+			}
+		}
+		LIST {
+			puts $Pstdin [ PrompterList [ lindex $line 1 ] $do_adv $ncfg_element ]
+		}
+		CURRENT {
+			set Pcurr ""
+			foreach attr [ keylget ATTR ] {
+				set cur [ keylget ATTR $attr.CURRENT ]
+				if { [ cequal "$cur" "__UNUSED__" ] || [ cequal "$cur" "__SKIP__" ] } {
+					continue
+				}
+				if { [ keylget ATTR $attr.BASADV ] ==  [ lindex $line 1 ] } {
+					lappend Pcurr "$attr 1 [ keylget ATTR $attr.CURRENT ]"
+				}
+			}
+			puts $Pstdin "$Pcurr"
+		}
+		VALUES {
+			set attr [ lindex $line 1 ]
+			puts $Pstdin "[ keylget ATTR $attr.VALUES ]"
+		}
+		SET {
+			set attr [ lindex $line 1 ]
+			set val [ lrange $line 2 end ]
+			keylset ATTR $attr.CURRENT "$val"
+			puts $Pstdin OK
+		}
+		USER_DONE {
+			puts $Pstdin OK
+			flush $Pstdin
+			# map custom values from prompter labels to RESVALUES for idinstall
+			for {set i 1} {$i <= $custom_params} {incr i} {
+				set cptopo [ keylget c($i) TOPOLOGIES ]
+				set numtopos [ llength $cptopo ]
+				for {set j 0} {$j < $numtopos} {incr j} {
+					if { [ cequal [lindex $cptopo $j] "$topo" ] } {
+						break
+					}
+				}
+				if { $j == $numtopos } {
+					continue
+				}
+				set param [ keylget c($i) RESMGRPARAM ]
+				set choices [ keylget c($i) CHOICES ]
+				set resvalues [ keylget c($i) RESVALUES ]
+				set current [ keylget ATTR $param.CURRENT ]
+				if { [ cequal "$current" "__UNUSED__" ] } {
+					set custidx [ lsearch -exact $resvalues "__UNUSED__" ]
+					set current [ lindex $choices $custidx ]
+				}
+				keylset ATTR ${param}_.RESMGR ${param}_
+				keylset ATTR ${param}_.CURRENT $current
+				set idx -1
+				if { "$choices" != "__STRING__" } {
+					set idx [ lsearch $choices $current ]
+				}
+				if { $idx != -1 } {
+					keylset ATTR $param.CURRENT [ lindex $resvalues $idx ]
+				}
+			}
+			
+			# If this card has been isaautodetected and the IOADDR has been
+			# changed we need to give ndcfg the old IOADDR
+			if { $action == "INIT" } {
+				if [ keylget ATTR IOADDR.CURRENT curio ] {
+					if [ keylget item GHOST._IOADDR autoio ] {
+						if { $curio != $autoio } {
+							#puts stderr "OLDIO = $curio AUTOIO = $autoio"
+							keylset ATTR OLDIOADDR.RESMGR "OLDIOADDR"
+							keylset ATTR OLDIOADDR.CURRENT $autoio
+						}
+					}
+				}
+			} 
+
+# JAW - not needed for idmodify
+#
+#else {
+#				if [ info exists origioaddr ] {
+#					if [ keylget ATTR IOADDR.CURRENT curio ] {
+#						if { $curio != $origioaddr } {
+#puts stderr "ORIGIO = $origioaddr NEWIO = $curio"
+#							keylset ATTR OLDIOADDR.RESMGR "OLDIOADDR"
+#							keylset ATTR OLDIOADDR.CURRENT $origioaddr
+#						}
+#					}
+#				}
+#			}
+
+
+			if { "$topo" == "ISDN" } {
+				set isdninout [ lindex [ keylget ATTR $isdn_param.CURRENT ] 0 ]
+				RemoveIncoming $ncfg_element
+				RemoveOutgoing $ncfg_element
+				foreach inout $isdninout {
+					case $inout {
+					Incoming {
+						AddIncoming $ncfg_element
+					}
+					Outgoing {
+						AddOutgoing $ncfg_element
+					}
+					}
+				}
+			}
+			break
+		}
+		}
+		flush $Pstdin
+	}
+
+	set ret [ wait $childPid ]
+	close $Pstdin
+	close $Pstdout
+	return "[ lindex $ret 2 ] [ list $ATTR ]"
+}
+
+
+# Send a request to the Network Driver component back end tool, ndcfg
+proc SendNDRequest {request} \
+{
+	global NDstdin NDstdout ErrorCode
+
+#puts stderr "SendNDRequest(<$request>)"
+	puts $NDstdin $request
+	catch { flush $NDstdin }
+
+	if { [ gets $NDstdout message ] == -1 } {
+		echo "SCO_NETCONFIG_UI_ERR_BE_SCRIPT_DIED"
+		exit 1
+	}
+	while { [ select "$NDstdout" {} {} 0 ] != {} } {
+		if { [ gets $NDstdout msg ] == -1 } {
+			echo "SCO_NETCONFIG_UI_ERR_BE_SCRIPT_DIED"
+			exit 1
+		}
+		append message $msg
+	}
+	# returns a list, first element is error code, NOERROR is magic string
+	# error code should be an internationalized string name, if not just die
+	set NDResponse [ lindex $message 0 ]
+	if { $NDResponse != "NOERROR" } {
+		echo "SCO_NETCONFIG_UI_ERR_BE_SCRIPT_ERROR $NDResponse"
+		exit 1
+	} else {
+		set message [ lrange $message 1 end ]
+	}
+#puts stderr "SendNDRequest: message <$message>"
+	return $message
+}
+
+# Build the list structure for the AddHW confirmation box
+proc StartNDSCRIPT {} \
+{
+	global NDstdin NDstdout
+	global NDCFG_PATH
+
+	pipe a NDstdin 
+	pipe NDstdout b
+
+	set childPid [ fork ]
+	case $childPid {
+		-1 {
+			#puts stderr "netconfig: Unable to fork back-end-script"
+			echo "SCO_NETCONFIG_UI_ERR_FORK_FAIL"
+			exit 1
+		}
+		0 {
+			close $NDstdin
+			close $NDstdout
+
+			dup $a stdin
+			close $a
+
+			dup $b stdout
+			close $b
+
+
+
+			if {[id userid] == "0"} {
+				execl $NDCFG_PATH "-t -b"
+			} else {
+				set RETCODE [ catch {  exec /sbin/tfadmin -t NETCFG: $NDCFG_PATH ] } ]
+				if { $RETCODE == "0" } {
+					execl /sbin/tfadmin "$NDCFG_PATH -t -b"
+				} else {
+					#should never get here  but execl
+					#just in case 
+					execl $NDCFG_PATH "-t -b"
+				}
+			}
+
+
+#			execl $NDCFG_PATH "-t -b"
+		}
+	}
+	close $a
+	close $b
+}
+
+proc StopNDSCRIPT {} \
+{
+	global NDstdin NDstdout
+
+	if { [ info exists NDstdin ] } {
+		puts $NDstdin QUIT
+		catch { flush $NDstdin }
+		close $NDstdin
+		close $NDstdout
+
+		unset NDstdin
+	}
+}
+
+proc GhostTOTree {ghost node} \
+{
+	if { $node == "netX" } {	# called from AddHWVendorList
+		keylset nodeinfo CHAIN [ keylget ghost NCFGELEMENT ]
+		set node net00000000
+	} else {
+		keylset nodeinfo CHAIN $node
+	}
+	keylset nodeinfo INDEX 0
+	keylset nodeinfo CONFIGURED 0
+
+	keylset result SELECTABLE 1
+	keylset result INDENT 2
+	keylset result NODEINFO $nodeinfo
+	if [ IsNetX $node ] {
+		keylset result DESCRIPTION [ keylget ghost DESCRIPTION ]
+		if { ! [ keylget ghost DANGEROUS_SEARCH detectable ] } {
+			set detectable 0
+		}
+		keylset result DETECTABLE $detectable
+		keylset result ICONLIST [ list 6 20 ]
+		keylset result GHOST $ghost
+	} else {
+		global ELEMENT
+
+		keylset result DESCRIPTION [keylget ELEMENT($node) DESCRIPTION ]
+		keylset result DETECTABLE 0
+
+		set up [ keylget ELEMENT($node) UP ]
+		if { [ IsWANInterface $up ] } {
+			keylset result ICONLIST [ list 18 21 ]
+		} else {
+			keylset result ICONLIST [ list 17 22 ]
+		}
+	}
+
+	return $result
+}
+
+proc RemoveHW {element} \
+{
+	set NetISL 0
+
+# puts stderr "RemoveHW($element)\n"
+
+	RemoveOutgoing $element
+	RemoveIncoming $element
+
+
+	set result [ SendNDRequest "IDREMOVE $element $NetISL" ]
+	return $result
+}
+
+proc TestHW {element} \
+{
+#puts stderr "TestHW($element)"
+	set result [ SendNDRequest "TEST $element" ]
+	return $result
+}
+
+proc ListORReconfHW {action element} \
+{
+	global ErrorCode
+	set NetISL 0
+	set result ""
+	set idargs {}
+
+#puts stderr "ListORReconfHW(<$action> <$element>)"
+	set prompter_ret [ Prompt $action $element ]
+	case [ lindex $prompter_ret 0 ] {
+	3 {		# user cancelled prompter session - return OK
+		set result [ list [ list {STATUS cancel} ] ]
+	}
+	0 {
+		set ATTR [ lindex $prompter_ret 1 ]
+		foreach attr [ keylget ATTR ] {
+			case [ keylget ATTR $attr.CURRENT ] {
+			__SKIP__ {}
+			{} {
+				lappend idargs "[ keylget ATTR $attr.RESMGR ]=__STRING__"
+			}
+			default {
+				if { [ keylget ATTR $attr.CUSTOM ret ] } {
+					lappend idargs "[ keylget ATTR $attr.RESMGR ]=\{[ keylget ATTR $attr.CURRENT ]\}"
+				} else {
+					lappend idargs "[ keylget ATTR $attr.RESMGR ]=[ keylget ATTR $attr.CURRENT ]"
+				}
+			}
+			}
+		}
+	}
+	default {
+		set ErrorCode SCO_NETCONFIG_UI_ERR_BE_PROMPTER_FAILED
+		set result [ lindex $prompter_ret 0 ]
+	}
+	}
+	if { $idargs != {} && $action == "RECONF" } {
+		set result [ SendNDRequest "IDMODIFY $element $idargs" ]
+	}
+
+	return $result
+}
+
+proc AddHWSelect {lan_wan topo charm item} \
+{
+	global NDVList ErrorCode
+
+	keylset item GHOST.TOPOLOGIES $topo
+	set FailOver 0
+	set result ""
+
+	set idargs {}
+	set key [ keylget item GHOST.KEY ]
+	if { $key != {} } {
+		set idargs KEY=$key
+	}
+	set prompter_ret [ Prompt INIT $item ]
+#puts stderr "AddHWSelect: $prompter_ret"
+
+	case [ lindex $prompter_ret 0 ] {
+	3 {		# user cancelled prompter session - return OK
+		set idargs {}
+		set result [ list [ list {STATUS cancel} ] ]
+	}
+	0 {
+		set ATTR [ lindex $prompter_ret 1 ]
+		foreach attr [ keylget ATTR ] {
+			case [ keylget ATTR $attr.CURRENT ] {
+			__SKIP__ {}
+			{} {
+				lappend idargs "[ keylget ATTR $attr.RESMGR ]={__STRING__}"
+			}
+			default {
+				if { [ keylget ATTR $attr.CUSTOM ret ] } {
+					lappend idargs "[ keylget ATTR $attr.RESMGR ]=\{[ keylget ATTR $attr.CURRENT ]\}"
+				} else {
+					lappend idargs "[ keylget ATTR $attr.RESMGR ]=[ keylget ATTR $attr.CURRENT ]"
+				}
+			}
+			}
+		}
+	}
+	default {
+		set ErrorCode SCO_NETCONFIG_UI_ERR_BE_PROMPTER_FAILED
+		set result [ lindex $prompter_ret 0 ]
+	}
+	}
+	if { $idargs != {}} {
+		set bi [ keylget item GHOST.BCFGINDEX ]
+		case $lan_wan {
+		LAN {
+			set lw 1
+		}
+		WAN {
+			set lw 2
+		}
+		}
+		if { $charm } {
+			lappend idargs __CHARM=1
+		} else {
+			lappend idargs __CHARM=0
+		}
+
+		set result ""
+		keylset result STATUS IDINSTALL
+		keylset result ARGS [ list IDINSTALL $bi $topo $FailOver $lw $idargs ]
+
+#puts stderr "ncfgBE result=$result"
+		return [list $result]
+# jaw - never get here
+		set result [ SendNDRequest "IDINSTALL $bi $topo $FailOver $lw $idargs" ]
+	}
+
+	return $result
+}
+
+proc IdInstall { args } {
+
+	set arg2 [ lindex $args 0 ]
+#puts stderr "IdInstall args=$args\n arg2=$arg2"
+
+	set result [ SendNDRequest "$arg2" ]
+
+	return $result
+
+}
+
+
+proc AddHWAutoDetect {item searchtype} \
+		{
+	global NDVList
+	
+#puts stderr "AddHWAutoDetect($item)"
+	set list ""
+	
+	set nodeinfo [ keylget item NODEINFO ]
+	set elementname [ keylget nodeinfo CHAIN ]
+	
+	set desc [ keylget item DESCRIPTION ]
+	set found [ keylget item GHOST ]
+#puts stderr "F($found)"
+
+	set bcfgindex [ keylget found BCFGINDEX ] 
+
+	case $searchtype {
+	SAFE { 
+		set list [ SendNDRequest "ISAAUTODETECT GET $bcfgindex" ]
+	}
+	DANGEROUS { 
+		set list [ SendNDRequest "DANGEROUSISAAUTODETECT GET $bcfgindex" ]
+	} }
+# puts stderr "L($list)"
+	set tree ""
+
+	if { $list != "\{ \}" } {
+		foreach i $list {
+			set y [	concat $found $i ] 
+# puts stderr "y($y)"
+            set desc [ keylget y DESCRIPTION ]
+			set ioaddr [ keylget y _IOADDR ]
+			keylset y DESCRIPTION "$desc (IO=$ioaddr)"
+			lappend tree [ GhostTOTree $y $elementname ]
+		}
+	}
+	return $tree
+}
+
+proc BuildNDHWRoots {} \
+{
+	global ELEMENT
+	global NDHWRoots
+
+	if { [ info exists NDHWRoots ] } {
+		return
+	}
+	set x [ GetCurrentChains ]
+	set mesh [ lindex $x 0 ]
+
+	set possible_roots ""
+	foreach i [ array names ELEMENT ] {
+		set down [ keylget ELEMENT($i) DOWN ]
+		if { $down == "NULL" } {
+			lappend possible_roots $i
+		}
+	}
+	set NDHWRoots ""
+	foreach i $possible_roots {
+		set found 0
+		foreach j $mesh {
+			set nodeinfo [ lindex $j 1 ]
+			set element [ keylget nodeinfo CHAIN ]
+			if { $i == $element } {
+				set found 1
+				break
+			}
+		}
+		if {!$found} {
+			lappend NDHWRoots $i
+		}
+	}
+}
+
+proc AddHWSafeDetect { lan_wan } \
+{
+	set result ""
+	set desclist ""
+	set x [ SendNDRequest "RESSHOWUNCLAIMED $lan_wan" ]
+	if { $x != "\{ \}" } {
+		foreach i $x {
+			lappend desclist [ linsert $i 0 "DESCRIPTION \{[ keylget i NAME ]\}" ]
+		}
+		set sortlist [ lsort $desclist ]
+		foreach i $sortlist {
+			lappend result [ GhostTOTree $i "netX" ]
+		}
+	}
+	return $result
+}
+
+proc AddHWTopologies {lan_wan} \
+{
+	set result ""
+	set Topologies [ SendNDRequest "SHOWALLTOPOLOGIES $lan_wan" ]
+
+	foreach i $Topologies {
+		keylset i DESCRIPTION [ keylget i FULLNAME ]
+		keylset i ICONLIST " "
+		keylset i SELECTABLE 1
+		keylset i INDENT 1
+		lappend result $i
+	}
+	return $result
+}
+
+# AddHWVendorList no longer returns existing HardWare devices
+proc AddHWVendorList {lan_wan {topo ""}} \
+{
+	global NDHWRoots NDVList ELEMENT
+
+#puts stderr "AddHWVendorList(<$lan_wan> <$topo>)"
+
+	set NDVList ""
+	set result ""
+	set desclist ""
+
+	if { $lan_wan == "WAN" } {
+		set Topologies [ SendNDRequest "SHOWALLTOPOLOGIES WAN" ]
+		foreach t $Topologies {
+			if [ keylget t TOPOLOGY topo ] {
+				append NDVList [ SendNDRequest "SHOWTOPO $topo" ]
+			}
+		}
+	} else {
+		set NDVList [ SendNDRequest "SHOWTOPO $topo" ]
+	}
+	foreach i $NDVList {
+		set j [ linsert $i 0 "DESCRIPTION \{[ keylget i NAME ]\}" ]
+		if [ keylget i BUS bustype ] {
+			if { $bustype == "ISA" } {
+				set hasvrfy [ lindex [ SendNDRequest "BCFGHASVERIFY [ keylget i BCFGINDEX ]" ] 0 ]
+				if { [ keylget hasvrfy ANSWER ] == "Y" } {
+					lappend j "DANGEROUS_SEARCH \{1\}"
+				}
+			}
+		}
+		lappend desclist $j
+	}
+
+#puts stderr "desclist = $desclist"
+
+	set sortlist [ lsort $desclist ]
+	foreach i $sortlist {
+		# ODI/DLPI drivers may not have netcfg elements before USER_SELECT
+		# GhostTOTree has a kludge to treat these as netX elements for now
+		lappend result [ GhostTOTree $i netX ]
+	}
+
+#puts stderr $result
+
+	return $result
+}
+
+# Build the TREE structure for the AddSW (and 2nd stage of the AddHW)
+# confirmation box
+proc BuildAddSWTree {nodeinfo} \
+{
+	set x [ GetCurrentChains ]
+	set mesh [ lindex $x 0 ]
+	set configured_chains [ lindex $x 1 ]
+
+	set chain_list [ GetPossibleChains $configured_chains ]
+
+	set tree [ list {} $nodeinfo ]
+	foreach i $mesh {
+		set root_ni [ lindex $i 1 ]
+		if { $root_ni == $nodeinfo } {
+			set tree $i
+			break
+		}
+	}
+
+	set x [ AddOneLayerOfChains [ list $tree ] $chain_list 0 ]
+	set mesh [ lindex $x 0 ]
+
+	set tree [ MeshToTree $mesh ADD_SW ]
+	return $tree
+}
+
+proc DeleteFilterTree {tree node node_counts removecount} \
+{
+	global ELEMENT
+
+#puts stderr "DeleteFilterTree(<$tree> <$node> <$node_counts> <$removecount>)"
+	set nodeinfo [ lindex $tree 1 ]
+
+	set dep 0
+	foreach nds [ keylget node_counts ] {
+		set count [ keylget node_counts $nds ]
+		if { $nodeinfo == $nds } {
+			if {$nds == $node || $count==$removecount} {
+				set dep 1
+			}
+		}
+	}
+#puts stderr "DFT nodeinfo <$nodeinfo> dep <$dep>"
+	keylset nodeinfo CONFIGURED [ expr {!$dep} ]
+	set el [ lindex [ keylget nodeinfo CHAIN ]  [ keylget nodeinfo INDEX ] ]
+#puts stderr "DFT el <$el>"
+	keylset nodeinfo HWSW [ keylget ELEMENT($el) HWSW ]
+
+	set new_tree ""
+	set newdep $dep
+	foreach i [ lindex $tree 0 ] {
+		set x [ DeleteFilterTree $i $node $node_counts $removecount]
+		if { $x != "" } {
+			lappend new_tree $x
+			set newdep 1
+		}
+	}
+	if { $newdep } {
+#puts stderr "NT($new_tree)"
+		set result [ list $new_tree $nodeinfo ]
+	} else {
+		set result ""
+	}
+#puts stderr "R($result)"
+	return $result
+}
+
+proc I {indent str} \
+{
+	for {set i 0} {$i<$indent} {incr i} {
+		puts stderr "	" nonewline
+	}
+	puts stderr $str
+}
+
+proc MergeCounts {current new ignore indent} \
+{
+	foreach x [ keylget new ] {
+		set x_c [ keylget new $x ]
+#I $indent "X($x)"
+		set found 0
+		foreach y [ keylget current ] {
+			set y_c [ keylget current $y ]
+#I $indent "Y($y)"
+			if { $x != $ignore && $x == $y } {
+				set found 1
+				set total [expr {$y_c+$x_c}]
+				keylset current $x $total
+#I $indent ">>$x==$total"
+				break
+			}
+		}
+		if { !$found } {
+			keylset current $x $x_c
+#I $indent "++$x==$x_c"
+		}
+	}
+	return $current
+}
+
+proc ScanDepNodes {tree dep {indent 0}} \
+{
+	global DepNodes
+
+	set nodeinfo [ lindex $tree 1 ]
+	set chain [ keylget nodeinfo CHAIN ]
+	set component [ lindex $chain [ keylget nodeinfo INDEX ] ]
+#I $indent "SDN($DepNodes,$chain||$component||,$dep)"
+	set result ""
+	foreach n $DepNodes {
+#I $indent "  N($n) nodeinfo($nodeinfo)"
+
+		if { $nodeinfo == $n } {
+			set dep 1
+			break
+		}
+	}
+	if { $dep } {
+		keylset result $nodeinfo 1
+	}
+#I $indent " ND($DepNodes)"
+
+	foreach i [ lindex $tree 0 ] {
+		set d [ ScanDepNodes $i $dep [ expr {$indent+1}]]
+		set result [ MergeCounts $result $d $nodeinfo $indent ]
+	}
+
+#I $indent "R($result)"
+	return $result
+}
+
+proc FindDepNodes {tree dep {indent 0}} \
+{
+	global DepNodes
+
+	set nodeinfo [ lindex $tree 1 ]
+	set chain [ keylget nodeinfo CHAIN ]
+	set component [ lindex $chain [ keylget nodeinfo INDEX ] ]
+#I $indent "FDN($DepNodes,$chain||$component||,$dep)"
+	set found 0
+	foreach n $DepNodes {
+#I $indent "  N($n)"
+		if { $nodeinfo == $n } {
+#I $indent " FOUND($nodeinfo)"
+			set dep 1
+			set found 1
+			break
+		}
+	}
+	if { $dep && !$found } {
+#I $indent " F($chain||$component||)"
+		lappend DepNodes $nodeinfo
+	}
+#I $indent " ND($DepNodes)"
+
+	foreach i [ lindex $tree 0 ] {
+		FindDepNodes $i $dep [ expr {$indent+1} ]
+	}
+}
+
+# Build the TREE structure for the DeleteSW confirmation box
+proc BuildDeleteSWTree {node_2_delete} \
+{
+	global DepNodes
+
+#puts stderr "BuildDeleteSWTree(<$node_2_delete>)"
+	set chain_2_delete [ keylget node_2_delete CHAIN ]
+	set DepNodes [ list $node_2_delete ]
+
+	set x [ GetCurrentChains ]
+	set mesh [ lindex $x 0 ]
+	set configured_chains [ lindex $x 1 ]
+
+	foreach root $mesh {
+		FindDepNodes $root 0 1
+	}
+
+#puts stderr "DepNodes <$DepNodes>"
+
+	set ndc ""
+	foreach root $mesh {
+		set d [ ScanDepNodes $root 0 1 ]
+		set ndc [ MergeCounts $ndc $d NoChainToIgnore 0 ]
+	}
+	set DepNodes $ndc
+#puts stderr "DepNodes_ndc <$DepNodes>"
+
+	set deps ""
+	foreach root $mesh {
+		set removecount [ keylget DepNodes $node_2_delete ]
+		set x [ DeleteFilterTree $root $node_2_delete $DepNodes $removecount ]
+		if { $x != "" } {
+			lappend deps $x
+		}
+	}
+#puts stderr "H($deps)"
+	set tree [ MeshToTree $deps DEL_SW ]
+	return $tree
+}
+
+proc ChainDescription {chain} \
+{
+	global ELEMENT
+
+	set products ""
+	foreach i $chain {
+		if { [ scan $i "%\[^(\](%\[^)\])" element personality ] != 1 } {
+			SetElement $element $personality
+		} else {
+			SetElement $element
+		}
+		set el $ELEMENT($i)
+		lappend products [ keylget el DESCRIPTION ]
+	}
+	return $products
+}
+
+
+# Cleanup: cleans up the mess left after a parital install of a 
+# netdriver.  Run at startup of ncfgBE.
+proc Cleanup { } \
+{
+	global NCFG_INFODIR NCFG_RECONFDIR NCFG_LISTDIR
+	global NCFG_CHAINSFILE
+	set elements ""
+
+	set chains [ ReadChainsFile ] 
+	foreach chain $chains {
+		while { $chain != "" } {
+			lappend elements [ lvarpop chain ] 
+		}
+	}
+	set elements [ lrmdups $elements ]
+	set infofiles [ readdir $NCFG_INFODIR ]
+	set notinchains [ lindex [ intersect3 $infofiles $elements ] 0 ] 
+	set noinfofile [ lindex [ intersect3 $infofiles $elements ] 2 ] 
+
+#First cleanup extra NIC files in the info dir
+	foreach element $notinchains {
+		set infoPath $NCFG_INFODIR/$element
+
+		set drivertype ""
+		set sd [ scancontext create ]
+		set fd [ open $infoPath ]
+		scanmatch $sd "^DRIVER_TYPE=" {
+			set drivertype [ string trim [ csubstr $matchInfo(line) 12 end ] \" ]
+		}
+		scanfile $sd $fd
+		scancontext delete $sd
+		close $fd
+
+		if { [ lsearch -exact { MDI ODI DLPI } $drivertype ] != -1 } {
+			RemoveHW $element
+		}
+	}
+
+	if { [ llength $noinfofile ] == 0 } {
+		return
+	}  
+
+# Now cleanup the chains file
+	set list ""
+	if [ file exists $NCFG_CHAINSFILE ] {
+		set fd [ open $NCFG_CHAINSFILE ]
+	} else {
+		set fd [ open $NCFG_CHAINSFILE w+ ]
+	}
+	set badchains ""
+	while { [ gets $fd line ] != -1 } {
+		set c [ translit "#" " " $line ]
+		if { [ llength $c ] > 0 } {
+			while { $c != "" } {
+				set element [ lvarpop c ] 
+				if { [ lsearch -exact $infofiles $element ] == -1 } {
+					lappend badchains $line 
+				}
+			}
+		}
+	}
+	close $fd
+
+	foreach badchain [ lrmdups $badchains ] {
+		RemoveChainEntry $NCFG_CHAINSFILE $badchain
+	}
+
+}
+
+proc RemoveChainEntry {file chain {newchain ""}} \
+{
+	global NCFG_TMP_CHAINS_FILE
+#puts stderr "RemoveChainEntry $file $chain $newchain"
+	set ifd [ open $file r ]
+	lassign [ tmpfile $NCFG_TMP_CHAINS_FILE ]  ofd tmpfilename
+	while { [ gets $ifd line ] != -1 } {
+		if { $line != $chain } {
+			puts $ofd $line
+		} else {
+			if { $newchain != "" } {
+				puts $ofd $newchain
+			}
+		}
+	}
+	close $ofd
+	close $ifd
+
+	TfadminMv $tmpfilename $file
+}
+
+
+
+# main Main MAIN
+#
+# This portion of the script analyses the requests from the UI and calls
+# the appropriate handler function.  Then it returns the result.  This is
+# done to minimize the complexity of the code in the UI.  Since the interface
+# to this script is well defined, and programatic it can be tested
+# automatically.
+
+ErrorTopLevelCatch {
+StartNDSCRIPT
+Cleanup
+while { [ gets stdin line ] != -1 } {
+    set ErrorCode "NOERROR"
+    set Output ""
+    case [ lindex $line 0 ] {
+	LAN_WAN_COUNT {
+		set Output [ BuildMainTree [ lindex $line 1 ] COUNT ]
+	}
+	MAIN_TREE {
+		set Output [ BuildMainTree [ lindex $line 1 ] TREE ]
+	}
+	ADD_HW_SAFE_DETECT {
+		set Output [ AddHWSafeDetect [ lindex $line 1 ] ]
+	}
+	ADD_HW_TOPOLOGIES {
+		set Output [ AddHWTopologies [ lindex $line 1 ] ]
+	}
+	ADD_HW_VENDOR_LIST {
+		set Output [ AddHWVendorList LAN [ lindex $line 1 ] ]
+	}
+	ADD_HW_WAN_LIST {
+		set Output [ AddHWVendorList WAN ]
+	}
+	ADD_HW_AUTODETECT {
+		set Output [ AddHWAutoDetect [ lindex $line 1 ] [ lindex $line 2 ] ]
+	}
+	ADD_HW_SELECT {
+		set Output [ AddHWSelect [ lindex $line 1 ] [ lindex $line 2 ] [ lindex $line 3 ] [ lindex $line 4 ] ]
+	}
+	IDINSTALL {
+		set Output [ IdInstall [ lindex $line 1 ] ]
+	}
+	LIST_HW {
+		set Output [ ListORReconfHW LIST [ lindex $line 1 ] ]
+	}
+	RECONF_HW {
+		set Output [ ListORReconfHW RECONF [ lindex $line 1 ] ]
+	}
+	REMOVE_HW {
+		set Output [ RemoveHW [ lindex $line 1 ] ]
+	}
+	TEST_HW {
+		set Output [ TestHW [ lindex $line 1 ] ]
+	}
+	ADD_HW_END {
+		global NDHWRoots
+		if { [ info exists NDHWRoots ] } {
+			unset NDHWRoots
+		}
+	}
+	ADD_SW_TREE {
+		set Output [ BuildAddSWTree [ lindex $line 1 ] ]
+	}
+	DELETE_TREE {
+		set Output [ BuildDeleteSWTree [ lindex $line 1 ] ]
+	}
+	LOOKUP {
+	    case [ lindex $line 1 ] {
+		ELEMENT {
+			set Output [ GetElement [ lindex $line 2 ] ]
+		}
+		CHAIN {
+			set Output [ ChainDescription [ lindex $line 2 ] ]
+		}
+	    }
+	}
+	default {
+		set ErrorCode "SCO_NETCONFIG_UI_ERR_BE_UNKNOWN_REQ"
+	}
+    }
+    if { "$ErrorCode" != "" } {
+		puts stdout "$ErrorCode $Output"
+	}
+    flush stdout
+}
+set Output [ StopNDSCRIPT ]
+} ncfgBE

@@ -1,0 +1,96 @@
+#!/bin/perl
+@iclist=(ic1);
+@ic1=("tp1","tp2","tp3","tp4","tp5","tp6","tp7","tp8","tp9","tp10",
+	"tp11","tp12","tp13");
+
+require "common.pl";
+
+sub tp1{
+	$tp=tp1;
+	&run("-e contrib/api ctest-parallel");
+
+	foreach(@journal) {
+		($number)=/^(\d+)\|.*\|.*$/;
+		if ($number eq "") {
+			&fail;
+			return;
+		}
+	}
+	&pass;
+}
+
+
+sub tp2 {
+	$tp=tp2;
+	&verify((@tcstarts=grep(/^$TEST_CASE_START\|.*TC Start.*$/,@journal))==8);
+}
+
+sub tp3 {
+	$tp=tp3;
+	&verify(grep(/^$TEST_CASE_END\|.*TC End$/,@journal)==8);
+}
+
+sub tp4 {
+	$tp=tp4;
+	&verify(grep(/^$INVOCABLE_COMPONENT_START\|.*IC Start/,@journal)==16);
+}
+
+sub tp5 {
+	$tp=tp5;
+	&verify(grep(/^$INVOCABLE_COMPONENT_END\|.*IC End$/,@journal)==16);
+}
+
+sub tp6 {
+	$tp=tp6;
+	&verify((@infolines=grep(/^$TEST_CASE_INFORMATION\|/,@journal))==48);
+}
+
+sub tp7 {
+	$tp=tp7;
+	&verify(grep(/test1: startup/,@infolines)==8);
+}
+	
+sub tp8 {
+	$tp=tp8;
+	&verify(grep(/test1: cleanup/,@infolines)==8);
+}
+	
+sub tp9 {
+	$tp=tp9;
+	local(@activity_numbers)=(0,0,0,0,0,0,0,0);
+	foreach(@tcstarts) {
+		&breakup_tcstart($_);
+		$activity_numbers[$activity]=1;
+	}
+	&verify(grep(/0/,@activity_numbers)==0);
+}
+
+sub tp10 {
+	$tp=tp10;
+	local(@activity_numbers)=(0,0,0,0,0,0,0,0);
+	@messes=grep(/ic1 tp1/,@infolines);
+	foreach(@messes) {
+		&breakup_infoline($_);
+		$activity_numbers[$activity]=1;
+	}
+	&verify(grep(/0/,@activity_numbers)==0);
+}
+	
+sub tp11 {
+	$tp=tp11;
+	&verify((grep(/^$TEST_PURPOSE_RESULT\|.*PASS$/,@journal))==8);
+}
+
+sub tp12 {
+	$tp=tp12;
+	&verify((grep(/^$TEST_PURPOSE_RESULT\|.*FAIL$/,@journal))==8);
+}
+
+sub tp13 {
+	$tp=tp13;
+	&verify((grep(/^$TEST_PURPOSE_RESULT\|.*UNRESOLVED$/,@journal))==8);
+}
+
+	
+
+require "$ENV{\"TET_ROOT\"}/lib/perl/tcm.pl";

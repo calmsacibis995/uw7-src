@@ -1,0 +1,161 @@
+/**/#ident	"@(#)dtadmin:userad/Imakefile	1.13.6.15"
+/**/#copyright	"%c%"
+
+#include <Motif.tmpl>
+#include <Motif.rules>
+
+#define PassCDebugFlags 'CDEBUGFLAGS=$(CDEBUGFLAGS)'
+
+          SRCS = \
+		LoginMgr.c \
+		findlocales.c \
+		next.c \
+		makepath.c \
+		appendlist.c \
+		format.c \
+		locale_util.c \
+		userprop.c
+
+          OBJS = \
+		LoginMgr.o \
+		findlocales.o \
+		next.o \
+		makepath.o \
+		appendlist.o \
+		format.o \
+		locale_util.o \
+		userprop.o
+
+        HEADERS = \
+		login_msg.h
+
+           STAR = *
+
+   DTCLIENTSLIB = $(USLCLIENTSRC)/libMDtI
+       DTLIBSRC = $(LIBSRC)/Dt
+    GIZMOLIBSRC = $(LIBSRC)/MGizmo
+      DTILIBSRC = $(DTCLIENTSLIB)
+     DTAMLIBSRC = ../dtamlib
+          DTLIB = $(DTLIBSRC)/libDt.so
+       GIZMOLIB = $(GIZMOLIBSRC)/libMGizmo.so
+         DTILIB = $(DTILIBSRC)/libMDtI.so
+        DTAMLIB = $(DTAMLIBSRC)/libdtam.a
+        DTAMLIB = $(DTAMLIBSRC)/libdtam.a
+    DTWIDLIBSRC = $(LIBSRC)/DtWidget
+      DTWIDLIB  = $(DTWIDLIBSRC)/libDtWidget.so
+
+
+       INCLUDES = -I$(LIBSRC) -I$(LIBSRC)/Xm -I$(GIZMOLIBSRC) -I$(DTILIBSRC) -I$(USLCLIENTSRC)
+LOCAL_LIBRARIES = $(DTAMLIB) $(DTILIB) $(DTLIB) $(DTWIDLIB) $(GIZMOLIB) XmClientLibs
+        DEPLIBS = $(DTAMLIB) $(DTILIB) $(DTLIB) $(DTWIDLIB) $(GIZMOLIB) XmClientDepLibs
+
+  SYS_LIBRARIES = -lgen -lm -lcmd
+
+CC = LD_RUN_PATH=/usr/lib/X11 $(PFX)cc
+
+ComplexProgramTarget(LoginMgr)
+
+InstallMsgCatalog(dtuser2)
+InstallMsgCatalog(dtuser-sh)
+InstallMsgCatalog(dtperm)
+InstallNonExecFile(scripts/.olinitrc,$(DTADMDIR))
+InstallNonExecFile(scripts/.olsetup,$(DTADMDIR))
+InstallNonExecFile(scripts/.xsession,$(DTADMDIR))
+InstallNonExecFile(scripts/dtuser.msgs,$(DTADMDIR))
+InstallNonExecFile(scripts/dtadduser,$(DTADMDIR))
+InstallNonExecFile(scripts/dtdeluser,$(DTADMDIR))
+InstallNonExecFile(scripts/dtprivilege,$(DTADMDIR))
+InstallNonExecFile(scripts/dttoolbox,$(DTADMDIR))
+InstallNonExecFile(scripts/make-owner,$(DTADMDIR))
+InstallNonExecFile(scripts/olremuser,$(DTADMDIR))
+InstallNonExecFile(scripts/olsetvar,$(DTADMDIR))
+InstallNonExecFile(scripts/olunsetvar,$(DTADMDIR))
+InstallNonExecFile(scripts/dtsetlogin,$(DTADMDIR))
+InstallNonExecFile(scripts/day1addmap,$(DTADMDIR))
+InstallNonExecFile(scripts/day1delmap,$(DTADMDIR))
+
+InstallNonExecFile(PrivTable,$(DESKTOPDIR)/LoginMgr)
+InstallNonExecFile(desktop/.init_dtinfo,$(DESKTOPDIR))
+/*
+InstallNonExecFile(desktop/.lastsession,$(DESKTOPDIR))
+*/
+InstallNonExecFile(desktop/Applications/.init_dtinfo,$(DESKTOPDIR)/Applications)
+InstallNonExecFile(desktop/Admin_Tools/.init_dtinfo,$(DESKTOPDIR)/Admin_Tools)
+InstallNonExecFile(desktop/Admin_Tools/Networking/.init_dtinfo,$(DESKTOPDIR)/Admin_Tools/Networking)
+InstallNonExecFile(desktop/Disks-etc/.init_dtinfo,$(DESKTOPDIR)/Disks-etc)
+InstallNonExecFile(desktop/Games/.init_dtinfo,$(DESKTOPDIR)/Games)
+InstallNonExecFile(desktop/Mailbox/.init_dtinfo,$(DESKTOPDIR)/Mailbox)
+InstallNonExecFile(desktop/Preferences/.init_dtinfo,$(DESKTOPDIR)/Preferences)
+InstallNonExecFile(desktop/Preferences/Startup_Items/.init_dtinfo,$(DESKTOPDIR)/Preferences/Startup_Items)
+InstallNonExecFile(desktop/Preferences/Wallpaper/.init_dtinfo,$(DESKTOPDIR)/Preferences/Wallpaper)
+
+install::
+	if [ -d $(DESKTOPDIR) -a -w $(DESKTOPDIR) ] ; 			\
+then	cd $(DESKTOPDIR); 						\
+else 									\
+	echo "cannot create toolboxes in $(DESKTOPDIR)" ; 		\
+	exit 2 ; 							\
+fi ; 									\
+									\
+if [ ! -x Shutdown ] ; 							\
+then									\
+	echo "Shutdown" > Shutdown ;					\
+	$(CHMOD) +x Shutdown ;						\
+fi ;									\
+if [ ! -x Folder_Map ] ;						\
+then									\
+	echo "Folder_Map" > Folder_Map ;				\
+	$(CHMOD) +x Folder_Map ;					\
+fi ;									\
+if [ ! -x dtbinder ] ;							\
+then									\ 
+	echo "dtbinder" > dtbinder ;					\
+	$(CHMOD) +x dtbinder ;						\
+fi ;									\
+if [ ! -x dtprop ] ;							\
+then									\
+	echo "dtprop" > dtprop ;					\
+	$(CHMOD) +x dtprop ;						\
+fi ;									\
+if [ ! -x dtwastebasket ] ;						\
+then									\
+	echo "dtwastebasket" > dtwastebasket ;				\
+	$(CHMOD) +x dtwastebasket ;					\
+fi ;									\
+$(CP) dtprop DtColorProps ;						\
+$(CP) dtprop DtDesktopProps ;						\
+$(CP) dtprop DtWindowProps ;						\
+$(CP) dtprop DtIconProps ;						\
+$(CP) dtprop DtLocaleProps ;						\
+$(CP) dtprop DtMouseProps ;						\
+if [ ! -f Preferences/Password ] ;				\
+then	touch Preferences/Password ;				\
+fi ;
+									
+
+#ifndef UTSXENV
+InstallDesktopClient($(BINDIR)/LoginMgr,$(DESKTOPDIR)/Admin_Tools/User_Setup)
+InstallDesktopClient($(DESKTOPDIR)/dtbinder,$(DESKTOPDIR)/Admin_Tools/Icon_Setup)
+InstallDesktopClient($(DESKTOPDIR)/DtColorProps,$(DESKTOPDIR)/Preferences/Color)
+InstallDesktopClient($(DESKTOPDIR)/DtDesktopProps,$(DESKTOPDIR)/Preferences/Desktop)
+InstallDesktopClient($(DESKTOPDIR)/DtWindowProps,$(DESKTOPDIR)/Preferences/Desktop)
+InstallDesktopClient($(DESKTOPDIR)/DtIconProps,$(DESKTOPDIR)/Preferences/Icons)
+InstallDesktopClient($(DESKTOPDIR)/DtLocaleProps,$(DESKTOPDIR)/Preferences/Locale)
+InstallDesktopClient($(DESKTOPDIR)/DtMouseProps,$(DESKTOPDIR)/Preferences/Mouse)
+
+/* *****
+XCOMM#
+XCOMM# DO NOT change the following to InstallDesktopClient( )
+XCOMM# InstallDesktopClient() generates a dependency on /usr/sbin/sysadm
+XCOMM# and during the final builds, /usr/sbin/sysadm doesn't exist, so install
+XCOMM# will fail. By putting install:: directly, the link is created even
+XCOMM# the file, /usr/sbin/sysadm doesn't exist; later when the sysadm stuff
+XCOMM# is installed, everything will be OK
+XCOMM#
+* *****/
+
+install::
+	$(RM) $(DESKTOPDIR)/Admin_Tools/Extra_Admin
+	$(CH)$(LN) /usr/sbin/sysadm $(DESKTOPDIR)/Admin_Tools/Extra_Admin
+#endif
+

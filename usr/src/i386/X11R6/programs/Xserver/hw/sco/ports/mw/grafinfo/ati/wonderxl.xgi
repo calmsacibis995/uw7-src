@@ -1,0 +1,1192 @@
+/*
+ *    @(#) wonderxl.xgi 12.1 95/05/09  
+ */
+/*
+ *	@(#) wonderxl.xgi 23.2 90/12/13 
+ *
+ *      Copyright (C) The Santa Cruz Operation, 1989-1992.
+ *      This Module contains Proprietary Information of
+ *      The Santa Cruz Operation, and should be treated as Confidential.
+ *
+ *
+ *      Copyright (C) ATI Technologies Inc., 1990
+ */
+
+/* ************************************************************************* *
+ * ATI/WONDERXL+.XGI - XEGIA(tm) GrafInfo File for ATI WONDER XL             *
+ *                                                                           *
+ * - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -   *
+ *   ATI.WONDERXL.ATIVGA.640x480-16-72     VGA 640x480/16 72HZ	             *
+ *   ATI.WONDERXL.ATIVGA.800x600-16-56     Super VGA 800x600/16 56HZ        *
+ *   ATI.WONDERXL.ATIVGA.800x600-16-60     Super VGA 800x600/16 60HZ        *
+ *   ATI.WONDERXL.ATIVGA.800x600-16-72     Super VGA 800x600/16 72HZ        *
+ *   ATI.WONDERXL.ATIVGA.800x600-256-60                                     *
+ *   ATI.WONDERXL.ATIVGA.1024x768-16                                        *
+ *   ATI.WONDERXL.ATIVGA.1024x768-256                                       *
+ * ************************************************************************* */
+
+
+VENDOR ATI         "ATI"
+ MODEL  WONDERXL    "VGA WONDER XL"
+  CLASS  ATIVGA    "ATI VGA"
+   MODE   640x480-16-72 "640x480 16-color 72HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Basee Address, Length       */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+         {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+         DEVTYPE     = 01;
+         DEVTECH     = 0x0D;            /* VGA */
+         PIXBYTES    = 80;
+         PIXWIDTH    = 640;
+         PIXHEIGHT   = 480;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+         }
+
+      PROCEDURE SetGraphics
+         {
+         in(r63,0x3DA);                   /* reset attr F/F  */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 1;  r1 = 1;  r2 = 0x0F;  r3 = 0;  r4 = 6;
+         bout(5,0x3C4,0x3C5);             /* reset, sequencer regs */
+/* select 32.00 MHz */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3F);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xEF);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+
+         out(0x3C2,0xE7);                 /* misc out reg */
+         r0=3;  bout(1,0x3C4,0x3C5);      /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x65;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x88; /* crtc */
+         r4  = 0x55;  r5  = 0x9a;  r6  = 0x09;  r7  = 0x3E;
+         r8  = 0x00;  r9  = 0x40;  r10 = 0x00;  r11 = 0x00;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0xE8;  r17 = 0x9b;  r18 = 0xDF;  r19 = 0x28;
+         r20 = 0x00;  r21 = 0xE7;  r22 = 0x04;  r23 = 0xE3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x00;  r6  = 0x05;  r7  = 0x0F;
+         r8  = 0xFF;  bout( 9, 0x3CE, 0x3CF );
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+
+         r16 = 0x01;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x00; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+
+      PROCEDURE SetText
+         {
+         in(r63,0x3DA);                   /* reset attr F/F */
+         out(0x3C0,0);                    /* disable palette */
+
+         r0 = 0x01;  r1 = 0x00;  r2 = 0x03;  r3 = 0x00;  r4 = 0x02;
+         bout(5,0x3C4,0x3C5);         /* sequencer regs */
+
+/* select 28.322MHz */
+
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); or(r63, 0x02);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); or(r63, 0x40);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         out(0x3D4,0x11); out(0x3D5,0);   /* unprotect crtc regs 0-7 */
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x1F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+         }
+
+/* ********************************************************************* */
+
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA  "ATI VGA"
+   MODE   800x600-16-56  "800x600 16-color 56HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+        {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+        DEVTYPE     = 01;
+        DEVTECH     = 0x0D;    /* VGA */
+        PIXBYTES    = 100;
+        PIXWIDTH    = 800;
+        PIXHEIGHT   = 600;
+        PIXBITS     = 1;
+        PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+        }
+
+    PROCEDURE   SetGraphics             /* ATI mode 0x54 */
+        {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x1;
+        r1 = 0x1;
+        r2 = 0xF;
+        r3 = 0x0;
+        r4 = 0x86;
+        bout(5, 0x3C4, 0x3C5);
+
+        /* set ATI extended registers */
+
+        /* ATI Reg 0 = XX0XX00X */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD9); or(r63, 0x01);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */ 
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);  or(r63, 0x00);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */         
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 00XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+        /* misc output reg */
+        out(0x3C2,0x2F);  
+
+        /* remove sequencer reset */
+        r0 = 0x3;
+        bout(1,0x3C4,0x3C5);
+
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+        /* crtc */
+        r0  = 0x7b; r1  = 0x63; r2  = 0x65; r3  = 0x9D;
+        r4  = 0x68; r5  = 0x91; r6  = 0x37; r7  = 0x1F;
+        r8  = 0;    r9  = 0;    r10 = 0;    r11 = 0;
+        r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;
+        r16 = 0x2D; r17 = 0x8E; r18 = 0x2B; r19 = 0x32;
+        r20 = 0xF;  r21 = 0x32; r22 = 0x34; r23 = 0xE7;
+        r24 = 0xFF;
+        bout( 25, 0x3d4, 0x3D5 );
+
+        /* attribute controller */
+        in(r63,0x3DA);   /* reset f/f */
+
+        /* palette */
+        r0  = 00;       r1  = 01;       r2  = 02;       r3  = 03;
+        r4  = 04;       r5  = 05;       r6  = 0x14;     r7  = 07;
+        r8  = 0x38;     r9  = 0x39;     r10 = 0x3A;     r11 = 0x3B;
+        r12 = 0x3C;     r13 = 0x3D;     r14 = 0x3E;     r15 = 0x3F;
+        /* attribute controller */
+        r16 = 01;       r17 = 00;       r18 = 0x0F;     r19 = 00;
+        r20 = 0;
+        bout( 21, 0x3C0, 0x3C0 );
+
+        /* enable palette */
+        out( 0x3C0, 0x20);
+
+        /* graphics controller */
+        r0 = 0x0;
+        r1 = 0x0;
+        r2 = 0x0;
+        r3 = 0x0;
+        r4 = 0x0;
+        r5 = 0x0;
+        r6 = 0x5;
+        r7 = 0xF;
+        r8 = 0xFF;
+        bout( 9, 0x3CE, 0x3CF );
+
+        }
+
+    PROCEDURE SetText
+         {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x01;
+        r1 = 0x00;
+        r2 = 0x03;
+        r3 = 0x00;
+        r4 = 0x02;
+        bout( 5, 0x3C4, 0x3C5 );
+
+        /* set ATI extended registers */
+
+        /* ATI Reg 0 = XX0XX000 */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD8);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 01XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);  or(r63, 0x40);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);  or(r63, 0x02);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         }
+
+
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA  "ATI VGA"
+   MODE   800x600-16-60  "800x600 16-color 60HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+        {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+        DEVTYPE     = 01;
+        DEVTECH     = 0x0D;    /* VGA */
+        PIXBYTES    = 100;
+        PIXWIDTH    = 800;
+        PIXHEIGHT   = 600;
+        PIXBITS     = 1;
+        PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+        }
+
+    PROCEDURE   SetGraphics             /* ATI mode 0x54 */
+        {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x1;
+        r1 = 0x1;
+        r2 = 0xF;
+        r3 = 0x0;
+        r4 = 0x86;
+        bout(5, 0x3C4, 0x3C5);
+
+        /* set ATI extended registers */
+
+        /* ATI Reg 0 = XX0XX001 */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD9); or( r63, 0x01);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);  or(r63, 0x00);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */              
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x00);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 00XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD); or( r63, 0x02);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+        /* misc output reg */
+        out(0x3C2,0x23);  
+
+        /* remove sequencer reset */
+        r0 = 0x3;
+        bout(1,0x3C4,0x3C5);
+
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+        /* crtc */
+        r0  = 0x7f; r1  = 0x63; r2  = 0x65; r3  = 0x9D;
+        r4  = 0x6b; r5  = 0x9c; r6  = 0x38; r7  = 0x1F;
+        r8  = 0;    r9  = 0;    r10 = 0;    r11 = 0;
+        r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;
+        r16 = 0x2c; r17 = 0x8E; r18 = 0x2B; r19 = 0x32;
+        r20 = 0xF;  r21 = 0x32; r22 = 0x34; r23 = 0xE7;
+        r24 = 0xFF;
+        bout( 25, 0x3d4, 0x3D5 );
+
+        /* attribute controller */
+        in(r63,0x3DA);   /* reset f/f */
+
+        /* palette */
+        r0  = 00;       r1  = 01;       r2  = 02;       r3  = 03;
+        r4  = 04;       r5  = 05;       r6  = 0x14;     r7  = 07;
+        r8  = 0x38;     r9  = 0x39;     r10 = 0x3A;     r11 = 0x3B;
+        r12 = 0x3C;     r13 = 0x3D;     r14 = 0x3E;     r15 = 0x3F;
+        /* attribute controller */
+        r16 = 01;       r17 = 00;       r18 = 0x0F;     r19 = 00;
+        r20 = 0;
+        bout( 21, 0x3C0, 0x3C0 );
+
+        /* enable palette */
+        out( 0x3C0, 0x20);
+
+        /* graphics controller */
+        r0 = 0x0;
+        r1 = 0x0;
+        r2 = 0x0;
+        r3 = 0x0;
+        r4 = 0x0;
+        r5 = 0x0;
+        r6 = 0x5;
+        r7 = 0xF;
+        r8 = 0xFF;
+        bout( 9, 0x3CE, 0x3CF );
+
+        }
+
+    PROCEDURE SetText
+         {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x01;
+        r1 = 0x00;
+        r2 = 0x03;
+        r3 = 0x00;
+        r4 = 0x02;
+        bout( 5, 0x3C4, 0x3C5 );
+
+        /* set ATI extended registers */
+
+        /* ATI Reg 0 = XX0XX000 */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD8);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 01XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);  or(r63, 0x40);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);  or(r63, 0x02);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         }
+
+
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA  "ATI VGA"
+   MODE   800x600-16-72  "800x600 16-color 72HZ (DEC VRC16)"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+        {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 4;
+        DEVTYPE     = 01;
+        DEVTECH     = 0x0D;    /* VGA */
+        PIXBYTES    = 100;
+        PIXWIDTH    = 800;
+        PIXHEIGHT   = 600;
+        PIXBITS     = 1;
+        PIXPLANES   = 4;
+         MAPTYPE     = "EGA";
+        }
+
+    PROCEDURE   SetGraphics             /* ATI mode 0x54 */
+        {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x1;
+        r1 = 0x1;
+        r2 = 0xF;
+        r3 = 0x0;
+        r4 = 0x86;
+        bout(5, 0x3C4, 0x3C5);
+
+        /* set ATI extended registers */
+
+        /* ATI Reg 0 = XX0XX001 */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD9); or(r63, 0x01);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */              /* might need to be 0x40 */
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);  or(r63, 0x00);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 00XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+        /* misc output reg */
+        out(0x3C2,0x27);  
+
+        /* remove sequencer reset */
+        r0 = 0x3;
+        bout(1,0x3C4,0x3C5);
+
+        /* unprotect crtc regs 0-7 */
+        out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+        /* crtc */
+        r0  = 0x7e; r1  = 0x63; r2  = 0x65; r3  = 0x9D;
+        r4  = 0x6c; r5  = 0x9b; r6  = 0x4b; r7  = 0x1F;
+        r8  = 0;    r9  = 0;    r10 = 0;    r11 = 0;
+        r12 = 0;    r13 = 0;    r14 = 0;    r15 = 0;
+        r16 = 0x3D; r17 = 0x80; r18 = 0x2B; r19 = 0x32;
+        r20 = 0xF;  r21 = 0x33; r22 = 0x36; r23 = 0xE7;
+        r24 = 0xFF;
+        bout( 25, 0x3d4, 0x3D5 );
+
+        /* attribute controller */
+        in(r63,0x3DA);   /* reset f/f */
+
+        /* palette */
+        r0  = 00;       r1  = 01;       r2  = 02;       r3  = 03;
+        r4  = 04;       r5  = 05;       r6  = 0x14;     r7  = 07;
+        r8  = 0x38;     r9  = 0x39;     r10 = 0x3A;     r11 = 0x3B;
+        r12 = 0x3C;     r13 = 0x3D;     r14 = 0x3E;     r15 = 0x3F;
+        /* attribute controller */
+        r16 = 01;       r17 = 00;       r18 = 0x0F;     r19 = 00;
+        r20 = 0;
+        bout( 21, 0x3C0, 0x3C0 );
+
+        /* enable palette */
+        out( 0x3C0, 0x20);
+
+        /* graphics controller */
+        r0 = 0x0;
+        r1 = 0x0;
+        r2 = 0x0;
+        r3 = 0x0;
+        r4 = 0x0;
+        r5 = 0x0;
+        r6 = 0x5;
+        r7 = 0xF;
+        r8 = 0xFF;
+        bout( 9, 0x3CE, 0x3CF );
+
+        }
+
+    PROCEDURE SetText
+         {
+
+        /* stop the sequencer and reprogram it */
+        r0 = 0x01;
+        r1 = 0x00;
+        r2 = 0x03;
+        r3 = 0x00;
+        r4 = 0x02;
+        bout( 5, 0x3C4, 0x3C5 );
+
+        /* set ATI extended registers Plus */
+
+        /* ATI Reg 0 = XX0XX000 */
+        out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xD8);
+        out(0x1CE, 0xB0); out(0x1CF, r63);
+        /* ATI Reg 1 = X0000XXX */
+        out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87);
+        out(0x1CE, 0xB1); out(0x1CF, r63);
+        /* ATI Reg E = XXX10X0X */
+        out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xE5);  or(r63, 0x10);
+        out(0x1CE, 0xBE); out(0x1CF, r63);
+        /* ATI Reg 5 = 0XXXXXXX */
+        out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f);
+        out(0x1CE, 0xB5); out(0x1CF, r63);
+        /* ATI Reg 6 = XXX000X0 */
+        out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2);
+        out(0x1CE, 0xB6); out(0x1CF, r63);
+        /* ATI Reg 8 = 01XXXXXX */
+        out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f);  or(r63, 0x40);
+        out(0x1CE, 0xB8); out(0x1CF, r63);
+        /* ATI Reg 3 = X0X0XXXX */
+        out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xAF);
+        out(0x1CE, 0xB3); out(0x1CF, r63);
+        /* ATI Reg 9 = XXXXXX0X */
+        out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD);  or(r63, 0x02);
+        out(0x1CE, 0xB9); out(0x1CF, r63);
+
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+
+         }
+
+
+/*
+   Derived from mode 800x600-16-60 and:
+   Programmer's Reference Manual for the VGAWONDER
+*/
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA  "ATI VGA"
+   MODE   800x600-256-60  "800x600 256-color 60HZ"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+      {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;    /* devEGA   */
+         DEVTECH     = 0x1A; /* dt8Bit_V */
+         PIXBYTES    = 800;
+         PIXWIDTH    = 800;
+         PIXHEIGHT   = 600;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         MAPTYPE     = "ATIWonder+800x600x256";
+      }
+
+      PROCEDURE   SetGraphics         /* ATI mode 0x63 */
+      {
+         in(r63,0x3DA);               /* reset attr F/F  */
+         out(0x3C0,0);                /* disable palette */
+
+         /* stop the sequencer and reprogram it */
+
+         r0 = 0x1; r1 = 0x1; r2 = 0x0f; r3 = 0x0; r4 = 0x8e;
+         bout(5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg 0 = XX1XXXX1 */
+         out(0x1ce, 0xb0);  in(r63, 0x1cf); and(r63, 0xde); or(r63, 0x21); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = XXXXXX0X */
+         out(0x1ce, 0xb1);  in(r63, 0x1cf); and(r63, 0xfd); or(r63, 0x00); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = 00000000 (Select RO/WO page 0 */
+         out(0x1ce, 0xb2);  in(r63, 0x1cf); and(r63, 0x00); or(r63, 0x00); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX11XXX (Enable Dual-Page) */
+         out(0x1ce, 0xbe);  in(r63, 0x1cf); and(r63, 0xe7); or(r63, 0x18); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = XXXXXXXX */
+         out(0x1ce, 0xb5);  in(r63, 0x1cf); and(r63, 0xff); or(r63, 0x00); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXXXX1XX */
+         out(0x1ce, 0xb6);  in(r63, 0x1cf); and(r63, 0xfb); or(r63, 0x04); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 00XXXXXX */
+         out(0x1ce, 0xb8);  in(r63, 0x1cf); and(r63, 0x3f); or(r63, 0x00); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = XXX0XXXX */
+         out(0x1ce, 0xb3);  in(r63, 0x1cf); and(r63, 0xef); or(r63, 0x00); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX0X */
+         out(0x1ce, 0xb9);  in(r63, 0x1cf); and(r63, 0xfd); or(r63, 0x00); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         /* misc output reg */
+         out(0x3C2,0xef);  
+
+         /* remove sequencer reset */
+         r0 = 0x3;
+         bout(1,0x3C4,0x3C5);
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+         /* crtc */
+         r0  = 0x7a; r1  = 0x63; r2  = 0x65; r3  = 0x9d;
+         r4  = 0x67; r5  = 0x92; r6  = 0x38; r7  = 0x1f;
+         r8  = 0x00; r9  = 0x0;  r10 = 0x00; r11 = 0x00;
+         r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+         r16 = 0x2d; r17 = 0x8e; r18 = 0x2b; r19 = 0x32;
+         r20 = 0xf;  r21 = 0x32; r22 = 0x34; r23 = 0xe7;
+         r24 = 0xff;
+         bout( 25, 0x3d4, 0x3D5 );
+
+         /* attribute controller */
+         in(r63,0x3DA);   /* reset f/f */
+
+         /* palette */
+         r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03;
+         r4  = 0x04; r5  = 0x05; r6  = 0x06; r7  = 0x07;
+         r8  = 0x08; r9  = 0x09; r10 = 0x0a; r11 = 0x0b;
+         r12 = 0x0c; r13 = 0x0d; r14 = 0x0e; r15 = 0x0f;
+         /* attribute controller */
+         r16 = 0x01; r17 = 0x00; r18 = 0x0F; r19 = 0x00; r20 = 0;
+         bout( 21, 0x3C0, 0x3C0 );
+
+         /* enable palette */
+         out(0x3C0, 0x20);
+
+         /* graphics controller */
+         r0  = 0x00; r1  = 0x00; r2  = 0x00; r3  = 0x00;
+         r4  = 0x00; r5  = 0x00; r6  = 0x05; r7  = 0x0F;
+         r8  = 0xFF;
+         bout( 9, 0x3CE, 0x3CF);
+      }
+
+      PROCEDURE SetText
+      {
+         /* stop the sequencer and reprogram it */
+         r0 = 0x01; r1 = 0x00; r2 = 0x03; r3 = 0x00; r4 = 0x03;
+         bout( 5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg 0 = XX0XX000 */
+         out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xd8); or(r63, 0  ); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = XXXXXXXX */
+         out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87); or(r63, 0  ); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = 00000001 */
+         out(0x1CE, 0xb2);  in(r63, 0x1CF); and(r63, 0x01); or(r63, 0x01); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX10XXX */
+         out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xe7); or(r63, 0x10); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = XXXXXXXX */
+         out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f); or(r63, 0  ); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXXXX0XX */
+         out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xfb); or(r63, 0  ); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 01XXXXXX */
+         out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f); or(r63, 0x40); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = X0X0XXXX */
+         out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xaf); or(r63, 0  ); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX11 */
+         out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xFD); or(r63, 0x03); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11); out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+      }
+
+/*
+   Derived from mode 800x600-256-60 and:
+   Programmer's Reference Manual for the VGAWONDER
+*/
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA  "ATI VGA"
+   MODE   1024x768-16 "1024x768 16-color"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+      {
+  	 XDRIVER     = "mw";
+  	 VISUAL      = "PseudoColor";
+  	 DEPTH       = 4;
+         DEVTYPE     = 1;
+         DEVTECH     = 0x0D;    /* VGA */
+         PIXBYTES    = 128;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 1;
+         PIXPLANES   = 4;
+         MAPTYPE     = "ATIWonder+1024x768x16";
+      }
+
+      PROCEDURE   SetGraphics         /* ATI mode 0x55 */
+      {
+         in(r63,0x3DA);               /* reset attr F/F  */
+         out(0x3C0,0);                /* disable palette */
+
+         /* stop the sequencer and reprogram it */
+
+         r0 = 0x1; r1 = 0x1; r2 = 0x0f; r3 = 0x0; r4 = 0x36;
+         bout(5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg 0 = XX0X100X */
+         out(0x1ce, 0xb0);  in(r63, 0x1cf); and(r63, 0xd1); or(r63, 0x08); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = X1000XXX */
+         out(0x1ce, 0xb1);  in(r63, 0x1cf); and(r63, 0x87); or(r63, 0x40); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = XXXXXXXX (Select RO/WO page 0 */
+         out(0x1ce, 0xb2);  in(r63, 0x1cf); and(r63, 0x00); or(r63, 0x00); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX11X1X (Enable Dual-Page) */
+         out(0x1ce, 0xbe);  in(r63, 0x1cf); and(r63, 0xe5); or(r63, 0x1a); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = 1XXXXXXX */
+         out(0x1ce, 0xb5);  in(r63, 0x1cf); and(r63, 0x7f); or(r63, 0x80); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXX110X1 */
+         out(0x1ce, 0xb6);  in(r63, 0x1cf); and(r63, 0xe2); or(r63, 0x19); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 00XXXXXX */
+         out(0x1ce, 0xb8);  in(r63, 0x1cf); and(r63, 0x3f); or(r63, 0x00); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = X1X0XXXX */
+         out(0x1ce, 0xb3);  in(r63, 0x1cf); and(r63, 0xaf); or(r63, 0x40); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX1X */
+         out(0x1ce, 0xb9);  in(r63, 0x1cf); and(r63, 0xfd); or(r63, 0x02); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         /* misc output reg */
+         out(0x3C2,0x2f);  
+
+         /* remove sequencer reset */
+         r0 = 0x3;
+         bout(1,0x3C4,0x3C5);
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+         /* crtc */
+         r0  = 0x4a; r1  = 0x3f; r2  = 0x40; r3  = 0x8c;
+         r4  = 0x43; r5  = 0x0e; r6  = 0x32; r7  = 0xfd;
+         r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+         r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+         r16 = 0x06; r17 = 0x8f; r18 = 0xff; r19 = 0x20;
+         r20 = 0x0f; r21 = 0x05; r22 = 0x2d; r23 = 0xe3;
+         r24 = 0xff;
+         bout( 25, 0x3d4, 0x3D5 );
+
+         /* attribute controller */
+         in(r63,0x3DA);   /* reset f/f */
+
+         /* palette */
+         r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03;
+         r4  = 0x04; r5  = 0x05; r6  = 0x06; r7  = 0x07;
+         r8  = 0x08; r9  = 0x09; r10 = 0x0a; r11 = 0x0b;
+         r12 = 0x0c; r13 = 0x0d; r14 = 0x0e; r15 = 0x0f;
+         /* attribute controller */
+         r16 = 0x01; r17 = 0x00; r18 = 0x0F; r19 = 0x00; r20 = 0;
+         bout( 21, 0x3C0, 0x3C0 );
+
+         /* enable palette */
+         out(0x3C0, 0x20);
+
+         /* graphics controller */
+         r0  = 0x00; r1  = 0x00; r2  = 0x00; r3  = 0x00;
+         r4  = 0x00; r5  = 0x00; r6  = 0x05; r7  = 0x0F;
+         r8  = 0xFF;
+         bout( 9, 0x3CE, 0x3CF);
+      }
+
+      PROCEDURE SetText
+      {
+         /* stop the sequencer and reprogram it */
+         r0 = 0x01; r1 = 0x00; r2 = 0x03; r3 = 0x00; r4 = 0x03;
+         bout( 5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg 0 = XX0XX00X */
+         out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xd9); or(r63, 0  ); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = X0000XXX */
+         out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87); or(r63, 0  ); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = XXXXXXX1 */
+         out(0x1CE, 0xb2);  in(r63, 0x1CF); and(r63, 0x01); or(r63, 0x01); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX10X0X */
+         out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xe5); or(r63, 0x10); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = 0XXXXXXX */
+         out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f); or(r63, 0  ); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXX000X0 */
+         out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2); or(r63, 0  ); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 01XXXXXX */
+         out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f); or(r63, 0x40); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = X0X0XXXX */
+         out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xaf); or(r63, 0  ); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX1X */
+         out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xfd); or(r63, 0x02); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11); out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+      }
+
+
+/*
+   Derived from mode 1024x768-16 and:
+   Programmer's Reference Manual for the VGAWONDER
+*/
+VENDOR ATI       "ATI"
+ MODEL  WONDERXL  "VGA WONDER XL"
+  CLASS  ATIVGA       "ATI VGA"
+   MODE   1024x768-256 "1024x768 256-color"
+
+      MEMORY(0xA0000,0x10000);        /* Base Address, Length        */
+      PORT(0x1CE-0x1CF);              /* ATI extended register       */
+      PORT(VGA);
+
+      DATA
+      {
+	 XDRIVER     = "mw";
+	 VISUAL      = "PseudoColor";
+	 DEPTH       = 8;
+         DEVTYPE     = 01;    /* devEGA   */
+         DEVTECH     = 0x1A; /* dt8Bit_V */
+         PIXBYTES    = 1024;
+         PIXWIDTH    = 1024;
+         PIXHEIGHT   = 768;
+         PIXBITS     = 8;
+         PIXPLANES   = 1;
+         MAPTYPE     = "ATIWonder+1024x768x256";
+      }
+
+      PROCEDURE   SetGraphics         /* ATI mode 0x64 */
+      {
+         in(r63,0x3DA);               /* reset attr F/F  */
+         out(0x3C0,0);                /* disable palette */
+
+         /* stop the sequencer and reprogram it */
+
+         r0 = 0x1; r1 = 0x1; r2 = 0x0f; r3 = 0x0; r4 = 0x4e;
+         bout(5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg  A7       */
+         out(0x1ce, 0xa7);  in(r63, 0x1cf); and(r63, 0xf4); or(r63, 0x08); out(0x1ce,0xa7); out(0x1cf, r63);
+         /* ATI Reg  A6       */
+         out(0x1ce, 0xa6);  in(r63, 0x1cf);                 or(r63, 0x01); out(0x1ce,0xa6); out(0x1cf, r63);
+         /* ATI Reg 0 = XX1X100X */
+         out(0x1ce, 0xb0);  in(r63, 0x1cf); and(r63, 0xd1); or(r63, 0x28); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = X0000XXX */
+         out(0x1ce, 0xb1);  in(r63, 0x1cf); and(r63, 0x87); or(r63, 0x00); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = XXXXXXXX (Select RO/WO page 0 */
+         out(0x1ce, 0xb2);  in(r63, 0x1cf); and(r63, 0x00); or(r63, 0x00); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX01X0X (Enable Dual-Page) */
+         out(0x1ce, 0xbe);  in(r63, 0x1cf); and(r63, 0xe5); or(r63, 0x08); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = 0XXXXXXX */
+         out(0x1ce, 0xb5);  in(r63, 0x1cf); and(r63, 0x7f); or(r63, 0x00); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXX001X1 */
+         out(0x1ce, 0xb6);  in(r63, 0x1cf); and(r63, 0xe2); or(r63, 0x05); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 00XXXXXX */
+         out(0x1ce, 0xb8);  in(r63, 0x1cf); and(r63, 0x3f); or(r63, 0x00); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = X0X0XXXX */
+         out(0x1ce, 0xb3);  in(r63, 0x1cf); and(r63, 0xaf); or(r63, 0x00); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX1X */
+         out(0x1ce, 0xb9);  in(r63, 0x1cf); and(r63, 0xfd); or(r63, 0x02); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         /* misc output reg */
+         out(0x3C2,0xef);  
+
+         /* remove sequencer reset */
+         r0 = 0x3;
+         bout(1,0x3C4,0x3C5);
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11);  out(0x3D5, 0x00);
+
+         /* crtc */
+         r0  = 0xa3; r1  = 0x7f; r2  = 0x81; r3  = 0x85;
+         r4  = 0x88; r5  = 0x8f; r6  = 0x28; r7  = 0xfd;
+         r8  = 0x00; r9  = 0x60; r10 = 0x00; r11 = 0x00;
+         r12 = 0x00; r13 = 0x00; r14 = 0x00; r15 = 0x00;
+         r16 = 0x06; r17 = 0x8f; r18 = 0xff; r19 = 0x40;
+         r20 = 0x0f; r21 = 0x05; r22 = 0x1a; r23 = 0xe3;
+         r24 = 0xff;
+         bout( 25, 0x3d4, 0x3D5 );
+
+         /* attribute controller */
+         in(r63,0x3DA);   /* reset f/f */
+
+         /* palette */
+         r0  = 0x00; r1  = 0x01; r2  = 0x02; r3  = 0x03;
+         r4  = 0x04; r5  = 0x05; r6  = 0x06; r7  = 0x07;
+         r8  = 0x08; r9  = 0x09; r10 = 0x0a; r11 = 0x0b;
+         r12 = 0x0c; r13 = 0x0d; r14 = 0x0e; r15 = 0x0f;
+         /* attribute controller */
+         r16 = 0x01; r17 = 0x00; r18 = 0x0F; r19 = 0x00; r20 = 0;
+         bout( 21, 0x3C0, 0x3C0 );
+
+         /* enable palette */
+         out(0x3C0, 0x20);
+
+         /* graphics controller */
+         r0  = 0x80; r1  = 0x00; r2  = 0x10; r3  = 0x00;
+         r4  = 0x00; r5  = 0x00; r6  = 0x05; r7  = 0x0F;
+         r8  = 0xFF;
+         bout( 9, 0x3CE, 0x3CF);
+      }
+
+      PROCEDURE SetText
+      {
+         /* stop the sequencer and reprogram it */
+         r0 = 0x01; r1 = 0x00; r2 = 0x03; r3 = 0x00; r4 = 0x03;
+         bout( 5, 0x3C4, 0x3C5);
+
+         /* set ATI extended registers */
+
+         /* ATI Reg  A7       */
+         out(0x1ce, 0xa7);  in(r63, 0x1cf); and(r63, 0xf4); or(r63, 8  ); out(0x1ce,0xa7); out(0x1cf, r63);
+         /* ATI Reg  A6       */
+         out(0x1ce, 0xa6);  in(r63, 0x1cf); and(r63, 0xfe);               out(0x1ce,0xa6); out(0x1cf, r63);
+         /* ATI Reg 0 = XX0X000X */
+         out(0x1CE, 0xB0);  in(r63, 0x1CF); and(r63, 0xd1); or(r63, 0  ); shl(r63, 8); or(r63, 0xb0); outw(0x1ce, r63);
+         /* ATI Reg 1 = X0000XXX */
+         out(0x1CE, 0xB1);  in(r63, 0x1CF); and(r63, 0x87); or(r63, 0  ); shl(r63, 8); or(r63, 0xb1); outw(0x1ce, r63);
+         /* ATI Reg 2 = XXXXXXX1 */
+         out(0x1CE, 0xb2);  in(r63, 0x1CF); and(r63, 0x01); or(r63, 0x01); shl(r63, 8); or(r63, 0xb2); outw(0x1ce, r63);
+         /* ATI Reg E = XXX10X0X */
+         out(0x1CE, 0xBE);  in(r63, 0x1CF); and(r63, 0xe5); or(r63, 0x10); shl(r63, 8); or(r63, 0xbe); outw(0x1ce, r63);
+         /* ATI Reg 5 = 0XXXXXXX */
+         out(0x1CE, 0xB5);  in(r63, 0x1CF); and(r63, 0x7f); or(r63, 0  ); shl(r63, 8); or(r63, 0xb5); outw(0x1ce, r63);
+         /* ATI Reg 6 = XXX000X0 */
+         out(0x1CE, 0xB6);  in(r63, 0x1CF); and(r63, 0xe2); or(r63, 0  ); shl(r63, 8); or(r63, 0xb6); outw(0x1ce, r63);
+         /* ATI Reg 8 = 01XXXXXX */
+         out(0x1CE, 0xB8);  in(r63, 0x1CF); and(r63, 0x3f); or(r63, 0x40); shl(r63, 8); or(r63, 0xb8); outw(0x1ce, r63);
+         /* ATI Reg 3 = X0X0XXXX */
+         out(0x1CE, 0xB3);  in(r63, 0x1CF); and(r63, 0xaf); or(r63, 0  ); shl(r63, 8); or(r63, 0xb3); outw(0x1ce, r63);
+         /* ATI Reg 9 = XXXXXX1X */
+         out(0x1CE, 0xB9);  in(r63, 0x1CF); and(r63, 0xfd); or(r63, 0x02); shl(r63, 8); or(r63, 0xb9); outw(0x1ce, r63);
+
+         out(0x3C2,0x67);                 /* misc out reg   */
+
+         r0=0x03; bout(1,0x3C4,0x3C5);    /* sequencer enable */
+
+         /* unprotect crtc regs 0-7 */
+         out(0x3D4, 0x11); out(0x3D5, 0x0E);
+
+         r0  = 0x5F;  r1  = 0x4F;  r2  = 0x50;  r3  = 0x82; /* crtc */
+         r4  = 0x55;  r5  = 0x81;  r6  = 0xBF;  r7  = 0x1F;
+         r8  = 0x00;  r9  = 0x4F;  r10 = 0x0D;  r11 = 0x0E;
+         r12 = 0x00;  r13 = 0x00;  r14 = 0x00;  r15 = 0x00;
+         r16 = 0x9C;  r17 = 0x8E;  r18 = 0x8F;  r19 = 0x28;
+         r20 = 0x0F;  r21 = 0x96;  r22 = 0xB9;  r23 = 0xA3;
+         r24 = 0xFF;  bout(25,0x3D4,0x3D5);
+
+         in(r63,0x3DA);                   /* reset attr F/F */
+
+         r0  = 0x00;  r1  = 0x01;  r2  = 0x02;  r3  = 0x03; /* palette    */
+         r4  = 0x04;  r5  = 0x05;  r6  = 0x14;  r7  = 0x07;
+         r8  = 0x38;  r9  = 0x39;  r10 = 0x3A;  r11 = 0x3B;
+         r12 = 0x3C;  r13 = 0x3D;  r14 = 0x3E;  r15 = 0x3F;
+         r16 = 0x0C;  r17 = 0x00;  r18 = 0x0F;  r19 = 0x08; /* attr cntlr */
+         bout(20,0x3C0,0x3C0);
+
+         out(0x3C0,0x20);                 /* enable palette */
+
+         out(0x3CC,0x00); out(0x3CA,0x01); /* graphics controller */
+         r0  = 0x00;  r1  = 0x00;  r2  = 0x00;  r3  = 0x00;
+         r4  = 0x00;  r5  = 0x10;  r6  = 0x0E;  r7  = 0x00;
+         r8  = 0xFF;  bout(9,0x3CE,0x3CF);
+      }
+
+/* End of File - ATI-WONDERXL.XGI */

@@ -1,0 +1,75 @@
+#!/bin/ksh
+#ident	"@(#)getdefgateway	1.2"
+#		copyright	"%c%"
+#
+# (c)Copyright Hewlett-Packard Company 1991.  All Rights Reserved.
+# (c)Copyright 1983 Regents of the University of California
+# (c)Copyright 1988, 1989 by Carnegie Mellon University
+# 
+#                          RESTRICTED RIGHTS LEGEND
+# Use, duplication, or disclosure by the U.S. Government is subject to
+# restrictions as set forth in sub-paragraph (c)(1)(ii) of the Rights in
+# Technical Data and Computer Software clause in DFARS 252.227-7013.
+#
+#                          Hewlett-Packard Company
+#                          3000 Hanover Street
+#                          Palo Alto, CA 94304 U.S.A.
+#
+
+while [ 0 ] 
+do
+  echo "\nEnter default gateway name or address (optional): $NL"  
+  read -r GWADDR
+  if [ -z "$GWADDR" ]
+  then
+    break
+  fi
+  if [ "$GWADDR" = "q" ]
+  then	
+    exit 1
+  fi
+  if [ "$GWADDR" = "?" ]
+  then
+    echo ""
+    echo "A default gateway must be specified to communicate with hosts not"
+    echo "directly connected to the same network cable as the peripheral.  "
+    echo "Only one default gateway is allowed.  An example of a valid gateway"
+    echo "address is 15.43.4.7"
+    echo ""
+    $QUITHELP
+    continue
+  fi
+  LOOKUPGWADDR="`gethostaddr $GWADDR`"
+  WASADDR=$?
+  if [ $WASADDR -eq 1 ]
+  then
+    echo $LOOKUPGWADDR | egrep '^[0-9]+\.[0-9]+.[0-9]+.[0-9]+$' >/dev/null
+    if [ $? -eq 1 ]
+    then
+      echo ""
+      echo "$GWADDR is not a valid address."
+      continue
+    fi
+  fi
+  if [ -z "$LOOKUPGWADDR" ]
+  then
+    echo ""
+    echo "$GWADDR: unknown host"
+  else
+    onlyoneaddr "$GWADDR" "$LOOKUPGWADDR"
+    RETCODE=$?
+    GWADDR="`cat $TMP/ONEADDR`"
+    rm -f -- "$TMP/ONEADDR"
+    if [ $RETCODE -eq 1 ]
+    then
+      exit 1
+    fi
+    if [ ! -z "$GWADDR" ]
+    then
+      break
+    fi
+  fi
+done
+
+echo $GWADDR	> "$TMP/GATEWY"
+exit 0

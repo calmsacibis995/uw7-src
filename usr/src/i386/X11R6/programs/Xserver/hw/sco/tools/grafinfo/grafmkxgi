@@ -1,0 +1,359 @@
+#!/bin/tcl
+
+#
+#	@(#)grafmkxgi	11.1	10/22/97	12:41:04
+#
+#       Copyright (C) 1992-1993 The Santa Cruz Operation, Inc.
+#               All Rights Reserved.
+#       This Module contains Proprietary Information of
+#       The Santa Cruz Operation and should be treated as Confidential.
+#
+
+##############################################################################
+# NAME:
+# 	grafmkxgi - Creates a grafinfo (.xgi) file for the currently
+#	installed graphics card.
+#
+# SYNOPSYS:
+#	grafmkxgi [-v vendor] [-c class] [-m model] [-t] [vesa_info_file]
+#
+#	If the currently installed graphics card supports the VESA video
+#	bios extensions (VBE) then 'grafmkxgi' will create a grafinfo file
+#	which will include support for all the VESA SVGA graphics modes that 
+#	are supported by the graphics adapter.  If the graphics adaptor
+#	doesn't contain video bios extensions, then the 'grafmkxgi' will
+#	not generate a grafinfo file.
+#
+#	If the currently installed graphics card supports the VESA video
+#	bios extensions version 2.0 (VBE 2.0) then 'grafmkxgi' will create
+#	a grafinfo file that uses the svga graphics driver and directly 
+#	accesses adaptor's frame buffer.
+#
+#	If the installed graphics adaptor's VBE version is less than 2.0
+#	then 'grafmkxgi' will create a grafinfo file that uses the 'mw'
+#	graphics driver and that calls the bank	manager routines built
+#	into the graphics adaptor's video bios.
+#
+# EXIT STATUS:
+#	== 0 if a grafinfo file was successfully created
+#	== 1 if an error occurred
+#	== 2 if the installed adapter doesn't suppor the VESA extensions.
+#
+# FLAGS:
+#	-v vendor :: set VENDOR string as specified instead of using 'VESA'
+#	-m model  :: set MODEL string as specified instead of using 'SVGA'
+#	-c class  :: set CLASS string as specified instead of using 'VBE'
+#	-t :: verify that modes function before adding them to the grafinfo
+#		file.  See 'vesa -t'.  This flag is only valid if a 'vesa_info_file'
+#		data file is NOT passed as an argument to 'grafmkxgi'.
+#
+# NOTES: 
+#
+# MODIFICATIONS:
+#
+# S000	Thu Jan 23 20:30:50 PST 1997	kylec@sco.com
+#	- Created
+#
+##############################################################################
+
+# Exit status
+set EXIT_NO_ERROR 0
+set EXIT_ERROR 1
+set EXIT_NOT_VESA 2
+
+# Message catalogue 
+set GRAFMKXGI(catalogue) {grafmkxgi}
+set GRAFMKXGI(fd) [catopen $GRAFMKXGI(catalogue)]
+set GRAFMKXGI(error) {1}
+set GRAFMKXGI(usage.id) {1}
+set GRAFMKXGI(usage.str) {grafmkxgi: USAGE: grafmkxgi [-v vendor] [-c class] [-m model] [-t] [vesaInfo]}
+set GRAFMKXGI(exec.id) {2}
+set GRAFMKXGI(exec.str) {grafmkxgi: ERROR '%s': '%s'}
+set GRAFMKXGI(novesa.id) {3}
+set GRAFMKXGI(novesa.str) {grafmkxgi: ERROR: unable to obtain VESA information}
+
+proc Usage {} {
+    global GRAFMKXGI
+    puts stderr [catgets $GRAFMKXGI(fd) $GRAFMKXGI(error) \
+            $GRAFMKXGI(usage.id) $GRAFMKXGI(usage.str)]
+}
+
+proc CreateLinearEntry {VESA VENDOR MODEL CLASS OEM MEMORY VBE varMODE} {
+
+    upvar $varMODE MODE
+
+    # We have direct access to the frame buffer.
+    for_array_keys res MODE {
+        if { ($res != 0) } {
+            set DEPTH [keylget MODE($res) DEPTH]
+            if { ([keylget MODE($res) FRAME_BUFFER] != 0) && \
+                    (($DEPTH == 8) || ($DEPTH == 16)) && \
+                    ([keylget MODE($res) PIXWIDTH] >= 640) } {
+
+                case $DEPTH in {
+                    8  {
+                        set colors "256-color"
+                        set visual "PseudoColor"
+                    }
+                    16 {
+                        set colors "64K-color"
+                        set visual "TrueColor"
+                    }
+                }
+
+                set fb [keylget MODE($res) FRAME_BUFFER]
+                set paddr [ expr {[keylget fb SEGMENT] * \
+                        [keylget MODE($res) WIN_GRANULARITY] * 0x400 + 
+                [keylget fb OFFSET] } ]
+
+                set vesa_mode \
+                    [format "%#X" [expr {0x4000 + [keylget MODE($res) VESA_MODE]}]]
+
+                echo "VENDOR	$VENDOR\t\t\"VESA\""
+                echo " MODEL	$MODEL\t\t\"$OEM\""
+                echo "  CLASS	$CLASS\t\t\"VBE ($VBE)\""
+                echo "   MODE	$res\t\"[keylget MODE($res) PIXWIDTH]x[keylget MODE($res) PIXHEIGHT] $colors\""
+                echo
+                echo "    MEMORY([format "%#X" $paddr],$MEMORY);"
+                echo "    PORT(0x0:0xFFFF);"
+                echo
+                echo "    DATA"
+                echo "    {"
+                echo "    XDRIVER       = \"svga\";"
+                echo "    VISUAL        = \"$visual\";"
+                echo "    DEPTH         = [keylget MODE($res) DEPTH];"
+                echo "    PIXWIDTH      = [keylget MODE($res) PIXWIDTH];"
+                echo "    PIXHEIGHT     = [keylget MODE($res) PIXHEIGHT];"
+                echo "    PIXBYTES      = [keylget MODE($res) PIXBYTES];"
+                echo "    } /* end DATA */"
+                echo
+                echo "    PROCEDURE SetGraphics {"
+                echo "		r0 = 0x4F02;"
+                echo "		r1 = $vesa_mode;"
+                echo "		int10(r0, 2);"
+                echo "    } /* end SetGraphics */"
+                echo 
+                echo "    PROCEDURE SetText {"
+                echo "		r0 = 0x03;"
+                echo "		int10(r0, 1);"
+                echo "    } /* end SetText */"
+                echo 
+                echo
+            }
+        }
+    }
+}
+
+
+proc CreateBankedEntry {VESA VENDOR MODEL CLASS OEM MEMORY VBE varMODE} {
+    
+    upvar $varMODE MODE
+
+    # We have access to the bios bank switch routines
+    # Currently we only support depth=8 and 640 <= pixwidth <= 1024
+    for_array_keys res MODE {
+        if { ($res != 0) } {
+            set DEPTH [keylget MODE($res) DEPTH]
+            if { ([keylget MODE($res) WIN_FUNC_PTR] != 0) && \
+                    ($DEPTH == 8) && \
+                    ([keylget MODE($res) PIXWIDTH] >= 640) && \
+                    ([keylget MODE($res) PIXWIDTH] <= 1024) }  {
+
+                case $DEPTH in {
+                    8  {
+                        set colors "256-color"
+                        set visual "PseudoColor"
+                        set devtech 0x4
+                    }
+                    16 {
+                        set colors "64K-color"
+                        set visual "TrueColor"
+                        set devtech "?"
+                    }
+                    24 {
+                        set colors "16M-color"
+                        set visual "TrueColor"
+                        set devtech "?"
+                    }
+                }
+
+                set win_func [keylget MODE($res) WIN_FUNC_PTR]
+                set win_A_seg [expr {[keylget MODE($res) WIN_A_SEGMENT] * 0x10}]
+                set win_A_perms [expr {[keylget MODE($res) WIN_A_PERMS] & 0x6}]
+                set win_B_seg [expr {[keylget MODE($res) WIN_B_SEGMENT] * 0x10}]
+                set win_B_perms [expr {[keylget MODE($res) WIN_B_PERMS] & 0x6}]
+                set win_size [format "%#X" [expr {[keylget MODE($res) WIN_SIZE] * 0x400}]]
+                
+                if { ($win_B_seg > 0) } {
+                    set win_B_offset [expr {$win_B_seg - $win_A_seg}]
+                } else {
+                    set win_B_offset 0
+                }
+
+		set MEMORY [format "%#X" [expr {$win_size + $win_B_offset}]]
+
+		if { (([expr {($win_A_perms & 0x6) == 0x6}]) || \
+			([expr {($win_B_perms & 0x6) == 0x6}])) } {
+		    # at least one RW window (see mw driver)
+		    set win_type 0x3
+		} else {
+		    # one R only window and one W only window (see mw driver)
+		    set win_type 0x2
+		}
+
+                set vesa_mode [format "%#X" [keylget MODE($res) VESA_MODE]]
+
+                echo "VENDOR	$VENDOR\t\t\"VESA\""
+                echo " MODEL	$MODEL\t\t\"$OEM\""
+                echo "  CLASS	$CLASS\t\t\"(VBE $VBE)\""
+                echo "   MODE	$res\t\"[keylget MODE($res) PIXWIDTH]x[keylget MODE($res) PIXHEIGHT] $colors\""
+                echo
+                echo "    MEMORY([format "%#X" $win_A_seg],$MEMORY);"
+                echo "    PORT(0x0:0xFFFF);"
+                echo
+                echo "    DATA"
+                echo "    {"
+                echo "    XDRIVER       = \"mw\";"
+                echo "    VISUAL        = \"$visual\";"
+                echo "    DEVTYPE       = 0x1;"
+                echo "    WINTYPE       = $win_type;"
+                echo "    DEVTECH       = $devtech;"
+                echo "    MAPTYPE       = \"VESA\";"
+                echo "    DEPTH         = [keylget MODE($res) DEPTH];"
+                echo "    PIXWIDTH      = [keylget MODE($res) PIXWIDTH];"
+                echo "    PIXHEIGHT     = [keylget MODE($res) PIXHEIGHT];"
+                echo "    PIXBYTES      = [keylget MODE($res) PIXBYTES];"
+                echo "    PIXBITS       = [keylget MODE($res) PIXBITS];"
+                echo "    PIXPLANES     = [keylget MODE($res) PIXPLANES];"
+                echo "    WIN_SIZE      = $win_size;"
+                echo "    WIN_GRANULARITY = [keylget MODE($res) WIN_GRANULARITY];"
+                echo "    WIN_A_PERMS   = [format "%#X" $win_A_perms];"
+                echo "    WIN_B_PERMS   = [format "%#X" $win_B_perms];"
+                echo "    WIN_B_OFFSET  = [format "%#X" $win_B_offset];"
+                echo "    WIN_FUNC_SEG  = [keylget win_func SEGMENT];"
+                echo "    WIN_FUNC_OFF  = [keylget win_func OFFSET];"
+                echo "    } /* end DATA */"
+                echo
+                echo "    PROCEDURE SetGraphics {"
+                echo "		r0 = 0x4F02;"
+                echo "		r1 = $vesa_mode;"
+                echo "		int10(r0, 2);"
+                echo "    } /* end SetGraphics */"
+                echo 
+                echo "    PROCEDURE SetText {"
+                echo "		r0 = 0x03;"
+                echo "		int10(r0, 1);"
+                echo "    } /* end SetText */"
+                echo 
+                echo
+            }
+        }
+    }
+}
+
+proc CreateGrafinfo {VESA VENDOR MODEL CLASS OEM MEMORY VBE varMODE} {
+    global EXIT_NO_ERROR EXIT_NOT_VESA
+    upvar $varMODE MODE
+
+    if { ($VESA == 1) && ($VBE >= 1.2) } {
+        for_array_keys res MODE {
+            if { ($res != 0) } {
+                set fb [keylget MODE($res) FRAME_BUFFER]
+                set paddr [ expr {[keylget fb SEGMENT] * \
+                        [keylget MODE($res) WIN_GRANULARITY] * 0x400 + \
+                        [keylget fb OFFSET] } ]
+                if { $paddr != 0 } {
+                    set linearMode($res) $MODE($res)
+                    CreateLinearEntry $VESA $VENDOR $MODEL \
+                            $CLASS $OEM $MEMORY $VBE linearMode
+                    unset linearMode
+                } else {
+                    set bankedMode($res) $MODE($res)
+                    CreateBankedEntry $VESA $VENDOR $MODEL \
+                            $CLASS $OEM $MEMORY $VBE bankedMode
+                    unset bankedMode
+                }
+            }
+        }
+        return $EXIT_NO_ERROR
+    } else {
+        return $EXIT_NOT_VESA
+    }
+}
+
+
+
+##############################################################################
+#
+# Main
+#
+##############################################################################
+
+# Init environment
+set LIBDIR	{/usr/X11R6.1/lib}
+set AOFDIR	${LIBDIR}/vidconf/AOF
+set AOFBIN	${AOFDIR}/bin
+set env(PATH) 	${AOFBIN}:$env(PATH)
+set TMPVESAINFO /tmp/vesainfo[pid]
+
+# Set defaults
+set VESA   	{0}
+set VENDOR 	{VESA}
+set MODEL  	{SVGA}
+set CLASS  	{VBE}
+set OEM    	{VESA}
+set MEMORY 	{0xA0000}
+set VBE	   	{1.0}
+set MODE(0)	{}
+set TEST_MODES	{0}
+set VESA_OPTS	{-mv}
+
+
+# Process command line
+while { ([lindex $argv 0] == "-v") || \
+	([lindex $argv 0] == "-m") || \
+	([lindex $argv 0] == "-c") || \
+	([lindex $argv 0] == "-i") || \
+	([lindex $argv 0] == "-t") } {
+
+    case [lvarpop argv] in {
+        -v { set VENDOR [lvarpop argv] }
+        -m { set MODEL  [lvarpop argv] }
+        -c { set CLASS  [lvarpop argv] }
+        -i { set VESA_OPTS "${VESA_OPTS}i" }
+        -t { set VESA_OPTS "${VESA_OPTS}t" }
+    }
+}
+
+if { [llength $argv] < 1 } {
+    set VESAINFO ${TMPVESAINFO}
+    if {$TEST_MODES == 1} {
+        set VESA_OPTS "${VESA_OPTS} -t"
+    }
+    # Restrict search to 8-bit color depths
+    # Restrict search to resolutions >= 640x480
+    catch {exec -- vesa ${VESA_OPTS} -d 8 -l 4 -w 640 -h 480 > ${VESAINFO}} err
+} else {
+    set VESAINFO [lvarpop argv]
+}
+
+# Source VESA information
+if { [catch {source $VESAINFO}] != 0 } {
+    global GRAFMKXGI
+    puts stderr [catgets $GRAFMKXGI(fd) $GRAFMKXGI(error) \
+            $GRAFMKXGI(novesa.id) $GRAFMKXGI(novesa.str)]
+    set status $EXIT_ERROR
+} elseif {$VESA != 1} {
+    global GRAFMKXGI
+    puts stderr [catgets $GRAFMKXGI(fd) $GRAFMKXGI(error) \
+            $GRAFMKXGI(novesa.id) $GRAFMKXGI(novesa.str)]
+    set status $EXIT_NOT_VESA
+} else {
+    set status [CreateGrafinfo $VESA $VENDOR $MODEL $CLASS $OEM $MEMORY $VBE MODE]
+}
+
+if { [file exists ${TMPVESAINFO}] == 1} {
+    exec -- rm -f ${TMPVESAINFO}
+}
+
+exit $status

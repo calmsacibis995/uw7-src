@@ -1,0 +1,68 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.offline.sh	1.2 3/3/97 03:21:01 - cmd.vxvm:common/voladm/disk.offline.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.offline.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+
+voladm_menu_push OfflineDisk
+voladm_help_push disk.offline.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:160 "Disable (offline) a disk device"
+	ewritemsg -M vxvmshm:547 \
+"Use this menu operation to disable all access to a disk device
+  by the Volume Manager.  This operation can be applied only to
+  disks that are not currently in a disk group.  Use this operation
+  if you intend to remove a disk from a system without rebooting.
+
+  NOTE:  Many systems do not support disks that can be removed from
+         a system during normal operation.  On such systems, the
+         offline operation is seldom useful."
+
+	voladm_disk_device -M vxvmshm:357 "Select a disk device to disable"
+	set -- `vxdisk -q list | grep "^\$daname[ 	]"`
+	if [ $# -lt 5 ]
+	then
+		export device; ewritemsg -M vxvmshm:192 \
+"Disk device $device is not defined.  The offline operation cannot.
+  be applied."
+
+		voladm_yorn -M vxvmshm:162 "Disable a different device?" n || break
+		continue
+	else
+		if [ "X$4" != X- ]
+		then
+			export device; ewritemsg -M vxvmshm:191 \
+"Disk device $device is added to disk group $4, the disk must
+  first be removed from its disk group ." $0 "$@"
+			voladm_yorn -M vxvmshm:162 "Disable a different device?" n || break
+			continue
+		fi
+	fi
+	doit vxdisk offline "$daname" 2> $tmpfile1
+	[ $? -eq 0 ] || writemsg "`cat $tmpfile1`"
+#	[ $? -eq 0 ] || (export tmpfile1; ewritemsg -M vxvmshm:904 "Error: `cat $tmpfile1`")
+	voladm_yorn -M vxvmshm:163 "Disable another device?" n || break
+done
+
+quit 0

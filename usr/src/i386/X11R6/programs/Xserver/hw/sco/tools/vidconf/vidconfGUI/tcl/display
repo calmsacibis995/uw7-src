@@ -1,0 +1,1217 @@
+#******************************************************************************
+#                               display
+#------------------------------------------------------------------------------
+# SCO System Administration Video Configuration User Interface script.
+#------------------------------------------------------------------------------
+#	@(#) display 12.9 95/07/25 
+#
+# Copyright (C) 1995 The Santa Cruz Operation, Inc.
+#
+# The information in this file is provided for the exclusive use of the
+# licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+# to use, modify, and incorporate this code into other products for purposes 
+# authorized by the license agreement provided they include this notice 
+# and the associated copyright notice with any such product.  The 
+# information in this file is provided "AS IS" without warranty.
+#==============================================================================
+
+#==========================================================================
+# ReDrawChainTree -- 
+#	Redraw the chain tree in the specified drawn list.
+#
+# 	Under CHARM the rows and columns are never adjusted.
+#	Under MOTIF rows are dynamic but columns are not.
+#
+# Parameters:
+#	dlist - drawn list name
+#	list - list holding redraw sequence
+#	columns - width of screen.
+# Returns: none
+#--------------------------------------------------------------------------
+proc ReDrawChainTree {dlist list {columns 20}} \
+{
+   global MOTIF_MINLIST_ROWS MOTIF_MAXLIST_ROWS 
+   global MOTIF_MINLIST_COLS MOTIF_MAXLIST_COLS
+
+   VtDrawnListDeleteItem $dlist -all
+
+   set rows [ llength $list ]
+
+   # walk through list drawing each item
+   for {set inx 0} {$inx < $rows} {incr inx} {
+       set i [ lindex $list $inx ]
+       set iconlist [ keylget i ICONLIST ]
+       set desc [ keylget i DESCRIPTION ]
+       set descLen [SetColumnFudge [string length $desc]]
+       VtDrawnListAddItem $dlist \
+	-formatList [list \
+		[list ICON [llength $iconlist] 0 0] \
+		[list STRING $descLen 0 0]] \
+	-fieldList [list "$iconlist" "$desc"]
+   }
+
+   if {! [IsCharm]} {
+      if {$rows < $MOTIF_MINLIST_ROWS} {
+	   set rows $MOTIF_MINLIST_ROWS
+      }
+      if {$rows > $MOTIF_MAXLIST_ROWS} {
+	   set rows $MOTIF_MAXLIST_ROWS
+      }
+      if {$columns < $MOTIF_MINLIST_COLS} {
+	   set columns $MOTIF_MINLIST_COLS
+      }
+      if {$columns > $MOTIF_MAXLIST_COLS} {
+	   set columns $MOTIF_MAXLIST_COLS
+      }
+   }
+}
+
+
+#==========================================================================
+# DrawChainTree --
+#       Create initial drawn list screen.
+#
+# Parameters:
+#	widget - name to use for drawn list.
+#	callback - specify callback to create widget with
+#	defaultCallback - specify default callback to create widget with
+#	list - initialize drawn list with values in list
+#	columns - width of drawn list
+#	helpString - localized string containing help
+# Returns:
+#	dlist - name of created drawn list
+#--------------------------------------------------------------------------
+proc DrawChainTree {widget callback defaultCallback list columns helpString} \
+{
+   global ICON_PATH
+   global CHARM_LIST_ROWS
+   global MOTIF_MINLIST_ROWS MOTIF_MAXLIST_ROWS 
+   global MOTIF_MINLIST_COLS MOTIF_MAXLIST_COLS
+
+   if {$helpString == ""} {
+      # screens that don't use help
+      set saShortHelpCB return
+   } else {
+      set saShortHelpCB SaShortHelpCB
+   }
+
+   set rows [ llength $list ]
+   if {[IsCharm]} {
+      # rows shouldn't change under CHARM due to restricted 
+      # screen size. Typical environment has 1 card and should display 
+      # as many terminal devices as possible in second list.
+      set rows $CHARM_LIST_ROWS
+   } else {
+      if {$rows < $MOTIF_MINLIST_ROWS} {
+	   set rows $MOTIF_MINLIST_ROWS
+      }
+      if {$rows > $MOTIF_MAXLIST_ROWS} {
+	   set rows $MOTIF_MAXLIST_ROWS
+      }
+      if {$columns < $MOTIF_MINLIST_COLS} {
+	   set columns $MOTIF_MINLIST_COLS
+      }
+      if {$columns > $MOTIF_MAXLIST_COLS} {
+	   set columns $MOTIF_MAXLIST_COLS
+      }
+   }
+
+   set dlist [VtDrawnList $widget \
+	-iconList [ list	$ICON_PATH/line0.px \
+				$ICON_PATH/line0end.px \
+				$ICON_PATH/line1.px \
+				$ICON_PATH/line2.px \
+				$ICON_PATH/line3.px \
+				$ICON_PATH/card1.px \
+				$ICON_PATH/card2.px \
+				$ICON_PATH/ghostcard1.px \
+				$ICON_PATH/ghostcard2.px \
+				$ICON_PATH/monitor.px \
+				$ICON_PATH/resolution.px \
+				$ICON_PATH/blank.px \
+				$ICON_PATH/line4.px \
+				$ICON_PATH/line5.px \
+				] \
+	-CHARM_iconList \
+	{" "  " "  " "  " "  " "  " "  "-"  " "  "-"  " "  " "  " "  " "  " "} \
+	-horizontalScrollBar on \
+	-selection SINGLE \
+	-rows $rows -CHARM_columns $columns \
+	-shortHelpCallback $saShortHelpCB \
+	-shortHelpString $helpString \
+	-callback $callback \
+	-autoLock $defaultCallback \
+	-defaultCallback $defaultCallback]
+
+	# register as drawn list
+	VxSetVar $dlist listtype 1
+	ReDrawChainTree $dlist $list $columns
+	return $dlist
+}
+
+
+#==========================================================================
+# DisplayComment --
+#       Display the COMMENT string if there is one for the selected
+#	resolution.  This routine is called after a resolution is 
+#	selected.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc DisplayComment {parent} \
+{
+   set comment {}
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set class [GetCurClass]
+   set mode [GetCurMode]
+   set vendormodelPr \
+             "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+
+   set comment [GetComment $class $mode [GetResolutions $vendor $model]]
+   if {$comment != {}} {
+         set resmesg [VtMessageDialog $parent.resmesg \
+		-message [format "%s\n\n%s" $vendormodelPr $comment] \
+		-ok]
+         VtShow $resmesg
+   }
+}
+
+
+#==========================================================================
+# CardCCB --
+#       Called when either Add or Modify cancel button is selected.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc CardCCB {cbs} \
+{
+   global screenIndex
+
+   VtDestroyDialog [keylget cbs dialog]
+
+   # Warning: reset screenIndex to beginning - screenIndex may NOT
+   # be in sync with current highlight any longer.
+   #set screenIndex 0
+   #set dlist [VxGetVar [GetMainDialogID] dlist]
+   #VtDrawnListSelectItem $dlist -position [expr $screenIndex+1]
+}
+
+
+#==========================================================================
+# CardOK --
+#       Update ttyList with the configuration changes stored in tmpttyList.
+#
+#	We need to have a tmp ttyList because it is possible to insert
+#	multiheaded elements between already existing entries making change
+#	tracking difficult with just one list (ttyList).
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc CardOK {} \
+{
+   global curList curIndex screenList screenIndex
+   set vendor {}; set model {}
+
+   #Display curList
+   VtLock
+   # Save contents of tmpttyList to ttyList
+   SaveTMPList
+   #Display ttyList
+
+   # update monList list
+   # point to type == MONITOR
+   set curIndex 1
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set vendormodelPr \
+        "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   keylset monlist MONVENDOR [GetCurMonVendor]
+   keylset monlist MONMODEL [GetCurMonModel]
+   SetMonElement $vendor.$model $monlist
+   # remove stale/empty "{}" vendor.model entries from monList
+   SyncMonList
+
+   set tmpcols 0
+   set dlist [VxGetVar [GetMainDialogID] dlist]
+   ReDrawChainTree $dlist [BuildScreenList MAIN_SCREEN tmpcols]
+   #Display screenList
+
+   # Move focus to this card in list - could be a new one
+   VtDrawnListSelectItem $dlist -field 1 $vendormodelPr
+   SaDrawnListShowSelectedItem $dlist 0
+   # reset screenIndex to match selection here!
+   set screenIndex [expr [VtDrawnListGetSelectedItem $dlist -byPositionList]-1]
+
+   # get rid of curList - don't need any more
+   if {[info exists curList]} {
+      unset curList
+   }
+
+   SetSave
+   ProcessMainScreenStippling
+   UpdateDevices
+
+   VtUnLock -once
+}
+
+
+#==========================================================================
+# Add --
+#       Called by VideoPPL screen OK button.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc Add {{cbs {}}} \
+{
+   global curList curIndex 
+   global MOTIFWIDTH CHARM_ADDLIST_COLS MOTIF_ADDLIST_COLS
+   
+   VtLock
+   set addfn [VtFormDialog [GetMainDialogID].addfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_ADD_TITLE] \
+	-resizable 0 \
+	-MOTIF_width $MOTIFWIDTH \
+	-ok -okCallback AddOKCB \
+        -cancel -cancelCallback CardCCB \
+	-cancelButton CANCEL \
+	-defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $addfn -ok]
+
+   set addlab [VtLabel $addfn.addlab \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_ADD_ACTION]]
+
+   set columns 0
+   if {[IsCharm]} {
+      set columns $CHARM_ADDLIST_COLS
+   } else {
+      set columns $MOTIF_ADDLIST_COLS
+   }
+   set dlist [DrawChainTree $addfn.dlist \
+	AddVideoListCB \
+	AddDefaultCB \
+	$curList \
+        $columns \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_ADD_LIST]]
+
+   set statusbar [SaStatusBar $addfn.statusbar 0]
+
+   set rc [VtRowColumn $addfn.rc \
+	-topSide $addlab \
+        -leftSide NONE \
+        -rightSide FORM]
+
+   set addmonbtn [VtPushButton $rc.addmonbtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_ADD_ADDMON] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_ADD_ADDMON]\
+	-autoLock MonitorPPLCheck \
+        -callback MonitorPPLCheck]
+   set addresbtn [VtPushButton $rc.addresbtn \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_ADD_ADDRES] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_ADD_ADDRES]\
+	-autoLock ResolutionPPLCheck \
+        -callback ResolutionPPLCheck]
+
+   VtSetValues $dlist -bottomSide $statusbar -rightSide $rc 
+   VtSetValues $statusbar -topSide NONE -rightSide FORM
+
+   VxSetVar $dlist dlistcb AddVideoList
+   VxSetVar $dlist addmonbtn $addmonbtn
+   VxSetVar $dlist addresbtn $addresbtn
+   VxSetVar $addfn statusbar $statusbar
+   VxSetVar [GetMainDialogID] SUBFORMID $addfn
+   VxSetVar [GetMainDialogID] DLISTID $dlist
+   # creates the Resolution entry in dlist, sets focus to resolution
+   CreateResolution $dlist
+
+   # CARD=0, point to MONITOR=1 when displaying list
+   set curIndex 1
+   VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+
+   AddVideoList
+
+   VtShow $addfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# AddCheckCB --
+#       When the Add button is selected, this routine is called.
+#	If autodetect fails, call into Video ppl.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddCheckCB {cbs} \
+{
+   global OK FAIL
+
+   InitTMPList
+   SetScreenType "ADD_SCREEN"
+   VxSetVar [GetMainDialogID] BUTTON "ADDBTN"
+   if {[AutoDetect $cbs] == $FAIL} {
+      VideoPPL $cbs
+   }
+   # not reached
+}
+
+
+#==========================================================================
+# AddOKCB --
+#       Okay callback for Add screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddOKCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   if {! [IsCompleteAdd]} {
+      set warn [VtWarningDialog $dialog.warn \
+          -message [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_ADD_CONFIGURED] \
+          -ok]
+      VtShow $warn
+   } else {
+      VtDestroyDialog $dialog
+      FkeySetupCB $cbs
+   }
+}
+
+
+#==========================================================================
+# AddVideoListCB --
+#       Wrapper for AddVideoList routine.  Handles stippling of
+#	Add video list.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddVideoListCB {cbs} \
+{
+   AddVideoList
+}
+
+
+#==========================================================================
+# AddVideoList --
+#       Protect against CARD being selected and moves focus along under
+#	CHARM. Valid selections are MONITOR and RESOLUTION.  If user 
+#	tries to select the CARD, bounce em back to the previous selection.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddVideoList {} \
+{
+   global curList curIndex
+
+   # lock is too slow - makes double click hard to do
+   #VtLock
+   set type {}; set pos {}
+   set tmpIndex $curIndex
+   # called from ppl routines, Add routine and as dlist callback
+   set dlist [VxGetVar [GetMainDialogID] DLISTID]
+
+   set curIndex [DoGetDrawnListSelection $curIndex $dlist]
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+   #echo type: $type, curIndex: $curIndex
+   if {$type == "CARD"} {
+      # jump back to the previous position (at curIndex)
+      set curIndex $tmpIndex
+      set elem [lindex $curList $curIndex]
+      keylget elem TYPE type
+      VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+   } 
+   #echo type: $type, curIndex: $curIndex
+   
+   set addmonbtn [VxGetVar $dlist addmonbtn]
+   set addresbtn [VxGetVar $dlist addresbtn]
+
+   # If you click real fast on CARD, sometimes it sticks.
+   # But curIndex is right so if you select an available
+   # button you will modify the right thing.
+   if {($type == "CARD") || ($type == "NOTHING") || ($type == {})} {
+      return
+   } elseif {$type == "MONITOR"} {
+      VtSetFocus $addmonbtn
+   } elseif {$type == "RESOLUTION"} {
+      VtSetFocus $addresbtn
+   }
+   #VtUnLock -once
+}
+
+
+#==========================================================================
+# MonitorPPLCheck --
+#       Make sure the monitor selection is highlighted prior to 
+#	calling MonitorPPL.  Otherwise the monitor list will 
+#	not have a default selection.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MonitorPPLCheck {cbs} \
+{
+   global curIndex
+
+   if {$curIndex != 1} {
+      # move focus to index 1 (MONITOR) and select it.
+      set curIndex 1
+      set dlist [VxGetVar [GetMainDialogID] DLISTID]
+      VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+   }
+   MonitorPPL $cbs
+}
+
+
+#==========================================================================
+# MoveCurToResolution --
+#       Moves the curIndex to the first resolution if it is not already
+#	there.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc MoveCurToResolution {} \
+{
+   global curIndex
+
+   if {$curIndex <= 1} {
+      # resolution can't be at index 0 (CARD) or 1 (MONITOR)
+      # if it is, move it to the first resolution and select it
+      set curIndex 2
+      set dlist [VxGetVar [GetMainDialogID] DLISTID]
+      VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+   }
+}
+
+
+#==========================================================================
+# ResolutionPPLCheck --
+#       Make sure the resolution selection is highlighted prior to 
+#	calling the correct routine.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ResolutionPPLCheck {cbs} \
+{
+   MoveCurToResolution
+   ResolutionPPL $cbs
+}
+
+
+#==========================================================================
+# FkeySetupCheck --
+#       Make sure the resolution selection is highlighted prior to 
+#	calling the correct routine.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc FkeySetupCheck {cbs} \
+{
+   MoveCurToResolution
+   FkeySetupCB $cbs
+}
+
+
+#==========================================================================
+# AddDefaultCB --
+#       Called when double click occurs on drawn list in Add screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc AddDefaultCB {cbs} \
+{
+   DefaultCallbackCB $cbs
+}
+
+
+#==========================================================================
+# DefaultCallbackCB --
+#       Called when double click occurs on drawn list in Add/Modify screens.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc DefaultCallbackCB {cbs} \
+{
+   global curList curIndex
+
+   # unlock autoLock
+   VtUnLock -once
+   set dlist [keylget cbs widget]
+   # save off curIndex in case they selected a CARD.
+   set tmpIndex $curIndex
+   set curIndex [DoGetDrawnListSelection $curIndex $dlist]
+
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+   #echo type: $type, curIndex: $curIndex
+   if {$type == "CARD"} {
+      # they clicked on card, jump back to the previous saved position
+      set curIndex $tmpIndex
+      set elem [lindex $curList $curIndex]
+      keylget elem TYPE type
+      VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+      return
+   }
+   #echo type: $type, curIndex: $curIndex
+
+   if {($type == "CARD") || ($type == "NOTHING") || ($type == {})} {
+	return
+   } elseif {$type == "MONITOR"} {
+	MonitorPPL $cbs
+   } elseif {$type == "RESOLUTION"} {
+	ResolutionPPL $cbs
+   }
+}
+
+
+#--------------------------------------------------------------------------
+# ChkRemoveResCB --
+#       Wrapper routine for ChkRemoveRes
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ChkRemoveResCB {cbs} \
+{
+   # Destroy the ResPPL dialog
+   set dialog [keylget cbs dialog]
+   VtDestroyDialog $dialog
+
+   ChkRemoveRes
+}
+
+
+#==========================================================================
+# ChkRemoveRes --
+#
+#	Make sure a previously unconfigured resolution was 
+#	really configured.  If a resolution was not configured,
+#	remove the unconfigured RESOLUTION at the end of the list 
+#	and update the iconList for the last resolution.
+#
+#	Called by:
+#	Add->Add Resolution, - don't remove 'Resolution Not Configured' line
+#	Modify->Add Resolution,	- remove this new line
+#	Modify->Change Resolution - don't remove this previously configured line
+#
+# Parameters: 
+#	widget - the name of the widget to update
+# Returns: none
+#--------------------------------------------------------------------------
+proc ChkRemoveRes {} \
+{
+   global curList curIndex
+   global RES_ICON
+
+   set type {}
+
+   # make sure the added resolution was really configured
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+   set screentype [GetScreenType]
+
+   # only remove entry if the selected Modify->Add.
+   # don't remove entry for Add->Add or Modify->Change.
+   if {($type == "RESOLUTION") && ($screentype == "MODIFY_SCREEN")} {
+      if {([GetCurClass] == {}) || ([GetCurMode] == {}) \
+	|| ([GetCurTTYSHEAD] == "{}")} {
+         # didn't configure last resolution correctly - replace it with nothing
+         set curList [lreplace $curList $curIndex $curIndex]
+
+	 # now clean up the current last resolution iconList
+	 incr curIndex -1
+	 set elem [lindex $curList $curIndex]
+	 keylset elem TYPE type
+	 if {$type == "RESOLUTION"} {
+	    set iconlist $RES_ICON
+	    set elem [lindex $curList $curIndex]
+	    keylset elem "ICONLIST" $iconlist
+	    set curList [lreplace $curList $curIndex $curIndex $elem]
+	 }
+	 set dlist [VxGetVar [GetMainDialogID] DLISTID]
+         ReDrawChainTree $dlist $curList
+
+   	# highlight the new entry
+   	set dlistCB [VxGetVar $dlist dlistcb]
+   	$dlistCB
+      }
+   }
+   # don't do anything outside of the unconfigured resolution
+}
+
+
+#==========================================================================
+# CreateResolution --
+#	Always create the new resolution at the end of the list.
+#
+#	If previous entry is a resolution, update its iconlist 
+#	and then create an unconfigured resolution.
+#       Called by:
+#	Add->Add Resolution, 
+#	Modify->Add Resolution
+#	Modify->Change Resolution does not call this routine.
+#
+# Parameters:
+#	widget - the name of the widget to update
+# Returns: none
+#--------------------------------------------------------------------------
+proc CreateResolution {dlist} \
+{
+   global curList curIndex
+   global RES_ICON RES_ICON_LEG
+
+   set type {}
+   set vendor {}; set model {}; set monvendor {}; set monmodel {}
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set monvendor [GetCurMonVendor]
+   set monmodel  [GetCurMonModel]
+
+   #echo curIndex: $curIndex
+   # Update the last RESOLUTION with the proper iconlist.
+   # Always add to the end of the list.
+   set curIndex [expr [llength $curList]-1]
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+   if {$type == "RESOLUTION"} {
+      # add a leg icon to last resolution
+      set iconlist $RES_ICON_LEG
+      keylset elem ICONLIST $iconlist
+      set curList [lreplace $curList $curIndex $curIndex $elem]
+   }
+
+   # add initial details for new RESOLUTION
+   set iconlist $RES_ICON
+   lappend curList [DrawnList \
+	$iconlist "RESOLUTION" \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NORESOLUTION] \
+        $vendor $model {} {} \
+        $monvendor $monmodel {{}} ]
+   incr curIndex
+   ReDrawChainTree $dlist $curList
+   # select the new entry "Resolution Not Configured" just added
+   VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+
+   # highlight the new entry
+   set dlistCB [VxGetVar $dlist dlistcb]
+   $dlistCB
+}
+
+
+#==========================================================================
+# Modify --
+#       When the Modify button is selected, this routine is called.
+#	A user must select either a monitor or resolution before 
+#	selecting this button.  This button is stippled when a video
+#	adapter is selected.  You can not modify the video adapter.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc Modify {{cbs {}}} \
+{
+   global curList curIndex
+   global CHARM_MODLIST_COLS MOTIF_MODLIST_COLS MOTIFWIDTH
+
+   VtLock
+   set modfn [VtFormDialog [GetMainDialogID].modfn \
+	-title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_MODIFY_TITLE] \
+	-resizable 0 \
+	-MOTIF_width $MOTIFWIDTH \
+        -ok -okCallback ModifyOKCB \
+        -cancel -cancelCallback CardCCB \
+	-cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $modfn -ok]
+
+   set modlab [VtLabel $modfn.modlab \
+	-label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_MODIFY_ACTION]]
+
+   set columns 0
+   if {[IsCharm]} {
+      set columns $CHARM_MODLIST_COLS
+   } else {
+      set columns $MOTIF_MODLIST_COLS
+   }
+   set dlist [DrawChainTree $modfn.dlist \
+	ModifyVideoListCB \
+	ModifyDefaultCB \
+	$curList \
+	$columns \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MODIFY_LIST]]
+
+   set statusbar [SaStatusBar $modfn.statusbar 0]
+
+   set rc [VtRowColumn $modfn.rc \
+	-topSide $modlab \
+	-leftSide NONE \
+	-rightSide FORM]
+
+   set modmonbtn [VtPushButton $rc.modmonbtn \
+        -label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MODIFY_MODMON] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MODIFY_MODMON] \
+	-autoLock MonitorPPLCheck \
+        -callback MonitorPPLCheck]
+   set modchgbtn [VtPushButton $rc.modchgbtn \
+        -label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MODIFY_MODCHG] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MODIFY_MODCHG] \
+	-autoLock ResolutionPPLCheck \
+        -callback ResolutionPPLCheck]
+   set modresbtn [VtPushButton $rc.modresbtn \
+        -label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MODIFY_MODRES] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MODIFY_MODRES] \
+	-autoLock CreateResolution \
+        -callback "CreateResolution $dlist; ResolutionPPL"]
+   set moddevbtn [VtPushButton $rc.moddevbtn \
+        -label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_PBL_MODIFY_MODDEV] \
+        -shortHelpCallback SaShortHelpCB \
+        -shortHelpString \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_MODIFY_MODDEV] \
+	-autoLock FkeySetupCheck \
+        -callback FkeySetupCheck]
+
+   VtSetValues $dlist -bottomSide $statusbar -rightSide $rc
+   VtSetValues $statusbar -rightSide FORM
+ 
+   VxSetVar $dlist dlistcb ModifyVideoList
+   VxSetVar $dlist modmonbtn $modmonbtn
+   VxSetVar $dlist modchgbtn $modchgbtn
+   VxSetVar $dlist modresbtn $modresbtn
+   VxSetVar $dlist moddevbtn $moddevbtn
+   VxSetVar $modfn statusbar $statusbar
+   VxSetVar [GetMainDialogID] DLISTID $dlist
+   VxSetVar [GetMainDialogID] SUBFORMID $modfn
+
+   # CARD=0, MONITOR=1, RESOLUTION=2, RESOLUTION=3 ... 
+   # curIndex points to either a MONITOR or one of the RESOLUTIONS 
+   # in curList.
+   if {$curIndex == 0} {
+	# bump curIndex up to MONITOR
+	incr curIndex
+   }
+
+   VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+
+   ModifyVideoList
+
+   VtShow $modfn
+   VtUnLock
+}
+
+
+#==========================================================================
+# ModifyCheckCB --
+#       When the Modify button is selected, this routine is called.
+#       If type CARD was selected, autodetect for any adapters. If none
+#	found, call into Video ppl.  Later we might call into Add if the
+#	user selects a different card then the one being Modified.
+#	If type CARD wasn't selected call directly into Modify.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ModifyCheckCB {cbs} \
+{
+   global OK FAIL
+   global screenList screenIndex
+
+   InitTMPList
+   SetScreenType "MODIFY_SCREEN"
+   VxSetVar [GetMainDialogID] BUTTON "MODIFYBTN"
+   set type {}
+   set elem [lindex $screenList $screenIndex]
+   keylget elem TYPE type
+   if {$type == "CARD"} {
+      if {[AutoDetect $cbs] == $FAIL} {
+	 VideoPPL $cbs
+      }
+   } else {
+      # Call into modify
+      set columns 0
+      BuildScreenList MODIFY_SCREEN columns
+      Modify
+   }
+   # remove autoLock lock
+   VtUnLock
+}
+
+
+#==========================================================================
+# ModifyOKCB --
+#       Okay callback for Modify screen.
+#       
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ModifyOKCB {cbs} \
+{
+   set dialog [keylget cbs dialog]
+   VtDestroyDialog $dialog
+   CardOK
+}
+
+
+#==========================================================================
+# ModifyVideoListCB --
+#       Wrapper for ModifyVideoList routine.  Handles stippling of
+#	Modify video list.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ModifyVideoListCB {cbs} \
+{
+   ModifyVideoList
+}
+
+
+#==========================================================================
+# ModifyVideoList --
+#       Protect against CARD being selected and moves focus along under
+#	CHARM. Valid selections are MONITOR and RESOLUTION.  If user 
+#	tries to select the CARD, bounce em back to the previous selection.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ModifyVideoList {} \
+{
+   global curList curIndex
+
+   # lock is too slow - makes double click hard to do
+   #VtLock
+   set type {}; set pos {}
+   # save off curIndex in case they selected a CARD.
+   set tmpIndex $curIndex
+   # called from ppl routines, modify routine and as dlist callback
+   set dlist [VxGetVar [GetMainDialogID] DLISTID]
+
+   set curIndex [DoGetDrawnListSelection $curIndex $dlist]
+
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+   #echo type: $type, curIndex: $curIndex
+   if {$type == "CARD"} {
+      # they clicked on card, jump back to the previous saved position
+      set curIndex $tmpIndex
+      set elem [lindex $curList $curIndex]
+      keylget elem TYPE type
+      VtDrawnListSelectItem $dlist -position [expr $curIndex+1]
+   }
+   #echo type: $type, curIndex: $curIndex
+
+   set modmonbtn [VxGetVar $dlist modmonbtn]
+   set moddevbtn [VxGetVar $dlist moddevbtn]
+   set modresbtn [VxGetVar $dlist modresbtn]
+   set modchgbtn [VxGetVar $dlist modchgbtn]
+
+   # if you click real fast, sometimes it sticks
+   # but curIndex is right so if you select an available
+   # button you will modify the right thing.
+   if {($type == "CARD") || ($type == "NOTHING") || ($type == {})} {
+      return
+   } elseif {$type == "MONITOR"} {
+      VtSetFocus $modmonbtn
+   } elseif {$type == "RESOLUTION"} {
+      VtSetFocus $modchgbtn
+   } 
+   #VtUnLock -once
+}
+
+
+#==========================================================================
+# ModifyDefaultCB --
+#       Called when double click occurs on drawn list in Modify screen.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc ModifyDefaultCB {cbs} \
+{
+   DefaultCallbackCB $cbs
+}
+
+
+#==========================================================================
+# Remove --
+#       When the Remove button is selected, this routine is called.
+#	A user must select either a video card or a resolution prior
+#	to selecting the Remove button.  
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc Remove {cbs} \
+{
+   global curIndex 
+   set vendor {}; set model {}; set class {}; set mode {}
+   set vendormodelPr {}; set classmodePr {}; set mondesc {}
+
+   VtLock
+   InitTMPList
+
+   set columns 0
+   # Build a copy of the Video Adapter including Monitor and Resolutions.
+   set curlist [BuildScreenList MODIFY_SCREEN columns]
+
+   set type {}
+   # subtract CARD and MONITOR entries to get total number of resolutions
+   set reslen [expr [llength $curlist]-2]
+   set elem [lindex $curlist $curIndex] 
+   keylget elem TYPE type
+
+   set title {}
+   set labelstr {}
+   if {$type == "CARD"} {
+      set labelstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_VIDEO]
+   } elseif {$type == "MONITOR"} {
+      set labelstr [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_MONITOR]
+   } elseif {$type == "RESOLUTION"} {
+	if {$reslen > 1} {
+      	   set labelstr \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_RESOLUTION]
+	} else {
+      	   set labelstr \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_RESOLUTION_ALL]
+	}
+   }
+
+   set removefn [VtFormDialog [GetMainDialogID].removefn \
+        -title [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_REMOVE_TITLE] \
+	-resizable 0 \
+        -ok -okCallback RemoveOKCB \
+        -cancel -cancelCallback VxEndFormCB \
+	-cancelButton CANCEL \
+        -defaultButton OK \
+        -help]
+   VtSetFocus [VtGetValues $removefn -ok]
+
+   set vendor [GetCurVendor]
+   set model [GetCurModel]
+   set mondesc [GetCurMonDescription]
+   set vendormodelPr \
+        "[GetVendorPr $vendor $model] [GetModelPr $vendor $model]"
+   set class [GetCurClass]
+   set mode [GetCurMode]
+   set classmodePr \
+	[GetClassModePr $class $mode [GetResolutions $vendor $model]]
+
+   if {$type != "RESOLUTION"} {
+      # CARD or MONITOR selected and more then one RESOLUTION
+      if {$reslen > 1} {
+         # more then one resolution, display a generic string instead
+         set classmodePr \
+	   [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_RESOLUTION_MANY]
+      } else {
+	 # curIndex does not point to the RESOLUTION
+	 # temporarily point it to the only one
+	 set tmpIndex $curIndex
+	 set curIndex 2
+         set class [GetCurClass]
+         set mode [GetCurMode]
+         set classmodePr \
+	      [GetClassModePr $class $mode [GetResolutions $vendor $model]]
+	 set curIndex $tmpIndex
+      }
+   }
+
+   set frame [VtFrame $removefn.frame \
+        -shadowType ETCHED_OUT]
+
+   set slab [VtLabel $frame.slab \
+        -labelLeft \
+        -label [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_LABEL_REMOVE_SETUP \
+                [list $vendormodelPr $mondesc $classmodePr]]]
+
+   set rmlab [VtLabel $removefn.rmlab \
+	-label $labelstr \
+	-labelLeft]
+
+   VtShow $removefn
+   VtUnLock
+}
+
+
+#==========================================================================
+# RemoveOKCB --
+#       If the position represents a video adapter or monitor, delete 
+#	the entire video adapter.
+#	If it represents a resolution, delete only that resolution.
+#
+# Parameters: none
+# Returns: none
+#--------------------------------------------------------------------------
+proc RemoveOKCB {cbs} \
+{
+   global curList curIndex screenIndex
+
+   set dialog [keylget cbs dialog]
+   set type {}
+   set ttyshead {}
+
+   # they hit OK, get the selection.
+   set elem [lindex $curList $curIndex]
+   keylget elem TYPE type
+
+   # remove the video adapter or monitor removes all resolutions
+   if {($type == "CARD") || ($type == "MONITOR")} {
+      set len [llength $curList]
+      # RESOLUTIONS start after CARD and MONITOR (at position 2)
+      # walk through each RESOLUTION removing Vendor/Model/Class/Mode 
+      # from ttyList
+      for {set index 2} {$index < $len} {incr index} {
+         set type {}
+         set elem [lindex $curList $index]
+         keylget elem TYPE type
+         keylget elem TTYSHEAD ttyshead
+         if {$type != "RESOLUTION"} {
+	    break
+         }
+	 #XXX - Redue multiheaded code here ...
+	 # wasting space passing in elem which contains ttyshead also
+         RemoveResolutions $elem $ttyshead
+      }
+   } elseif {$type == "RESOLUTION"} {
+         keylget elem TTYSHEAD ttyshead
+	 #XXX - Redue multiheaded code here ...
+         RemoveResolutions $elem $ttyshead
+   }
+
+   if {[info exists curList]} {
+      unset curList
+   }
+   # remove stale/empty vendor.model entries from monList
+   SyncMonList
+   VtDestroyDialog $dialog
+
+   set tmpcols 0
+   set dlist [VxGetVar [GetMainDialogID] dlist]
+   ReDrawChainTree $dlist [BuildScreenList MAIN_SCREEN tmpcols]
+   set screenIndex 0
+   VtDrawnListSelectItem $dlist -position [expr $screenIndex+1]
+
+   SetSave
+   ProcessMainScreenStippling
+   UpdateDevices
+}
+
+
+#==========================================================================
+# RemoveResolutions --
+#       Called by RemoveOKCB to remove resolutions found in 
+#	curList from ttyList.  Remove any multiple tty/head
+#	combinations
+#
+# Parameters: 
+#	ttyshead - tty/head# combinations to remove
+#	elem - need to pull out V/M/C/M in multiheaded case
+# Returns: none
+#--------------------------------------------------------------------------
+proc RemoveResolutions {elem ttyshead} \
+{
+
+   foreach entry $ttyshead {
+      set tty [lindex $entry 0]
+      set head [lindex $entry 1]
+   
+      # how many heads are there?
+      set hlen [GetTTYHeadLen $tty]
+      # if only one head, clear it
+      if {$hlen == 1} {
+         SetTTYElement $tty {}
+      } else {
+	 # multiple heads, delete the head in ttyList by replacing it 
+	 # w/ nothing.  watch it - we can't use $head to delete the 
+	 # entry because we might have already deleted a head screwing 
+	 # up the position.
+	 # Just search for the right entry in ttyList and delete it.
+         #XXX - get elem from curList ...
+	 set ttyelem [GetTTYElement $tty]
+	 for {set cnt 0} {$cnt < $hlen} {incr cnt} {
+	     set ttyelemhead [lindex $ttyelem $cnt]
+
+      	     if {([keylget elem VENDOR] == [keylget ttyelemhead VENDOR]) && \
+      		 ([keylget elem MODEL]  == [keylget ttyelemhead MODEL]) && \
+		 ([keylget elem CLASS]  == [keylget ttyelemhead CLASS]) && \
+		 ([keylget elem MODE]   == [keylget ttyelemhead MODE])} {
+            	 set ttyelem [lreplace $ttyelem $cnt $cnt]
+            	 SetTTYElement $tty $ttyelem
+		 break
+	     }
+	 }
+      }
+   }
+}
+
+
+#==========================================================================
+# DisplayHelpTopic --
+#       Display a window asking if the user wants to see help 
+#	for this topic.
+#
+# Parameters:
+#	itemstring - string to display
+#	topicstring - string to get help on 
+#	callback - routine name to continue on with
+# Returns: none
+#--------------------------------------------------------------------------
+proc DisplayHelpTopic {itemstring topicstring callback} \
+{
+   set topichelpfn [VtQuestionDialog [GetMainDialogID].topichelpfn \
+        -message [format "%s:\n\n%s" \
+		$itemstring \
+		[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_SPECIAL_HELP]] \
+        -ok -okLabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_YES] \
+        -okCallback "ShowHelpTopic $topicstring; $callback" \
+        -cancel -cancelLabel [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_NO] \
+   	-cancelCallback "$callback"]
+   VtShow $topichelpfn
+}
+
+
+#==========================================================================
+# ShowHelpTopic --
+#       Calls into help to display help on this topic.
+#
+# Parameters:
+#	topicstring - string to get help on 
+# Returns:
+#--------------------------------------------------------------------------
+proc ShowHelpTopic {topicstring} \
+{
+   VtLock
+
+   set help_parentID [GetMainDialogID]
+   set statusbarID [VxGetVar $help_parentID statusbar]
+
+   SaStatusBarSet $statusbarID \
+	[IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_SHELP_HELP_LOAD]
+
+   set book [IntlLocalizeMsg SCO_VIDCONF_GUI_MSG_HELPBOOK]
+   VtDisplayHelp $help_parentID -topic $topicstring -book $book
+   VtUnLock -once
+}
+

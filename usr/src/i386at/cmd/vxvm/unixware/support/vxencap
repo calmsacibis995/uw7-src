@@ -1,0 +1,411 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxencap.sh	1.2 3/3/97 03:29:32 - cmd.vxvm:unixware/support/vxencap.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxencap.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+set_rootdisk
+
+[ -n "$verbose" ] && VOL_VERBOSE=yes
+
+bail()
+{
+	quit 10
+}
+
+
+usage()
+{
+	egettxt "Usage: $0 [-N] [-g diskgroup] [-c] [diskname=]accessname
+       $0 -k -a|accessname..." vxvmshm:520 $0 >&2
+	quit 1
+}
+
+getnames()
+{
+	echo "%names" > $tmpfile1
+	if [ -n "$debug_input_dir" -a -f "$debug_input_dir/install-db" ] ||
+	   [ ! -f $mkdbfile ]
+	then
+		vxprint -AQqn >> $tmpfile1
+	fi
+	if [ -s $pcaplist ]; then
+		for i in `cat $pcaplist`; do
+			grep '^#vxmake vol ' $DISKDIR/$i/newpart |
+				awk '{print $3}' >> $tmpfile1
+		done
+	fi
+	echo "%fstab" >> $tmpfile1
+	exec 3<&0 < $SYSROOT/etc/vfstab
+	while read blk chr mpoint fstyp pass auto opts; do
+		case $blk in
+		'#'*)	continue;;
+		esac
+		echo "$blk $mpoint $fstyp" >> $tmpfile1
+	done
+	exec 0<&3 3<&-
+}
+
+getusage()
+{
+	#
+	# Check if there exist a file system on any partition. This is
+	# because we canot rely on partition tags anymore
+	#
+	 
+	echo "%usage" >> $tmpfile1
+	for slice in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
+		dogi_device_slice $disk $slice dskpath
+		(fstyp $dskpath 2>&1) > /dev/null
+		if [ $? -eq 0 ] ; then
+			echo 1 >> $tmpfile1
+		else
+			echo 0 >> $tmpfile1
+		fi
+	done
+}
+
+set_OS_variables
+opt_dg=rootdg
+opt_create=
+opt_commit=yes
+opt_kill_encap=
+opt_all=
+opt_adm=
+
+while getopts :Ng:ckavA#: c
+do
+	case $c in
+	N)	opt_commit=;;
+	g)	opt_dg=$OPTARG;;
+	c)	opt_create=yes;;
+	k)	opt_kill_encap=yes;;
+	a)	opt_all=yes;;
+	v)	verbose=yes; VOL_VERBOSE=yes;;
+	A)	opt_adm=yes;;
+	'#')	debug_input_dir=$OPTARG;;
+	?)	usage;;
+	esac
+done
+shift `expr $OPTIND - 1`
+
+# if -k was specified, abort encapsulation requests.  -a with no
+# arguments implies aborting all encapsulation requests.
+
+if [ -n "$opt_kill_encap" ]
+then
+	if [ $# -eq 0 ]
+	then
+		[ -n "$opt_all" ] || usage
+		rm -f $reconfigfile
+		rm -f $pcapfile $pcaplist $pcapfile
+		rm -f $relfile $reltmpslcfile $relrestfile $relsavefile
+		rm -f $relvtocfile
+		exit 0
+	fi
+	[ -f "$pcaplist" ] || exit 0
+	for disk in "$@"
+	do
+		grep -v "^$disk\$" $pcaplist > $pcaplist.new
+		mv $pcaplist.new $pcaplist
+		if [ "X$disk" = "X$rootdisk" ]
+		then
+			rm -f $relfile $reltmpslcfile $relrestfile $relsavefile
+			rm -f $relvtocfile
+		fi
+	done
+	exit 0
+fi
+if [ $# -ne 1 ]
+then
+	usage
+fi
+
+if expr "$1" : ".*\=" > /dev/null 2>&1 ; then
+	dmname=`expr "$1" : "\(.*\)\="`
+	disk=`expr "$1" : ".*\=\(.*\)"`
+else
+	dmname=
+	disk=$1
+fi
+
+if vxcheckda $disk > /dev/null 2> /dev/null
+then
+	if dogi_is_whole_slice $disk
+	then
+		dogi_slice_to_device $disk disk
+	fi
+fi
+
+# Make sure that if the requested disk to encapsulate names a root
+# metadisk then the AP facility has been set up to manage this
+# metadisk; otherwise, do not allow the encapsulation.
+# 
+okay_to_encap_root=
+case $disk in
+	mc*)
+		if [ "X$disk" = "X$rootdisk" ]
+		then
+			# okay so far, but has apboot been run with mc?
+			if grep "rootdev:/pseudo/ap_dmd" \
+				$SYSROOT/etc/system > /dev/null 2>&1
+			then
+				okay_to_encap_root=yes
+			fi
+		fi
+		;;
+	*)
+		okay_to_encap_root=yes
+		;;
+esac
+if [ -z "$okay_to_encap_root" ] 
+then
+	export disk; ewritemsg -M vxvmshm:188 \
+"Disk cannot be encapsulated...  
+
+  Disk $disk is a root metadisk and as such requires that the 
+  AP facility put such a disk under its control before the Volume Manager
+  encapsulates it.
+
+  The Volume Manager has detected that such is not the case.  
+
+  Try running the appropriate AP operation to bring $disk 
+  under AP boot control.  Then try to encapsulate this disk."
+	quit 1 
+fi
+
+
+# Make sure the disk isn't currently in use. Only check if
+# vxconfigd is enabled.
+
+voldmode=`vxdctl mode 2>/dev/null`
+case "$voldmode" in
+	"mode: enabled") dogi_darecs_on_device $disk > $tmpfile1 ;;
+	*) >$tmpfile1 ;;
+esac
+
+if [ -s $tmpfile1 ]
+then
+	exec 3<&0 < $tmpfile1
+	read da type dm dg flags
+	if [ "X$dm" != "X-" ]
+	then
+		export da dm type dg; ewritemsg -M vxvmshm:166 \
+"Disk $da is already being used as $type disk $dm in disk group $dg;
+	Disk cannot be encapsulated."
+		quit 1
+	fi
+	dogi_whole_slice $disk wholeaddr
+	if [ "X$da" != "X$wholeaddr" ] ||
+	   [ "X$type" != "Xsliced" ]
+	then
+		export da dm type dg disk
+		xerrmsg -M vxvmshm:166 \
+"Disk $da is already being used as $type disk $dm in disk group $dg;
+	Disk cannot be encapsulated."
+		exit 1
+	fi
+	exec <&3 3<&-
+fi
+
+# if the disk is already listed for encapsulation, remove the old
+# encapsulation
+
+if grep "^$disk\$" $pcaplist > /dev/null 2> /dev/null
+then
+	grep -v "^$disk\$" $pcaplist > $pcaplist.new
+	mv $pcaplist.new $pcaplist
+	if [ "X$disk" = "X$rootdisk" ]
+	then
+		rm -f $relfile $reltmpslcfile $relrestfile $relsavefile
+		rm -f $relvtocfile
+	fi
+fi
+
+[ -d $DISKDIR ] || xcmd mkdir $DISKDIR
+[ -d $DISKDIR/$disk ] || xcmd mkdir $DISKDIR/$disk
+
+rm -f $DISKDIR/$disk/vtoc
+rm -f $DISKDIR/$disk/dmname
+rm -f $DISKDIR/$disk/dg
+
+if [ -n "$opt_create" ] && [ "X$opt_dg" != "Xrootdg" ]; then
+	if [ -f $mkdbfile ]; then
+		ewritemsg -M vxvmshm:388 \
+"The Volume Manager must be installed to use the -c option.
+  Run vxinstall to install the Volume Manager."
+	fi
+	echo $opt_dg > $DISKDIR/$disk/dg
+elif [ "X$opt_dg" != "Xrootdg" ]; then
+	if not vxdg -q list "$opt_dg" > /dev/null 2>&1
+	then
+		export opt_dg; ewritemsg -M vxvmshm:194 \
+			"Disk group $opt_dg does not exist." >&2
+		quit 1
+	fi
+	echo $opt_dg > $DISKDIR/$disk/dg
+fi
+
+	dogi_device_rawpath $disk drawpath
+
+if [ -n "$debug_input_dir" ]
+then
+	cp "$debug_input_dir/vtoc" $DISKDIR/$disk/vtoc 2> /dev/null
+	[ -f "$debug_input_dir/vtoc" ]
+else
+	ecmd $PRTVTOC -f $DISKDIR/$disk/vtoc $drawpath 2>&1 > /dev/null
+fi
+if [ $? != 0 ]; then
+	export disk; ewritemsg -M vxvmshm:372 \
+		"The $disk disk does not appear to be prepared for this system."
+	if [ -z "$opt_commit" ]; then
+		ewritemsg -M vxvmshm:105 \
+			"Add it as a new disk through the vxdiskadm command."
+	fi
+	quit 100
+fi
+
+[ -s $DISKDIR/$disk/vtoc ] || bail
+
+
+if [ -n "$debug_input_dir" ]
+then
+	eval `cat "\$debug_input_dir/stat"`
+else
+	eval `vxparms -s $drawpath`
+	if [ -n "$STAT_DISK_TYPE" ] && [ "X$STAT_DISK_TYPE" != Xdisk ]
+	then
+		type=$STAT_DISK_TYPE ewritemsg -M vxvmshm:133 \
+			'Cannot encapsulate $type devices'
+	fi
+fi
+if [ -n "$debug_input_dir" -a -f "$debug_input_dir/rootdisk" ]
+then
+	rootdisk=$disk
+fi
+if [ "X$disk" = "X$rootdisk" ]
+then
+	r_op=-r
+	if [ -n "$debug_input_dir" ]
+	then
+		eval `cat "\$debug_input_dir/parms"`
+	else
+		eval `vxparms -s $drawpath`
+	fi
+	if [ "X$opt_dg" != "Xrootdg" ]
+	then
+		export disk opt_dg; ewritemsg -M vxvmshm:170 \
+'Disk $disk is the root disk.  It can be encapsulated only into the
+  rootdg disk group.'
+		quit 1
+	fi
+
+	if [ "X$STAT_MAX_BOOT_SECTOR" != X ]; then
+		p_op="-p $STAT_MAX_BOOT_SECTOR"
+	else
+		p_op=
+	fi
+else
+	r_op=
+	p_op=
+fi
+[ -n "$STAT_SECPERCYL" ] && c_op="-c $STAT_SECPERCYL"
+
+getnames
+if [ -n "$debug_input_dir" ]
+then
+	(echo %usage; cat "$debug_input_dir/usage") >> $tmpfile1
+else
+	getusage
+fi
+
+cat $DISKDIR/$disk/vtoc $tmpfile1 > $tmpfile2
+
+if [ "X${dmname}" != X ]; then
+	echo $dmname > $DISKDIR/$disk/dmname
+fi
+
+[ -n "$debug_input_dir" ] && cat $tmpfile2 > $DISKDIR/$disk/slicer-input
+
+if [ "X${dmname}" != X ]
+then
+	vxslicer $c_op $r_op $p_op -d "$dmname=$disk" \
+		< $tmpfile2 > $DISKDIR/$disk/newpart 2> $tmpfile3
+	ret=$?
+else
+	vxslicer $c_op $r_op $p_op -d "$disk" \
+		< $tmpfile2 > $DISKDIR/$disk/newpart 2> $tmpfile3
+	ret=$?
+fi
+
+if [ $ret = 0 ]
+then
+	echo $disk >> $pcaplist
+	xcmd touch $pcapfile
+else
+	if [ $ret = 100 ]; then
+		if [ -n "$opt_adm" ] 
+		then
+			if [ ! -f $reconfigfile ]
+			then
+				xcmd touch $reconfigfile
+			fi		
+		else
+			export disk; ewritemsg -M vxvmshm:371 \
+		"The $disk disk appears to be empty. Adding as a new disk."
+		fi	
+		if voladm_yorn -M vxvmshm:300 \
+			"Perform surface analysis (highly recommended)" y
+		then
+			sa_opt=-y
+		else
+			sa_opt=-n
+		fi
+		echo "$disk $sa_opt" >> $pnewlist
+		touch $pnewfile
+		quit 0
+	fi
+	reason=`cat $tmpfile3`
+	export disk reason; ewritemsg -M vxvmshm:264 \
+"It is not possible to encapsulate $disk, for the following reason:
+     <${reason}>   " >&2
+	quit 1
+fi
+
+[ -d $STATEDIR ] || volmkdirs
+if grep '^#reloc' $DISKDIR/$disk/newpart > /dev/null 2>&1; then
+	[ $disk != $rootdisk ] && bail
+	xcmd touch $reltmpslcfile
+	xcmd touch $relvtocfile
+	xcmd touch $relsavefile
+	xcmd touch $relrestfile
+	xcmd touch $relfile
+fi
+
+if [ -n "$opt_commit" ]; then
+	xcmd touch $reconfigfile
+fi
+
+export disk; ewritemsg -M vxvmshm:373 \
+"The $disk disk has been configured for encapsulation."
+quit 0

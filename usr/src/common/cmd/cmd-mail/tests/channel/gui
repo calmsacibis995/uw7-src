@@ -1,0 +1,798 @@
+#!/bin/sh
+#
+#******************************************************************************
+#
+#	ident @(#) gui 11.1 97/10/30 
+#
+#******************************************************************************
+#
+#	Copyright (C) 1993-1997 The Santa Cruz Operation, Inc.
+#		All Rights Reserved.
+#
+#	The information in this file is provided for the exclusive use of
+#	the licensees of The Santa Cruz Operation, Inc.  Such users have the
+#	right to use, modify, and incorporate this code into other products
+#	for purposes authorized by the license agreement provided they include
+#	this notice and the associated copyright notice with any such product.
+#	The information in this file is provided "AS IS" without warranty.
+#
+#******************************************************************************
+#
+# Semi-automated test suite for channel table editor client.
+#
+# Attempts to achieve complete branch coverage of
+#	mapFile.tcl
+#	channel.tcl
+#	intl.tcl
+#	main.tcl 
+#	ui.tcl
+#	uimenu.tcl
+#	uitoolbar.tcl
+#
+# Refer to gui.plan for test setup and instructions.
+#
+#******************************************************************************
+
+#
+# utility routines
+#
+
+# execute a list of test cases
+testlist() \
+{
+	name=$1
+	shift
+	for i in $*
+	do
+		TEST=${name}$i
+		echo "$TEST: BEGIN"
+
+		retry=y
+		while [ "$retry" = "y" ]
+		do
+			${name}$i
+			code=$?
+			if [ $code -ne 0 ]
+			then
+				echo "Failed: retry (y/n) [y]: \c"
+				retry=`line`
+				if [ "$retry" = "" ]
+				then
+					retry="y"
+				fi
+			else
+				retry=n
+			fi
+		done
+		passfail $code
+		echo "$TEST: END"
+		echo ""
+	done
+}
+
+passfail() \
+{
+	result=$1
+	if [ $# -eq 2 ]
+	then
+		message=$2
+	fi
+
+	if [ "$1" = "0" ]
+	then
+		echo $TEST: PASS
+	else
+		echo $TEST: $message : FAIL
+	fi
+}
+
+cleanup() \
+{
+	rm -f ${TMPDIR}/*
+}
+
+#
+# test cases
+#
+
+
+channel_gui_core_entry_add() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_add
+	expected=$TMPDIR/channel.entry_add.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	sed '
+	/^foo.pdev.sco.com.*$/a\
+newHost.sco.com	mail.sco.com
+	' $testfile >$expected
+	$PROGRAM -f $tmpfile -h dromeda.pdev.sco.com >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_delete() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_delete
+	expected=$TMPDIR/channel.entry_delete.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	sed '/^yikes\.london\.sco\.com.*$/d' $testfile >$expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_delete_all() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.2
+	tmpfile=$TMPDIR/channel.entry_delete_all
+	expected=$TMPDIR/channel.entry_delete_all.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	echo "# test file channel.2" > $expected
+	echo "" >> $expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_modify() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_modify
+	expected=$TMPDIR/channel.entry_modify.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	sed '
+	s/^spam.pdev.sco.com.*$/bean.pdev.sco.com	email.pdev.sco.com/
+	s/^foo\.pdev\.sco\.com.*$/modified.sco.com	ns.pdev.sco.COM/
+	' $testfile >$expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_move() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.2
+	tmpfile=$TMPDIR/channel.entry_move
+	expected=$TMPDIR/channel.entry_move.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+
+	echo "# test file channel.2" > $expected
+	echo "" >> $expected
+	echo "foo.pdev.sco.com	email.pdev.sco.com" >> $expected
+	echo "spam.pdev.sco.com	email.pdev.sco.com" >> $expected
+	echo "yikes.london.sco.com	email.london.sco.com" >> $expected
+	echo "uwhelp.com		tehama.sco.com" >> $expected
+	echo "tech.newjersey.sco.com	emailnj.pdev.sco.com" >> $expected
+	echo "test.newjersey.sco.com	email.newjersey.sco.com" >> $expected
+	echo "dromeda.pdev.sco.com	dromeda.pdev.sco.com" >> $expected
+	echo "build.pdev.sco.com	email.pdev.sco.com" >> $expected
+	echo "build.newjersey.sco.com	email.newjersey.sco.com" >> $expected
+	echo "yikes.newjersey.sco.com	email2.newjersey.sco.com" >> $expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_save() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_save
+	expected=$TMPDIR/channel.entry_save.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+ 	sed '
+        /^yikes\.london\.sco\.com.*$/a\
+newHost.sco.com	mail.sco.com
+        ' $testfile >$expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# check results
+	diff $expected $tmpfile
+	if [ $? -ne 0 ]
+	then
+		return 1
+	fi
+
+	# check that database is there
+	if [ ! -f ${tmpfile}.db ]
+	then
+		echo "Database ${tmpfile}.db is missing"
+		return 1
+	fi
+
+	return 0
+}
+
+channel_gui_core_entry_exit_no_save() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_exit_no_save
+	expected=$TMPDIR/channel.entry_exit_no_save.expected
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_entry_exit_cancel() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.entry_exit_cancel
+	expected=$TMPDIR/channel.entry_exit_cancel.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+ 	sed '
+        s/^yikes\.london\.sco\.com.*$/newHost.sco.com	mail.sco.com/
+        s/^uwhelp\.com.*$/uwhelp.com	mail2.sco.com/
+	' $testfile >$expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_core_file_doesnt_exist() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.file_doesnt_exist
+	expected=$TMPDIR/channel.file_doesnt_exist.expected
+
+	echo "newHost.sco.com	mail.sco.com" >$expected
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# check results
+	diff $expected $tmpfile
+	if [ $? -ne 0 ]
+	then
+		return 1
+	fi
+
+	# check that database is there
+	if [ ! -f ${tmpfile}.db ]
+	then
+		echo "Database ${tmpfile}.db is missing"
+		return 1
+	fi
+
+	return 0
+}
+
+channel_gui_core_file_doesnt_exist_exit() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.file_doesnt_exist_exit
+	expected=$TMPDIR/channel.file_doesnt_exist_exit.expected
+
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# check results
+	if [ -f $tmpfile ]
+	then
+		echo "File $tmpfile should not exist"
+		return 1
+	fi
+
+	# ensure database is not there
+	if [ -f ${tmpfile}.db ]
+	then
+		echo "Database ${tmpfile}.db should not exist"
+		return 1
+	fi
+
+	return 0
+}
+
+channel_gui_core_file_doesnt_exist_empty() 
+{
+	cleanup
+	tmpfile=$TMPDIR/channel.file_doesnt_exist_empty
+
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# ensure that file exists
+	if [ ! -f $tmpfile ]
+	then
+		echo "File $tmpfile does not exist"
+		return 1
+	fi
+
+	# ensure that file is empty
+	if [ -s $tmpfile ]
+	then
+		echo "File $tmpfile is not empty"
+		return 1
+	fi
+
+	# ensure database is there
+	if [ ! -f ${tmpfile}.db ]
+	then
+		echo "Database ${tmpfile}.db is missing"
+		return 1
+	fi
+
+	return 0
+}
+
+channel_gui_core_options() 
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.options
+	cp $testfile $tmpfile
+
+	# remove the scoadmin preferences file
+	rm -f $HOME/.scoadmin.pref
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	# ensure that scoadmin preferences file exists
+	if [ ! -f $HOME/.scoadmin.pref ]
+	then
+		echo "File $HOME/.scoadmin.pref does not exist"
+		return 1
+	fi
+
+	# ensure that file contains channel table editor preferences
+	prefs=`sed '/^channel:$/ { N; N; s/channel:\n	toolbarVisibility=0\n	shorthelp=0/FOUND/; }' $HOME/.scoadmin.pref`
+	if [ "$prefs" != "FOUND" ]
+	then
+		echo "$HOME/.scoadmin.pref does not contain:"
+		echo "channel:"
+		echo "	toolbarVisibility=0"
+		echo "	shorthelp=0"
+		return 1
+	fi
+
+	$PROGRAM -f $tmpfile >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+
+	return 0
+}
+
+channel_gui_error_directory()
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.directory
+	expected=$TMPDIR/channel.directory.expected
+	diffout=$TMPDIR/out.diff
+	cp $testfile $tmpfile
+	cp $testfile $expected
+
+	$PROGRAM -f $TMPDIR  >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	diff $expected $tmpfile
+	return $?
+}
+
+channel_gui_error_write()
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.error_write
+	cp $testfile $tmpfile
+
+	$PROGRAM -f $tmpfile -t channel_gui_error_write >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	return 0
+}
+
+channel_gui_error_database()
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.error_database
+	cp $testfile $tmpfile
+
+	$PROGRAM -f $tmpfile -t channel_gui_error_database >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	return 0
+}
+
+channel_gui_error_load()
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.error_load
+	cp $testfile $tmpfile
+
+	$PROGRAM -f $tmpfile -t channel_gui_error_load >$STDOUT 2>$STDERR
+	if [ $? -ne 0 ]
+	then
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		return 1
+	fi
+	return 0
+}
+
+channel_gui_auto_usage()
+{
+	cleanup
+	testfile=$TESTFILEDIR/channel.1
+	tmpfile=$TMPDIR/channel.auto_usage
+	ret=0
+
+	# test no command line arguments
+	$PROGRAM >$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		echo "no error on no command line args"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		echo "no command line args-- no Usage message"
+		ret=1
+	fi
+
+	# test missing -f arg
+	$PROGRAM -f >$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		echo "no error on missing -f flag arg"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		echo "missing -f arg-- no Usage message"
+		ret=1
+	fi
+
+	# test missing -h arg
+	$PROGRAM -h >$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		echo "no error on missing -h flag arg"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		echo "missing -h arg-- no Usage message"
+		ret=1
+	fi
+
+	# test missing -f flag, when have -h flag
+	$PROGRAM -h foo.pdev.sco.com >$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		echo "no error on missing -f flag, when have -h flag"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		echo "missing -f flag, when have -h flag -- no Usage message"
+		ret=1
+	fi
+
+	# test too many command line args
+	$PROGRAM -f $tmpfile extra >$STDOUT 2>$STDERR
+	if [ $? -eq 0 ]
+	then
+		echo "no error on extra command line arg"
+		if [ -s $STDOUT ]
+		then
+			echo "STDOUT:\n`cat $STDOUT`"
+		fi
+		if [ -s $STDERR ]
+		then
+			echo "STDERR:\n`cat $STDERR`"
+		fi
+		ret=1
+	fi
+	grep "Usage" $STDERR 1>/dev/null 2>&1
+	if [ $? -eq 1 ]
+	then
+		echo "extra command line arg-- no Usage message"
+		ret=1
+	fi
+
+	return $ret
+}
+
+#
+# main()
+#
+
+TEST=""
+
+if [ "$TESTDIR" = "" ]
+then
+	TESTDIR=`pwd`
+fi
+
+if [ "$PROGDIR" = "" ]
+then
+	PROGDIR=/etc/mail/admin
+fi
+
+PROGRAM=$PROGDIR/channel
+TESTFILEDIR=$TESTDIR/testfiles
+TMPDIR=$TESTDIR/tmp
+STDOUT=$TMPDIR/out.stdout
+STDERR=$TMPDIR/out.stderr
+
+if [ ! -d $TMPDIR ]
+then
+	mkdir -p $TMPDIR
+fi
+
+# module prefix is composed of the client being tested (channel)
+# and this test script name (gui) -- used in case there are similar
+# test procedure names that must be differentiated in common code (like
+# the admin/lib files)
+modulePrefix="channel_gui_"
+
+core="entry_add entry_delete entry_delete_all entry_modify entry_move \
+      entry_save entry_exit_no_save entry_exit_cancel file_doesnt_exist \
+      file_doesnt_exist_exit file_doesnt_exist_empty options"
+
+error="directory write database load"
+
+auto="usage"
+
+cleanup
+rm -f $HOME/.scoadmin.pref
+
+testlist ${modulePrefix}core_ $core
+testlist ${modulePrefix}error_ $error
+
+echo ""
+echo "The following tests are fully automated and need no interaction."
+echo "----------------------------------------------------------------"
+testlist ${modulePrefix}auto_ $auto

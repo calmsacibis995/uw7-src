@@ -1,0 +1,95 @@
+#ident	"@(#)main	15.1"
+
+function check_all
+{
+	integer dsk=0 disk
+	integer i
+	while (( (dsk=dsk+1) <= NDISKS ))
+	do
+		disk=dsk-1
+		if [ "${FSTOT[dsk]}" -gt "${USABLE_SIZE[disk]}" ]
+		then
+			eval errmsg "$FS_ERR_TOOBIG"
+			return 1
+		fi
+	done
+	if fdisk_chk 0
+	then
+		if check_stand
+		then
+			footer "$FOOTER_HIGHCYLS"
+			display -w "$HighCYLS" -bg $MAGENTA -fg $WHITE
+			return 1
+		fi
+		for i in $INSTDISKS
+		do
+			if fdisk_chk $i
+			then
+				continue
+			else
+				return 1
+			fi
+		done
+	else
+		return 1
+	fi
+
+	if keyb_chk
+	then
+		continue
+	else
+		return 1
+	fi
+	if size_chk
+	then
+		continue
+	else
+		return 1
+	fi
+	return 0
+}
+
+function testinst
+{
+	# Now that we're really installing, tell /sbin/init to ignore all further
+	# reboot requests from the keyboard (like ctrl-alt-del).
+	kill -USR1 1
+
+	msg
+	footer
+	check_all || return 1
+	wclose $1
+	msg
+	footer
+	return 0
+}
+
+function main_exit
+{
+	[ -z "$RESET" ] || return 0
+	errmsg "$EXIT_ERR"
+	return 1
+}
+
+function main
+{
+	place_window MAINWIDTH+5 8 -title "$MAIN_TITLE" -current 'footer "$MAIN_FOOTER"'
+	typeset wid=$CURWIN
+	set_hotkey 9 securevt
+	#Uncomment the following line to allow restart -- handy for debugging.
+	#set_hotkey 8 "msg 'Restart Enabled -- Now hit ESC'; RESET=1"
+	open_menu -x 3 -y 1 -exit main_exit
+	typeset mid=$MID
+	add_menu_item -help 'helpwin change_pkgs help.main' -entry "msgnoerr \"$PKGPROMPT\"" -select 'pkgs' "$PKGENTRY"
+	if [ "$NOND" != "yes" ]
+	then
+		add_menu_item -help 'helpwin diskconf help.main' -select fd_fs -entry "msgnoerr \"$HARD_DISK_PROMPT\"" "$HARD_DISK_ENTRY"
+		add_menu_item -help 'helpwin sysname help.main' -entry "msgnoerr \"$NODE_PROMPT\"" -select 'asknodename' "$CHANGE_NAME"
+	fi
+	add_menu_item -help 'helpwin datetime help.main' -entry "msgnoerr \"$TIME_PROMPT\"" -select 'asktime' "$CHANGE_TIME"
+	add_menu_item -help 'helpwin kbtype help.main' -entry "msgnoerr \"$INTL_PROMPT\"" -select 'keyboard' "$INTL_ENTRY"
+	add_menu_item -help 'helpwin startinst help.main' -select "testinst $wid" -entry 'msgnoerr $SAVE_EXIT_PROMPT' "$SAVE_EXIT"
+	#add_menu_item -help 'helpwin restart help.main' -select "msg; footer; wclose $wid; RESET=1" -entry "msgnoerr \"$RESET_PROMPT\"" "$RESET_ENTRY"
+	add_menu_item -help 'helpwin caninst help.main' -select halt -entry 'msgnoerr $CANCEL_PROMPT' "$CANCEL"
+	run_menu $mid 0
+}

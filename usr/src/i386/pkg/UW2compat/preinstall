@@ -1,0 +1,228 @@
+#!/usr/bin/sh
+#ident	"@(#)udk-uwcompat:i386/pkg/UW2compat/preinstall	1.3"
+
+# UW2compat preinstall script
+
+FAILURE=1
+EXITCODE=3		# User termination request exit code
+
+trap 'exit $EXITCODE' 2 3 15
+
+#
+# If the PTF is applicable to multiple Updates (eg, it's fixing a problem
+# on 2.01, but won't be included in an Update until, say, 2.04), then you
+# probably want to set ALLOW_REINSTALL=YES...
+
+ALLOW_REINSTALL=YES
+
+# define variables needed during pkgadd/pkgrm...
+#
+# this is the only way I could find to set needed variables in one place
+# and have them known across all scripts
+#
+# we now put only PTFVARS in the pkginfo file, everything else
+# goes in the PTFVARS file
+
+CONFDIR=/etc/conf
+CONFBIN=$CONFDIR/bin
+CONTENTS=/var/sadm/install/contents
+PKGSAV=/var/sadm/pkg/$PKGINST/save
+TMP=/tmp/${PKGINST}.err
+SYSINC=/usr/include/sys
+
+PKGMSG=${PKGINST}.pkg
+
+# Determine which packages are installed on the target 
+# system and set approriate
+# flags for the following packages:
+# nsu inet nis
+#
+# the present of the base package is assumed
+#
+BASEFILES=" \
+/usr/bin/uname \
+/usr/lib/libsocket.so.1 \
+/usr/lib/libsocket.so \
+/usr/lib/libthread.so \
+/usr/lib/libthread.so.1 \
+/usr/lib/libthreadT.so \
+/usr/lib/libthreadT.so.1 \
+/usr/lib/libcrypt_i.so \
+/usr/lib/libcrypt.so \
+/usr/lib/libc.so.1 \
+/usr/lib/libdl.so.1 \
+/usr/lib/ld.so.1 \
+/usr/lib/libcdfs.so \
+/usr/lib/libnsl_i.so \
+/usr/lib/libnsl.so \
+/usr/lib/libnsl.so.1"
+
+if [ -f /usr/lib/libcrypt.so.1 ]
+then
+	BASEFILES="${BASEFILES} /usr/lib/libcrypt.so.1"
+fi
+
+if [ -f /usr/lib/libsocket.so.2 ]
+then
+	BASEFILES="${BASEFILES} /usr/lib/libsocket.so.2"
+fi
+
+NSU=nsu
+NSUFILES=" \
+/etc/conf/pack.d/net/Driver_atup.o \
+/etc/conf/pack.d/net/Driver_mp.o"
+HAS_NSU=
+
+INET=inet
+INETFILES=" \
+/usr/lib/resolv.so \
+/usr/lib/tcpip.so "
+HAS_INET=
+
+NIS=nis
+NISFILES="/usr/lib/tcpip_nis.so "
+HAS_NIS=
+
+# files to be replaced by PTF
+REPLFILES=${BASEFILES}
+#
+
+#
+# Determine if the nsu package is in place.
+#
+/usr/bin/pkginfo -q nsu >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+	HAS_NSU="yes"
+	REPLFILES="${REPLFILES} ${NSUFILES}"
+else
+	HAS_NSU="no"
+fi
+#
+# Determine if the inet package is in place.
+#
+/usr/bin/pkginfo -q inet >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+	HAS_INET="yes"
+	REPLFILES="${REPLFILES} ${INETFILES}"
+else
+	HAS_INET="no"
+fi
+
+#
+# Determine if the nis package is in place.
+#
+/usr/bin/pkginfo -q nis >/dev/null 2>&1
+if [ $? -eq 0 ]; then
+	HAS_NIS="yes"
+	REPLFILES="${REPLFILES} ${NISFILES}"
+else
+	HAS_NIS="no"
+fi
+
+#
+
+# new files to be installed by PTF
+
+NEWFILES=""
+
+# files to be deleted by PTF
+
+DELFILES=""
+# a temporary work directory...
+
+PKGTMP=/tmp/${PKGINST}
+
+# directory under which files will be saved
+
+SAVEDIR=$PKGSAV/oldfiles
+
+# name of file where we'll keep contents info about installed files
+
+FILEINFO=$PKGSAV/fileinfo
+
+# name of file where we'll save most of the package variables -- where
+# they can be used in multiple scripts...
+
+# some common error messages
+
+NOTAGAIN=`pfmt -s error -g ${PKGMSG}:2 "%s has already been installed and cannot be installed again\n" ${NAME} 2>&1`
+
+
+# if installed before...
+
+if pkginfo -q ${PKGINST} > /dev/null  2>&1
+then
+	# if $ALLOW_REINSTALL isn't set to YES, exit
+
+	[ "$ALLOW_REINSTALL" = "YES" ] || {
+		message -d "${NOTAGAIN}"
+		exit ${FAILURE}
+	}
+
+	# if no files have changed, exit
+	# otherwise assume regressed by update install and allow reinstall
+
+	grep "^/.*${PKGINST}" ${CONTENTS} |awk '($2 == "f" || $2 == "v") {print $1, $7, $8, $9}' |cmp -s - $FILEINFO && {
+		message -d "${NOTAGAIN}"
+		exit ${FAILURE}
+	}
+
+	# files to be saved before (re)installing PTF
+	# (any $DELFILES have already been, uh, DEL'd)
+
+	SAVEFILES="${REPLFILES}"
+else
+	# files to be saved before installing PTF
+
+	SAVEFILES="${REPLFILES}${DELFILES:+ ${DELFILES}}"
+
+fi
+
+
+# just in case any of the $NEWFILES are present, we'll add them to the
+# $SAVEFILES list...
+
+[ -n "${NEWFILES}" ] && {
+	SAVENEW=`ls -d ${NEWFILES} 2>/dev/null`
+	SAVEFILES="${SAVEFILES}${SAVENEW:+ ${SAVENEW}}"
+}
+
+ls -d ${SAVEFILES} >/dev/null 2>&1 || {
+	message -d `pfmt -s error -g ${PKGMSG}:3 "%s: could not locate one or more files to be saved" ${PKGINST} 2>&1`
+	exit ${FAILURE}
+}
+
+[ -d ${SAVEDIR} ] || mkdir -p ${SAVEDIR}
+[ $? -eq 0 ] || {
+	message -d `pfmt -s error -g ${PKGMSG}:4 "%s: could not create save directory" ${PKGINST} 2>&1`
+	exit ${FAILURE}
+}
+
+ls -d ${SAVEFILES} | cpio -pdum ${SAVEDIR} 2>/dev/null
+[ $? -eq 0 ] || {
+	message -d `pfmt -s error -g ${PKGMSG}:5 "%s: could not save files to be replaced" ${PKGINST} 2>&1`
+	exit ${FAILURE}
+}
+
+cat >$PTFVARS <<!
+CONFDIR=$CONFDIR
+CONFBIN=$CONFBIN
+CONTENTS=$CONTENTS
+TMP=$TMP
+PKGTMP=$PKGTMP
+DSPTMP=$DSPTMP
+KERNPATCH=$KERNPATCH
+NICCFG=$NICCFG
+FIXPRIVS=$FIXPRIVS
+SAVEFILES="$SAVEFILES"
+SAVEDIR=$SAVEDIR
+FILEINFO=$FILEINFO
+LOCK_UPDATE=$LOCK_UPDATE
+SUPD_PTF=$SUPD_PTF
+PTFUPDATE=$PTFUPDATE
+HAS_INET=$HAS_INET
+HAS_NIS=$HAS_NIS
+HAS_NSU=$HAS_NSU
+!
+
+exit 0

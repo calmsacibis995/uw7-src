@@ -1,0 +1,11 @@
+#!/usr/bin/ksh
+
+PIDS=$(ps -e -o pid -o comm | grep -e slapd -e slurpd | awk '{print $1}')
+if [ -z "$PIDS" ]
+then
+	pfmt  -s info -g ldapmisc:1 "Cannot find any active slapd daemons\n"
+	exit 1
+else
+	PIDLIST=$(echo $PIDS | sed -es/" "/,/g)
+	ps -p $PIDLIST -o user -o pid -o args
+fi

@@ -1,0 +1,379 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:common/voladm/disk.repl.sh	1.2 3/3/97 03:21:27 - cmd.vxvm:common/voladm/disk.repl.sh
+#ident	"@(#)cmd.vxvm:common/voladm/disk.repl.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+. ${VOLADM_LIB:-/usr/lib/vxvm/voladm.d/lib}/vxadm_lib.sh
+. $VOLADM_BIN/disk.ckinit
+
+set_OS_variables
+
+voladm_menu_push ReplaceDisk
+voladm_help_push disk.repl.help
+
+while true
+do
+	voladm_begin_screen -M vxvmshm:335 "Replace a failed or removed disk"
+	ewritemsg -M vxvmshm:552 \
+"Use this menu operation to specify a replacement disk for a disk
+  that you removed with the \\\"Remove a disk for replacement\\\" menu
+  operation, or that failed during use.  You will be prompted for
+  a disk name to replace and a disk device to use as a replacement.
+  You can choose an uninitialized disk, in which case the disk will
+  be initialized, or you can choose a disk that you have already
+  initialized using the Add or initialize a disk menu operation."
+
+	vxdisk -q list > $tmpfile1
+	found_removed=
+	exec 3<&0 < $tmpfile1
+	while read device type disk group flags
+	do
+		[ "X$device" = X- ] && found_removed=yes
+	done
+	exec 0<&3 3<&-
+	if [ -z "$found_removed" ]
+	then
+		ewritemsg -M vxvmshm:463 \
+"There are currently no devices that are failed or removed.
+
+"
+		voladm_continue
+		break
+	fi
+	voladm_get_disk_dmname -r "Select a removed or failed disk"
+
+	vxprint -g $dgname -qtd | awk '$1=="dm" && $3=="-" {print $2;}'\
+	 | grep "\<$dmname\>" > /dev/null 2> /dev/null
+
+	if [ $? != 0 ] 
+	then
+		export $dmname; ewritemsg -M vxvmshm:196 \
+"Disk media name $dmname does not appear to be valid."
+	voladm_yorn -M vxvmshm:354 \
+	"Select a different disk ?" n \
+		&& continue
+	break
+	fi
+
+	vxprint -g $dgname -F '%dm_offset %len %name'\
+		 -se 'sd_dm_name=\"$dmname\"' > $tmpfile1 2> /dev/null
+
+	offs=0
+	len=0
+	priv_start=
+	priv_len=
+	exec 3<&0 < $tmpfile1
+	while read sd_offset sd_len sd_name
+	do
+		if [ "$sd_name" = "$dmname"Priv ]
+		then
+			priv_start=$sd_offset
+			priv_len=$sd_len
+		elif [ "$sd_name" != "$dmname"Priv ] && [ "$priv_len" ] &&
+		     [ $sd_offset -gt $priv_start ]
+		then
+			offs=`expr $sd_offset - $priv_len`
+			len=$sd_len
+		else 
+			offs=$sd_offset
+			len=$sd_len
+		fi
+	done
+	exec 0<&3 3<&-
+	minlen=`expr $offs + $len`
+
+	vxdisk -q list > $tmpfile1
+	repldevlist=
+	exec 3<&0 < $tmpfile1
+	while read device type disk group status invalid
+	do
+		[ X$disk = X- ] || continue
+		[ $status = online ] || continue
+		[ -z "$invalid" ] || continue
+
+		if vxcheckda $device > /dev/null 2> /dev/null
+		then
+			if dogi_name_is_slice $device
+			then
+				daname=$device
+			else
+				dogi_name_daname $device daname
+			fi
+		else
+			daname=$device
+		fi
+
+		vxdisk list "$daname" > $tmpfile2
+		groupline=`grep "^group:" $tmpfile2`
+		case $groupline in
+		*"name= id=") :;;
+		*)	continue;;
+		esac
+
+		dalenline=`grep "^public:" $tmpfile2`
+		dalenfield=`list_item 4 \$dalenline`
+		dalen=`expr $dalenfield : 'len=\(.*\)'`
+		[ $dalen -ge $minlen ] || continue
+
+		append_list repldevlist $device
+	done
+	exec 0<&3 3<&-
+	repldev=
+	initdev=
+	call_init=
+	if [ ! -z "$repldevlist" ]
+	then
+		export repldevlist dmname; ewritemsg -M vxvmshm:413 \
+"The following devices are available as replacements:
+
+  	$repldevlist
+
+  You can choose one of these disks to replace $dmname.
+  Choose \\\"none\\\" to initialize another disk to replace $dmname."
+
+		while true
+		do
+			_riput=`egettxt "Choose a device, or select 'none'" vxvmshm:138`
+			read_input  "$_riput" "<device>,none" `first_item $repldevlist`
+			[ $? -eq 0 ] || continue
+			if [ "X$input" = Xnone ]
+			then
+				break
+			elif list_member "$input" $repldevlist
+			then
+				repldev=$input
+				if vxcheckda $repldev > /dev/null 2> /dev/null
+				then
+					if dogi_name_is_slice $repldev
+					then
+						repldaname=$repldev
+					else
+						dogi_name_daname \
+						 $repldev repldaname
+					fi
+				else
+					repldaname=$repldev
+				fi
+				break
+			fi
+			export repldevlist dmname; ewritemsg -M vxvmshm:301 \
+"Please choose a device from the following list:
+
+  	$repldevlist
+
+  Choose \\\"none\\\" to initialize another disk to replace $dmname."
+		done
+	fi
+	repldgname=$dgname
+	repldmname=$dmname
+	if [ -z "$repldev" ]
+	then while true
+	do
+		voladm_disk_device -M vxvmshm:361 "Select disk device to initialize"
+		initdev=$device
+		initdaname=$daname
+		repldev=$device
+		repldaname=$daname
+
+
+		#
+		# disk_ckinit sets the following environment variables:
+		#
+		#     ckint_init - disks to be initialized
+		#     ckint_noreinit - disks not to be reinitialized
+		#     ckint_reatt - disks to be re-attached
+		#     ckint_encap - disks to be encapsulated
+		#
+		# Either the ckinit_init or ckinit_noreinit variables
+		# should be set.
+		#
+		disk_ckinit "$device" "$daname" replace
+
+		if [ -n "$ckinit_init" ]
+		then
+			call_init=yes
+			break
+		elif [ -z "$ckinit_noreinit" ]
+		then
+			voladm_yorn -M vxvmshm:353 "Select a different device?" n \
+				&& continue
+			voladm_yorn -M vxvmshm:334 "Replace a different disk?" n &&
+				continue 2
+			break 2
+		fi
+		break
+	done; fi
+
+	if [ "$call_init" ]
+	then
+		export initdev repldmname repldgname; ewritemsg -M vxvmshm:445 \
+"The requested operation is to initialize disk device $initdev and
+  to then use that device to replace the removed or failed disk
+  $repldmname in disk group $repldgname."
+		voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+		if [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:334 "Replace a different disk?" n && continue
+			break
+		fi
+		voladm_call disk.doinit "$initdev" "$initdaname"
+		if [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:334 "Replace a different disk?" n && continue
+			break
+		fi
+	else
+		export repldev repldmname repldgname; ewritemsg -M vxvmshm:449 \
+"The requested operation is to use the initialized device $repldev
+  to replace the removed or failed disk $repldmname in disk group $repldgname."
+		voladm_yorn -M vxvmshm:145 "Continue with operation?" y
+		if [ $? -ne 0 ]
+		then
+			voladm_yorn -M vxvmshm:334 "Replace a different disk?" n && continue
+			break
+		fi
+	fi
+
+#
+# This next piece of shell code, attempts to fix a problem with 
+# replacing previously encapsulated boot disks. The basic problem is that 
+# the configuration generated by encapsulating a boot disk is incompatible
+# with the disk layout that volume manager creates on a new unused disk. This 
+# code attempts to recognize this situation and take the appropriate actions. 
+# The following scenarios are handled here:
+# 	1 The disk being replaced is not a boot disk. Do normal replacement
+# 	  actions.
+# 	2 The configuration for the dm is an encapsulated root 
+# 	  configuration and the physical disk being added is new
+# 	  disk which has been intialized as a new disk by the volume 
+# 	  manager.
+# 	3 The configuration for the dm is an encapsulated root
+# 	  configuration and the physical disk being added was the original
+# 	  disk with disk layouts that resulted from the encapsulation.
+# 
+
+	#
+	# The following command returns a boolean, but as a side effect
+	# root_disk and root_vol are set
+	#
+	dogi_is_boot_device "$repldmname"
+	if [ $? -eq 1 ] ; then
+		#
+		# Need to look at the ondisk config layout of the da 
+		# that is being used as the replacement disk.
+		#
+		eval `vxdisk list $repldaname | grep "^public:" | awk '{printf("_pub_%s",$3)}'`
+
+		#
+		# If true this means we have an encapsulated root disk
+		# This means we want to reinit and reorg(pack) the disk.
+		# But there might be nonredundant data on the disk so we must
+		# prompt the admin for confirmation.
+		#
+		if [ $_pub_offset -eq $VOL_GHOST_LEN ] ; then
+		
+			export repldaname; ewritemsg -M vxvmshm:396 \
+"The disk $repldaname was a previously encapsulated root disk. 
+  Due to the disk layout that results from root disk encapsulation, 
+  the perferred action is to reinitialize and reorganize this disk. 
+  However, if you have any non-redundant data on this disk you should 
+  not reorganize this disk, as the data will be lost."
+
+			voladm_yorn -M vxvmshm:333 "Reorganize the disk" n 
+			if [ $? -eq 0 ] ; then
+				dogi_name_to_device $repldaname realdev
+				voladm_call disk.doinit "$realdev" "$repldaname"
+				opts="-pk"
+			else
+				opts="-k"
+			fi
+		else
+			#
+			# We have a normal ondisk layout. So check to see if 
+			# we have the root volume which created through 
+			# encapsulation. The is_split_rootvol var is set to 
+			# true if the $root_vol has a plex composed of 
+			# multiple subdisks associated with the dm being 
+			# replaced. This should only be true of encapsulated 
+			# root disks.
+			#
+			_is_split_rootvol=`vxprint -F true -e "as=\"$root_vol\" && aslist.sd_dm_name=\"$repldmname\" && pl_sd_num > 1"`
+			if [ "X$_is_split_rootvol" = "Xtrue" ] ; then 
+				#
+				# Normal ondisk layout w/root encap config
+				#
+				opts="-pk"
+			else
+				#
+				# Normal ondisk layout w/o root encap config
+				#
+				opts="-k"
+			fi
+		fi
+	else
+		#
+		# Not a boot disk
+		#
+		opts="-k"
+	fi
+
+	#
+	# One final trick. If the disk is to be packed, then that means we have
+	# a root encapsulated configuration. This may include a disassociated
+	# subdisk called rootdiskPriv. This subdisk is present if the
+	# encapsulation process had to "steal" space from the swap device for
+	# the private region, forcing the public region to share space with
+	# the private region. To protect the private region, this subdisk is
+	# created. However, if we have a reinit'd/reorg'd disk, then our 
+	# public and private regions do not overlap and this subdisk will
+	# cause the size requirements to exceed that of the disk
+	# (remember we started by encapsulating a root disk with no free 
+	# space). So if this subdisk exists with space on $repldmname we 
+	# remove it.
+	#
+	if [ "$opts" = "-pk" ] ; then
+		removesd=`vxprint -F true -e "sd_name=\"rootdiskPriv\" && sd_dm_name=\"$repldmname\""`
+		if [ "X$removesd" = "Xtrue" ] ; then
+			vxedit -rf rm rootdiskPriv
+		fi
+	fi
+
+	doit vxdg -g $repldgname $opts adddisk $repldmname=$repldaname 2> $tmpfile1
+	if [ $? -eq 0 ]
+	then
+		[ "X$repldgname" = Xrootdg ] && \
+		doit vxbootsetup $v_opt $repldmname
+		doit vxrecover -sb -g $repldgname $repldmname
+		export repldmname repldgname repldev; ewritemsg -M vxvmshm:342 \
+"Replacement of disk $repldmname in group $repldgname with disk device
+  $repldev completed successfully."
+		voladm_yorn -M vxvmshm:336 "Replace another disk?" n || break
+	else
+		export repldmname repldgname repldev tmpfile1; \
+		ewritemsg -M vxvmshm:341 \
+"Replacement of disk $repldmname in group $repldgname with device $repldev
+  failed.
+  `cat $tmpfile1`"
+		voladm_yorn -M vxvmshm:334 "Replace a different disk?" n || break
+	fi
+done
+
+quit 0

@@ -1,0 +1,358 @@
+#!/bin/sh
+
+#ident	"@(#)dtm:wallpaper/dtwallpaper	1.5.1.2"
+#	Copyright (c) 1990, 1991, 1992, 1993, 1994 Novell, Inc. All Rights Reserved.
+#	Copyright (c) 1993 Novell, Inc. All Rights Reserved.
+#	  All Rights Reserved
+
+#	THIS IS UNPUBLISHED PROPRIETARY SOURCE CODE OF Novell Inc.
+#	The copyright notice above does not evidence any
+#	actual or intended publication of such source code.
+
+#
+
+XWINHOME=${XWINHOME:-/usr/X}
+DAY1MAP=$XWINHOME/adm/day1addmap
+DAY1FILE=$XWINHOME/desktop/LoginMgr/DayOne/$LOGNAME
+
+
+# 
+# LocateWallpaperDir
+#
+# Find the name of the directory containing the wallpaper files
+# and the name of the "None" wallpaper item.  The names are localized
+# to the locale used to create the user's DayOne Desktop
+#
+#	C locale --> $HOME/Preferences/Wallpaper/Wallpaper_Installer
+# non-C locale	 --> localized version of above
+#
+# If the user's dayone desktop is not C, we need to use the message
+# catalog to construct the path.  The indeces for the message catalog
+# are stored in $XWINHOME/adm/day1addmap.
+#
+#	INPUT: None
+#	OUTPUT: sets WALLPAPERDIR to name of directory with installed Wallpaper
+#			sets CLEAR_PAPER to name of "None" wallpaper item
+LocateWallpaperDir()
+{
+	if [ -f $DAY1FILE ]
+	then
+		DAY1LOCALE=`/usr/bin/cut -f1 $DAY1FILE`
+		if [ -z "$DAY1LOCALE" ]
+		then
+			DAY1LOCALE="C"	
+		fi
+	else
+		DAY1LOCALE="C"
+	fi
+
+	if [ "$DAY1LOCALE" != "C" ]
+	then
+		PREF=`LC_ALL=$DAY1LOCALE /usr/bin/gettxt dayone:34 "Preferences"`
+		WALLPAPER=`LC_ALL=$DAY1LOCALE /usr/bin/gettxt dayone:49 "Wallpaper"`
+		INSTALL=`LC_ALL=$DAY1LOCALE /usr/bin/gettxt dayone:50 "Wallpaper_Installer"`
+		NONE=`LC_ALL=$DAY1LOCALE /usr/bin/gettxt dayone:71 "None"`
+	
+		WALLPAPERDIR=$HOME/$PREF/$WALLPAPER/$INSTALL	
+		CLEAR_PAPER=$HOME/$PREF/$WALLPAPER/$NONE
+	else
+	 	WALLPAPERDIR=$HOME/Preferences/Wallpaper/Wallpaper_Installer
+		CLEAR_PAPER=$HOME/Preferences/Wallpaper/None
+	fi
+}
+
+#
+#  InitWallpaper
+#
+#  Pick a gif in the user's Wallpaper folder and set the root with it
+#  Be random about it if more than one exists.
+#
+#	INPUT: none (uses WALLPAPERDIR)
+#	OUTPUT: prints name of chosen wallpaper file (or NULL of none exists)
+#		to stdout
+#
+InitWallpaper()
+{
+	WPFILES=" "
+	for i in $WALLPAPERDIR/*
+	do
+		if [ -f $i ]
+		then
+			WPFILES="$i $WPFILES"
+		fi
+	done
+
+	if [ "$WPFILES" != " " ]
+	then
+		x=`date +%S`
+		x=`expr substr $x 2 1`
+		y=0
+		for i in $WPFILES
+		do
+			y=`expr $y + 1`
+		done
+		x=`expr $x + $y`
+		x=`expr $x % $y`
+		y=0
+		for i in $WPFILES
+		do
+			if [ $x -eq $y ]
+			then
+				echo $i
+			fi
+			y=`expr $y + 1`
+		done
+	else
+		echo ""
+	fi
+}
+
+#
+#	AddWallpaper - Add an image file to the users installed wallpaper directory
+#	
+#	INPUT: full pathname of image file 
+#	OUTPUT: None
+#
+AddWallpaper()
+{
+	if [ ! -f "$WALLPAPERDIR/`basename $1`" ]
+	then
+		ln -s $1 $WALLPAPERDIR
+	fi
+}
+
+#
+#	CheckClearPaper - Check if the image specified is the "None" image.
+#	If so, remove all installed wallpaper images and set background to
+#	match current color palette chosen via $HOME/Preferences/Color
+#	
+#	INPUT: full pathname of image file
+#	OUTPUT: None
+#
+#	!*NOTE*!: Exits after clearing background if image is "None"
+#
+CheckClearPaper()
+{
+	if [ "$1" = "$CLEAR_PAPER" ]
+	then
+		RemoveInstalled
+		ClearWallpaper
+		exit 0
+	fi
+}
+
+#
+# If failure is due to an unsupported display visual such as
+# TrueColor, use xsetroot as a workaround for now.  Must check
+# whether a bitmap or pixmap file is being used.  If the file is
+# neither a bitmap nor pixmap file, return 1 to indicate failure.
+#
+TryWorkAround()
+{
+	xloadimage -identify $1 | grep -i pixmap >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		xsetroot -xpm $1
+		return $?
+	fi
+	xloadimage -identify $1 | grep -i bitmap >/dev/null 2>&1
+	if [ $? -eq 0 ]
+	then
+		xsetroot -bitmap $1
+		return $?
+	fi
+	return 1
+}
+
+#
+#	ClearWallpaper: set background to match current palette
+#	
+#	INPUT: None
+#	OUTPUT: None
+#
+ClearWallpaper()
+{
+	/usr/X/bin/dtsetbg &
+}
+
+#
+#	RemoveInstalled - remove all installed wallpaper images
+#	
+#	INPUT:	None (uses WALLPAPERDIR)
+#	OUTPUT: None
+#
+RemoveInstalled()
+{
+	rm $WALLPAPERDIR/* >/dev/null 2>&1
+}
+
+
+#
+#	ReportError: post a popup to indicate that we failed to install an image
+#
+#	INPUT: full pathname of image file
+#	OUTPUT: NONE
+ReportError()
+{
+	Err=`/usr/bin/gettxt dtmgr:1458:"Failed to Install Image: `
+	echo "$Err $FILE" | $XWINHOME/desktop/rft/dtmsg
+}
+
+#
+#	TestWallpaper - test an image file, display an error popup if the
+#	file does not exist or does not contain a valid image.
+#
+#	INPUT: full pathname of image file
+#	OUTPUT: None
+#			Exits if the file is not a valid image file
+#
+TestWallpaper()
+{
+	xloadimage -identify $1 1>/dev/null 2>&1
+	if [ $? -ne 0 ]
+	then
+		ShowSupportedImages $1
+		exit 1	
+	fi
+}
+
+#
+#	SetWallpaper - load an image onto the root window.  If load fails,
+#	revert to the solid background color for the current palette
+#	
+#	INPUT: full pathname of image file
+#	OUTPUT: 0 image successfully loaded
+#			1 failed to load image
+#
+SetWallpaper()
+{
+	RETVAL=0
+	
+	xloadimage -onroot -quiet -colors 150 $1
+	if [ $? -ne 0 ]
+	then
+		#
+		# If failure is due to an unsupported display visual such as
+		# TrueColor, use xsetroot as a workaround for now for a pixmap
+		# or bitmap file.  If xsetroot fails for some reason or if
+		# neither a bitmap or pixmap file is being used, then just do
+		# ClearWallpaper.
+		#
+		TryWorkAround $1
+		if [ $? -ne 0 ]
+		then
+			ClearWallpaper
+			RETVAL=1
+		fi
+	fi
+
+	return $RETVAL
+}
+
+#
+#	ShowSupportedImages: display a list of supported image types
+#
+#	INPUT: full pathname of image file 
+#	OUTPUT: None
+#
+ShowSupportedImages()
+{
+	xloadimage -supported -identify $1 | $XWINHOME/desktop/rft/dtmsg
+}
+
+#
+#
+#	Usage: print a usage message
+#
+#
+Usage()
+{
+	echo "Usage: $0 [-add \<file_name\>] [-clear] [-init] [-list] [-unique]"
+	exit 1
+}
+
+
+#
+#	main()
+#
+LocateWallpaperDir
+FILE=$2
+
+	case $1 in 
+	-add)
+		[ $# -eq 2 ] || Usage
+
+		# $HOME/Preferences/Wallpaper/None is a special case		
+		CheckClearPaper $FILE
+		# check that this is a valid file
+		TestWallpaper $FILE
+		# if we did not exit, the image must be ok. Try to install it
+		SetWallpaper $FILE
+		if [ $? -eq 0 ]
+		then
+			# Install Wallpaper for later sessions
+			AddWallpaper $FILE
+		else
+			#	Failed to add wallpaper- perhaps too many colors
+			ReportError $FILE
+		fi
+	;;
+	-clear) 
+		#
+		# 	Remove all installed wallpapers and set background to match
+		#	current pallete
+		#
+		RemoveInstalled
+		ClearWallpaper
+	;;
+	-unique) 
+		#	
+		#	Install an image as the only installed wallpaper image
+		#
+		[ $# = 2 ] || Usage
+
+		# $HOME/Preferences/Wallpaper/None is a special case		
+		CheckClearPaper $FILE
+		# check that this is a valid file
+		TestWallpaper $FILE
+		# if we did not exit, the image must be ok. Try to install it
+		SetWallpaper $FILE
+		if [ $? -eq 0 ]
+		then
+			RemoveInstalled
+			AddWallpaper $FILE
+		else
+			#	Failed to add wallpaper- perhaps too many colors
+			ReportError $FILE
+		fi
+	;;
+	-init) 
+		FILE=`InitWallpaper`
+		if [ "$FILE" != "" ]
+		then
+			SetWallpaper $FILE
+		else
+			ClearWallpaper
+		fi
+		;;
+	-list) 
+		if [ -f $WALLPAPERDIR/* ]
+		then
+			Title=`/usr/bin/gettxt dtmgr:1399:"Installed Wallpaper\n\n\
+				You have installed the wallpaper items shown below.`
+			Contents="`ls $WALLPAPERDIR`\n"
+		else
+			Title=`/usr/bin/gettxt dtmgr:1400 "No Wallpaper Items are Installed."`
+			Contents=""
+		fi
+		Help=`/usr/bin/gettxt dtmgr:1457 "You can install a single item to be\
+		 	used as the wallpaper for each desktop session by \
+			double-clicking on the item.  You can install multiple items \
+			and have the system randomly select an image for each session \
+			by dragging and dropping items onto the 'Wallpaper_Installer'.  \
+			To uninstall all items, double-click on the item labelled 'None'"`
+
+		echo "$Title\n\n$Contents\n$Help" | $XWINHOME/desktop/rft/dtmsg
+	;;
+	esac
+

@@ -1,0 +1,539 @@
+#ident	"@(#)terminfo:common/cmd/terminfo/OSR5/dec.ti	1.1"
+#
+#	@(#) dec.ti 25.5 94/10/31 
+###
+###	      UNIX is a registered trademark of AT&T
+###		Portions Copyright 1976-1989 AT&T
+###	Portions Copyright 1980-1989 Microsoft Corporation
+###    Portions Copyright 1983-1994 The Santa Cruz Operation, Inc
+###		      All Rights Reserved
+#
+#"
+# # --------------------------------
+#
+# dec: DEC (DIGITAL EQUIPMENT CORPORATION)
+#
+# Manufacturer:	DEC (DIGITAL EQUIPTMENT CORP.)
+# Class:	II
+# 
+# Info:
+#	Note that xenl glitch in vt100 is not quite the same as concept,
+#	since the cursor is left in a different position while in the
+#	weird state (concept at beginning of next line, vt100 at end
+#	of this line) so all versions of vi before 3.7 don't handle
+#	xenl right on vt100. The correct way to handle xenl is when
+#	you output the char in column 80, immediately output CR LF
+#	and then assume you are in column 1 of the next line. If xenl
+#	is on, am should be on too.
+#	
+#	I assume you have smooth scroll off or are at a slow enough baud
+#	rate that it doesn't matter (1200? or less). Also this assumes
+#	that you set auto-nl to "on", if you set it off use vt100-nam 
+#	below.
+#	
+#	The padding requirements listed here are guesses. It is strongly
+#	recommended that xon/xoff be enabled, as this is assumed here.
+#	
+#	The vt100 uses rs2 and rf rather than is2/tbc/hts because the 
+#	tab settings are in non-volatile memory and don't need to be 
+#	reset upon login. Also setting the number of columns glitches 
+#	the screen annoyingly. You can type "reset" to get them set.
+#
+###	3/6/90		sco!hitesh
+# smkx and rmkx, given below, were removed. 
+# smkx=\E[?1h\E=, rmkx=\E[?1l\E>,
+# Somtimes smkx and rmkx are included.  This will put the auxilliary keypad in
+# dec application mode, which is not appropriate for SCO applications.
+###
+###	12/3/90	sco!hitesh
+###	Corrected kcuu1, kcuf1, kcud1, kcub1.
+###
+vt100|vt100-am|dec vt100 (w/advanced video),
+	mir, msgr, cr=^M, cud1=^J, ind=^J, bel=^G, cols#80, lines#24, it#8,
+	clear=\E[H\E[J$<50>, cub1=^H, am, cup=\E[%i%p1%d;%p2%dH$<5>,
+	cuf1=\E[C$<2>, cuu1=\E[A$<2>, el=\E[K$<3>, el1=\E[1K$<3>, ed=\E[J$<50>,
+	cud=\E[%p1%dB, cuu=\E[%p1%dA, cub=\E[%p1%dD, cuf=\E[%p1%dC, 
+	smso=\E[1;7m$<2>, rmso=\E[m$<2>, smul=\E[4m$<2>, rmul=\E[m$<2>,
+	bold=\E[1m$<2>, rev=\E[7m$<2>, blink=\E[5m$<2>, sgr0=\E[m^O$<2>,
+	sgr=\E[0%?%p1%p6%|%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;m%?%p9%t^N%e^O%;,
+	rs2=\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h,
+	enacs=\E(B\E)0, smacs=^N, rmacs=^O,
+	acsc=``aaffggjjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+	tbc=\E[3g, hts=\EH, home=\E[H, ht=^I, ri=\EM$<5>,
+	kcuu1=\E[A, kcud1=\E[B, kcuf1=\E[C, kcub1=\E[D, kbs=^H,
+
+# Info:
+# This is how the keypad gets assigned.
+#	PF1	  PF2	    PF3	      PF4
+	kf1=\EOP, kf2=\EOQ, kf3=\EOR, kf4=\EOS,
+#	7	  8	     9	    '-' does not send anything on my terminal.
+	kf9=\EOw, kf10=\EOx, kf0=\EOy,
+#	4	  5	    6	      ,
+	kf5=\EOt, kf6=\EOu, kf7=\EOv, kf8=\EOl,
+#	1	  2	    3
+	ka1=\EOq, kb2=\EOr, ka3=\EOs,
+#	0	  .	    ENTER
+	kc1=\EOp, kc3=\EOn, kent=\EOM,
+#
+
+
+	vt#3, xenl, xon, sc=\E7, rc=\E8, csr=\E[%i%p1%d;%p2%dr,
+###  BEGIN SCO_BASE
+###  14 June 89  sco!law
+###  Added vt100nam as canonical name for VP/IX support.
+vt100nam|vt100-nam|vt100 w/no am (w/advanced video),
+	am@, xenl@, use=vt100-am,
+###   END SCO_BASE
+# Info:
+#	Ordinary vt100 in 132 column ("wide") mode.
+#
+vt100-w|vt100-w-am|dec vt100 132 cols (w/advanced video),
+	cols#132, lines#24, rs2=\E>\E[?3h\E[?4l\E[?5l\E[?8h, use=vt100-am,
+vt100-w-nam|vt100-nam-w|dec vt100 132 cols (w/advanced video),
+	cols#132, lines#14, rs2=\E>\E[?3h\E[?4l\E[?5l\E[?8h, vt@, use=vt100-nam,
+# Info:
+#	vt100's with no advanced video.
+#
+vt100-nav|vt100 without advanced video option,
+	sgr@, smso=\E[7m , rmso=\E[m , xmc#1,
+	smul@, rmul@, bold@, rev@, blink@, sgr0@, use=vt100,
+vt100-nav-w|vt100-w-nav|dec vt100 132 cols 14 lines (no advanced video option),
+	lines#14, cols#132, use=vt100-nav,
+# Info:
+#	vt100's with one of the 24 lines used as a status line.
+#	We put the status line on the top.
+#
+vt100-s|vt100-s-top|vt100-top-s|vt100 for use with sysline,
+	lines#23, is2=\E7\E[2;24r\E8, clear=\E[2;1H\E[J$<50>, home=\E[2;1H,
+	dsl=\E7\E[1;24r\E8,
+	cup=\E[%i%p1%{1}%+%d;%p2%dH$<5>, csr=\E[%i%i%p1%d;%p2%dr,
+	hs, eslok, tsl=\E7\E[1;%p1%dH\E[1K, fsl=\E8, use=vt100-am,
+# Info:
+#	Status line at bottom. 
+#	Clearing the screen will clobber status line.
+#
+vt100-s-bot|vt100-bot-s|vt100 for use with sysline,
+	lines#23, is2=\E[1;23r\E[23;1H, dsl=\E7\E[1;24r\E8,
+	hs, eslok, tsl=\E7\E[24;%p1%dH\E[1K, fsl=\E8, use=vt100-am,
+#
+# Info:
+#	winvt100 - VT100 for use by Windows Terminal in vt100 emulation mode
+#
+winvt100|winvt|winvt-am| Windows Terminal In vt100 emulation mode,
+	mir, am, cr=^M, cud1=^J, ind=^J, bel=^G, cols#80, lines#24, it#8,
+	clear=\E[H\E[J$<50>, cub1=^H, cup=\E[%i%p1%d;%p2%dH$<5>,
+	cuf1=\E[C$<2>, cuu1=\E[A$<2>, 
+	.el=\E[K$<3>, el1=\E[1K$<3>, 
+	ed=\E[J$<50>,
+	cud=\E[%p1%dB, cuu=\E[%p1%dA, cub=\E[%p1%dD, cuf=\E[%p1%dC, 
+	smso=\E[7m$<2>, rmso=\E[m$<2>, smul=\E[4m$<2>, rmul=\E[m$<2>,
+	bold=\E[1m$<2>, rev=\E[7m$<2>, blink=\E[5m$<2>, sgr0=\E[m\E)2$<2>,
+	sgr=\E[0%?%p1%p6%|%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;m%?%p9%t\E(2%e\E)2%;,
+	rs2=\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h,
+	enacs=\E(B\E)0, smacs=\E(2, rmacs=\E)2,
+	acsc=``aaffggjjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+	tbc=\E[3g, hts=\EH, home=\E[H, ht=^I, ri=\EM$<5>,
+	kcuu1=\E[A, kcud1=\E[B, kcuf1=\E[C, kcub1=\E[D, kbs=^H,
+
+# Info:
+# This is how the keypad gets assigned.
+#	PF1	  PF2	    PF3	      PF4
+	kf1=\EOP, kf2=\EOQ, kf3=\EOR, kf4=\EOm,
+#	7	  8	     9	    '-' does not send anything on my terminal.
+	kf9=\EOw, kf10=\EOx, kf0=\EOy,
+#	4	  5	    6	      ,
+	kf5=\EOt, kf6=\EOu, kf7=\EOv, kf8=\EOl,
+#	1	  2	    3
+	ka1=\EOq, kb2=\EOr, ka3=\EOs,
+#	0	  .	    ENTER
+	kc1=\EOp, kc3=\EOn, kent=\EOM,
+#
+
+
+# Info:
+#	vt132 - like vt100 but slower and has ins/del line and such.
+#	I'm told that smir/rmir are backwards in the terminal from the
+#	manual and from the ANSI standard, this describes the actual 
+#	terminal. I've never actually used a vt132 myself, so this 
+#	is untested.
+#
+vt132|DEC vt132,
+	il1=\E[L$<99>, dl1=\E[M$<99>, ip=$<7>, dch1=\E[P$<7>, rmir=\E[4h,
+	smir=\E[4l, xenl, ind=^J$<30>, use=vt100,
+# Info:
+#	Older DEC CRT's
+#
+vt50|dec vt50,
+	cr=^M, cud1=^J, ind=^J, bel=^G, cub1=^H, ed=\EJ, el=\EK, clear=\EH\EJ,
+	cols#80, lines#12, cuf1=\EC, ht=^I, cuu1=\EA,
+vt50h|dec vt50h,
+	cr=^M, cud1=^J, ind=^J, bel=^G, cub1=^H, ed=\EJ, el=\EK,
+	clear=\EH\EJ, cup=\EY%p1%' '%+%c%p2%' '%+%c, cols#80, lines#12,
+	cuf1=\EC, ht=^I, ri=\EI, cuu1=\EA,
+vt52|dec vt52,
+	cr=^M, cud1=^J, ind=^J, bel=^G, cub1=^H, ed=\EJ, el=\EK,
+	clear=\EH\EJ, cup=\EY%p1%' '%+%c%p2%' '%+%c, cols#80, lines#24,
+	cuf1=\EC, ht=^I, it#8, ri=\EI, cuu1=\EA,
+	kcuu1=\EA, kcud1=\EB, kcuf1=\EC, kcub1=\ED, kbs=^H,
+# Info:
+#	A VT62 can be made to think that it is a VT61 by moving 6 
+#	soldered-in jumpers on the i/o board. 
+#	The keyboard must be relabeled, also. 
+#
+vt61|vt-61|vt61.5|,
+	cr=^M$<20>, cud1=^J, ind=^J$<20>, bel=^G, cub1=^H,
+	ed=\EJ$<120>, el=\EK$<70>, clear=\EH\EJ$<120>,
+	cup=\EY%p1%' '%+%c%p2%' '%+%c$<20>, cols#80, lines#24,
+	cuf1=\EC$<20>, ht=^I, ri=\E$<20>I, cuu1=\EA$<20>,
+	kcuu1=\EA, kcud1=\EB, kcuf1=\EC, kcub1=\ED,
+# Info:
+#	Graphics CRT's.
+#	clear screen also erases graphics
+#
+vt125|vt125 graphics terminal,
+	clear=\E[;H\E[2J\EPpS(E)\E\\$<50>, use=vt100, 
+gt40|dec gt40,
+	cr=^M, cud1=^J, bel=^G,
+	cub1=^H, cols#72, lines#30, os,
+gt42|dec gt42,
+	cr=^M, cud1=^J, bel=^G,
+	cub1=^H, cols#72, lines#40, os,
+# Info:
+#	The gigi does standout with red!
+#
+gigi|vk100|dec gigi graphics terminal,
+	cr=^M, cud1=^J, ind=^J, bel=^G, cols#84, lines#24, am,
+	clear=\E[;H\E[2J, cub1=^H, cup=\E[%i%p1%d;%p2%dH, cuf1=\E[C,
+	cuu1=\E[A, el=\E[K, ed=\E[J, smso=\E[7;31m, rmso=\E[m,
+	smul=\E[4m, rmul=\E[m,
+	is2=\E>\E[?3l\E[?4l\E[?5l\E[?20l\E[?7h\E[?8h, smkx=\E[?1h\E=,
+	rmkx=\E[?1l\E>, kcuu1=\EOA,
+	kcud1=\EOB, kcuf1=\EOC, kcub1=\EOD, khome=\E[H, kf1=\EOP,
+	kf2=\EOQ, kf3=\EOR, kf4=\EOS, ht=^I, ri=\EM, xenl, cud=\E[%p1%dB,
+	cuu=\E[%p1%dA, cub=\E[%p2%dD, cuf=\E[%p1%dC,
+# Info:
+#	Hard copy (decwriter) dec terminals.
+#
+dw1|decwriter I,
+	cr=^M, cud1=^J, ind=^J, bel=^G,
+	cub1=^H, cols#72, hc, os,
+dw2|decwriter|dw|decwriter II,
+	cr=^M, cud1=^J, ind=^J, bel=^G, kbs=^H, cub1=^H, cols#132, hc, os,
+# Info:
+#	\E(B	Use U.S. character set (otherwise # => british pound !)
+#	\E[20l	Disable "linefeed newline" mode (otherwise puts \r after \n,\f,\(vt )
+#	\E[w	10 char/in pitch
+#	\E[1;132	full width horizontal margins
+#	\E[2g	clear all tab stops
+#	\E[z	6 lines/in
+#	\E[66t	66 lines/page (for \f)
+#	\E[1;66r	full vertical page can be printed
+#	\E[4g	clear vertical tab stops
+#	\E>	disable alternate keypad mode (so it transmits numbers!)
+#	\E[%i%du	set tab stop at column %d (origin == 1)
+#		(Full syntax is \E[n;n;n;n;n;...;nu where each 'n' is 
+#		a tab stop)
+#	
+#       The dw3 does standout with wide characters.
+#
+dw3|la120|decwriter III,
+	cr=^M, cud1=^J, ind=^J, bel=^G, kbs=^h, cub1=^H, cols#132, hc,
+	os, smso=\E[6w, rmso=\E[w, ht=^I,
+	is1=\E(B\E[20l\E[w\E[0;132s\E[2g\E[z\E[66t\E[1;66r\E[4g\E>,
+	is2=\E[9;17;25;33;41;49;57;65;73;81;89;97;105;113;121;129u\r,
+dw4|decwriter IV,
+	cr=^M, cud1=^J, ind=^J, bel=^G, cub1=^H, cols#132, hc, os, am,
+	ht=^I, is2=\Ec, kf0=\EOP, kf1=\EOQ, kf2=\EOR, kf3=\EOS, kbs=^H,
+###
+###	BEGIN SCO_BASE   
+###	sco!law	  4/14/89			vt102
+###	Added for xterm support. Kept 3.2 AT&T vt100 entry as basis
+###	for vt102.
+vt102|dec vt102,
+	mir,
+	dch1=\E[P, dl1=\E[M, il1=\E[L, rmir=\E[4l, smir=\E[4h,
+	use=vt100,
+###
+###	17 Aug 89    sco!law	  			xterm
+###	Created at SCO.
+###	05 Dec 89    sco!law
+###	Further modified at SCO for ODT release.
+###	3/6/90		sco!hitesh
+###	10/5/90		sco!tealas
+###	Added kf10 sequence.
+###	27 Nov 91	scol!anthonys
+###	Added kf11, kf12 sequences.
+###	31 Oct 94	sco!hops
+###	add extended chars, shifted ctrl and backtab keys, added sgr0 exit mode,
+###	added bold attribute
+# smkx and rmkx, given below, were removed. 
+# smkx=\E, rmkx=\E>,
+# Somtimes smkx and rmkx are included.  This will put the auxilliary keypad in
+# dec application mode, which is not appropriate for SCO applications.
+xterm|xterm terminal emulator,
+	am, km, mir, msgr, xenl, xon,
+	cols#80, lines#24,
+	bel=^G, clear=\E[H\E[2J, cr=\r, csr=\E[%i%p1%d;%p2%dr,
+	cub=\E[%p1%dD, cud=\E[%p1%dB, cud1=\n, cuf=\E[%p1%dC,
+	cuf1=\E[C, cup=\E[%i%p1%d;%p2%dH, cuu=\E[%p1%dA,
+	cuu1=\E[A, dch=\E[%p1%dP, dch1=\E[P, dl=\E[%p1%dM,
+	dl1=\E[M, ed=\E[J, el=\E[K, home=\E[H, ht=\t, hts=\EH,
+	ich=\E[%p1%d@, ich1=\E[@, il=\E[%p1%dL, il1=\E[L,
+	ind=\n, 
+        is2=\E7\E[r\E[m\E[?7h\E[?1;3;4;6l\E[4l\E8\E>,
+	kbs=\b, kcub1=\E[D, kcud1=\E[B, kcuf1=\E[C,
+	kcuu1=\E[A, kf0=\E[21~, kf1=\E[11~, kf2=\E[12~,
+	kf3=\E[13~, kf4=\E[14~, kf5=\E[15~, kf6=\E[17~,
+	kf7=\E[18~, kf8=\E[19~, kf9=\E[20~, kf10=\E[21~,
+	kf11=\E[23~, kf12=\E[24~,
+	khome=\E[8~, kend=\E[7~,
+	knp=\E[6~, kpp=\E[5~, rc=\E8, ri=\EM, rmacs=\E(B,
+	rmcup=\E[2J\E[?47l\E8, rmso=\E[m, rmul=\E[m,
+	rs1=\E>\E[1;3;4;5;6l\E[?7h\E[m\E[r\E[2J\E[H,
+	rs2=\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h, sc=\E7,
+	smacs=\E(0, smcup=\E7\E[?47h, smso=\E[7m,
+	smul=\E[4m, tbc=\E[3g, 
+        acsc=aakkllmmjjnnwwvvuuttqqxx,
+	kLFT=\E[d, kRIT=\E[c, kcbt=\E[Z,
+        sgr0=\E[m,
+	bold=\E[1m,
+
+###  23 May 89		sco!law			vt220
+###  Created using captoinfo so that our 3.2.0 vt220 entry
+###  matched termcap SID 2.11.  Removed smkx and rmkx sequences which put 
+###  the Numeric Keypad in application mode.  
+###
+###  19 June 89		sco!law
+###  Removed second long description name.
+###
+###	6 June 1990	sco!hitesh
+###	Changed kbs from ^_ to ^H
+###
+###	27 Aug 1990 sco!hitesh
+###comparing vt220 to vt220o.
+###    comparing booleans.
+###    comparing numbers.
+###    comparing strings.
+###	acsc: 'kkllmmjjnnwwqquuttvvxx','NULL'.
+###	kbs: '^_','\b'.
+###	kf0: '\E[29~','NULL'.
+###	kf10: 'NULL','\E[29~'.
+###	sgr: '\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p4%t;5%;%?%p1%p3%|%t;7%;m%?%p9%t\E(0%e\E(B%;','NULL'.
+###	smacs: '\E(0$<2>','\E(<$<2>'.
+###
+###	10/5/90		sco!tealas
+###	Added kf10 sequence.
+###	11/12/90	sco!hitesh
+###	removed kf0
+###	2/8/91		davidf@sco.com
+###	padded ind,ri   
+###	added cvis,cnorm & khome,kend, etc.
+###	3/1/91		darrent@sco.com
+###	changed clear from \E[;H\E[2J$<50> 
+###			to \E[H\E[2J$<50>
+###
+#
+# vt220:
+# This vt220 description maps F5--F9 to the second block of function keys
+# at the top of the keyboard.  The "DO" key is used as F10 to avoid conflict
+# with the key marked (ESC) on the vt220.  See vt220d for an alternate mapping.
+# PF1--PF4 are used as F1--F4.
+#
+vt220|DEC VT220 in vt100 emulation mode,
+	am, mir, xenl, xon,
+	cols#80, lines#24, vt#3,
+	acsc=kkllmmjjnnwwqquuttvvxx, bel=^G, blink=\E[5m$<2>,
+	bold=\E[1m$<2>, clear=\E[H\E[2J$<50>, cr=\r,
+	csr=\E[%i%p1%d;%p2%dr, cub1=\b, cud1=\E[B, cuf1=\E[C,
+	cup=\E[%i%p1%d;%p2%dH$<10>, cuu1=\E[A, dch1=\E[P,
+	dl1=\E[M, ed=\E[J$<50>, el=\E[K$<3>, home=\E[H, ht=\t,
+	if=/usr/lib/tabset/vt100, il1=\E[L, ind=\ED$<20/>,
+	is2=\E[1;24r\E[24;1H, kbs=^H, kcub1=\E[D, kcud1=\E[B,
+	kcuf1=\E[C, kcuu1=\E[A, kf1=\EOP,
+	kf2=\EOQ, kf3=\EOR, kf4=\EOS, kf5=\E[17~, kf6=\E[18~,
+	kf7=\E[19~, kf8=\E[20~, kf9=\E[21~, kf10=\E[29~, rc=\E8,
+	rev=\E[7m$<2>, rf=/usr/lib/tabset/vt100, ri=\EM$<14/>,
+	rmacs=\E(B$<4>, rmir=\E[4l, rmso=\E[m, rmul=\E[m,
+	rs2=\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h, sc=\E7,
+	sgr=\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p4%t;5%;%?%p1%p3%|%t;7%;m%?%p9%t\E(0%e\E(B%;,
+	sgr0=\E[m$<2>, smacs=\E(0$<2>, smir=\E[4h, smso=\E[7m,
+	smul=\E[4m,
+	khome=\E[1~, kend=\E[4~, kpp=\E[5~, knp=\E[6~, kdch1=\E[3~, kich1=\E[2~,
+	civis=\E[?25l,cnorm=\E[?25h,
+#
+###	4/25/90		sco!hitesh
+###
+vt320|DEC VT320 in vt100 emulation mode,
+	use=vt220,
+#
+###	03/19/92	sco!dieters
+###	- added vt420 terminfo as supplied by DEC			
+### 	- smkx and rmkx, given below, were removed. 
+### 		rmkx=\E>, smkx=\E=,
+###	03/23/92	sco!dieters
+###	- moved kend to the vt420pc definition
+###
+vt420|DEC VT420 ,
+        am, mir, xenl, xon,
+        cols#80, lines#24, vt#3,
+        bel=^G, blink=\E[5m$<2>,
+	acsc=``aaffggjjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+        bold=\E[1m$<2>, clear=\E[;H\E[2J$<50>, cr=\r,
+        csr=\E[%i%p1%d;%p2%dr, cub1=\b, cud1=\E[B, cuf1=\E[C,
+        cup=\E[%i%p1%d;%p2%dH$<10>, cuu1=\E[A, dch1=\E[P,
+        dl1=\E[M, ed=\E[J$<50>, el=\E[K$<3>, home=\E[H, ht=\t,
+        if=/usr/lib/tabset/vt100, il1=\E[L, ind=\ED,
+        is2=\E[1;24r\E[24;1H, is3=\E[?67h\E[64;1"p,
+        kbs=^H, kcub1=\E[D, kcud1=\E[B, kcuf1=\E[C, kcuu1=\E[A,
+        kf0=\E[29~, kf1=\EOP, kf2=\EOQ, kf3=\EOR, kf4=\EOS, kf5=\E[17~,
+        kf6=\E[18~, kf7=\E[19~, kf8=\E[20~, kf9=\E[21~, kf10=\E[29~,
+        rc=\E8, rev=\E[7m$<2>, rf=/usr/lib/tabset/vt100, ri=\EM,
+        rmacs=\E(B$<4>, rmir=\E[4l, rmso=\E[m, rmul=\E[m,
+	rs3=\E[?67h\E[64;1"p,
+        rmsc=\E[?0;0r\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h,
+	kfnd=\E[1~, kich1=\E[2~, kdch1=\E[3~,
+	knp=\E[6~, kpp=\E[5~, kslt=\E[4~,
+        sgr=\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p4%t;5%;%?%p1%p3%|%t;7%;m%?%p9%t\E(0%e\E(B%;,
+        sgr0=\E[m$<2>, smacs=\E(0$<2>, smir=\E[4h, smso=\E[7m,
+        smul=\E[4m,
+#
+vt420nam|vt420-nam|v420n|DEC VT420 in vt100 emul. mode with NO AUTO WRAP mode,
+	am@, use=vt420,
+#
+vt420pc|DEC VT420 PC keyboard,
+	pctrm=USR_TERM:vt420pcdos:,
+	kdch1=^?, khome=\E[H, kend=\E[4~,
+	kf1=\E[11~, kf2=\E[12~, kf3=\E[13~, kf4=\E[14~, kf5=\E[15~,
+        kf6=\E[17~, kf7=\E[18~, kf8=\E[19~, kf9=\E[20~, kf10=\E[21~,
+        kf11=\E[23~, kf12=\E[24~,
+#
+	kf13=\E[11;2~, kf14=\E[12;2~, kf15=\E[13;2~, kf16=\E[14;2~,
+	kf17=\E[15;2~, kf18=\E[17;2~, kf19=\E[18;2~, kf20=\E[19;2~,
+	kf21=\E[20;2~, kf22=\E[21;2~, kf23=\E[23;2~, kf24=\E[24;2~,
+#
+	kf25=\E[23~,   kf26=\E[24~,   kf27=\E[25~,   kf28=\E26~,
+	kf29=\E[28~,   kf30=\E[29~,   kf31=\E[31~,   kf32=\E[32~,
+        kf33=\E33~,    kf34=\E[34~,   kf35=\E[35~,   kf36=\E[36~, 
+#
+	kf37=\E[23;2~, kf38=\E[24;2~, kf39=\E[25;2~, kf40=\E[26;2~,
+	kf41=\E[28;2~, kf42=\E[29;2~, kf43=\E[31;2~, kf44=\E[32;2~,
+	kf45=\E[33;2~, kf46=\E[34;2~, kf47=\E[35;2~, kf48=\E[36;2~,
+#
+#  DECUDK   
+#               if (key < 16) then  value = key;
+#               else if (key < 21) then value = key + 1; 
+#               else if (key < 25) then value = key + 2;
+#               else if (key < 27) then value = key + 3;
+#               else if (key < 30) then value = key + 4;
+#               else value = key + 5;
+#
+	pfx=\EP1;1|%?%{16}%p1%>%t%{0}%e%{21}%p1%>%t%{1}%e%{25}%p1%>%t%{2}%e%{27}%p1%>%t%{3}%e%{30}%p1%>%t%{4}%e%{5}%;%p1%+%d/%p2%s\E\\,
+	use=vt420,
+#
+vt420pcdos|VT420PC,
+	pctrm@,
+	smsc=\E[?1;2r\E[34h,
+#	rmsc=\E[?0;0r,
+        rmsc=\E[?0;0r\E>\E[?3l\E[?4l\E[?5l\E[?7h\E[?8h,
+	u0=eg,
+	dispc=%?%p2%{19}%=%t\E\023\021%e%p2%{32}%<%t\E%p2%c%e%p2%{127}%=%t\E\177%e%p2%c%;,
+	sgr@,
+	sgr0=\E[0m,
+	lines#25,
+	use=vt420pc,
+#
+vt420f|DEC VT420 in VT mode  F1-F5 as Fkeys,
+	kdch1=^?, khome=\E[H, 
+	kf1=\E[11~, kf2=\E[12~, kf3=\E[13~, kf4=\E[14~, kf5=\E[15~,kf6=\E[17~,
+	kf7=\E[18~, kf8=\E[19~, kf9=\E[20~, kf10=\E[21~, kf11=\E[23~,
+	kf12=\E[24~, kf13=\E[25~, kf14=\E[26~, kf15=\E[28~,
+	kf16=\E[29~, kf17=\E[31~, kf18=\E[32~, kf19=\E[33~, kf20=\E[34~,
+	lf1=\EOP, lf2=\EOQ, lf3=\EOR, lf4=\EOS,
+	use=vt420,
+#
+#  Use v420fn for LYRIX
+#
+vt420f-nam|v420fn|DEC VT420 no auto margins,
+	am@, use=vt420f,
+#
+#  Use v420pcn for LYRIX
+#
+vt420pc-nam|v420pcn|DEC VT420 PC keyboard no auto margins,
+	am@, use=vt420pc,
+#
+###	14 april 94	scol!corinnew
+###	added support for vt510
+# vt510:
+##
+vt510|DEC VT510,
+	use=vt420,
+vt510nam|vt510-nam|v510n|DEC VT510 in vt100 emul. mode with NO AUTO WRAP mode,
+	use=vt420nam,
+vt510pc|DEC VT510 w/PC keyboard,
+	use=vt420pc,
+vt510pc-nam|v510pcn|DEC VT510 PC keyboard no auto margins,
+	am@, use=vt420pc,
+vt510pcdos|DEC VT510 w/PC for DOS Merge,
+	use=vt420pcdos,
+#
+#
+###  Created using captoinfo of SCO's 3.2.0 vt220d entry.
+###  Taken from termcap SID 2.11.
+###  Changed F10, added F11-19 values.
+# vt220d:
+# This vt220 description regards F6--F10 as the second block of function keys
+# at the top of the keyboard.  This mapping follows the description given
+# in the VT220 Programmer Reference Manual and agrees with the labeling
+# on some terminals that emulate the vt220.  There is no support for an F5.
+# See vt220 for an alternate mapping. 
+#
+vt220d|DEC VT220 in vt100 mode with DEC function key labeling,
+	kf5@, kf6=\E[17~, kf7=\E[18~, kf8=\E[19~,
+	kf9=\E[20~,  kf10=\E[21~, kf11=\E[23~, kf12=\E[24~, 
+	kf13=\E[25~, kf14=\E[26~, kf15=\E[28~, kf16=\E[29~, 
+	kf17=\E[31~, kf18=\E[32~, kf19=\E[33,  kf20=\E[34~, 
+	use=vt220,
+
+###	sco!law   6/14/89
+###	Added vt220nam for VP/IX support.
+vt220nam|vt220-nam|VT220 in vt100 mode with no auto margins,
+	am@, use=vt220,
+	
+###	sco!law   1/20/89			vt220-8
+###	Added  if, khome, rmkx, smkx    
+###	
+###	sco!law	  5/23/89					
+###	Changed name to vt220-8 so that SCO termcap vt220
+###	entry matched terminfo's.  This entry was taken from
+###	AT&T's 3.2.0 or 3.2.1 source.  Also removed rmkx, smkx
+###	because they put the Numeric Keypad in Application Mode
+###	rather than switch transmission on and off.
+###	END SCO_BASE  
+vt220-8|dec vt220 8 bit terminal,
+	am, mc5i, mir, msgr, xenl, xon,
+	cols#80, it#8, lines#24,
+	acsc=``aaffggjjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+	bel=^G, blink=\E[5m, bold=\E[1m, clear=\E[H\E[J,
+	cr=\r, csr=\E[%i%p1%d;%p2%dr, cub=\E[%p1%dD, cub1=\b,
+	cud=\E[%p1%dB, cud1=\n, cuf=\E[%p1%dC, cuf1=\E[C,
+	cup=\E[%i%p1%d;%p2%dH, cuu=\E[%p1%dA, cuu1=\E[A,
+	dch=\E[%p1%dP, dch1=\E[P, dl=\E[%p1%dM, dl1=\E[M,
+	ech=\E[%p1%dX, ed=\E[J, el=\E[K, el1=\E[1K,
+	enacs=\E)0, flash=\E[?5h$<200>\E[?5l, home=\E[H,
+	ht=\t, hts=\EH, ich=\E[%p1%d@, il=\E[%p1%dL, il1=\E[L,
+	ind=\ED, is2=\E[?7h\E[>\E[?1h\E\sF\E[?4l, kbs=\b,
+	kcub1=\E[D, kcud1=\E[B, kcuf1=\E[C, kcuu1=\E[A,
+	kf1=\EOP, kf10=\E[21~, kf11=\E[23~, kf12=\E[24~,
+	kf13=\E[25~, kf14=\E[26~, kf17=\E[31~, kf18=\E[32~,
+	kf19=\E[33~, kf2=\EOQ, kf20=\E[34~, kf3=\EOR,
+	kf4=\EOS, kf6=\E[17~, kf7=\E[18~, kf8=\E[19~,
+	kf9=\E[20~, kfnd=\E[1~, khlp=\E[28~, kich1=\E[2~,
+	knp=\E[6~, kpp=\E[5~, krdo=\E[29~, kslt=\E[4~,
+	lf1=pf1, lf2=pf2, lf3=pf3, lf4=pf4, mc0=\E[i,
+	mc4=\E[4i, mc5=\E[5i, nel=\EE, rc=\E8, rev=\E[7m,
+	ri=\EM, rmacs=^O, rmam=\E[?7l, rmir=\E[4l,
+	rmso=\E[27m, rmul=\E[24m, rs1=\E[?3l, sc=\E7,
+	sgr0=\E[0m, smacs=^N, smam=\E[?7h, smir=\E[4h,
+	smso=\E[7m, smul=\E[4m, tbc=\E[3g,
+	if=/usr/lib/tabset/vt100, khome=\E[H, 
+

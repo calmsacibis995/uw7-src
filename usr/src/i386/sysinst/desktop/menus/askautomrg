@@ -1,0 +1,31 @@
+#ident	"@(#)askautomrg	15.1"
+
+function automerge_set
+{
+	wclose $_t
+	if [ "$CHOICE" = "$AUTOMERGE_OPT" ]
+	then
+		AUTOMERGE="Yes"
+	else
+		AUTOMERGE="NULL"
+	fi
+	return
+}
+
+function askautomrg
+{
+	display "$AUTOMERGE_EXPLAIN"
+	_t=$CURWIN
+
+        if [ -z "${AUTOMERGE_OPT}" ]
+        then
+                typeset OIFS="$IFS"
+                IFS="$nl"
+                set -A AUTOMERGE_OPT ${AUTOMERGE_CHOOSE}
+                IFS="$OIFS"
+        fi
+	AUTOMERGE=$AUTOMERGE_CHOOSE
+	CHOOSE_FOOTER="$AUTOMERGE_FOOTER" CHOOSE_TITLE="$AUTOMERGE_ENTRY"
+	choose -f -e -exit 'automerge_set' -winparms "-below 0 -fg $COMBO2_FG -bg $COMBO2_BG" "$AUTOMERGE" "${AUTOMERGE_OPT[@]}"
+	return
+}

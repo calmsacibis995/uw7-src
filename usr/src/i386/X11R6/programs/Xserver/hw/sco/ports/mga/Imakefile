@@ -1,0 +1,128 @@
+/*
+ * @(#) Imakefile 11.2 97/10/24
+ *
+ * Copyright (C) 1994-1995 The Santa Cruz Operation, Inc.
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right
+ * to use, modify, and incorporate this code into other products for purposes
+ * authorized by the license agreement provided they include this notice
+ * and the associated copyright notice with any such product.  The
+ * information in this file is provided "AS IS" without warranty.
+ *
+ */
+/*
+ *	S001	Thu Jun  1 16:52:13 PDT 1995	brianm@sco.com
+ *	- added in Impression grafinfo files.
+ *	S000	Tue Dec 13 16:28:40 PST 1994	hiramc@sco.COM
+ *	- fixup config scripts and grafinfo install rules
+ */
+
+#include <Server.tmpl>
+
+SRCS =	mgaCmap.c mgaCursor.c mgaData.c mgaGC.c mgaRectOps.c mgaGlyph.c \
+	mgaImage.c mgaInit.c mgaScreen.c mgaWin.c mgaClock.c mgaVid.c \
+	mgaFont.c mgaFillSp.c mgaLine.c mgaFillRct.c mgaCursor.c
+
+OBJS =	mgaCmap.o mgaCursor.o mgaData.o mgaGC.o mgaRectOps.o mgaGlyph.o \
+	mgaImage.o mgaInit.o mgaScreen.o mgaWin.o mgaClock.o mgaVid.o \
+	mgaFont.o mgaFillSp.o mgaLine.o mgaFillRct.o mgaCursor.o
+
+DDXLIBS = libmga.a
+GRAFDIR = $(USRLIBDIR)/grafinfo
+
+#if defined(USLArchitecture)
+
+STD_DEFINES = ServerDefines -D VOLATILE=volatile
+   INCLUDES = -I. -I../.. -I$(SERVERSRC)/include \
+	-I$(SERVERSRC)/hw/sco/include \
+	-I$(SERVERSRC)/hw/sco -I$(SERVERSRC)/hw/sco/nfb \
+	-I$(SERVERSRC)/hw/sco/ports/gen -I$(INCLUDESRC) \
+	-I$(SERVERSRC)/mi -I$(SERVERSRC) -I$(FONTINCSRC)
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+all:: 
+	LibMkdir(shared)
+
+clean::
+	LibCleanDir(shared)
+
+.c.o:
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+NormalLibraryTarget(mga,$(OBJS))
+SharedXDriverTarget(mga,6.0,$(OBJS),shared,..)
+LintLibraryTarget(mga,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(mga,$(DDXLIBS))
+
+#else
+
+STD_DEFINES = ServerDefines
+   INCLUDES = -I. -I$(SERVERSRC)/sys/common -I$(SERVERSRC)/ddx \
+	 -I$(SERVERSRC)/ddx/ports -I$(SERVERSRC)/include -I$(FONTSRC)/include \
+	 -I$(INCLUDESRC)
+
+   LINTLIBS = $(SERVERSRC)/dix/llib-ldix.ln $(SERVERSRC)/os/4.2bsd/llib-los.ln \
+	     $(SERVERSRC)/ddx/mfb/llib-lmfb.ln $(SERVERSRC)/ddx/mi/llib-lmi.ln
+
+#if DebugServer
+#if ProfileServer
+
+DebuggedAndProfiledLibraryObjectRule()
+DebuggedLibraryTarget(mga,$(OBJS))
+ProfiledLibraryTarget(mga,$(OBJS))
+
+#else /* DebugServer && !ProfileServer */
+
+DebuggedLibraryObjectRule()
+DebuggedLibraryTarget(mga,$(OBJS))
+
+#endif /* ProfileServer */
+#else /* !DebugServer */
+#if ProfileServer /* !DebugServer && ProfileServer */
+
+ProfiledLibraryObjectRule()
+ProfiledLibraryTarget(mga,$(OBJS))
+
+#else /* !DebugServer && !ProfileServer */
+
+NormalLibraryObjectRule()
+
+#endif /* ProfileServer */
+#endif /* DebugServer */
+
+NormalLibraryTarget(mga,$(OBJS))
+LintLibraryTarget(mga,$(SRCS))
+
+NormalLintTarget($(SRCS))
+
+DynamicObjectRule(mga,$(DDXLIBS))
+
+#endif /* USLArchitecture */
+
+/**/#
+/**/#  You may want to change "ports" to the manufacture's name
+/**/#
+
+InstallNamedProg(grafinfo/matrox/mgapci.sh,mgapci,$(USRLIBDIR)/vidconf/scripts)
+InstallNamedProg(grafinfo/matrox/mgaipci.sh,mgaipci,$(USRLIBDIR)/vidconf/scripts)
+InstallNamedProg(grafinfo/compaq/qvis2000.sh,qvis2000,$(USRLIBDIR)/vidconf/scripts)
+
+InstallGrafFile(grafinfo/compaq,qvis2000.xgi,compaq)
+InstallGrafFile(grafinfo/compaq,qvis2000.tmpl,compaq)
+InstallGrafFile(grafinfo/matrox,mgapci.tmpl,matrox)
+InstallGrafFile(grafinfo/matrox,mgaipci.tmpl,matrox)
+InstallGrafFile(grafinfo/matrox,mgavlb.xgi,matrox)
+InstallGrafFile(grafinfo/matrox,Settings.doc,matrox)
+
+InstallNamedNonExec(grafinfo/compaq/qvis2000.unq,qvis2000,$(USRLIBDIR)/vidconf/AOF/UNIQUE/compaq)
+InstallNamedNonExec(grafinfo/matrox/mgapci.unq,mgapci,$(USRLIBDIR)/vidconf/AOF/UNIQUE/matrox)
+InstallNamedNonExec(grafinfo/AOF/mgapci.tmpl,mgapci,$(USRLIBDIR)/vidconf/AOF/TMPL/matrox)
+InstallNamedNonExec(grafinfo/AOF/mgaipci.tmpl,mgaipci,$(USRLIBDIR)/vidconf/AOF/TMPL/matrox)
+InstallNamedNonExec(grafinfo/AOF/qvis2000,qvis2000,$(USRLIBDIR)/vidconf/AOF/ID/compaq)
+
+DependTarget()
+

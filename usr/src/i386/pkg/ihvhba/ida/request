@@ -1,0 +1,53 @@
+#ident	"@(#)pkg.ihvhba:i386/pkg/ihvhba/ida/request	1.7"
+#
+#  Main routine
+#
+
+#
+#  Make sure LANG environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+# 
+# Set up to use menu_colors; default to C-locale
+# if ${LANG}'s dir has no menu_colors.sh.
+#
+if [ -f /etc/inst/locale/${LOCALE}/menus/menu_colors.sh ]
+then
+	. /etc/inst/locale/${LOCALE}/menus/menu_colors.sh
+else
+	. /etc/inst/locale/C/menus/menu_colors.sh
+fi
+
+MENU_RESP=$1
+
+#
+# Check if this package has a ${REQDIR}/$LANG/menu.ida.
+# If not default to ${REQDIR}/C/menu.ida
+#
+[ ! -f ${REQDIR}/${LANG}/menu.ida ] && LANG=C
+menu -f $REQDIR/${LANG}/menu.ida -o ${MENU_RESP} 2>/dev/null
+
+. ${MENU_RESP}
+case $LANG in
+	"C")
+	# Do nothing - no translation needed.
+	;;
+
+	# Example only
+	#"french")
+	#if [ "$INSTALLED_ON_IDE" = "o" -o  "$INSTALLED_ON_IDE" = "O" ]
+	#then
+	#	echo "INSTALLED_ON_IDE=y" >${MENU_RESP}
+	#else
+	#	echo "INSTALLED_ON_IDE=n" >${MENU_RESP}
+	#fi
+	#;;
+esac
+
+exit 0

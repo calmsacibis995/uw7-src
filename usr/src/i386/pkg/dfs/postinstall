@@ -1,0 +1,144 @@
+#ident	"@(#)postinstall	1.2"
+
+#
+# Initialize FAILURE to 1 (fatal error)
+#
+FAILURE=1
+
+# Create dummy /etc/dfs/lid_and_priv file
+#if [ ! -f /etc/dfs/lid_and_priv ]
+#then
+#	echo "# specify access to be granted to NFS clients of this server" >> /etc/dfs/lid_and_priv
+#	echo "# domain	hostname	MAC_level	privilege_set" >> /etc/dfs/lid_and_priv
+#fi
+#installf $PKGINST /etc/dfs/lid_and_priv f 0644 root root 2 NULL NULL
+
+# Create empty /etc/dfs/sharetab file
+if [ ! -f /etc/dfs/sharetab ]
+then
+	> /etc/dfs/sharetab
+fi
+installf $PKGINST /etc/dfs/sharetab v 0644 root root 2 NULL NULL
+
+#
+#	change levels of some commands to SYS_PUBLIC so that OA&M may work for dfs
+#	(cannot use chlvl)
+
+installf $PKGINST /usr/bin/tr f \? \? \? 1 NULL NULL
+
+#
+#	add /sbin/init to the NET role so that
+#	network administrator can go init 3
+#
+
+#adminrole -a init:/sbin/init:allprivs NET
+
+#
+#	Add the dev and filesys privilege to the generic umount & mount
+#	and also mountall & umountall commands since they are not set in the TCB.
+
+installf  $PKGINST /sbin/umount f \? \? \? 2 NULL allprivs
+installf  $PKGINST /sbin/mount f \? \? \? 1 NULL allprivs
+installf  $PKGINST /sbin/mountall f \? \? \? 2 NULL allprivs
+installf  $PKGINST /sbin/umountall f \? \? \? 2 NULL allprivs
+
+#
+#	put /usr/bin/cp in NET role with privs .. so that OA&M works
+#
+#	cp is needed by nsu and dfs, so both postinstalls add it
+#	ignoring error.  The packages can then remain independent.
+#
+#adminrole -a cp:/usr/bin/cp:macwrite:dacwrite:macread:dacread NET 2>/dev/null 1>&1
+#adminrole -a mkdir:/usr/bin/mkdir:dacread:dacwrite:macread:macwrite:multidir:fsysrange:setflevel NET 2>/dev/null
+#
+#
+#	put /sbin/sh in NET role with privs .. so that OA&M works
+#
+
+#adminrole -a sh:/sbin/sh:macwrite:dacwrite:macread:dacread:filesys:dev NET
+
+#
+#	Add dfs commands to TFM database
+#
+#while read cmd
+#do
+#	base=`basename $cmd`
+#	privs=`
+#		egrep ":${cmd}$" /etc/security/tcb/privs |
+#		sed -n '/%inher,.*:/s/^.*%inher,\(.*\):.*/\1/p' |
+#		sed 's/,/:/gp'
+#		`
+#	if [ ! -f $cmd ]
+#	then
+#		echo "Warning: $cmd not found on the system.\c"
+#		echo "  Not adding to TFM."
+#		continue
+#	fi
+#
+#	if [ -z "$privs" ]
+#	then
+#		adminrole -a $base:$cmd NET
+#	else
+#		adminrole -a $base:$cmd:$privs NET
+#	fi
+#done <<!
+#/usr/sbin/dfshares
+#/usr/sbin/general
+#/usr/sbin/share
+#/usr/sbin/shareall
+#/usr/sbin/unshareall
+#/usr/sbin/lidload
+#/usr/sbin/fuser
+#/usr/bin/kill
+#!
+
+# Workaround for putting unshare and dfmounts in NET role with privs 
+# /usr/sbin/unshare is a link to /usr/sbin/general and /usr/sbin/dfmounts
+# is a link to /usr/sbin/dfshares.
+
+#/usr/bin/adminrole -a unshare:/usr/sbin/unshare:dacread:dacwrite:dev:macread:macwrite:driver:fsysrange:filesys		NET
+#/usr/bin/adminrole -a dfmounts:/usr/sbin/dfmounts:dacread:dacwrite:dev:macread:macwrite:driver:fsysrange	NET
+
+#	and modify generic umount and mount (they already have new privs in TCB
+
+#for role in SOP SSO
+#do
+#	adminrole -r mount -a mount:/sbin/mount:allprivs $role
+#	adminrole -r umount -a umount:/sbin/umount:allprivs $role
+#done
+
+#adminrole -a mount:/sbin/mount:allprivs NET
+#adminrole -a umount:/sbin/umount:allprivs NET
+#adminrole -a umountall:/sbin/umountall:allprivs NET
+#adminrole -a mountall:/sbin/mountall:allprivs NET
+
+# root must have the NET role ....
+
+TEST=`adminuser root | grep "roles:" | (read a b; echo $b)`
+echo $TEST | grep NET > /dev/null
+if [ $? -ne 0 ]
+then
+	echo $TEST | grep none > /dev/null
+	if [ $? -ne 0 ]
+	then
+		TEST=$TEST,NET
+	else
+		TEST=NET
+	fi
+	adminuser -o $TEST root
+fi
+
+############# Begin UPGRADE AND OVERLAY #######################
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = "YES" ] && set -x
+
+if [ $PKGINSTALL_TYPE = UPGRADE ] || [ $PKGINSTALL_TYPE = OVERLAY ]
+then
+	${SCRIPTS}/pkgmrgconf "$PKGINST" "$AUTOMERGE" "$NAME"
+fi
+############# End UPGRADE AND OVERLAY #######################
+
+installf -f $PKGINST || exit FAILURE
+
+exit 	0

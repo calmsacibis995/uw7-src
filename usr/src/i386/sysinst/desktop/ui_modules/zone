@@ -1,0 +1,89 @@
+#!/sbin/sh
+#ident "@(#)zone	15.1	98/03/04"
+
+# zone UI module
+#
+# The purpose of the 'zone' module is to reduce the potentially huge
+# list of locales presented by the 'locale' module.
+# The ifile variable ZONE is simply the index of the choice made on this screen.
+# The 'locale' module dots in the zone.txtstrings file and uses zone[$ZONE]
+# to get the list of locales to present.
+# This arrangement allows the zone names and the corresponding lists of locales
+# to be defined together in the zone.txtstrings file,
+# but requires the 'locale' module to dot in that file.
+#
+
+#
+# Should we skip the user interaction?
+#
+function skip_func	# common.rc invokes this if skip_lang is True
+{
+	ZONE=`ivar get ZONE`
+	[ -z "$ZONE" ] && ivar set ZONE 0
+}
+
+. /isl/ui_modules/common.rc
+
+################################################################################
+
+function choose_zone
+{
+[ -n "$debug" ] && set -x
+
+	open_radio
+	r1=$RID
+
+	num=${#zone[*]}
+	selected=$ZONE
+	width=0
+	n=-1
+	while (( ( n += 1 ) < num )) ; do
+		[ "$n" = "$ZONE" ] && selected=$n
+		z="${zone[n]%%:*}"
+		add_radio "$z" -entry "make_current $n"
+		(( width < ${#z} )) && width=${#z}
+	done	
+
+	(( num   += 2 ))
+	(( width += 6 ))
+	place_window $width $num  -above 3 #-below 0
+	window_id=$CURWIN
+	set_hotkey  1 "save_exit HELP"
+	set_hotkey  9 "save_exit PREV"
+	set_hotkey 10 "save_exit NEXT"
+	run_radio $r1 $selected 8
+}
+
+function make_current
+{
+[ -n "$debug" ] && set -x
+	ZONE=$1
+	msg "$zone_current_is:  ${zone[ZONE]%%:*}"
+}
+
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	ivar set ZONE "$ZONE"
+	ivar set help_topic zone	# Just in case $1 == HELP
+	ii_exit $1
+}
+
+
+#
+# Main
+#
+#   Get the current choice, if any
+#
+ZONE=`ivar get ZONE`
+[ "$ZONE" = "" ] && ZONE=0
+
+#
+# Let the user choose one
+#
+display "$zone_prompt" -above 1 -below 4
+choose_zone
+footer "$zone_keys"
+input_handler
+save_exit NEXT	# should never get here

@@ -1,0 +1,59 @@
+#ident	"@(#)request	15.1"
+
+FAILURE=1
+
+trap 2 3 15
+
+#
+#  Make sure LANG environment variable is set.  If it's not set
+#  coming in to this request script, then default to the C-locale.
+#
+[ ${LANG} ] || LANG="C"
+export LANG
+
+MENU_RESP=$1
+if [ "${MENU_RESP}" = "" ]
+then
+        echo No response file given.  Usage: $0 response-file
+        exit 1
+fi
+# determine CLASSES to install
+urel=`uname -r`
+if [ $urel = "5" ]
+then
+	# native Gemini
+	CLASSES="all unative"
+elif [ $urel = "4.2MP" ]
+then
+	# UnixWare - pre-Gemini
+	uvers=`uname -v`
+	if [ $uvers != "2.1.2" ]
+	then
+		echo "Installation requires UnixWare version 2.1.2"
+		exit $FAILURE
+	else
+		CLASSES="all uaddon"
+	fi
+elif [ $urel = "3.2" ]
+then
+	# OSR5
+	xuname=`uname -X`
+	overs=`expr "$xuname" : '.*3\.2v5\.0\.4.*'`
+	if [ $overs = "0" ]
+	then
+		echo "Installation requires OpenServer version 5.0.4"
+		exit $FAILURE
+	else
+		CLASSES="all uaddon"
+	fi
+else
+	echo "Illegal release for installation"
+	exit $FAILURE
+fi
+#
+# if nothing to install, exit w/ code 77 for pkging tools to exit gracefully.
+#
+[ "$CLASSES" ] || exit 77
+
+echo CLASSES=\"${CLASSES}\" >> ${MENU_RESP}
+exit 0

@@ -1,0 +1,726 @@
+%% Virtual Memory (VM) Parameters
+%C Virtual Memory (VM) Parameters
+Virtual Memory (VM) Parameters include those for Aging,
+Kernel Virtual Address Space, Page Size Extensions, Paging,
+Segment Driver, and Swapping.
+%%% Aging Parameters
+% AGING_TUNE_PRIV
+While many of the tunables affecting how processes get aged are
+system level tunables (that is, applicable to all processes),
+some aging parameters applicable to a specific process can be changed
+to be different from those for other processes.
+Specifically, a specific process can have 
+different parameter values for these tunables:
+     ET_AGE_INTERVAL
+     INIT_AGE_QUANTUM
+     MAX_AGE_QUANTUM
+     MIN_AGE_QUANTUM
+     MAXRSS
+A process may change the applicable values using the priocntl
+system call or command interface.
+
+However, since these parameters affect memory resource distribution
+among processes, ordinarily the PLOCK privilege is required for a 
+process that changes these parameters.  For some trusted systems,
+it is necessary to waive this requirement, and this is made 
+possible by the AGING_TUNE_PRIV tunable.  Typically this tunable is 
+set at 0; if unprivileged processes are to be allowed to change 
+their aging parameters, then this tunable should be set to 1.
+% ET_AGE_INTERVAL
+Specifies the Elapsed Time aging interval.  This is the maximum 
+interval, measured in seconds, for which a process that is not 
+swapped out can continue without the scheduling of an aging event.
+If the system's free memory supply is plentiful, then processes 
+may not experience actual aging of their address spaces; therefore, 
+even low or moderate ET_AGE_INTERVAL does not affect process 
+execution in such cases.  Otherwise, a suitable ET_AGE_INTERVAL 
+ensures timely identification and recycling of memory that is used
+relatively infrequently by processes.
+% HI_GROW_RATE
+While other tunables (MIN_AGEQUANTUM and MAX_AGEQUANTUM) specify 
+the upper and lower limits on the number of virtual clock ticks
+between successive aging steps, the actual number of virtual clock 
+ticks between two aging steps is determined by the dynamics of a 
+process's growth rate.  A high growth rate is suggestive of 
+expansion of process size or change in process locality and such 
+processes are allowed more virtual clock ticks before aging.
+Conversely, a low growth rate is taken to signal a stable working
+set, and biases the process toward a quicker aging step.  The 
+determination of whether a process's instantaneous growth rate is 
+high or low is made by comparing the process growth (measured in 
+number of physical pages) over 5 virtual clock ticks with the 
+above two tunables.  If the growth rate is below the 
+LO_GROW_RATE tunable, then the process is considered to be growing 
+slowly enough to warrant quicker aging; otherwise, if the growth 
+rate is above the HI_GROW_RATE tunable, the process is given an 
+extension of time between aging steps.  A growth rate that falls 
+between the two tunables does not result in an adjustment of the 
+scheduled aging step.
+% LO_GROW_RATE
+While other tunables (MIN_AGEQUANTUM and MAX_AGEQUANTUM) specify 
+the upper and lower limits on the number of virtual clock ticks
+between successive aging steps, the actual number of virtual clock 
+ticks between two aging steps is determined by the dynamics of a 
+process's growth rate.  A high growth rate is suggestive of 
+expansion of process size or change in process locality and such 
+processes are allowed more virtual clock ticks before aging.
+Conversely, a low growth rate is taken to signal a stable working
+set, and biases the process toward a quicker aging step.  The 
+determination of whether a process's instantaneous growth rate is 
+high or low is made by comparing the process growth (measured in 
+number of physical pages) over 5 virtual clock ticks with the 
+above two tunables.  If the growth rate is below the 
+LO_GROW_RATE tunable, then the process is considered to be growing 
+slowly enough to warrant quicker aging; otherwise, if the growth 
+rate is above the HI_GROW_RATE tunable, the process is given an 
+extension of time between aging steps.  A growth rate that falls 
+between the two tunables does not result in an adjustment of the 
+scheduled aging step.
+% INIT_AGEQUANTUM
+These tunables specify the number of virtual clock ticks (a clock 
+tick specifies a duration equal to 1/HZ second, which is equal to 
+10 milliseconds for the conventional setting of HZ=100) after 
+which a process schedules an aging step for itself.  A process is 
+said to have taken a virtual clock tick, if one of its LWPs is 
+executing on a processor when a 1/HZ clock interrupt occurs.  It 
+is possible for a process LWP to execute for short durations of
+time without receiving virtual clock ticks; this may happen if for 
+example a process is predominantly in an interrupt or event driven 
+mode of execution.  Such processes are likely to be aged by 
+alternate means (see ET_AGE_INTERVAL).
+
+   INIT_AGEQUANTUM        This is the number of virtual clock ticks
+                          after which the first aging step is 
+                          scheduled since process inception.
+
+   MAX_AGEQUANTUM         The maximum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+
+   MIN_AGEQUANTUM         The minimum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+% MAX_AGEQUANTUM
+These tunables specify the number of virtual clock ticks (a clock 
+tick specifies a duration equal to 1/HZ second, which is equal to 
+10 milliseconds for the conventional setting of HZ=100) after 
+which a process schedules an aging step for itself.  A process is 
+said to have taken a virtual clock tick, if one of its LWPs is 
+executing on a processor when a 1/HZ clock interrupt occurs.  It 
+is possible for a process LWP to execute for short durations of
+time without receiving virtual clock ticks; this may happen if for 
+example a process is predominantly in an interrupt or event driven 
+mode of execution.  Such processes are likely to be aged by 
+alternate means (see ET_AGE_INTERVAL).
+
+   INIT_AGEQUANTUM        This is the number of virtual clock ticks
+                          after which the first aging step is 
+                          scheduled since process inception.
+
+   MAX_AGEQUANTUM         The maximum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+
+   MIN_AGEQUANTUM         The minimum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+% MIN_AGEQUANTUM
+These tunables specify the number of virtual clock ticks (a clock 
+tick specifies a duration equal to 1/HZ second, which is equal to 
+10 milliseconds for the conventional setting of HZ=100) after 
+which a process schedules an aging step for itself.  A process is 
+said to have taken a virtual clock tick, if one of its LWPs is 
+executing on a processor when a 1/HZ clock interrupt occurs.  It 
+is possible for a process LWP to execute for short durations of
+time without receiving virtual clock ticks; this may happen if for 
+example a process is predominantly in an interrupt or event driven 
+mode of execution.  Such processes are likely to be aged by 
+alternate means (see ET_AGE_INTERVAL).
+
+   INIT_AGEQUANTUM        This is the number of virtual clock ticks
+                          after which the first aging step is 
+                          scheduled since process inception.
+
+   MAX_AGEQUANTUM         The maximum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+
+   MIN_AGEQUANTUM         The minimum number of virtual clock ticks
+                          allowed to a process between two aging 
+                          steps.
+% MAXRSS
+Specifies the maximum memory, in pages, that a process is allowed.
+When processes exceed this value, they are ``trimmed,'' that is,
+forced to return a small number of pages back to the system, unless
+the system memory supply is plentiful.  This tunable is intended to
+limit aberrant growth in the physical size of a process.
+% NONLOCKED_MINPG
+During a process's memory aging step, all of its unlocked memory is 
+normally considered reclaimable.  If a process has no memory that 
+is not locked down, then it is futile to subject the process to an 
+aging step.  This tunable takes this consideration one step further;
+it specifies the minimum number of non-locked pages a process must 
+have before it is considered for an aging step.
+Typically this tunable should be left set at 0.
+A non-zero value for this tunable is 
+somewhat risky since it can lead to a memory depletion deadlock when
+a process that is not swappable due to  other reasons is also not 
+aged while holding down unreserved memory because of a positively 
+valued NONLOCKED_MINPG.
+%%% Kernel Virtual Address Space Parameters 
+% SEGKMEM_BYTES
+Together, these two tunables control the size of the kpgseg kernel 
+virtual segment.  This segment is used by the kernel memory allocator 
+for all its memory, by the hardware address translation layer (HAT)
+for its page tables, and by various drivers for both temporary and 
+permanent mappings.  By default, the maximum size of kpgseg is given 
+by:
+
+   SEGKMEM_BYTES + (fpp * SEGKMEM_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+kpgseg might be smaller because of limited kernel virtual space.  If
+kpgseg becomes overly full, performance might decrease because of an
+increased cost for allocating kernel virtual space.  Also, 
+performance may decrease on a multiprocessing system to an increased 
+requirement for TLB (translation lookaside buffer that is part of 
+the MMU) shootdown.  Finally, the system, or some LWP, can hang 
+because of a wait for kernel virtual space that is not available.
+Under any of these circumstances, the administrator may want to 
+increase kpgseg virtual space.  Conversely, if kpgseg is 
+underutilized, and more kernel virtual space is required in another 
+kernel virtual segment, then it may be advisable to decrease the 
+size of kpgseg.
+% SEGKMEM_PERCENT
+Together, these two tunables control the size of the kpgseg kernel 
+virtual segment.  This segment is used by the kernel memory allocator 
+for all its memory, by the hardware address translation layer (HAT)
+for its page tables, and by various drivers for both temporary and 
+permanent mappings.  By default, the maximum size of kpgseg is given 
+by:
+
+   SEGKMEM_BYTES + (fpp * SEGKMEM_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+kpgseg might be smaller because of limited kernel virtual space.  If
+kpgseg becomes overly full, performance might decrease because of an
+increased cost for allocating kernel virtual space.  Also, 
+performance may decrease on a multiprocessing system to an increased 
+requirement for TLB (translation lookaside buffer that is part of 
+the MMU) shootdown.  Finally, the system, or some LWP, can hang 
+because of a wait for kernel virtual space that is not available.
+Under any of these circumstances, the administrator may want to 
+increase kpgseg virtual space.  Conversely, if kpgseg is 
+underutilized, and more kernel virtual space is required in another 
+kernel virtual segment, then it may be advisable to decrease the 
+size of kpgseg.
+% SEGMAP_BYTES
+These two tunable parameters are used to determine the amount of 
+virtual address space in clicks available for kernel mapping of 
+user read/write requests.  To increase this by a fixed amount,
+increase SEGMAP_BYTES.  To increase it by an amount per amount of 
+memory, increase SEGMAP_PERCENT.  (The latter is particularly 
+useful when building a kernel for multiple machines, or if 
+expecting to change the amount on one machine.)
+
+Together, these two tunable parameters control the size of the
+segkmap kernel virtual segment.  This segment is used by file 
+systems to cache the data accessed through the read(2) and write(2)
+interfaces, file directory data, as well as data accessed by NFS on 
+the server side.  By default, the maximum size of segkmap is given 
+by:
+
+   SEGMAP_BYTES + (fppP * SEGMAP_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+segkmap may be smaller because of limited kernel virtual space.  If
+segkmap is too small for the load, local file or remote NFS 
+performance may suffer.  Conversely, if segkmap is underutilized,
+and more kernel virtual space is required in another kernel virtual
+segment, then it may be advisable to decrease the size of segkmap.
+% SEGMAP_PERCENT
+These two tunable parameters are used to determine the amount of 
+virtual address space in clicks available for kernel mapping of 
+user read/write requests.  To increase this by a fixed amount,
+increase SEGMAP_BYTES.  To increase it by an amount per amount of 
+memory, increase SEGMAP_PERCENT.  (The latter is particularly 
+useful when building a kernel for multiple machines, or if 
+expecting to change the amount on one machine.)
+
+Together, these two tunable parameters control the size of the
+segkmap kernel virtual segment.  This segment is used by file 
+systems to cache the data accessed through the read(2) and write(2)
+interfaces, file directory data, as well as data accessed by NFS on 
+the server side.  By default, the maximum size of segkmap is given 
+by:
+
+   SEGMAP_BYTES + (fpp * SEGMAP_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+segkmap may be smaller because of limited kernel virtual space.  If
+segkmap is too small for the load, local file or remote NFS 
+performance may suffer.  Conversely, if segkmap is underutilized,
+and more kernel virtual space is required in another kernel virtual
+segment, then it may be advisable to decrease the size of segkmap.
+% SEGKVN_BYTES
+Together, these two tunables control the size of the segkvn kernel 
+virtual segment.  This segment is used by the kernel to map 
+ublocks, as well as to map loadable modules.  By default, the 
+maximum size of segkvn is given by:
+
+   SEGKVN_BYTES + (fpp * SEGKVN_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+segkmap may be smaller because of limited kernel virtual space.  If
+segkvn is too small, it might become impossible to create processes
+or LWPs (because there is no kernel virtual for the ublocks) or to 
+load driver modules.  Conversely, if segkvn is underutilized, it 
+may be possible to give up some space for use by other kernel 
+virtual segment managers.
+% SEGKVN_PERCENT
+Together, these two tunables control the size of the segkvn kernel 
+virtual segment.  This segment is used by the kernel to map 
+ublocks, as well as to map loadable modules.  By default, the 
+maximum size of segkvn is given by:
+
+   SEGKVN_BYTES + (fpp * SEGKVN_PERCENT)
+
+where fpp is the size of the free page pool.  The actual size of
+segkmap may be smaller because of limited kernel virtual space.  If
+segkvn is too small, it might become impossible to create processes
+or LWPs (because there is no kernel virtual for the ublocks) or to 
+load driver modules.  Conversely, if segkvn is underutilized, it 
+may be possible to give up some space for use by other kernel 
+virtual segment managers.
+% ZBM_LGMAP_PERCENT
+Controls the percentage of kpgseg and segkvn kernel virtual segments
+reserved for large mappings. If this value is too small, then hangs are
+possible while processing large physical I/O requests close to the maximal
+permitted size of 128KB, while adding swap space, or while attempting to
+load certain device drivers or other loadable modules.
+%%% Segment Driver Parameters
+% SEGMAP_AGE_TIME
+These tunables control the rate at which segkmap unloads the 
+translations for mappings that it is caching (thus freeing the 
+pages).  SEGMAP_AGE_TIME controls the length of time a mapping
+must reside in memory (in seconds) before it will be unloaded
+under typical memory demand conditions (the actual time can 
+increase or decrease depending on the actual demand on memory).
+SEGMAP_AGINGS controls the maximum number of segkmap mappings
+that can be unloaded in any one second under typical memory 
+demand conditions (the actual number can increase or decrease 
+depending on the actual demand on memory).
+
+The effect of slowing down segkmap aging is to increase
+file system performance (as mentioned above), but at the expense 
+of decreased available memory for other uses (for example, for 
+process pages).
+% SEGMAP_AGINGS
+These tunables control the rate at which segkmap unloads the 
+translations for mappings that it is caching (thus freeing the 
+pages).  SEGMAP_AGE_TIME controls the length of time a mapping
+must reside in memory (in seconds) before it will be unloaded
+under typical memory demand conditions (the actual time can 
+increase or decrease depending on the actual demand on memory).
+SEGMAP_AGINGS controls the maximum number of segkmap mappings
+that can be unloaded in any one second under typical memory 
+demand conditions (the actual number can increase or decrease 
+depending on the actual demand on memory).
+
+The effect of slowing down segkmap aging is to increase
+file system performance (as mentioned above), but at the expense 
+of decreased available memory for other uses (for example, for 
+process pages).
+% SEGKVN_AGE_TIME
+This tunable parameter controls the rate at which segkvn ages the 
+translations for mappings that are not memory locked.  In 
+practice, such mappings are used by the kernel symbol table (when
+not actively being referenced) and by loadable driver modules
+(when present in memory but not being actively executed).
+SEGKVN_AGE_TIME controls the length of time a mapping must reside
+in memory (in seconds) before its translations are aged.  Ublocks 
+are not affected by this tunable.
+%%% Paging Parameters
+% GPGSLO
+For UnixWare, this parameter is used by the swapper to 
+determine the minimal level of freemem before it will swap
+in the smallest process.
+
+For UnixWare 1.1, this tunable parameter controlled when swap 
+outs began.  It specified the low water mark of free memory in 
+pages for swapping to start swapping out processes.  The 
+activity of the pageout daemon is also controlled by this 
+parameter.  The value must be an integer greater than 0; the 
+default is 25.  Increase the value to make the daemon more 
+active; decrease the value to make the daemon less active.
+% LOTSFREEBYTES
+These two parameters are used to compute the paging threshold.
+The system initiates paging whenever the amount of free physical
+memory is below this threshold.  The paging threshold is the
+smaller of LOTSFREEBYTES and total physical memory divided by
+LOTSFREEFRACT.
+
+   LOTSFREEBYTES          Absolute paging threshold, specified in
+                          bytes.
+
+   LOTSFREEFRACT          Relative paging threshold, specified as a
+                          divisor of total physical memory.
+
+% LOTSFREEFRACT
+These two parameters are used to compute the paging threshold.
+The system initiates paging whenever the amount of free physical
+memory is below this threshold.  The paging threshold is the
+smaller of LOTSFREEBYTES and total physical memory divided by
+LOTSFREEFRACT.
+
+   LOTSFREEBYTES          Absolute paging threshold, specified in
+                          bytes.
+
+   LOTSFREEFRACT          Relative paging threshold, specified as a
+                          divisor of total physical memory.
+
+% DESFREEBYTES
+These two parameters are used to compute the swapping threshold.
+The system initiates swapping when the amount of free memory
+is below this threshold for an extended period.  The swapping
+threshold is the smaller of DESFREEBYTES and total physical
+memory divided by DESFREEFRACT.
+
+   DESFREEBYTES           Absolute swapping threshold, specified in
+                          bytes.
+
+   DESFREEFRACT           Relative swapping threshold, specified as a
+                          divisor of total physical memory.
+
+% DESFREEFRACT
+These two parameters are used to compute the swapping threshold.
+The system initiates swapping when the amount of free memory
+is below this threshold for an extended period.  The swapping
+threshold is the smaller of DESFREEBYTES and total physical
+memory divided by DESFREEFRACT.
+
+   DESFREEBYTES           Absolute swapping threshold, specified in
+                          bytes.
+
+   DESFREEFRACT           Relative swapping threshold, specified as a
+                          divisor of total physical memory.
+
+% MINFREEBYTES
+These two parameters are used to compute the minimum amount
+of free memory which the system must maintain.  The free memory
+minimum is the smaller of MINFREEBYTES and the swapping threshold
+divided by MINFREEFRACT.
+
+   MINFREEBYTES           Absolute minimum free memory, specified
+                          in bytes.
+
+   MINFREEFRACT           Relative minimum free memory, specified as a
+                          divisor of the swapping threshold.
+
+% MINFREEFRACT
+These two parameters are used to compute the minimum amount
+of free memory which the system must maintain.  The free memory
+minimum is the smaller of MINFREEBYTES and the swapping threshold
+divided by MINFREEFRACT.
+
+   MINFREEBYTES           Absolute minimum free memory, specified
+                          in bytes.
+
+   MINFREEFRACT           Relative minimum free memory, specified as a
+                          divisor of the swapping threshold.
+
+% PAGEOUTRATE
+Specifies a target pageout rate in pages per second under
+heavy memory demand conditions (e.g., while paging or swapping).
+%% Page table parameter
+% PRIV_L1_SIZE
+If PRIV_L1_SIZE is non-zero, then each process whose size is
+greater than or equal to PRIV_L1_SIZE bytes is allocated a private
+level 1 page directory.
+Allocating a private level 1 page directory to large processes
+speeds up context switching for those processes, at the
+cost of an extra page per large process.
+Note that if PRIV_L1_SIZE is 0, then no processes will have
+private level 1 page directories.
+%% Dedicated memory reservation parameter
+% DEDICATED_MEMORY
+Specifies the size, in pages, of memory which is to be reserved
+at startup time and dedicated for certain special purposes.  Such
+purposes include shared memory segments which are 1Mbyte or larger,
+shared memory segments which use fine-grained affinity, and dynamic
+shared memory segments.
+%% General Purpose Memory reservation parameter
+% GENERAL_MEMORY
+Specifes the size, in pages, of memory which is preserved for general
+purpose use should the main memory be too small to accomodate the the
+DEDICATED_MEMORY parameter. This parameter acts as a safety net of sorts,
+allowing the system to at least boot should DEDICATED_MEMORY be
+over-specified. Alternatively, if DEDICATED_MEMORY is set to the maximum
+possible value (which can never be satisfied), then the value of
+GENERAL_MEMORY will specify how much general purpose memory the system is
+to have.
+% UVIRT_EXTENSION
+Specifies the size, in pages, of the extension of the user virtual
+address space beyond the minimum value of 3Gbytes specified by the
+ABI.  By default, every user process on the system has a virtual
+address space from 0 to 3Gbytes; setting UVIRT_EXTENSION to a non-zero
+value raises the end of the user address space to 3Gbytes plus
+UVIRT_EXTENSION multiplied by the system page size.  Note that increasing
+UVIRT_EXTENSION also decreases the size of the kernel virtual address
+space.
+%%% Swapping Parameters
+% CPU_WEIGHT
+These four tunables are used to set relative preferences governing
+the selection of a process for being swapped in.
+A swapped out process is considered eligible for a swap in
+only when at least one of its LWPs is runnable.
+Of such eligible processes, each process is assigned a swapin priority
+based on several attributes,
+and the process with the highest swapin priority is chosen
+as the best candidate for swapping in.
+These tunables affect the computation of this swap-in priority as follows:
+
+   CPU_WEIGHT       Positively weighs the highest among all the LWP
+                    scheduling priorities.
+
+   IO_WEIGHT        Negatively weighs a value given by a cost
+                    function of the size of the process when it
+                    was swapped out.  The cost function itself 
+                    is a piecewise linear function of size that
+                    reaches a constant value for large processes,
+                    which prevents excessive bias against large 
+                    processes.
+
+   SLEEP_WEIGHT     Positively weighs the length of time for which 
+                    all the LWPs of the process remained blocked 
+                    but signalable, during the last such blocking 
+                    interval that overlapped the process's swapout.
+                    This serves two purposes.  First, it favors a 
+                    process that became runnable while swapped out,
+                    and second, it favors a process that remained 
+                    inactive for a long time and is likely to 
+                    become inactive again after being allowed to 
+                    continue.
+
+   SWAP_WEIGHT      Positively weighs the length of time for which 
+                    the process has been swapped out.
+% IO_WEIGHT
+These four tunables are used to set relative preferences governing
+the selection of a process for being swapped in.
+A swapped out process is considered eligible for a swap in
+only when at least one of its LWPs is runnable.
+Of such eligible processes, each process is assigned a swapin priority
+based on several attributes,
+and the process with the highest swapin priority is chosen
+as the best candidate for swapping in.
+These tunables affect the computation of this swap-in priority as follows:
+
+   CPU_WEIGHT       Positively weighs the highest among all the LWP
+                    scheduling priorities.
+
+   IO_WEIGHT        Negatively weighs a value given by a cost
+                    function of the size of the process when it
+                    was swapped out.  The cost function itself 
+                    is a piecewise linear function of size that
+                    reaches a constant value for large processes,
+                    which prevents excessive bias against large 
+                    processes.
+
+   SLEEP_WEIGHT     Positively weighs the length of time for which 
+                    all the LWPs of the process remained blocked 
+                    but signalable, during the last such blocking 
+                    interval that overlapped the process's swapout.
+                    This serves two purposes.  First, it favors a 
+                    process that became runnable while swapped out,
+                    and second, it favors a process that remained 
+                    inactive for a long time and is likely to 
+                    become inactive again after being allowed to 
+                    continue.
+
+   SWAP_WEIGHT      Positively weighs the length of time for which 
+                    the process has been swapped out.
+% SLEEP_WEIGHT
+These four tunables are used to set relative preferences governing
+the selection of a process for being swapped in.
+A swapped out process is considered eligible for a swap in
+only when at least one of its LWPs is runnable.
+Of such eligible processes, each process is assigned a swapin priority
+based on several attributes,
+and the process with the highest swapin priority is chosen
+as the best candidate for swapping in.
+These tunables affect the computation of this swap-in priority as follows:
+
+   CPU_WEIGHT       Positively weighs the highest among all the LWP
+                    scheduling priorities.
+
+   IO_WEIGHT        Negatively weighs a value given by a cost
+                    function of the size of the process when it
+                    was swapped out.  The cost function itself 
+                    is a piecewise linear function of size that
+                    reaches a constant value for large processes,
+                    which prevents excessive bias against large 
+                    processes.
+
+   SLEEP_WEIGHT     Positively weighs the length of time for which 
+                    all the LWPs of the process remained blocked 
+                    but signalable, during the last such blocking 
+                    interval that overlapped the process's swapout.
+                    This serves two purposes.  First, it favors a 
+                    process that became runnable while swapped out,
+                    and second, it favors a process that remained 
+                    inactive for a long time and is likely to 
+                    become inactive again after being allowed to 
+                    continue.
+
+   SWAP_WEIGHT      Positively weighs the length of time for which 
+                    the process has been swapped out.
+% SWAP_WEIGHT
+These four tunables are used to set relative preferences governing
+the selection of a process for being swapped in.
+A swapped out process is considered eligible for a swap in
+only when at least one of its LWPs is runnable.
+Of such eligible processes, each process is assigned a swapin priority
+based on several attributes,
+and the process with the highest swapin priority is chosen
+as the best candidate for swapping in.
+These tunables affect the computation of this swap-in priority as follows:
+
+   CPU_WEIGHT       Positively weighs the highest among all the LWP
+                    scheduling priorities.
+
+   IO_WEIGHT        Negatively weighs a value given by a cost
+                    function of the size of the process when it
+                    was swapped out.  The cost function itself 
+                    is a piecewise linear function of size that
+                    reaches a constant value for large processes,
+                    which prevents excessive bias against large 
+                    processes.
+
+   SLEEP_WEIGHT     Positively weighs the length of time for which 
+                    all the LWPs of the process remained blocked 
+                    but signalable, during the last such blocking 
+                    interval that overlapped the process's swapout.
+                    This serves two purposes.  First, it favors a 
+                    process that became runnable while swapped out,
+                    and second, it favors a process that remained 
+                    inactive for a long time and is likely to 
+                    become inactive again after being allowed to 
+                    continue.
+
+   SWAP_WEIGHT      Positively weighs the length of time for which 
+                    the process has been swapped out.
+% DEFICIT_AGE
+The swapper maintains an operational variable called deficit,
+which is an account of short term memory needs on behalf of processes
+that are just swapped in.
+As time elapses, the deficit is revised;
+it is increased when processes are swapped in,
+and decayed gradually by a constant factor otherwise.
+DEFICIT_AGE is the fraction by which deficit is reduced per second.
+That is, if DEFICIT_AGE is 10,
+then deficit is reduced to 90% of its previous value each second.
+The available (free) memory count is reduced by deficit,
+in guiding further decisions for swapping processes in or out.
+If the system demonstrates a high percent of ``idle'' cycles
+with processes swapped out,
+then it may be advisable to reduce the DEFICIT_AGE factor
+so that deficit is revised downward quickly and swapins are encouraged.
+If, on the other hand, deficit is decayed too quickly,
+the system may swap processes in too quickly and experience memory thrashing.
+% MAX_DEFICIT
+Specifies the maximum value that ``deficit''
+(see DEFICIT_AGE) is allowed to reach.
+% MAXSLP
+Specifies the number of seconds for which all LWPs in a	 process
+can sleep, or be in a stopped or idle state,
+while remaining signalable,
+before the process is considered a suitable candidate
+for a discretionary swapout by the system
+if memory stress warrants swapping.
+The test for signalability
+is meant to exclude those durations in which involuntary blocking occurs
+because of contention for kernel resources.
+Processes that sleep for long durations merely waiting for events
+are considered preferable for swapouts,
+over processes that block intermittently
+for short durations or those that block rarely.
+% SCALE_MAXPGIO
+Specifies how the system should arrive at the
+estimated peak rate for paging (both pageins and pageouts)
+to and from the swap device.
+The setting of this tunable does not affect the actual paging rate,
+only the system's estimate of the peak paging capacity.
+In response to the real paging activity approaching
+the estimated peak paging rate,
+the swapper becomes more aggressive in selecting processes for swapout,
+with the objective of reducing system load.
+
+If multiple swap devices exist, and can be accessed in parallel
+so that the peak sustainable paging rate can scale
+with the number of swap devices,
+then this tunable should be set to 1.
+In this case, as each new swap device is added,
+the system increases its estimate of peak paging throughput.
+If one or more swap devices exist but the peak sustainable paging rate
+does not increase either because of controller limitations
+or because the swap devices are on the same physical media,
+then this tunable should be set to 0.
+% SWAP_MAXDEV
+Specifies the maximum number of swap devices that will be configured.
+%% Direct Memory Access (DMA) Parameters
+% DMA_PERCENT
+If MAXDMAPAGE is non-zero,
+and if memory is present at physical addresses
+above the threshold set by MAXDMAPAGE,
+then DMA_PERCENT gives an upper bound on the percentage of main memory
+that is dedicated for use by devices that require memory
+in a low physical address range for DMA access.
+In no case can the amount of memory reserved for restricted DMA devices
+exceed the amount of memory actually present below address
+(MAXDMAPAGE * PAGESIZE).
+% MAXDMAPAGE
+In units of 4096 pages, MAXDMAPAGE defines the upper limit
+to the physical address range accessible by devices
+that perform direct memory access (DMA) transfers,
+but are restricted in their ability to access all of memory.
+For AT systems, MAXDMAPAGE is set by default to 4096
+for the benefit of devices that are restricted to DMA
+into the lower 16MB of memory [also called 24-bit DMA].
+Such devices are most DMA-capable ISA devices,
+as well as some EISA devices performing standard mode transfers.
+
+Setting MAXDMAPAGE to 0 disables
+the kernel's support for restricted DMA.
+Do this only if the administrator is sure that every device
+on the system either doesn't have DMA capability,
+or is capable of accessing the entirety of physical memory through DMA.
+
+NOTE: Setting MAXDMAPAGE to 0
+when some device actually uses restricted DMA can cause the system to fail,
+either through operating system failure (PANIC), applications failure,
+or data corruption.
+
+Your system can have a PCI or EISA bus, but still have an ISA controller,
+a controller that uses standard mode DMA,
+or a driver which programs the controller into standard mode.
+If any of these is the case, then you must not set MAXDMAPAGE to 0.
+If you are not sure, then you should consult a system support engineer.
+
+When MAXDMAPAGE is non-zero, and memory is present
+above the threshold thus specified,
+the kernel will reserve a portion of its memory for exclusive use
+by devices with a DMA access restriction
+(see DMA_PERCENT).
+Setting MAXDMAPAGE to 0 preserves this memory for other uses
+(for example for files and processes).
+
+Devices that support DMA,
+but are not restricted in their ability to access memory
+(for example,  EISA devices performing extended mode transfers and PCI devices)
+are not affected by MAXDMAPAGE.
+
+%%% TLB Invalidation Parameters
+% INVLPG_MAX
+
+INVLPG_MAX defines the threshold at which a global TLB flush is done,
+instead of repeatedly invalidating individual TLB entries.

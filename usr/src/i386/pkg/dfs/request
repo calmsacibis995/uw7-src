@@ -1,0 +1,36 @@
+#ident	"@(#)request	1.2"
+
+#
+#  Main routine
+#
+LOCALE=${LC_ALL:-${LC_MESSAGES:-${LANG:-"C"}}}
+
+SCRIPTS=/usr/sbin/pkginst
+. ${SCRIPTS}/updebug
+[ "$UPDEBUG" = YES ] && set -x
+
+MENU_RESP=$1
+
+############# Begin UPGRADE AND OVERLAY #######################
+
+export PKGINSTALL_TYPE AUTOMERGE
+
+[ $AUTOMERGE ] || AUTOMERGE=Yes
+
+PKGINSTALL_TYPE=NEWINSTALL
+
+# is it upgrade or overlay?
+${SCRIPTS}/chkpkgrel
+PKGVERSION=$?
+case $PKGVERSION in
+	2)	PKGINSTALL_TYPE=OVERLAY ;;
+	4)	PKGINSTALL_TYPE=UPGRADE ;;
+	*)	;;
+esac
+
+echo AUTOMERGE=\"${AUTOMERGE}\" >> ${MENU_RESP}
+echo PKGINSTALL_TYPE=\"${PKGINSTALL_TYPE}\" >> ${MENU_RESP}
+
+############# End  UPGRADE AND OVERLAY #######################
+
+exit 0

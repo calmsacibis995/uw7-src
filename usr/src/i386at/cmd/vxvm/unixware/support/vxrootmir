@@ -1,0 +1,512 @@
+#!/sbin/sh -
+# @(#)cmd.vxvm:unixware/support/vxrootmir.sh	1.2 3/3/97 03:31:32 - cmd.vxvm:unixware/support/vxrootmir.sh
+#ident	"@(#)cmd.vxvm:unixware/support/vxrootmir.sh	1.2"
+
+# Copyright(C)1996 VERITAS Software Corporation.  ALL RIGHTS RESERVED.
+# UNPUBLISHED -- RIGHTS RESERVED UNDER THE COPYRIGHT
+# LAWS OF THE UNITED STATES.  USE OF A COPYRIGHT NOTICE
+# IS PRECAUTIONARY ONLY AND DOES NOT IMPLY PUBLICATION
+# OR DISCLOSURE.
+# 
+# THIS SOFTWARE CONTAINS CONFIDENTIAL INFORMATION AND
+# TRADE SECRETS OF VERITAS SOFTWARE.  USE, DISCLOSURE,
+# OR REPRODUCTION IS PROHIBITED WITHOUT THE PRIOR
+# EXPRESS WRITTEN PERMISSION OF VERITAS SOFTWARE.
+# 
+#               RESTRICTED RIGHTS LEGEND
+# USE, DUPLICATION, OR DISCLOSURE BY THE GOVERNMENT IS
+# SUBJECT TO RESTRICTIONS AS SET FORTH IN SUBPARAGRAPH
+# (C) (1) (ii) OF THE RIGHTS IN TECHNICAL DATA AND
+# COMPUTER SOFTWARE CLAUSE AT DFARS 252.227-7013.
+#               VERITAS SOFTWARE
+# 1600 PLYMOUTH STREET, MOUNTAIN VIEW, CA 94043
+
+: ${VOLROOT_DIR:=$__VXVM_ROOT_DIR}
+. ${VOL_SCRIPTS_LIB:-$VOLROOT_DIR/usr/lib/vxvm/lib}/vxcommon
+
+PATH=/usr/lib/vxvm/bin:/sbin:/usr/sbin:/usr/bin
+export PATH
+
+quit()
+{
+	rm -f $tmp1 $tmp2
+	exit $1
+}
+
+tmp1=/tmp/vxvm-$$a
+tmp2=/tmp/vxvm-$$b
+trap "quit 1" INT HUP TERM
+
+# doit - execute a command, printing the command in verbose mode
+doit() {
+	[ "$verbose" ] && cat <<-% >&3
+			! $*
+			%
+	[ -z "$noexec" ] && "$@"
+}
+
+part_setup()
+{
+	poffset=`vxprint -F '%dev_offset' -e \
+		"assoc.assoc=\"$1\" && sd_da_name=\"$daname\""`
+	if [ -z "$poffset" ]
+	then
+		 progname="$progname" dmname="$dmname" egettxt \
+		 "$progname: No subdisk offset for mirror of $1 on $dmname" \
+			vxvmshm:73  $0 "$@" >&2
+
+		quit 1
+	fi
+	doit vxpartadd /dev/rdsk/"$daname" $2 $3 $4 `expr $poffset + $5` $6
+}
+
+not()
+{
+	if "$@"
+	then
+		return 1
+	else
+		return 0
+	fi
+}
+
+isfreeslice()
+{
+	while read part tag flags offset len
+	do
+		case $part in
+		'#'*)	continue;;
+		esac
+		if [ "$part" -eq $1 ]
+		then
+			[ "$tag" = 0x0 ] && return 0
+			[ $# -gt 1 -a "X$tag" = "X$2" ] && return 0
+			return 1
+		fi
+	done
+	return 1
+}
+
+clone_partitions() {
+
+TMPFILE1=/tmp/tmp.$$
+TMPFILE2=$TMPFILE1.target
+source=$1
+target=$2
+fdisk -L $source > $TMPFILE1 <<-!
+x
+!
+
+n_part=
+issys_part=
+
+n_part=`cat $TMPFILE1 | grep NPART | sed 's/NPART=//'`
+issys_part=`cat $TMPFILE1 | grep PART1 | awk '{print $2}'`
+
+syspart_len=
+no_syspart=no
+
+if [ "$issys_part" = "System" ] ; then
+	syspart_len=`cat $TMPFILE1 | grep PART1 | awk '{print $5}'`  
+else
+	syspart_len=0
+	no_syspart=yes
+fi
+
+fdisk -L $target > $TMPFILE2 <<-!
+x
+!
+
+# check if target already has a sys partition
+tar_n_part=
+tar_sys_part=
+
+tar_n_part=`cat $TMPFILE2 | grep NPART | sed 's/NPART=//'`
+tar_sys_part=`cat $TMPFILE2 | grep PART1 | awk '{print $2}'`
+if [ "$no_syspart" = "yes" -a "$tar_sys_part" = "System" ] ; then
+	export target; ewritemsg -M vxvmshm:350 \
+	"Root disk does not have a system partition, but \
+         target disk $target does. Hence the Root disk cannot be 
+         mirrored."
+	quit 1
+fi
+
+no_copy=
+found=
+scrub=
+tar_sys_part_len=
+
+
+if [ "$tar_sys_part" = "System" ] ; then
+	# target drive already has a sys part, check its size
+	found=yes
+	scrub=no
+	tar_sys_part_len=`cat $TMPFILE2 | grep PART1 | awk '{print $5}'`
+	if [ $tar_sys_part_len -lt $syspart_len ] ; then
+		set_len=$syspart_len
+		no_copy=yes
+	fi
+else
+# No sys partition found on target disk, so scrub all partitions and
+# create ones similar to source disk
+	scrub=yes
+fi
+
+ewritemsg -M vxvmshm:129 \
+"Attempting to clone partition table onto mirrored drive."
+
+iter=
+
+
+if [ "$scrub" = "yes" ] ; then
+	if [ $tar_n_part -gt 0 ] ; then
+		iter=$tar_n_part
+		while [ $iter -gt 0 ] ; do
+			fdisk $target > /dev/null <<-!
+			3
+			1
+			y
+			4
+			!
+			iter=`expr $iter - 1`
+		done
+	fi
+else
+	# scrub all partitions other than the sys partition
+	if [ $tar_n_part -gt 1 ] ; then
+		iter=`expr $tar_n_part - 1`
+		while [ $iter -gt 0 ] ; do
+			fdisk $target > /dev/null <<-!
+			3
+			2
+			y
+			4
+			!
+			iter=`expr $iter - 1`
+		done
+	fi
+fi
+
+# Now start creating partitions the way they were on the root disk
+
+if [ "$issys_part" = "System" -a "$scrub" = "yes" ] ; then
+	#create a sys partition on the target disk
+	fdisk $target > /dev/null <<-!
+	n
+	1
+	4
+	c
+	$syspart_len
+	n
+	4
+	!
+
+	input_dev=`echo $source | sed -e "s/\"${VOL_FULL_SLICE}\"//"`
+	output_dev=`echo $target | sed -e "s/\"${VOL_FULL_SLICE}\"//"`
+	if [ "$no_copy" != "yes" ] ; then
+		ewritemsg -M vxvmshm:148 \
+		"Copying System Configuration data...."
+		dd if="$input_dev"p1 of="$output_dev"p1 ibs=1024k obs=1024k > /dev/null
+		ewritemsg -M vxvmshm:203 \
+		"Done."
+	fi
+fi
+#Sys part already exists, so create other ones
+
+unix_len=`cat $TMPFILE1 | grep Active| awk '{print $7}'`
+unix_start=`cat $TMPFILE1 | grep PART1 | awk '{print $4}'`
+fdisk_unix_start=`expr $unix_start + 1`
+
+#create a unix partition on the target
+	fdisk $target > /dev/null <<-!
+	1
+	1
+	c
+	$fdisk_unix_start
+	$unix_len
+	y
+	4
+	!
+
+non_parts=
+count=
+need_part=
+part_name=
+
+if [ $n_part -gt 2 ] ; then
+	#other non-unix partitions exist on the source disk, create them
+	# on the target
+	non_parts=`expr $n_part - 2`
+	count=1
+	while [ $non_parts -gt 0 ] ; do
+	need_part=`expr $count + 2`
+	part_name=`cat $TMPFILE1 | grep "PART${need_part}" | awk '{print $2}'`
+	if [ "$part_name" = "pre-5.0DOS" ] ; then
+		type=2
+	else
+		if [ "$part_name" = "DOS" ] ; then
+			type=3
+		else
+			type=5
+		fi
+	fi
+	part_len=`cat $TMPFILE1 | grep "PART${need_part}" | awk '{print $5}'` 
+	part_start=`cat $TMPFILE1 | grep "PART${need_part}" | awk '{print $3}'` 
+
+	# now create it
+	fdisk $target > /dev/null <<-!
+	1
+	$type
+	c
+	$part_start
+	$part_len
+	n
+	4
+	!
+	data_part=`expr $non_parts - 1`
+	input_dev=`echo $source | sed -e "s/\"${VOL_FULL_SLICE}\"//"`
+	output_dev=`echo $target | sed -e "s/\"${VOL_FULL_SLICE}\"//"`
+	export $part_name; ewritemsg -M vxvmshm:147 \
+	"Copying $part_name partition onto the mirrored disk...."
+	dd if="$input_dev"p${need_part} of="$output_dev"p${need_part} ibs=1024k obs=1024k 2> /dev/null
+	ewritemsg -M vxvmshm:203 \
+	"Done."
+	non_parts=`expr $non_parts - 1`
+	done
+fi
+
+}
+
+
+progname=$0
+usage=`progname="$progname" egettxt \
+		"Usage: $progname [-C] <disk-name>" vxvmshm:525`
+verbose=
+Verbose=
+clone=
+#
+#pick up an arbitrary root disk if there are multiple copies already
+#better choice is to get an argument using getopts to override this default
+#
+root_da=`vxprint -sF "%daname" -e 'assoc.assoc="rootvol"' | sort | head -1`
+
+
+while getopts :vVC c
+do
+	case $c in
+	v)	verbose=yes;;
+	V)	Verbose=yes;;
+	C)	clone=yes;;
+	?)	echo "$usage" >&2; quit 1;;
+	esac
+done
+shift `expr $OPTIND - 1`
+if [ $# -ne 1 ]
+then
+	echo "$usage" >&2
+	quit 1
+fi
+VOL_PUB_SLICE_TAG=
+VOL_PRIV_SLICE_TAG=
+V_ROOT=
+V_SWAP=
+V_STAND=
+eval `vxparms`
+if [ -z "$V_ROOT" ] || [ -z "$V_SWAP" ] || [ -z "V_STAND" ] ||
+   [ -z "$VOL_PUB_SLICE_TAG" ] || [ -z "$VOL_PRIV_SLICE_TAG" ]
+then
+	egettxt "$0: Unexpected results from vxparms utility" \
+		vxvmshm:49 $0 "$@"  >&2
+	quit 1
+fi
+
+dmname=$1
+daname=`vxprint -g rootdg -dF '%daname' "$dmname" 2> /dev/null`
+if [ -z "$daname" ]
+then
+	dmname="$dmname"  egettxt \
+		"$0: Disk $dmname not found in configuration" \
+		vxvmshm:37 $0 "$@" >&2
+	quit 1
+fi
+if [ "X$daname" = X- ]
+then
+	dmname="$dmname"  egettxt \
+		"$0: No backing device for disk $dmname" \
+		vxvmshm:39 $0 "$@" >&2
+	quit 1
+fi
+
+# Compaq changes for cloning rootdisk partitions
+if [ "$clone" = "yes" ] ; then
+	rdisk=/dev/rdsk/${root_da}
+	dest=/dev/rdsk/$daname
+	size_rdisk=`partsize -s $rdisk`
+	size_dest=`partsize -s $dest`
+	if [ $size_dest -lt $size_rdisk ] ; then
+		export dmname; ewritemsg -M vxvmshm:156 \
+		"Destination disk $dmname has a size less than that of the
+  root disk."
+		quit 1
+	fi
+	clone_partitions $rdisk $dest
+fi
+
+offset=
+$PRTVTOC -f $tmp1 "/dev/rdsk/$daname"
+dpart_offset=`while read part tag flags offset len
+	      do
+		if [ "X$tag" = X$VOL_PUB_SLICE_TAG ]; then
+			echo $offset; break;
+		fi
+	      done < $tmp1`
+if [ -z "$dpart_offset" ]
+then
+	daname="$daname"  egettxt \
+		"$0: Device $daname has no public partition" \
+		vxvmshm:36 $0 "$@" >&2
+	quit 1
+fi
+
+if not isfreeslice 1 $V_ROOT < $tmp1
+then
+	daname="$daname"  egettxt \
+		"$0: Partition 1 is not free on device $daname." \
+		vxvmshm:43 $0 "$@" >&2
+	quit 1
+fi
+if not isfreeslice 2 $V_SWAP < $tmp1
+then
+	daname="$daname"  egettxt \
+		"$0: Partition 2 is not free on device $daname." \
+		vxvmshm:46 $0 "$@" >&2
+	quit 1
+fi
+if not isfreeslice 10 $V_STAND < $tmp1
+then
+	daname="$daname"  egettxt \
+		"$0: Partition 10 is not free on device $daname." \
+		vxvmshm:44 $0 "$@" >&2
+	quit 1
+fi
+
+standlen=`vxprint -g rootdg -vF '%{len:*}' standvol`
+swaplen=`vxprint -g rootdg -vF '%{len:*}' swapvol`
+rootlen=`vxprint -g rootdg -vF '%{len:*}' rootvol`
+
+if [ -z "$rootlen" ] || [ -z "$swaplen" ] || [ -z "$standlen" ]
+then
+	progname="$progname"  egettxt \
+		"$progname: No length for root, swap, or stand volume" \
+		vxvmshm:72 >&2
+	quit 1
+fi
+totalneeded=`expr $standlen + $swaplen + $rootlen`
+#
+# Added code here to handle the /usr /var /home partitions for beta..
+#
+
+usrlen=`vxprint -sF "%len" -e \
+		"assoc.assoc=\"usr\" && sd_daname==\"${root_da}\""`
+if [ -n "$usrlen" ]
+then
+	if not isfreeslice 3 $V_USR < $tmp1
+	then
+		daname="$daname" egettxt \
+		"$0: Partition 3 is not free on device $daname." \
+			vxvmshm:47 $0 "$@" >&2
+		quit 1
+	fi
+else
+	usrlen=0
+fi
+
+varlen=`vxprint -sF "%len" -e \
+		"assoc.assoc=\"var\" && sd_daname==\"${root_da}\""`
+if [ -n "$varlen" ]
+then
+	if not isfreeslice 11 $V_VAR < $tmp1
+	then
+		daname="$daname" egettxt \
+		"$0: Partition 11 is not free on device $daname." \
+			vxvmshm:45 $0 "$@" >&2
+		quit 1
+	fi
+else
+	varlen=0
+fi
+
+homelen=`vxprint -sF "%len" -e \
+		"assoc.assoc=\"home\" && sd_daname==\"${root_da}\""`
+if [ -n "$homelen" ]
+then
+	if not isfreeslice 4 $V_HOME < $tmp1
+	then
+		daname="$daname" egettxt \
+		"$0: Partition 4 is not free on device $daname." \
+			vxvmshm:48 $0 "$@" >&2
+		quit 1
+	fi
+else
+	homelen=0
+fi
+
+totalneeded=`expr $totalneeded + $usrlen + $varlen + $homelen`
+
+vxdg -q -g rootdg free "$dmname" > $tmp1
+exec 3<&0 < $tmp1
+okay=
+while read dm da tag offs len flags
+do
+	if [ $len -ge $totalneeded ]
+	then
+		okay=yes
+		break
+	fi
+done
+exec 0<&3 3<&-
+if [ -z "$okay" ]
+then
+	progname="$progname" \
+	dmname="$dmname" \
+	totalneeded="$totalneeded" egettxt \
+"$progname: Insufficient space on disk $dmname for this
+	operation; $totalneeded blocks are needed." vxvmshm:70 >&2
+	quit 1
+fi
+
+[ -n "$Verbose" ] && egettxt "  Mirror volume standvol ..." vxvmshm:26
+doit vxassist mirror standvol layout=contig "$dmname" || quit 1
+[ -n "$Verbose" ] && egettxt "  Mirror volume swapvol ..." vxvmshm:27
+doit vxassist mirror swapvol  layout=contig "$dmname" || quit 1
+[ -n "$Verbose" ] && egettxt "  Mirror volume rootvol ..." vxvmshm:25
+doit vxassist mirror rootvol  layout=contig "$dmname" || quit 1
+
+if [ $usrlen -ne 0 ]; then
+	[ -n "$Verbose" ] && egettxt "  Mirror volume usr ..." vxvmshm:28
+	doit vxassist mirror usr  layout=contig "$dmname" || quit 1
+fi
+if [ $varlen -ne 0 ]; then
+	[ -n "$Verbose" ] && egettxt "  Mirror volume var ..." vxvmshm:29
+	doit vxassist mirror var  layout=contig "$dmname" || quit 1
+fi
+if [ $homelen -ne 0 ]; then
+	[ -n "$Verbose" ] && egettxt "  Mirror volume home ..." vxvmshm:24
+	doit vxassist mirror home  layout=contig "$dmname" || quit 1
+fi
+
+part_setup standvol 10 $V_STAND 0x200 $dpart_offset $standlen || quit 1
+part_setup swapvol   2 $V_SWAP  0x201 $dpart_offset $swaplen  || quit 1
+part_setup rootvol   1 $V_ROOT  0x200 $dpart_offset $rootlen  || quit 1
+
+if [ $usrlen -ne 0 ]; then
+	part_setup usr  3 $V_USR  0x200 $dpart_offset $usrlen  || quit 1
+fi
+if [ $varlen -ne 0 ]; then
+	part_setup var 11 $V_VAR  0x200 $dpart_offset $varlen  || quit 1
+fi
+if [ $homelen -ne 0 ]; then
+	part_setup home 4 $V_HOME  0x200 $dpart_offset $homelen  || quit 1
+fi
+
+quit 0

@@ -1,0 +1,45 @@
+/*
+ * @(#)Imakefile 11.1
+ *
+ * The information in this file is provided for the exclusive use of the
+ * licensees of The Santa Cruz Operation, Inc.  Such users have the right 
+ * to use, modify, and incorporate this code into other products for purposes 
+ * authorized by the license agreement provided they include this notice 
+ * and the associated copyright notice with any such product.  The 
+ * information in this file is provided "AS IS" without warranty.
+ *
+ *	 Copyright (C) The Santa Cruz Operation, 1991-1994.
+ * 
+ */
+
+#include <Server.tmpl>
+
+SRCS =	svgaCmap.c svgaCursor.c svgaData.c svgaGC.c \
+	svgaImage.c svgaImage16.c \
+        svgaInit.c svgaScreen.c svgaWin.c
+
+OBJS =	svgaCmap.o svgaCursor.o svgaData.o svgaGC.o \
+	svgaImage.o svgaImage16.o \
+        svgaInit.o svgaScreen.o svgaWin.o
+
+STD_DEFINES = ServerDefines
+   INCLUDES = XscoServerIncludes
+   LINTLIBS = 
+    DDXLIBS = libsvga.a
+    GRAFDIR = $(USRLIBDIR)/grafinfo
+
+all::
+	LibMkdir(shared)
+clean::
+	LibCleanDir(shared)
+.c.o: 
+	LibObjCompile(shared,-Kpic $(CDEBUGFLAGS))
+	NormalLibObjCompile($(NOOP_))
+
+NormalLibraryTarget(svga,$(OBJS))
+SharedXDriverTarget(svga,6.0,$(OBJS),shared,..)
+LintLibraryTarget(svga,$(SRCS))
+NormalLintTarget($(SRCS))
+DynamicObjectRule(svga,$(DDXLIBS))
+DependTarget()
+

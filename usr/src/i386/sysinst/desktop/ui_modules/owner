@@ -1,0 +1,233 @@
+#!/sbin/sh
+#ident "@(#)owner	15.1	97/12/19"
+
+# owner -- ISL UI module: user enters his/her own name
+
+# Notes for implementing UPGRADE version:
+# For an upgrade of the OS, this screen should present a list of users
+# to choose from, as done in the original pkg/base/ifiles/postreboot.sh script.
+
+# This module shares many things in common with the 'password' module.
+. /isl/ui_modules/password.rc
+
+#
+# Should we skip the user interaction?
+#
+function skip_func
+{
+[ -n "$debug" ] && set -x
+	# If the user has previously entered good values, then owner_pw_len
+	# will be set
+	owner_pw_len="`ivar get owner_pw_len`"
+	if [ -z "$owner_pw_len" ] 
+	then
+		#
+		# Call ourselves again, interactively.
+		#
+		ivar set silent_owner "false"
+		ivar set skip_owner "false"
+		. /isl/ui_map
+		exec $module_path/$module $direction
+	fi
+}
+
+function exit_check {
+	
+	[ -n "$debug" ] && set -x
+
+	check_owner_login
+	[ "$?" != "0" ] && return 1
+
+	check_owner_uid
+	[ "$?" != "0" ] && return 1
+
+	[ -z "$confirm_ok" ] && {
+		msgnoerr "$PASSWORD_NO_MATCH"
+		return 1 
+	}
+
+	return 0
+}	
+
+#
+# Create the winxksh form containing the Owner: textfield prompt.
+#
+function get_owner
+{
+[ -n "$debug" ] && set -x
+	footer "$OWNER_KEYS"
+	open_form -exit exit_check
+	form=$FID
+	(( ix = 2 + ${#Prompt_Repeat_PW} + 2 ))
+	(( ix = ${#Prompt_Name} ))
+	(( ${#Prompt_Login}	> ix )) && ix=${#Prompt_Login}
+	(( ${#Prompt_UID}	> ix )) && ix=${#Prompt_UID}
+	(( ${#Prompt_PW}	> ix )) && ix=${#Prompt_PW}
+	(( ${#Prompt_Repeat_PW}	> ix )) && ix=${#Prompt_Repeat_PW}
+	(( ix += 4 ))
+
+	add_field OWNER_NAME	-p "$Prompt_Name"	-ilen 25 \
+		-px 3 -py 2 -ix $ix -iy 2 		\
+		-entry 'msgnoerr "$Enter_Name"'		\
+		-exit  'check_owner_name'
+
+	add_field LOGIN		-p "$Prompt_Login"	-ilen $len_max  \
+		-px 3 -py 4 -ix $ix -iy 4 		\
+		-entry 'msg      "$Enter_Login"'	\
+		-exit  'check_owner_login'
+
+	add_field OWNER_UID	-p "$Prompt_UID"	-ilen 5  \
+		-px 3 -py 6 -ix $ix -iy 6 		\
+		-entry 'msg      "$Enter_UID"'		\
+		-exit  'check_owner_uid'
+
+	password_fldnum=$FIELDCNT
+	add_field password	-p "$Prompt_PW"		-ilen $len_max  -novisible \
+		-px 3 -py 8 -ix $ix -iy 8		\
+		-entry 'msg      "$Enter_PW"'		\
+		-exit  'check_password'
+
+	confirm_fldnum=$FIELDCNT
+	add_field confirm	-p "$Prompt_Repeat_PW"	-ilen $len_max -novisible \
+		-px 3 -py 10 -ix $ix -iy 10		\
+		-entry 'msg      "$Enter_Repeat"'	\
+		-exit  'check_match'
+
+	place_window 60 12 -title "${Prompt_Name%%:*}"
+	run_form $form
+	set_hotkey 9  'check_match; save_exit PREV'
+	set_hotkey 1  'check_match; save_exit HELP'
+}
+
+function check_owner_name
+{
+	case $OWNER_NAME in
+	*:*)
+		errmsg "$Error_Name_Colon"
+		name_ok=
+		return 1
+		;;
+		
+	esac
+	msg
+	name_ok=yes
+	return 0
+}
+
+#
+# Check the validity of $login.
+# If     ok, return 0, allowing exit from the entry form.
+# If not ok, return 1, denying  exit from the entry form.
+#
+function check_owner_login
+{
+[ -n "$debug" ] && set -x
+	login_ok=
+	len=${#LOGIN}
+	(( len < 3 || len > $len_max  )) && {
+		errmsg "$Error_Login_Short"
+		return 1
+	}
+	case "$LOGIN" in
+	*([A-Za-z0-9_-]))
+		;;
+	*)
+		errmsg "$Error_Login_Char"
+		return 1
+	esac
+	msg
+	login_ok=yes
+	return 0
+}
+
+function check_owner_uid
+{
+	uid_ok=
+	case "$OWNER_UID" in
+	[0-9][0-9]*)
+		;;
+	*)
+		errmsg "$Error_UID"
+		return 1
+	esac
+	(( 101 > OWNER_UID )) && {
+		errmsg "$Error_UID"
+		return 1
+	}
+	msg
+	uid_ok=yes
+	return 0
+}
+
+function save_exit
+{
+[ -n "$debug" ] && set -x
+	ivar set LOGIN		"$LOGIN"
+	ivar set OWNER		"$LOGIN"
+	ivar set USERID		"$LOGIN"
+	ivar set OWNER_NAME	"$OWNER_NAME"
+	ivar set USERNAME	"$OWNER_NAME"
+	ivar set OWNER_UID	"$OWNER_UID"
+	ivar set USERNUM	"$OWNER_UID"
+	ivar set help_topic owner	# Just in case $1 == HELP
+
+	if [ -n "$confirm_ok" ]
+	then
+		ivar set OWNER_PW_ENCRYPTED	"$encrypted"
+		ivar set owner_pw_len 		"${#password}"
+	else
+		ivar set OWNER_PW_ENCRYPTED	"$OWNER_PW_ENCRYPTED"
+		ivar set owner_pw_len 		"$owner_pw_len"
+	fi
+	ii_exit $1
+
+	# See comments in save_exit function in 'password' module.
+}
+
+
+function main
+{
+[ -n "$debug" ] && set -x
+	# Get the initial owner, if any.
+	#
+	owner_pw_len="`ivar get owner_pw_len`"
+	LOGIN=`ivar get LOGIN`
+	OWNER_NAME=`ivar get OWNER_NAME`
+	OWNER_UID=`ivar get OWNER_UID`
+	OWNER_PW_ENCRYPTED=`ivar get OWNER_PW_ENCRYPTED`
+
+	fake_password=x
+	confirm=
+	password=
+	confirm_ok=yes
+	[ -n "$owner_pw_len" ] && {
+		# user has previously entered good values for both fields.
+		i=0
+		while (( ( i += 1 ) <= owner_pw_len ))
+		do
+			password=$password"x"
+		done
+		fake_password=$password
+		confirm=$password
+		encrypted="$OWNER_PW_ENCRYPTED"
+		confirm_ok=yes
+	}
+	
+	[ -z "$OWNER_UID" ] && OWNER_UID="101"
+	
+	#
+	# Let the user enter a owner.
+	#
+	get_owner
+	input_handler
+	save_exit NEXT	
+}
+
+#
+# Main
+#
+
+. /isl/ui_modules/common.rc
+
+main
+

@@ -1,0 +1,37 @@
+#ident	"@(#)usermod.dfl	1.2"
+
+# This file contains the list of files/directories that usermod will
+# search when the -U option is used.  The files/directories to be 
+# searched are specified by the $LOCAL_PATH and $REMOTE_PATH variables.
+# These variables consist of complete path names separated by colons.
+# The purpose of the search is to chown files currently belonging to 
+# the specified user to the new uid for that user.
+#
+# Only files/directories belonging to the specified user will be chown'd;
+# other files/directories in the search path will be unchanged.  All 
+# files and directories under a specified directory are examined.
+#
+# If a pathname ends with "{login}",  "{login}" is translated by usermod
+# to the logname of the user whose uid is being changed.  For example,
+# the default value of MAILDIR is /var/mail/{login}.  For the command
+# "usermod -u 123 -U foo", the result will be that the file /var/mail/foo
+# will be chown'd to belong to uid 123 (and, of course, logname foo will
+# have uid 123 as well).
+#
+# The files/directories specified by $LOCAL_PATH will not be followed 
+# to remote machines but the files/directories specified by $REMOTE_PATH 
+# will be followed to remote machines.  For example, if $HOMEPATH is in
+# the list specified by $LOCAL_PATH and $HOMEPATH=/home/{login}, then
+# for the command "usermod -u 123 -U foo", all files and directories 
+# belonging to logname foo under /home/foo and residing on the local
+# machine will be chown'd to belong to uid 123 which will be foo's new uid.
+
+HOMEDIR=${HOMEDIR:=/home}
+HOMEPATH=$HOMEDIR/{login}
+MAILDIR=/var/mail/{login}
+MAILFORWARD=/var/mail/:forward/{login}
+UUCPDIR=/var/spool/uucppublic/receive/{login}
+PRESERVEDIR=/var/preserve
+
+LOCAL_PATH=$HOMEPATH:$MAILDIR:$MAILFORWARD:$UUCPDIR:$PRESERVEDIR
+REMOTE_PATH=

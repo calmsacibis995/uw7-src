@@ -1,0 +1,109 @@
+XCOMM $XConsortium: Imakefile /main/17 1996/02/06 10:03:48 kaleb $
+
+
+
+
+
+XCOMM $XFree86: xc/programs/Xserver/hw/xfree86/doc/Imakefile,v 3.25 1996/01/16 15:04:03 dawes Exp $
+
+#include <Server.tmpl>
+XCOMM #include <lnxdoc.rules>
+
+#if HasLinuxDoc || InstallJapaneseDocs
+#define IHaveSubdirs
+#endif
+
+#if HasLinuxDoc
+SGMLDIR = sgml
+#endif
+
+#if InstallJapaneseDocs
+JAPANESEDIR = Japanese
+#endif
+
+SUBDIRS = $(SGMLDIR) $(JAPANESEDIR)
+
+#if !BuildLinuxDocText
+/* FreeBSD's README is handled separately because of name length limits */
+#ifdef BSD386Architecture
+OSREADME = README.Bsdi
+#endif
+#ifdef FreeBSDArchitecture
+OSREADME = README.FreeBSD
+#endif
+#ifdef NetBSDArchitecture
+OSREADME = README.NetBSD
+#endif
+#ifdef i386MachArchitecture
+OSREADME = README.Mach
+#endif
+#ifdef LinuxArchitecture
+OSREADME = README.Linux
+#endif
+#ifdef LynxOSArchitecture
+OSREADME = README.LynxOS
+#endif
+#ifdef MinixArchitecture
+OSREADME = /* README.Minix */
+#endif
+#ifdef AmoebaArchitecture
+OSREADME = /* README.Amoeba */
+#endif
+#ifdef SVR3Architecture
+# ifdef i386ScoArchitecture
+OSREADME = README.SCO /* README.SVR3 */
+# else
+#  ifdef i386IscArchitecture
+OSREADME = README.isc /* README.SVR3 */
+#  else
+OSREADME = /* README.SVR3 */
+#  endif
+# endif
+#endif
+#ifdef SVR4Architecture
+# ifdef SunArchitecture
+OSREADME = README.SOLX86
+# else
+OSREADME = README.SVR4
+# endif
+#endif
+#endif /* !BuildLinuxDocText */
+/* There is no .sgml version of README.OS2 yet */
+#ifdef OS2Architecture
+OSREADME = README.OS2
+#endif
+
+#if 0
+#if XFree86Version % 10
+REPORTFORM = BetaReport
+#endif
+#endif
+
+all::
+
+#if !BuildLinuxDocText
+HWREADME =  README.ati README.trident README.tseng README.WstDig \ 
+            README.cirrus README.Video7 README.P9000 README.agx \
+            README.S3 README.W32 README.Oak README.Mach64 README.ark
+
+MAINDOCS = COPYRIGHT README README.Config INSTALL
+
+OTHERDOCS = /*VideoModes.doc*/ QuickStart.doc README.clkprog
+#endif
+
+MISCDOCS = ServersOnly LbxproxyOnly $(REPORTFORM) README.DGA
+
+DATABASE = /*modeDB.txt*/ AccelCards Monitors Devices
+
+FILES = $(MAINDOCS) $(OSREADME) $(HWREADME) $(OTHERDOCS) $(MISCDOCS) $(DATABASE)
+
+InstallMultipleDest(install,$(FILES),$(XFREE86DOCDIR))
+
+LinkFile(README.Mach64,READ.Mach64)
+LinkFile(README.FreeBSD,READ.FreeBSD)
+
+#ifdef IHaveSubdirs
+MakeSubdirs($(SUBDIRS))
+DependSubdirs($(SUBDIRS))
+#endif
+

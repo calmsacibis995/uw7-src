@@ -1,0 +1,31 @@
+#ident	"@(#)initpkg:common/cmd/initpkg/init.d/keymaster	1.3"
+#
+# 	This script will start the 'cr1' keymaster daemon
+#	if Enhanced Security is not configured in the running /unix.
+#
+#	The -n option indicates that the keys databsae is unencrypted.
+#	If you wish to have an encrypted keys database, you should
+#	remove the entry, since the keymaster must be started manually.
+#
+#	If your system does not support DES encryption and decryption,
+#	add the -s <scheme> option to indicate the name 'cr1.enigma'
+#	to use the enigma encryption/decryption mechanism.
+#
+
+mldmode > /dev/null 2>&1
+if [ "$?" = "0" ]
+then
+	exit
+fi
+
+case $1 in
+'start')
+	/usr/sbin/keymaster -n &
+	;;
+'stop')
+	/usr/sbin/keymaster -k
+	;;
+*)
+	exit 1
+	;;
+esac
